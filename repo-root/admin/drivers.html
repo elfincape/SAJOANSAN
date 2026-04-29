@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>기사 관리 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <h1 class="text-base font-semibold">기사 관리</h1>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] gap-4">
+
+      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+        <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
+          <input id="search-input" type="search" placeholder="이름/연락처 검색"
+                 class="app-input flex-1 min-w-[180px]">
+          <select id="filter-company" class="app-select w-44">
+            <option value="">운수사(전체)</option>
+          </select>
+          <select id="sort-key" class="app-select w-28">
+            <option value="name">이름순</option>
+            <option value="company">운수사순</option>
+            <option value="updated">수정 최신순</option>
+          </select>
+          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+        </div>
+        <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
+          <table class="app-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>연락처</th>
+                <th>운수사</th>
+                <th class="text-right">주코스</th>
+                <th class="text-right">보조코스</th>
+              </tr>
+            </thead>
+            <tbody id="list-tbody"></tbody>
+          </table>
+          <div id="empty-msg" class="hidden text-center text-sm text-zinc-500 py-12">
+            등록된 기사가 없습니다.
+          </div>
+        </div>
+        <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
+          <span id="result-count"></span>
+          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+        </div>
+      </section>
+
+      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+        <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
+          <h2 id="form-title" class="text-sm font-semibold">새 기사</h2>
+          <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
+          <div class="flex-1"></div>
+          <span id="form-meta" class="text-[11px] text-zinc-500"></span>
+        </div>
+        <form id="form" class="p-4 space-y-3" novalidate>
+          <input type="hidden" id="f-id">
+          <div>
+            <label class="app-label">이름 *</label>
+            <input id="f-name" class="app-input" required>
+          </div>
+          <div>
+            <label class="app-label">연락처 (휴대폰)</label>
+            <input id="f-phone" class="app-input" placeholder="예: 010-1234-5678">
+          </div>
+          <div>
+            <label class="app-label">소속 운수사</label>
+            <select id="f-company" class="app-select">
+              <option value="">선택 안 함</option>
+            </select>
+          </div>
+          <div>
+            <label class="app-label">비고</label>
+            <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
+          </div>
+          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
+            <div class="flex-1"></div>
+            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import { supabase } from '/js/supabase.js';
+    import { requireRole } from '/js/auth.js';
+    import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+
+    const profile = await requireRole('editor');
+    if (!profile) { /* 리다이렉트 */ }
+    document.getElementById('user-badge').textContent =
+      `${profile.display_name || profile.email || ''} (${profile.role})`;
+
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      rows: [],
+      filtered: [],
+      companies: [],
+      companyById: new Map(),
+      // driver_id -> { primary, secondary }
+      counts: new Map(),
+      selectedId: null,
+      filters: { search: '', companyId: '' },
+      sort: 'name'
+    };
+
+    bindEvents();
+    await loadAll();
+    resetForm();
+
+    // -------------------------------------------------------------------------
+    async function loadAll() {
+      $('loading-indicator').classList.remove('hidden');
+      try {
+        const [drv, co, rt] = await Promise.all([
+          supabase.from('drivers').select('*'),
+          supabase.from('companies').select('id, name').order('name'),
+          supabase.from('routes').select('id, primary_driver_id, secondary_driver_id')
+        ]);
+        if (drv.error) throw drv.error;
+        state.rows = drv.data || [];
+        state.companies = co.data || [];
+        state.companyById = new Map(state.companies.map(c => [c.id, c]));
+
+        // 참조 카운트
+        const counts = new Map();
+        const ensure = (id) => {
+          if (!counts.has(id)) counts.set(id, { primary: 0, secondary: 0 });
+          return counts.get(id);
+        };
+        for (const r of (rt.data || [])) {
+          if (r.primary_driver_id)   ensure(r.primary_driver_id).primary++;
+          if (r.secondary_driver_id) ensure(r.secondary_driver_id).secondary++;
+        }
+        state.counts = counts;
+
+        // 필터/폼 셀렉트
+        const opts = '<option value="">선택 안 함</option>' +
+          state.companies.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+        $('f-company').innerHTML = opts;
+        const filt = '<option value="">운수사(전체)</option>' +
+          state.companies.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+        const cur = $('filter-company').value;
+        $('filter-company').innerHTML = filt;
+        $('filter-company').value = cur;
+      } catch (e) {
+        toast('데이터를 불러오지 못했습니다.', 'error');
+        state.rows = [];
+        state.counts = new Map();
+      } finally {
+        $('loading-indicator').classList.add('hidden');
+      }
+      applyAndRender();
+    }
+
+    function applyAndRender() {
+      const q = state.filters.search.toLowerCase();
+      const cid = state.filters.companyId;
+      state.filtered = state.rows.filter(r => {
+        if (cid && r.company_id !== cid) return false;
+        if (q) {
+          const hay = [r.name, r.phone].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      if (state.sort === 'company') {
+        state.filtered.sort((a, b) => {
+          const an = state.companyById.get(a.company_id)?.name || '';
+          const bn = state.companyById.get(b.company_id)?.name || '';
+          return an.localeCompare(bn, 'ko') || (a.name || '').localeCompare(b.name || '', 'ko');
+        });
+      } else if (state.sort === 'updated') {
+        state.filtered.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+      } else {
+        state.filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+      }
+      renderList();
+    }
+
+    function renderList() {
+      const tbody = $('list-tbody');
+      const empty = $('empty-msg');
+      tbody.innerHTML = '';
+      if (state.filtered.length === 0) {
+        empty.classList.remove('hidden');
+      } else {
+        empty.classList.add('hidden');
+        const frag = document.createDocumentFragment();
+        for (const r of state.filtered) {
+          const c = state.counts.get(r.id) || { primary: 0, secondary: 0 };
+          const co = state.companyById.get(r.company_id);
+          const tr = document.createElement('tr');
+          tr.dataset.id = r.id;
+          if (r.id === state.selectedId) tr.classList.add('selected');
+          tr.classList.add('cursor-pointer');
+          tr.innerHTML = `
+            <td>${escapeHtml(r.name)}</td>
+            <td>${escapeHtml(formatPhone(r.phone))}</td>
+            <td>${escapeHtml(co?.name || '')}</td>
+            <td class="text-right">${c.primary}</td>
+            <td class="text-right">${c.secondary}</td>
+          `;
+          tr.addEventListener('click', () => selectRow(r.id));
+          frag.appendChild(tr);
+        }
+        tbody.appendChild(frag);
+      }
+      $('result-count').textContent =
+        state.rows.length === 0 ? '데이터 없음'
+        : (state.filtered.length === state.rows.length
+            ? `총 ${state.rows.length}건`
+            : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
+    }
+
+    function selectRow(id) {
+      state.selectedId = id;
+      renderList();
+      const r = state.rows.find(x => x.id === id);
+      if (r) rowToForm(r);
+    }
+    function resetForm() { state.selectedId = null; rowToForm(null); }
+
+    function rowToForm(r) {
+      $('f-id').value     = r?.id || '';
+      $('f-name').value   = r?.name || '';
+      $('f-phone').value  = r?.phone || '';
+      $('f-company').value = r?.company_id || '';
+      $('f-memo').value   = r?.memo || '';
+      const isEdit = !!r?.id;
+      $('form-title').textContent = isEdit ? r.name : '새 기사';
+      $('form-mode-badge').textContent = isEdit ? '편집' : '신규';
+      $('form-meta').textContent = isEdit && r.updated_at
+        ? `최종수정: ${new Date(r.updated_at).toLocaleString('ko-KR')}` : '';
+      $('btn-delete').classList.toggle('hidden', !isEdit);
+    }
+
+    function bindEvents() {
+      $('search-input').addEventListener('input', debounce(() => {
+        state.filters.search = $('search-input').value.trim();
+        applyAndRender();
+      }, 200));
+      $('filter-company').addEventListener('change', () => {
+        state.filters.companyId = $('filter-company').value;
+        applyAndRender();
+      });
+      $('sort-key').addEventListener('change', () => {
+        state.sort = $('sort-key').value;
+        applyAndRender();
+      });
+      $('new-btn').addEventListener('click', () => {
+        state.selectedId = null; renderList(); resetForm(); $('f-name').focus();
+      });
+      $('btn-cancel').addEventListener('click', () => {
+        if (state.selectedId) {
+          const r = state.rows.find(x => x.id === state.selectedId);
+          if (r) rowToForm(r);
+        } else resetForm();
+      });
+      $('form').addEventListener('submit', async (e) => { e.preventDefault(); await save(); });
+      $('btn-delete').addEventListener('click', remove);
+    }
+
+    async function save() {
+      const name = $('f-name').value.trim();
+      if (!name) { toast('이름은 필수입니다.', 'warn'); $('f-name').focus(); return; }
+
+      const payload = {
+        ...(($('f-id').value) ? { id: $('f-id').value } : {}),
+        name,
+        phone:      emptyToNull($('f-phone').value.trim()),
+        company_id: emptyToNull($('f-company').value),
+        memo:       emptyToNull($('f-memo').value.trim())
+      };
+      $('btn-save').disabled = true;
+      try {
+        const { data, error } = await supabase
+          .from('drivers').upsert(payload, { onConflict: 'id' })
+          .select().single();
+        if (error) {
+          toast(`저장 실패: ${error.message}`, 'error');
+          return;
+        }
+        toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
+        await loadAll();
+        selectRow(data.id);
+      } catch {
+        toast('저장 중 오류가 발생했습니다.', 'error');
+      } finally {
+        $('btn-save').disabled = false;
+      }
+    }
+
+    async function remove() {
+      const id = $('f-id').value;
+      if (!id) return;
+      const r = state.rows.find(x => x.id === id);
+      const c = state.counts.get(id) || { primary: 0, secondary: 0 };
+
+      let msg = `"${r?.name || '이 기사'}"를 삭제할까요?`;
+      const total = c.primary + c.secondary;
+      if (total > 0) {
+        msg += `\n\n⚠ 이 기사가 배정된 코스: 주기사 ${c.primary}건, 보조기사 ${c.secondary}건.\n` +
+               `삭제하면 해당 코스의 기사 항목은 비워집니다 (NULL 처리).`;
+      }
+      const ok = await confirmDialog(msg, { okText: '삭제', cancelText: '취소', danger: true });
+      if (!ok) return;
+
+      try {
+        const { error } = await supabase.from('drivers').delete().eq('id', id);
+        if (error) { toast(`삭제 실패: ${error.message}`, 'error'); return; }
+        toast('삭제되었습니다.', 'success');
+        await loadAll();
+        resetForm();
+      } catch {
+        toast('삭제 중 오류가 발생했습니다.', 'error');
+      }
+    }
+
+    function emptyToNull(v) { return v === '' || v == null ? null : v; }
+    function escapeHtml(s) {
+      return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+    }
+    function debounce(fn, w) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), w); }; }
+  </script>
+</body>
+</html>

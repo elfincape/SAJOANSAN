@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>사용자 관리 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1300px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <h1 class="text-base font-semibold">사용자 관리</h1>
+      <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-900/40 border border-rose-700 text-rose-200">관리자 전용</span>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1300px] w-full mx-auto px-4 py-3 space-y-4">
+
+    <!-- 안내 박스 -->
+    <section class="border border-amber-700/50 bg-amber-900/10 rounded-lg p-4 text-sm text-amber-100">
+      <h2 class="font-semibold mb-2">🔐 사용자 추가 절차</h2>
+      <ol class="list-decimal list-inside space-y-1 text-amber-100/90">
+        <li>
+          Supabase 대시보드의 <strong>Authentication → Users</strong>에서
+          "Add user"로 이메일·비밀번호를 직접 발급합니다.
+        </li>
+        <li>
+          생성된 사용자의 <strong>user_id (UUID)</strong>를 복사합니다.
+        </li>
+        <li>
+          아래 "신규 프로필 생성" 폼에 붙여넣고 표시이름·역할을 지정해 저장하면
+          시스템 사용자로 등록됩니다.
+        </li>
+      </ol>
+      <p class="mt-2 text-xs text-amber-200/80">
+        ※ 이 화면은 <code class="px-1 rounded bg-zinc-800/60">user_profiles</code> 테이블만 관리합니다.
+        이메일·비밀번호 자체의 변경/재설정은 Supabase 대시보드에서 수행하세요.
+      </p>
+      <p class="mt-1 text-xs text-amber-200/80">
+        <strong>참고:</strong> 트리거가 설치되어 있으면(<code>handle_new_auth_user</code>) 1단계 직후
+        <code>user_profiles</code>에 빈 행이 자동 생성됩니다. 이 경우 신규 폼 대신 목록에서 바로 편집해 활성화하면 됩니다.
+      </p>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] gap-4">
+
+      <!-- 좌측: 사용자 목록 -->
+      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+        <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
+          <input id="search-input" type="search" placeholder="이메일/이름 검색"
+                 class="app-input flex-1 min-w-[180px]">
+          <select id="filter-role" class="app-select w-32">
+            <option value="">역할(전체)</option>
+            <option value="admin">admin</option>
+            <option value="editor">editor</option>
+            <option value="viewer">viewer</option>
+          </select>
+          <select id="filter-active" class="app-select w-28">
+            <option value="">상태(전체)</option>
+            <option value="active">활성</option>
+            <option value="inactive">비활성</option>
+          </select>
+        </div>
+
+        <div class="table-wrap" style="max-height: calc(100vh - 320px); border:none; border-radius:0;">
+          <table class="app-table">
+            <thead>
+              <tr>
+                <th>이메일</th>
+                <th>표시이름</th>
+                <th>역할</th>
+                <th>상태</th>
+                <th>마지막 수정</th>
+                <th class="text-right">작업</th>
+              </tr>
+            </thead>
+            <tbody id="list-tbody"></tbody>
+          </table>
+          <div id="empty-msg" class="hidden text-center text-sm text-zinc-500 py-12">
+            등록된 프로필이 없습니다.
+          </div>
+        </div>
+        <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
+          <span id="result-count"></span>
+          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+        </div>
+      </section>
+
+      <!-- 우측: 폼 -->
+      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+        <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
+          <h2 id="form-title" class="text-sm font-semibold">신규 프로필 생성</h2>
+          <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
+          <div class="flex-1"></div>
+          <span id="form-meta" class="text-[11px] text-zinc-500"></span>
+        </div>
+
+        <form id="form" class="p-4 space-y-3" novalidate>
+          <input type="hidden" id="f-orig-id">
+
+          <div>
+            <label class="app-label">user_id (UUID) *</label>
+            <input id="f-id" class="app-input font-mono text-xs"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   spellcheck="false" autocomplete="off">
+            <p class="text-[10px] text-zinc-500 mt-1">
+              Supabase Authentication > Users에서 복사. 편집 모드에서는 변경할 수 없습니다.
+            </p>
+          </div>
+
+          <div>
+            <label class="app-label">이메일</label>
+            <input id="f-email" class="app-input" placeholder="name@company.com">
+            <p class="text-[10px] text-zinc-500 mt-1">
+              auth.users의 이메일과 동일하게 적어주세요. 표시 용도이며, 인증에 영향을 주지 않습니다.
+            </p>
+          </div>
+
+          <div>
+            <label class="app-label">표시이름</label>
+            <input id="f-name" class="app-input">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="app-label">역할 *</label>
+              <select id="f-role" class="app-select">
+                <option value="viewer">viewer</option>
+                <option value="editor">editor</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div>
+              <label class="app-label">상태</label>
+              <label class="cb mt-1.5"><input type="checkbox" id="f-active" checked> 활성</label>
+            </div>
+          </div>
+
+          <div id="self-warn" class="hidden text-xs text-amber-300 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2"></div>
+
+          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+            <button type="submit" id="btn-save"   class="btn btn-primary">저장</button>
+            <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
+            <div class="flex-1"></div>
+            <button type="button" id="btn-toggle-active" class="btn btn-ghost hidden">비활성화</button>
+            <button type="button" id="btn-delete"        class="btn btn-danger hidden">프로필 삭제</button>
+          </div>
+        </form>
+
+        <div class="px-4 pb-4 text-[11px] text-zinc-500">
+          ※ "프로필 삭제"는 시스템 접근 권한만 회수합니다. <code class="px-1 rounded bg-zinc-800">auth.users</code> 자체는 Supabase 대시보드에서 삭제하세요.
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import { supabase } from '/js/supabase.js';
+    import { requireRole } from '/js/auth.js';
+    import { toast, confirmDialog } from '/js/ui.js';
+
+    // -------------------------------------------------------------------------
+    // 권한
+    // -------------------------------------------------------------------------
+    const me = await requireRole('admin');
+    if (!me) { /* 리다이렉트 */ }
+    document.getElementById('user-badge').textContent =
+      `${me.display_name || me.email || ''} (${me.role})`;
+
+    const $ = (id) => document.getElementById(id);
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    // -------------------------------------------------------------------------
+    // 상태
+    // -------------------------------------------------------------------------
+    const state = {
+      rows: [],
+      filtered: [],
+      selectedId: null,
+      filters: { search: '', role: '', active: '' }
+    };
+
+    bindEvents();
+    await loadAll();
+    resetForm();
+
+    // -------------------------------------------------------------------------
+    // 데이터 로드
+    // -------------------------------------------------------------------------
+    async function loadAll() {
+      $('loading-indicator').classList.remove('hidden');
+      try {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*');
+        if (error) throw error;
+        state.rows = data || [];
+      } catch (e) {
+        toast('사용자 목록을 불러오지 못했습니다.', 'error');
+        state.rows = [];
+      } finally {
+        $('loading-indicator').classList.add('hidden');
+      }
+      applyAndRender();
+    }
+
+    function applyAndRender() {
+      const f = state.filters;
+      const q = f.search.toLowerCase();
+      state.filtered = state.rows.filter(r => {
+        if (f.role   && r.role !== f.role) return false;
+        if (f.active === 'active'   && !r.active) return false;
+        if (f.active === 'inactive' &&  r.active) return false;
+        if (q) {
+          const hay = [r.email, r.display_name].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      // 정렬: 활성 먼저 → 역할(admin>editor>viewer) → 이름
+      const roleRank = { admin: 0, editor: 1, viewer: 2 };
+      state.filtered.sort((a, b) =>
+        Number(b.active) - Number(a.active) ||
+        (roleRank[a.role] ?? 9) - (roleRank[b.role] ?? 9) ||
+        String(a.display_name || a.email || '').localeCompare(
+          String(b.display_name || b.email || ''), 'ko'));
+      renderList();
+    }
+
+    function renderList() {
+      const tbody = $('list-tbody');
+      const empty = $('empty-msg');
+      tbody.innerHTML = '';
+      if (state.filtered.length === 0) {
+        empty.classList.remove('hidden');
+      } else {
+        empty.classList.add('hidden');
+        const frag = document.createDocumentFragment();
+        for (const r of state.filtered) {
+          const tr = document.createElement('tr');
+          tr.dataset.id = r.id;
+          if (r.id === state.selectedId) tr.classList.add('selected');
+          tr.classList.add('cursor-pointer');
+          const isMe = r.id === me.id;
+          tr.innerHTML = `
+            <td class="font-mono text-xs">
+              ${escapeHtml(r.email || '-')}
+              ${isMe ? '<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-emerald-900/40 border border-emerald-700 text-emerald-200">나</span>' : ''}
+            </td>
+            <td>${escapeHtml(r.display_name || '')}</td>
+            <td>${roleBadge(r.role)}</td>
+            <td>${r.active
+                  ? '<span class="text-emerald-400 text-xs">활성</span>'
+                  : '<span class="text-rose-400 text-xs">비활성</span>'}</td>
+            <td class="text-xs text-zinc-400">${r.updated_at ? new Date(r.updated_at).toLocaleString('ko-KR') : ''}</td>
+            <td class="text-right whitespace-nowrap">
+              <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${r.id}">편집</button>
+              <button class="btn btn-ghost text-xs ${r.active ? 'text-rose-300' : 'text-emerald-300'}"
+                      data-act="toggle" data-id="${r.id}">${r.active ? '비활성화' : '활성화'}</button>
+            </td>
+          `;
+          tr.addEventListener('click', (e) => {
+            if (e.target.closest('button[data-act]')) return;
+            selectRow(r.id);
+          });
+          frag.appendChild(tr);
+        }
+        tbody.appendChild(frag);
+
+        tbody.querySelectorAll('button[data-act]').forEach(b => {
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = b.dataset.id;
+            if (b.dataset.act === 'edit')   selectRow(id);
+            if (b.dataset.act === 'toggle') toggleActive(id);
+          });
+        });
+      }
+
+      $('result-count').textContent =
+        state.rows.length === 0 ? '데이터 없음'
+        : (state.filtered.length === state.rows.length
+            ? `총 ${state.rows.length}건`
+            : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
+    }
+
+    function roleBadge(role) {
+      const map = {
+        admin:  'bg-rose-900/40 border-rose-700 text-rose-200',
+        editor: 'bg-emerald-900/40 border-emerald-700 text-emerald-200',
+        viewer: 'bg-zinc-700/60 border-zinc-600 text-zinc-200'
+      };
+      const cls = map[role] || map.viewer;
+      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${cls}">${escapeHtml(role || '-')}</span>`;
+    }
+
+    // -------------------------------------------------------------------------
+    // 행 선택 / 폼
+    // -------------------------------------------------------------------------
+    function selectRow(id) {
+      state.selectedId = id;
+      renderList();
+      const r = state.rows.find(x => x.id === id);
+      if (r) rowToForm(r);
+    }
+    function resetForm() {
+      state.selectedId = null;
+      rowToForm(null);
+    }
+
+    function rowToForm(r) {
+      const isEdit = !!r;
+      $('f-orig-id').value = r?.id || '';
+      $('f-id').value      = r?.id || '';
+      $('f-id').readOnly   = isEdit;
+      $('f-id').classList.toggle('opacity-60', isEdit);
+
+      $('f-email').value   = r?.email || '';
+      $('f-email').readOnly = isEdit;
+      $('f-email').classList.toggle('opacity-60', isEdit);
+
+      $('f-name').value    = r?.display_name || '';
+      $('f-role').value    = r?.role || 'viewer';
+      $('f-active').checked = r ? !!r.active : true;
+
+      $('form-title').textContent =
+        isEdit ? (r.display_name || r.email || '(이름 없음)') : '신규 프로필 생성';
+      $('form-mode-badge').textContent = isEdit ? '편집' : '신규';
+      $('form-meta').textContent = isEdit && r.updated_at
+        ? `최종수정: ${new Date(r.updated_at).toLocaleString('ko-KR')}` : '';
+
+      const tgl = $('btn-toggle-active');
+      const del = $('btn-delete');
+      if (isEdit) {
+        tgl.classList.remove('hidden');
+        tgl.textContent = r.active ? '비활성화' : '활성화';
+        del.classList.remove('hidden');
+      } else {
+        tgl.classList.add('hidden');
+        del.classList.add('hidden');
+      }
+      refreshSelfWarn();
+    }
+
+    function refreshSelfWarn() {
+      const warn = $('self-warn');
+      const id   = $('f-orig-id').value;
+      const role = $('f-role').value;
+      const active = $('f-active').checked;
+
+      if (id && id === me.id) {
+        const messages = [];
+        if (role !== 'admin')  messages.push('자기 자신의 admin 권한을 박탈할 수 없습니다.');
+        if (!active)           messages.push('자기 자신을 비활성화할 수 없습니다.');
+        if (messages.length) {
+          warn.textContent = '⚠ ' + messages.join(' ');
+          warn.classList.remove('hidden');
+          return;
+        }
+      }
+      warn.classList.add('hidden');
+      warn.textContent = '';
+    }
+
+    // -------------------------------------------------------------------------
+    // 이벤트
+    // -------------------------------------------------------------------------
+    function bindEvents() {
+      $('search-input').addEventListener('input', debounce(() => {
+        state.filters.search = $('search-input').value.trim();
+        applyAndRender();
+      }, 200));
+      $('filter-role').addEventListener('change', () => {
+        state.filters.role = $('filter-role').value;
+        applyAndRender();
+      });
+      $('filter-active').addEventListener('change', () => {
+        state.filters.active = $('filter-active').value;
+        applyAndRender();
+      });
+
+      $('f-role').addEventListener('change', refreshSelfWarn);
+      $('f-active').addEventListener('change', refreshSelfWarn);
+
+      $('btn-cancel').addEventListener('click', () => {
+        if (state.selectedId) {
+          const r = state.rows.find(x => x.id === state.selectedId);
+          if (r) rowToForm(r);
+        } else resetForm();
+      });
+
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await save();
+      });
+
+      $('btn-toggle-active').addEventListener('click', async () => {
+        const id = $('f-orig-id').value;
+        if (id) await toggleActive(id);
+      });
+
+      $('btn-delete').addEventListener('click', removeProfile);
+    }
+
+    // -------------------------------------------------------------------------
+    // 저장 (신규 INSERT / 편집 UPDATE)
+    // -------------------------------------------------------------------------
+    async function save() {
+      const isEdit = !!$('f-orig-id').value;
+      const id     = ($('f-id').value || '').trim();
+      const role   = $('f-role').value;
+      const active = $('f-active').checked;
+      const name   = $('f-name').value.trim();
+      const email  = $('f-email').value.trim();
+
+      if (!isEdit) {
+        if (!UUID_RE.test(id)) {
+          toast('user_id 형식이 올바르지 않습니다 (UUID).', 'warn');
+          $('f-id').focus();
+          return;
+        }
+        if (state.rows.some(r => r.id === id)) {
+          toast('이미 등록된 user_id입니다.', 'warn');
+          return;
+        }
+      }
+
+      // 자기 자신 보호
+      const targetId = isEdit ? $('f-orig-id').value : id;
+      if (targetId === me.id) {
+        if (role !== 'admin') {
+          toast('자기 자신의 admin 권한을 박탈할 수 없습니다.', 'error');
+          return;
+        }
+        if (!active) {
+          toast('자기 자신을 비활성화할 수 없습니다.', 'error');
+          return;
+        }
+      }
+
+      // 마지막 admin 보호
+      if (isEdit) {
+        const orig = state.rows.find(r => r.id === targetId);
+        const wasActiveAdmin = orig && orig.role === 'admin' && orig.active;
+        const willBeActiveAdmin = role === 'admin' && active;
+        if (wasActiveAdmin && !willBeActiveAdmin) {
+          if (countActiveAdmins({ excludeId: targetId }) === 0) {
+            toast('마지막 활성 admin입니다. 다른 admin이 있어야 변경할 수 있습니다.', 'error');
+            return;
+          }
+        }
+      }
+
+      const payload = {
+        id: targetId,
+        email: emptyToNull(email),
+        display_name: emptyToNull(name),
+        role,
+        active
+      };
+
+      $('btn-save').disabled = true;
+      try {
+        const q = isEdit
+          ? supabase.from('user_profiles').update(payload).eq('id', targetId).select().single()
+          : supabase.from('user_profiles').insert(payload).select().single();
+
+        const { data, error } = await q;
+        if (error) {
+          // FK 위반: auth.users에 해당 id가 없을 때
+          if (error.code === '23503') {
+            toast('해당 user_id가 auth.users에 없습니다. Supabase 대시보드에서 먼저 사용자를 생성하세요.', 'error');
+          } else if (error.code === '23505') {
+            toast('이미 존재하는 user_id입니다.', 'error');
+          } else {
+            toast(`저장 실패: ${error.message}`, 'error');
+          }
+          return;
+        }
+        toast(isEdit ? '수정되었습니다.' : '추가되었습니다.', 'success');
+        await loadAll();
+        selectRow(data.id);
+      } catch {
+        toast('저장 중 오류가 발생했습니다.', 'error');
+      } finally {
+        $('btn-save').disabled = false;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 활성/비활성 토글
+    // -------------------------------------------------------------------------
+    async function toggleActive(id) {
+      const r = state.rows.find(x => x.id === id);
+      if (!r) return;
+
+      // 자기 자신 비활성화 차단
+      if (id === me.id && r.active) {
+        toast('자기 자신을 비활성화할 수 없습니다.', 'error');
+        return;
+      }
+      // 마지막 활성 admin 비활성화 차단
+      if (r.active && r.role === 'admin' && countActiveAdmins({ excludeId: id }) === 0) {
+        toast('마지막 활성 admin입니다. 비활성화할 수 없습니다.', 'error');
+        return;
+      }
+
+      const verb = r.active ? '비활성화' : '활성화';
+      const ok = await confirmDialog(
+        `${r.display_name || r.email || '이 사용자'}를 ${verb}할까요?`,
+        { okText: verb, cancelText: '취소', danger: r.active }
+      );
+      if (!ok) return;
+
+      try {
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({ active: !r.active })
+          .eq('id', id);
+        if (error) {
+          toast(`${verb} 실패: ${error.message}`, 'error');
+          return;
+        }
+        toast(`${verb}되었습니다.`, 'success');
+        await loadAll();
+        if (state.selectedId === id) selectRow(id);
+      } catch {
+        toast(`${verb} 중 오류가 발생했습니다.`, 'error');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 프로필 삭제 (auth.users는 별도)
+    // -------------------------------------------------------------------------
+    async function removeProfile() {
+      const id = $('f-orig-id').value;
+      if (!id) return;
+      const r = state.rows.find(x => x.id === id);
+      if (!r) return;
+
+      if (id === me.id) {
+        toast('자기 자신의 프로필을 삭제할 수 없습니다.', 'error');
+        return;
+      }
+      if (r.role === 'admin' && r.active && countActiveAdmins({ excludeId: id }) === 0) {
+        toast('마지막 활성 admin입니다. 삭제할 수 없습니다.', 'error');
+        return;
+      }
+
+      const ok = await confirmDialog(
+        `"${r.display_name || r.email || '이 사용자'}"의 프로필을 삭제할까요?\n\n` +
+        `이 작업은 시스템 접근 권한만 회수합니다.\n` +
+        `Supabase의 auth.users 자체는 대시보드에서 별도로 삭제해야 합니다.`,
+        { okText: '삭제', cancelText: '취소', danger: true }
+      );
+      if (!ok) return;
+
+      try {
+        const { error } = await supabase.from('user_profiles').delete().eq('id', id);
+        if (error) {
+          toast(`삭제 실패: ${error.message}`, 'error');
+          return;
+        }
+        toast('프로필을 삭제했습니다.', 'success');
+        await loadAll();
+        resetForm();
+      } catch {
+        toast('삭제 중 오류가 발생했습니다.', 'error');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 헬퍼
+    // -------------------------------------------------------------------------
+    function countActiveAdmins({ excludeId } = {}) {
+      return state.rows.filter(r =>
+        r.role === 'admin' && r.active && r.id !== excludeId
+      ).length;
+    }
+    function emptyToNull(v) { return v === '' || v == null ? null : v; }
+    function escapeHtml(s) {
+      return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+    }
+    function debounce(fn, w) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), w); }; }
+  </script>
+</body>
+</html>
