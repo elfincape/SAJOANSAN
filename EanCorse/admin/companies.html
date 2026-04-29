@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>운수사 관리 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <h1 class="text-base font-semibold">운수사 관리</h1>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] gap-4">
+
+      <!-- 좌측 목록 -->
+      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+        <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
+          <input id="search-input" type="search" placeholder="이름 검색"
+                 class="app-input flex-1 min-w-[180px]">
+          <select id="sort-key" class="app-select w-28">
+            <option value="name">이름순</option>
+            <option value="updated">수정 최신순</option>
+          </select>
+          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+        </div>
+
+        <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
+          <table class="app-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th class="text-right">기사</th>
+                <th class="text-right">차량</th>
+                <th class="text-right">코스</th>
+                <th>비고</th>
+              </tr>
+            </thead>
+            <tbody id="list-tbody"></tbody>
+          </table>
+          <div id="empty-msg" class="hidden text-center text-sm text-zinc-500 py-12">
+            등록된 운수사가 없습니다.
+          </div>
+        </div>
+
+        <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
+          <span id="result-count"></span>
+          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+        </div>
+      </section>
+
+      <!-- 우측 폼 -->
+      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+        <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
+          <h2 id="form-title" class="text-sm font-semibold">새 운수사</h2>
+          <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
+          <div class="flex-1"></div>
+          <span id="form-meta" class="text-[11px] text-zinc-500"></span>
+        </div>
+        <form id="form" class="p-4 space-y-3" novalidate>
+          <input type="hidden" id="f-id">
+          <div>
+            <label class="app-label">이름 *</label>
+            <input id="f-name" class="app-input" required>
+            <p class="text-[10px] text-zinc-500 mt-1">운수사 이름은 중복될 수 없습니다.</p>
+          </div>
+          <div>
+            <label class="app-label">비고</label>
+            <textarea id="f-memo" rows="3" class="app-textarea"></textarea>
+          </div>
+          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
+            <div class="flex-1"></div>
+            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import { supabase } from '/js/supabase.js';
+    import { requireRole } from '/js/auth.js';
+    import { toast, confirmDialog } from '/js/ui.js';
+
+    const profile = await requireRole('editor');
+    if (!profile) { /* 리다이렉트 */ }
+    document.getElementById('user-badge').textContent =
+      `${profile.display_name || profile.email || ''} (${profile.role})`;
+
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      rows: [],
+      filtered: [],
+      // company_id -> { drivers, vehicles, routes }
+      counts: new Map(),
+      selectedId: null,
+      filters: { search: '' },
+      sort: 'name'
+    };
+
+    bindEvents();
+    await loadAll();
+    resetForm();
+
+    // -------------------------------------------------------------------------
+    async function loadAll() {
+      $('loading-indicator').classList.remove('hidden');
+      try {
+        const [c, d, v, r] = await Promise.all([
+          supabase.from('companies').select('*'),
+          supabase.from('drivers').select('id, company_id'),
+          supabase.from('vehicles').select('id, company_id'),
+          supabase.from('routes').select('id, company_id')
+        ]);
+        if (c.error) throw c.error;
+        state.rows = c.data || [];
+
+        // 참조 카운트 집계
+        const counts = new Map();
+        const inc = (id, key) => {
+          if (!id) return;
+          if (!counts.has(id)) counts.set(id, { drivers: 0, vehicles: 0, routes: 0 });
+          counts.get(id)[key]++;
+        };
+        (d.data || []).forEach(x => inc(x.company_id, 'drivers'));
+        (v.data || []).forEach(x => inc(x.company_id, 'vehicles'));
+        (r.data || []).forEach(x => inc(x.company_id, 'routes'));
+        state.counts = counts;
+      } catch (e) {
+        toast('데이터를 불러오지 못했습니다.', 'error');
+        state.rows = [];
+        state.counts = new Map();
+      } finally {
+        $('loading-indicator').classList.add('hidden');
+      }
+      applyAndRender();
+    }
+
+    function applyAndRender() {
+      const q = state.filters.search.toLowerCase();
+      state.filtered = state.rows.filter(r => {
+        if (q && !(r.name || '').toLowerCase().includes(q)) return false;
+        return true;
+      });
+      if (state.sort === 'updated') {
+        state.filtered.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+      } else {
+        state.filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+      }
+      renderList();
+    }
+
+    function renderList() {
+      const tbody = $('list-tbody');
+      const empty = $('empty-msg');
+      tbody.innerHTML = '';
+      if (state.filtered.length === 0) {
+        empty.classList.remove('hidden');
+      } else {
+        empty.classList.add('hidden');
+        const frag = document.createDocumentFragment();
+        for (const r of state.filtered) {
+          const c = state.counts.get(r.id) || { drivers: 0, vehicles: 0, routes: 0 };
+          const tr = document.createElement('tr');
+          tr.dataset.id = r.id;
+          if (r.id === state.selectedId) tr.classList.add('selected');
+          tr.classList.add('cursor-pointer');
+          tr.innerHTML = `
+            <td>${escapeHtml(r.name)}</td>
+            <td class="text-right">${c.drivers}</td>
+            <td class="text-right">${c.vehicles}</td>
+            <td class="text-right">${c.routes}</td>
+            <td class="muted">${escapeHtml(r.memo || '')}</td>
+          `;
+          tr.addEventListener('click', () => selectRow(r.id));
+          frag.appendChild(tr);
+        }
+        tbody.appendChild(frag);
+      }
+      $('result-count').textContent =
+        state.rows.length === 0 ? '데이터 없음'
+        : (state.filtered.length === state.rows.length
+            ? `총 ${state.rows.length}건`
+            : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
+    }
+
+    function selectRow(id) {
+      state.selectedId = id;
+      renderList();
+      const r = state.rows.find(x => x.id === id);
+      if (r) rowToForm(r);
+    }
+    function resetForm() {
+      state.selectedId = null;
+      rowToForm(null);
+    }
+
+    function rowToForm(r) {
+      $('f-id').value   = r?.id   || '';
+      $('f-name').value = r?.name || '';
+      $('f-memo').value = r?.memo || '';
+      const isEdit = !!r?.id;
+      $('form-title').textContent = isEdit ? r.name : '새 운수사';
+      $('form-mode-badge').textContent = isEdit ? '편집' : '신규';
+      $('form-meta').textContent = isEdit && r.updated_at
+        ? `최종수정: ${new Date(r.updated_at).toLocaleString('ko-KR')}` : '';
+      $('btn-delete').classList.toggle('hidden', !isEdit);
+    }
+
+    function bindEvents() {
+      $('search-input').addEventListener('input', debounce(() => {
+        state.filters.search = $('search-input').value.trim();
+        applyAndRender();
+      }, 200));
+      $('sort-key').addEventListener('change', () => {
+        state.sort = $('sort-key').value;
+        applyAndRender();
+      });
+      $('new-btn').addEventListener('click', () => {
+        state.selectedId = null;
+        renderList();
+        resetForm();
+        $('f-name').focus();
+      });
+      $('btn-cancel').addEventListener('click', () => {
+        if (state.selectedId) {
+          const r = state.rows.find(x => x.id === state.selectedId);
+          if (r) rowToForm(r);
+        } else resetForm();
+      });
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await save();
+      });
+      $('btn-delete').addEventListener('click', remove);
+    }
+
+    async function save() {
+      const name = $('f-name').value.trim();
+      if (!name) {
+        toast('이름은 필수입니다.', 'warn');
+        $('f-name').focus();
+        return;
+      }
+      const payload = {
+        ...(($('f-id').value) ? { id: $('f-id').value } : {}),
+        name,
+        memo: emptyToNull($('f-memo').value.trim())
+      };
+      $('btn-save').disabled = true;
+      try {
+        const { data, error } = await supabase
+          .from('companies').upsert(payload, { onConflict: 'id' })
+          .select().single();
+        if (error) {
+          if (error.code === '23505') toast('이미 존재하는 운수사 이름입니다.', 'error');
+          else toast(`저장 실패: ${error.message}`, 'error');
+          return;
+        }
+        toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
+        await loadAll();
+        selectRow(data.id);
+      } catch {
+        toast('저장 중 오류가 발생했습니다.', 'error');
+      } finally {
+        $('btn-save').disabled = false;
+      }
+    }
+
+    async function remove() {
+      const id = $('f-id').value;
+      if (!id) return;
+      const r = state.rows.find(x => x.id === id);
+      const c = state.counts.get(id) || { drivers: 0, vehicles: 0, routes: 0 };
+
+      let msg = `"${r?.name || '이 운수사'}"를 삭제할까요?`;
+      const refs = [];
+      if (c.drivers)  refs.push(`기사 ${c.drivers}명`);
+      if (c.vehicles) refs.push(`차량 ${c.vehicles}대`);
+      if (c.routes)   refs.push(`코스 ${c.routes}개`);
+      if (refs.length) {
+        msg += `\n\n⚠ 이 운수사에 연결된 데이터가 있습니다: ${refs.join(', ')}.\n` +
+               `삭제하면 해당 데이터의 운수사 항목은 비워집니다 (NULL 처리).`;
+      }
+      const ok = await confirmDialog(msg, { okText: '삭제', cancelText: '취소', danger: true });
+      if (!ok) return;
+
+      try {
+        const { error } = await supabase.from('companies').delete().eq('id', id);
+        if (error) {
+          toast(`삭제 실패: ${error.message}`, 'error');
+          return;
+        }
+        toast('삭제되었습니다.', 'success');
+        await loadAll();
+        resetForm();
+      } catch {
+        toast('삭제 중 오류가 발생했습니다.', 'error');
+      }
+    }
+
+    // 헬퍼
+    function emptyToNull(v) { return v === '' || v == null ? null : v; }
+    function escapeHtml(s) {
+      return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+    }
+    function debounce(fn, w) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), w); }; }
+  </script>
+</body>
+</html>

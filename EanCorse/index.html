@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>코스표 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+
+  <!-- ===== 상단 헤더 ====================================================== -->
+  <header class="border-b border-zinc-800 bg-zinc-900/95 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-8 h-8 rounded-md bg-emerald-600/20 border border-emerald-600/40 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-400"
+               fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+          </svg>
+        </div>
+        <h1 class="text-base font-semibold truncate">코스표 관리 시스템</h1>
+      </div>
+
+      <!-- 보기 모드 토글 -->
+      <div class="ml-2 hidden sm:flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md p-0.5">
+        <button data-view="flat"  class="view-toggle px-2.5 py-1 rounded text-xs">평면 보기</button>
+        <button data-view="group" class="view-toggle px-2.5 py-1 rounded text-xs">코스 그룹</button>
+      </div>
+
+      <div class="flex-1"></div>
+
+      <div class="flex items-center gap-2 text-sm">
+        <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+        <a id="admin-link"  href="/admin/" class="btn btn-ghost hidden">관리 페이지</a>
+        <button id="me-btn"     class="btn btn-ghost">내 정보</button>
+        <button id="logout-btn" class="btn btn-ghost">로그아웃</button>
+      </div>
+    </div>
+
+    <!-- ===== 필터 바 ====================================================== -->
+    <div class="border-t border-zinc-800 bg-zinc-900/95">
+      <div class="max-w-[1600px] mx-auto px-4 py-3">
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <!-- 다중선택 드롭다운 (커스텀) -->
+          <div data-multi="company_name" class="multi-select"></div>
+          <div data-multi="route_name"   class="multi-select"></div>
+          <div data-multi="car_number"   class="multi-select"></div>
+          <div data-multi="driver_name"  class="multi-select"></div>
+          <div data-multi="dp_region"    class="multi-select"></div>
+
+          <!-- 통합 검색 -->
+          <input id="search-input" type="search"
+                 placeholder="납품처/주소/차량번호 검색"
+                 class="app-input col-span-2 lg:col-span-1">
+        </div>
+
+        <!-- 체크박스 묶음 -->
+        <div class="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs">
+          <fieldset class="flex items-center gap-2">
+            <legend class="text-zinc-500 mr-1">납품방식</legend>
+            <label class="cb"><input type="checkbox" data-cb="delivery_method" value="대면"> 대면</label>
+            <label class="cb"><input type="checkbox" data-cb="delivery_method" value="검수"> 검수</label>
+            <label class="cb"><input type="checkbox" data-cb="delivery_method" value="무인"> 무인</label>
+          </fieldset>
+          <fieldset class="flex items-center gap-2">
+            <legend class="text-zinc-500 mr-1">진입방식</legend>
+            <label class="cb"><input type="checkbox" data-cb="access_method" value="보안키"> 보안키</label>
+            <label class="cb"><input type="checkbox" data-cb="access_method" value="열쇠"> 열쇠</label>
+            <label class="cb"><input type="checkbox" data-cb="access_method" value="없음"> 없음</label>
+          </fieldset>
+          <fieldset class="flex items-center gap-2">
+            <legend class="text-zinc-500 mr-1">납품장소</legend>
+            <label class="cb"><input type="checkbox" data-cb="delivery_location" value="창고"> 창고</label>
+            <label class="cb"><input type="checkbox" data-cb="delivery_location" value="탑차"> 탑차</label>
+            <label class="cb"><input type="checkbox" data-cb="delivery_location" value="야적"> 야적</label>
+          </fieldset>
+          <fieldset class="flex items-center gap-2">
+            <legend class="text-zinc-500 mr-1">진입조건</legend>
+            <label class="cb"><input type="checkbox" data-cb="entry_cond" value="allow_under_1ton"> 1톤이하</label>
+            <label class="cb"><input type="checkbox" data-cb="entry_cond" value="allow_under_3_5ton"> 3.5톤이하</label>
+            <label class="cb"><input type="checkbox" data-cb="entry_cond" value="allow_over_5ton"> 5톤이상</label>
+            <label class="cb"><input type="checkbox" data-cb="entry_cond" value="allow_unmanned_yard"> 무인야적</label>
+          </fieldset>
+
+          <div class="flex-1"></div>
+
+          <div class="flex items-center gap-2">
+            <span id="active-filter-count" class="text-zinc-500"></span>
+            <button id="reset-filters" class="btn btn-ghost text-xs">필터 초기화</button>
+            <button id="reset-sort"    class="btn btn-ghost text-xs">정렬 초기화</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== 본문 ========================================================== -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 py-3">
+    <div class="flex items-center justify-between mb-2">
+      <div id="result-count" class="text-xs text-zinc-400"></div>
+      <div id="loading-indicator" class="text-xs text-zinc-500 hidden">불러오는 중...</div>
+    </div>
+
+    <!-- 평면 보기: 표 -->
+    <div id="flat-view" class="table-wrap" style="max-height: calc(100vh - 240px);">
+      <table class="app-table" id="course-table">
+        <thead>
+          <tr id="course-thead-row"></tr>
+        </thead>
+        <tbody id="course-tbody"></tbody>
+      </table>
+      <div id="empty-msg"
+           class="hidden text-center text-sm text-zinc-500 py-12">
+        조건에 맞는 코스가 없습니다.
+      </div>
+    </div>
+
+    <!-- 코스 그룹 보기 -->
+    <div id="group-view" class="hidden space-y-4"></div>
+  </main>
+
+  <script type="module" src="/js/dashboard.js"></script>
+</body>
+</html>

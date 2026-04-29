@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>코스표 일괄 가져오기 · 관리자</title>
+<link rel="stylesheet" href="/css/common.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- CSV 파서 -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen">
+
+<header class="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-30">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+    <a href="/admin/index.html" class="text-zinc-400 hover:text-zinc-100 text-sm">← 관리자 홈</a>
+    <h1 class="text-lg font-semibold">📥 코스표 일괄 가져오기</h1>
+    <span class="ml-auto text-xs text-zinc-400" id="user-badge"></span>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- 안내 -->
+  <section class="bg-zinc-800/60 border border-zinc-700 rounded-lg p-4 text-sm leading-relaxed">
+    <h2 class="font-semibold text-zinc-100 mb-2">사용 방법</h2>
+    <ol class="list-decimal list-inside space-y-1 text-zinc-300">
+      <li>엑셀 시트를 <strong>UTF-8 CSV</strong>로 저장합니다 (엑셀 → 다른 이름으로 저장 → "CSV UTF-8").</li>
+      <li>아래 <strong>1단계</strong>에서 CSV 파일을 선택하면 자동으로 컬럼이 인식되고 미리보기가 표시됩니다.</li>
+      <li><strong>2단계</strong>에서 컬럼 매핑을 확인/수정합니다 (헤더가 다를 경우).</li>
+      <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/정거장).</li>
+      <li><strong>4단계</strong>에서 "DB에 저장" 버튼을 눌러 일괄 upsert를 실행합니다.</li>
+    </ol>
+    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 정거장은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 정거장이 덮어써질 수 있습니다.</p>
+  </section>
+
+  <!-- 1단계: 파일 선택 -->
+  <section class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
+    <h2 class="font-semibold mb-3">1단계 · CSV 파일 선택</h2>
+    <div class="flex flex-wrap items-center gap-3">
+      <input type="file" id="csv-file" accept=".csv,text/csv"
+             class="text-sm file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
+      <span id="file-info" class="text-xs text-zinc-400"></span>
+    </div>
+    <details class="mt-3 text-xs text-zinc-400">
+      <summary class="cursor-pointer hover:text-zinc-200">엑셀에서 헤더를 어떻게 정리해야 하나요?</summary>
+      <div class="mt-2 pl-3 border-l border-zinc-700">
+        <p>1행에 다음 헤더(또는 유사 이름)가 있어야 합니다. 정확히 일치하지 않아도 2단계에서 수동 매핑 가능:</p>
+        <code class="block bg-zinc-900 rounded p-2 mt-1 text-zinc-300 whitespace-pre">호차, 운수사, 코스명, 톤수, 차량번호, 운전자명, 연락처, 입차시간, 하차시작, 하차종료, 납품마감, 코드, 납품처명, 1톤이하, 3.5톤이하, 5톤이상, 무인야적납, 대면, 검수, 무인, 보안키, 열쇠, 없음, 창고, 탑차, 야적, 주소, 비고</code>
+      </div>
+    </details>
+  </section>
+
+  <!-- 2단계: 컬럼 매핑 -->
+  <section id="step-mapping" class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4 hidden">
+    <h2 class="font-semibold mb-3">2단계 · 컬럼 매핑 확인</h2>
+    <p class="text-xs text-zinc-400 mb-3">CSV의 컬럼명을 시스템 필드에 연결합니다. 자동 인식되지 않은 항목은 직접 선택하세요.</p>
+    <div id="mapping-grid" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
+  </section>
+
+  <!-- 3단계: 미리보기 -->
+  <section id="step-preview" class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4 hidden">
+    <h2 class="font-semibold mb-3">3단계 · 정규화 미리보기</h2>
+    <div id="summary-cards" class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4"></div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div>
+        <h3 class="text-sm font-semibold mb-1">회사 (companies)</h3>
+        <div id="preview-companies" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-1">기사 (drivers)</h3>
+        <div id="preview-drivers" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-1">차량 (vehicles)</h3>
+        <div id="preview-vehicles" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-1">납품처 (delivery_points)</h3>
+        <div id="preview-points" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-1">코스 (routes)</h3>
+        <div id="preview-routes" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-1">정거장 (route_stops)</h3>
+        <div id="preview-stops" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
+      </div>
+    </div>
+
+    <details class="mt-4">
+      <summary class="cursor-pointer text-sm text-zinc-300 hover:text-zinc-100">⚠️ 경고/스킵된 행 보기 (<span id="warn-count">0</span>건)</summary>
+      <div id="warnings" class="bg-zinc-900 rounded p-2 mt-2 max-h-60 overflow-auto text-xs space-y-1"></div>
+    </details>
+  </section>
+
+  <!-- 4단계: 실행 -->
+  <section id="step-execute" class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4 hidden">
+    <h2 class="font-semibold mb-3">4단계 · DB에 저장</h2>
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="opt-replace-stops" class="accent-emerald-500" checked />
+        기존 코스의 정거장을 모두 삭제하고 다시 입력 (권장)
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="opt-dry-run" class="accent-amber-500" />
+        Dry-run (실제 저장 없이 SQL 카운트만 확인)
+      </label>
+    </div>
+    <button id="btn-execute" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded font-semibold">
+      🚀 DB에 저장 시작
+    </button>
+    <div id="exec-log" class="mt-3 bg-zinc-900 rounded p-3 text-xs font-mono space-y-1 max-h-96 overflow-auto"></div>
+  </section>
+
+</main>
+
+<script type="module">
+  import { supabase } from '/js/supabase.js';
+  import { requireRole, getCurrentProfile } from '/js/auth.js';
+  import { displayToBizMin } from '/js/time.js';
+  import { toast } from '/js/ui.js';
+
+  /* ─────────── 인증 가드 ─────────── */
+  await requireRole('admin');
+  const profile = await getCurrentProfile();
+  document.getElementById('user-badge').textContent =
+    `${profile?.display_name ?? ''} (${profile?.role ?? ''})`;
+
+  /* ─────────── 컬럼 매핑 정의 ─────────── */
+  const FIELDS = [
+    ['company',     '운수사',        ['운수사','회사','업체','company']],
+    ['car_number',  '호차',          ['호차','car','carno','carnumber']],
+    ['route_name',  '코스명',        ['코스명','코스','노선','route','routename']],
+    ['tonnage',     '톤수',          ['톤수','ton','tonnage']],
+    ['vehicle_no',  '차량번호',      ['차량번호','차량','plate','vehicleno','vehicle','platenumber']],
+    ['driver_name', '운전자명',      ['운전자명','운전자','기사','기사명','driver','drivername']],
+    ['driver_phone','연락처',        ['연락처','전화','phone','contact']],
+    ['entry_time',  '입차시간',      ['입차시간','입차','arrival','entrytime']],
+    ['unload_start','하차시작',      ['하차시작','하차시작시간','unloadstart']],
+    ['unload_end',  '하차종료',      ['하차종료','하차종료시간','unloadend']],
+    ['deadline',    '납품마감',      ['납품마감','마감','deadline']],
+    ['point_code',  '납품처코드',    ['코드','납품처코드','code','pointcode']],
+    ['point_name',  '납품처명',      ['납품처명','납품처','거래처','pointname']],
+    ['cond_1t',     '1톤이하',       ['1톤이하','1톤','1t']],
+    ['cond_3_5t',   '3.5톤이하',     ['3.5톤이하','3.5톤','3.5t']],
+    ['cond_5t',     '5톤이상',       ['5톤이상','5톤','5t']],
+    ['cond_yard',   '무인야적납',    ['무인야적납','야적납','yard']],
+    ['dm_face',     '대면',          ['대면']],
+    ['dm_inspect',  '검수',          ['검수']],
+    ['dm_unmanned', '무인',          ['무인']],
+    ['am_seckey',   '보안키',        ['보안키']],
+    ['am_key',      '열쇠',          ['열쇠']],
+    ['am_none',     '없음',          ['없음']],
+    ['dl_warehouse','창고',          ['창고']],
+    ['dl_box',      '탑차',          ['탑차']],
+    ['dl_yard',     '야적',          ['야적']],
+    ['address',     '주소',          ['주소','address','실제납품지']],
+    ['notes',       '비고',          ['비고','메모','note','notes','memo']],
+  ];
+
+  /* ─────────── 상태 ─────────── */
+  const state = { rows: [], headers: [], mapping: {}, normalized: null };
+
+  /* ─────────── 1단계: 파일 입력 ─────────── */
+  document.getElementById('csv-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('file-info').textContent =
+      `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      transformHeader: h => h.trim(),
+      complete: (res) => {
+        state.rows = res.data;
+        state.headers = res.meta.fields || [];
+        if (!state.rows.length) { toast('CSV에 데이터가 없습니다', 'error'); return; }
+        autoMap();
+        renderMapping();
+        document.getElementById('step-mapping').classList.remove('hidden');
+        toast(`${state.rows.length}행을 읽었습니다`, 'success');
+      },
+      error: (err) => toast(`파싱 오류: ${err.message}`, 'error'),
+    });
+  });
+
+  /* ─────────── 2단계: 자동 매핑 ─────────── */
+  function normalizeName(s) { return String(s||'').toLowerCase().replace(/[\s_\-()]/g, ''); }
+  function autoMap() {
+    state.mapping = {};
+    for (const [key, , aliases] of FIELDS) {
+      const found = state.headers.find(h => {
+        const n = normalizeName(h);
+        return aliases.some(a => normalizeName(a) === n);
+      });
+      if (found) state.mapping[key] = found;
+    }
+  }
+  function renderMapping() {
+    const grid = document.getElementById('mapping-grid');
+    grid.innerHTML = FIELDS.map(([key, label]) => `
+      <label class="flex items-center gap-2 text-sm bg-zinc-900/60 rounded px-2 py-1.5">
+        <span class="w-28 text-zinc-400 shrink-0">${label}</span>
+        <select data-field="${key}" class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-zinc-100">
+          <option value="">— 사용 안 함 —</option>
+          ${state.headers.map(h => `
+            <option value="${escapeAttr(h)}" ${state.mapping[key] === h ? 'selected' : ''}>${escapeHtml(h)}</option>
+          `).join('')}
+        </select>
+      </label>
+    `).join('');
+    grid.querySelectorAll('select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const k = sel.dataset.field;
+        if (sel.value) state.mapping[k] = sel.value; else delete state.mapping[k];
+        normalize();
+      });
+    });
+    normalize();
+  }
+
+  /* ─────────── 정규화 헬퍼 ─────────── */
+  function pick(row, key) {
+    const col = state.mapping[key];
+    if (!col) return null;
+    const v = row[col];
+    if (v === undefined || v === null) return null;
+    const s = String(v).trim();
+    return s === '' || s.toLowerCase() === 'nan' ? null : s;
+  }
+  function isCheck(v) {
+    if (!v) return false;
+    const s = String(v).trim().toUpperCase();
+    return s === 'O' || s === '1' || s === 'TRUE' || s === 'Y' || s === '✓';
+  }
+  function parseTimeToBizMin(raw) {
+    if (!raw) return null;
+    let s = String(raw).trim();
+    if (!s || /^(x|미운행|없음)$/i.test(s)) return null;
+    const m = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (m) s = `${m[1].padStart(2,'0')}:${m[2]}`;
+    const m2 = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m2) return null;
+    try { return displayToBizMin(`${m2[1].padStart(2,'0')}:${m2[2]}`); } catch { return null; }
+  }
+  function parseTonnageNumeric(raw) {
+    if (!raw) return null;
+    const m = String(raw).match(/(\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : null;
+  }
+  function extractRegion(addr) {
+    if (!addr) return null;
+    const m = String(addr).match(/(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충[북남]|전[북남]|경[북남]|제주)[^\s]*\s*([가-힣]+(시|군|구))?/);
+    if (!m) return null;
+    return [m[1], m[2]].filter(Boolean).join(' ').trim();
+  }
+
+  /* ─────────── 3단계: 정규화 ─────────── */
+  function normalize() {
+    const warnings = [];
+    const companies = new Map();
+    const drivers   = new Map();
+    const vehicles  = new Map();
+    const points    = new Map();
+    const routes    = new Map();
+    const stops     = [];
+    const orderMap  = new Map();
+
+    state.rows.forEach((r, idx) => {
+      const lineNo = idx + 2;
+      const company    = pick(r,'company');
+      const carNumber  = pick(r,'car_number');
+      const routeName  = pick(r,'route_name');
+      const tonnage    = pick(r,'tonnage');
+      const vehicleNo  = pick(r,'vehicle_no');
+      const driverName = pick(r,'driver_name');
+      const driverPhone= pick(r,'driver_phone');
+      const pointCode  = pick(r,'point_code');
+      const pointName  = pick(r,'point_name');
+      const address    = pick(r,'address');
+
+      // 납품처
+      if (pointCode && pointName && !points.has(pointCode)) {
+        points.set(pointCode, {
+          code: pointCode,
+          name: pointName,
+          address,
+          region: extractRegion(address),
+          allow_under_1ton:    isCheck(pick(r,'cond_1t')),
+          allow_under_3_5ton:  isCheck(pick(r,'cond_3_5t')),
+          allow_over_5ton:     isCheck(pick(r,'cond_5t')),
+          allow_unmanned_yard: isCheck(pick(r,'cond_yard')),
+          delivery_method:
+            isCheck(pick(r,'dm_face'))     ? '대면' :
+            isCheck(pick(r,'dm_inspect'))  ? '검수' :
+            isCheck(pick(r,'dm_unmanned')) ? '무인' : null,
+          access_method:
+            isCheck(pick(r,'am_seckey')) ? '보안키' :
+            isCheck(pick(r,'am_key'))    ? '열쇠' :
+            isCheck(pick(r,'am_none'))   ? '없음' : null,
+          delivery_location:
+            isCheck(pick(r,'dl_warehouse')) ? '창고' :
+            isCheck(pick(r,'dl_box'))       ? '탑차' :
+            isCheck(pick(r,'dl_yard'))      ? '야적' : null,
+          deadline_business_min: parseTimeToBizMin(pick(r,'deadline')),
+          deadline_text:         pick(r,'deadline'),
+        });
+      }
+
+      if (!company || !carNumber || !routeName) {
+        if (!pointCode) warnings.push(`행 ${lineNo}: 운수사/호차/코스명 누락으로 스킵`);
+        return;
+      }
+
+      if (!companies.has(company)) companies.set(company, { name: company });
+
+      if (vehicleNo && !vehicles.has(vehicleNo)) {
+        vehicles.set(vehicleNo, {
+          plate_number: vehicleNo,
+          tonnage: parseTonnageNumeric(tonnage),
+          company_name: company,
+        });
+      }
+
+      if (driverName) {
+        const dKey = `${driverName}|${company}`;
+        if (!drivers.has(dKey)) {
+          drivers.set(dKey, {
+            name: driverName,
+            phone: driverPhone,
+            contact: driverPhone, // 두 컬럼 모두 채움
+            company_name: company,
+          });
+        }
+      }
+
+      const routeKey = `${company}|${carNumber}|${routeName}`;
+      if (!routes.has(routeKey)) {
+        routes.set(routeKey, {
+          key: routeKey,
+          name: routeName,
+          car_number: carNumber,
+          company_name: company,
+          driver_name: driverName,
+          vehicle_no: vehicleNo,
+        });
+        orderMap.set(routeKey, 0);
+      }
+
+      if (pointCode) {
+        const order = orderMap.get(routeKey) + 1;
+        orderMap.set(routeKey, order);
+        const arrMin = parseTimeToBizMin(pick(r,'entry_time'));
+        const usMin  = parseTimeToBizMin(pick(r,'unload_start'));
+        const ueMin  = parseTimeToBizMin(pick(r,'unload_end'));
+        const dlMin  = parseTimeToBizMin(pick(r,'deadline'));
+        if (arrMin == null && usMin == null && ueMin == null) {
+          warnings.push(`행 ${lineNo}: ${pointName} 시간 정보 모두 비어있음`);
+        }
+        stops.push({
+          route_key: routeKey,
+          point_code: pointCode,
+          stop_order: order,
+          arrival_text:                pick(r,'entry_time'),
+          arrival_business_min:        arrMin,
+          unloading_start_text:        pick(r,'unload_start'),
+          unloading_start_business_min:usMin,
+          unloading_end_text:          pick(r,'unload_end'),
+          unloading_end_business_min:  ueMin,
+          deadline_text:               pick(r,'deadline'),
+          deadline_business_min:       dlMin,
+          memo:                        pick(r,'notes'),
+        });
+      } else {
+        warnings.push(`행 ${lineNo}: 납품처 코드 없음`);
+      }
+    });
+
+    state.normalized = {
+      companies: [...companies.values()],
+      drivers:   [...drivers.values()],
+      vehicles:  [...vehicles.values()],
+      points:    [...points.values()],
+      routes:    [...routes.values()],
+      stops, warnings,
+    };
+    renderPreview();
+    document.getElementById('step-preview').classList.remove('hidden');
+    document.getElementById('step-execute').classList.remove('hidden');
+  }
+
+  function renderPreview() {
+    const n = state.normalized;
+    const cards = [
+      ['회사', n.companies.length], ['기사', n.drivers.length],
+      ['차량', n.vehicles.length],  ['납품처', n.points.length],
+      ['코스', n.routes.length],    ['정거장', n.stops.length],
+    ];
+    document.getElementById('summary-cards').innerHTML = cards.map(([l,c]) => `
+      <div class="bg-zinc-900 rounded p-2 text-center">
+        <div class="text-xs text-zinc-400">${l}</div>
+        <div class="text-xl font-bold text-emerald-400">${c}</div>
+      </div>`).join('');
+    document.getElementById('preview-companies').innerHTML =
+      n.companies.slice(0,50).map(c => escapeHtml(c.name)).join('<br>') || '<i>없음</i>';
+    document.getElementById('preview-drivers').innerHTML =
+      n.drivers.slice(0,50).map(d => `${escapeHtml(d.name)} <span class="text-zinc-500">/ ${escapeHtml(d.company_name)}</span>`).join('<br>') || '<i>없음</i>';
+    document.getElementById('preview-vehicles').innerHTML =
+      n.vehicles.slice(0,50).map(v => `${escapeHtml(v.plate_number)} <span class="text-zinc-500">${v.tonnage ?? ''}t</span>`).join('<br>') || '<i>없음</i>';
+    document.getElementById('preview-points').innerHTML =
+      n.points.slice(0,50).map(p => `${escapeHtml(p.code)} ${escapeHtml(p.name)}`).join('<br>') || '<i>없음</i>';
+    document.getElementById('preview-routes').innerHTML =
+      n.routes.slice(0,50).map(r => `${escapeHtml(r.car_number)} · ${escapeHtml(r.name)} <span class="text-zinc-500">/ ${escapeHtml(r.company_name)}</span>`).join('<br>') || '<i>없음</i>';
+    document.getElementById('preview-stops').innerHTML =
+      n.stops.slice(0,50).map(s => `${escapeHtml(s.route_key.split('|')[1])} #${s.stop_order} · ${escapeHtml(s.point_code)}`).join('<br>') || '<i>없음</i>';
+    document.getElementById('warn-count').textContent = n.warnings.length;
+    document.getElementById('warnings').innerHTML =
+      n.warnings.map(w => `<div class="text-amber-300/90">${escapeHtml(w)}</div>`).join('') || '<i class="text-zinc-500">경고 없음</i>';
+  }
+
+  /* ─────────── 4단계: 실행 ─────────── */
+  const log = (msg, cls = '') => {
+    const el = document.getElementById('exec-log');
+    const line = document.createElement('div');
+    line.className = cls;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    el.appendChild(line); el.scrollTop = el.scrollHeight;
+  };
+
+  document.getElementById('btn-execute').addEventListener('click', async () => {
+    if (!state.normalized) { toast('먼저 CSV를 업로드하세요', 'error'); return; }
+    const btn = document.getElementById('btn-execute');
+    btn.disabled = true;
+    document.getElementById('exec-log').innerHTML = '';
+    const dryRun = document.getElementById('opt-dry-run').checked;
+    const replaceStops = document.getElementById('opt-replace-stops').checked;
+
+    try {
+      const n = state.normalized;
+      log(`▶ 시작 (${dryRun ? 'DRY-RUN' : '실제 저장'})`);
+
+      /* 1) 회사 */
+      log(`회사 ${n.companies.length}건 upsert…`);
+      const companyMap = new Map();
+      if (!dryRun && n.companies.length) {
+        const { data, error } = await supabase
+          .from('companies').upsert(n.companies, { onConflict: 'name' })
+          .select('id, name');
+        if (error) throw new Error(`companies: ${error.message}`);
+        data.forEach(c => companyMap.set(c.name, c.id));
+      }
+
+      /* 2) 기사 — unique 제약이 없을 수 있으므로 검색-후-삽입 방식 */
+      log(`기사 ${n.drivers.length}건 처리…`);
+      const driverMap = new Map();
+      if (!dryRun) {
+        for (const d of n.drivers) {
+          const compId = companyMap.get(d.company_name) || null;
+          const { data: ex } = await supabase
+            .from('drivers').select('id')
+            .eq('name', d.name)
+            .eq('company_id', compId)
+            .maybeSingle();
+          let driverId;
+          if (ex) {
+            const { error } = await supabase.from('drivers')
+              .update({ phone: d.phone, contact: d.contact })
+              .eq('id', ex.id);
+            if (error) throw new Error(`drivers update: ${error.message}`);
+            driverId = ex.id;
+          } else {
+            const { data: ins, error } = await supabase.from('drivers')
+              .insert({ name: d.name, phone: d.phone, contact: d.contact, company_id: compId })
+              .select('id').single();
+            if (error) throw new Error(`drivers insert: ${error.message}`);
+            driverId = ins.id;
+          }
+          driverMap.set(`${d.name}|${d.company_name}`, driverId);
+        }
+      }
+
+      /* 3) 차량 */
+      log(`차량 ${n.vehicles.length}건 처리…`);
+      const vehicleMap = new Map();
+      if (!dryRun) {
+        for (const v of n.vehicles) {
+          const compId = companyMap.get(v.company_name) || null;
+          const { data: ex } = await supabase
+            .from('vehicles').select('id')
+            .eq('plate_number', v.plate_number)
+            .maybeSingle();
+          let vehicleId;
+          if (ex) {
+            const { error } = await supabase.from('vehicles')
+              .update({ tonnage: v.tonnage, company_id: compId })
+              .eq('id', ex.id);
+            if (error) throw new Error(`vehicles update: ${error.message}`);
+            vehicleId = ex.id;
+          } else {
+            const { data: ins, error } = await supabase.from('vehicles')
+              .insert({ plate_number: v.plate_number, tonnage: v.tonnage, company_id: compId })
+              .select('id').single();
+            if (error) throw new Error(`vehicles insert: ${error.message}`);
+            vehicleId = ins.id;
+          }
+          vehicleMap.set(v.plate_number, vehicleId);
+        }
+      }
+
+      /* 4) 납품처 */
+      log(`납품처 ${n.points.length}건 처리…`);
+      const pointMap = new Map();
+      if (!dryRun) {
+        for (let i = 0; i < n.points.length; i += 100) {
+          const batch = n.points.slice(i, i + 100);
+          const { data, error } = await supabase
+            .from('delivery_points').upsert(batch, { onConflict: 'code' })
+            .select('id, code');
+          if (error) throw new Error(`delivery_points[${i}]: ${error.message}`);
+          data.forEach(p => pointMap.set(p.code, p.id));
+          log(`  납품처 ${Math.min(i+100, n.points.length)}/${n.points.length}`);
+        }
+      }
+
+      /* 5) 코스 */
+      log(`코스 ${n.routes.length}건 처리…`);
+      const routeMap = new Map();
+      if (!dryRun) {
+        for (const r of n.routes) {
+          const compId    = companyMap.get(r.company_name);
+          const driverId  = r.driver_name ? driverMap.get(`${r.driver_name}|${r.company_name}`) : null;
+          const vehicleId = r.vehicle_no  ? vehicleMap.get(r.vehicle_no) : null;
+          const payload = {
+            name: r.name,
+            car_number: r.car_number,
+            company_id: compId,
+            primary_driver_id: driverId,
+            primary_vehicle_id: vehicleId,
+            active: true,
+          };
+          const { data: ex } = await supabase.from('routes').select('id')
+            .eq('company_id', compId).eq('car_number', r.car_number).eq('name', r.name)
+            .maybeSingle();
+          let routeId;
+          if (ex) {
+            const { error } = await supabase.from('routes').update(payload).eq('id', ex.id);
+            if (error) throw new Error(`routes update: ${error.message}`);
+            routeId = ex.id;
+          } else {
+            const { data: ins, error } = await supabase.from('routes').insert(payload).select('id').single();
+            if (error) throw new Error(`routes insert: ${error.message}`);
+            routeId = ins.id;
+          }
+          routeMap.set(r.key, routeId);
+        }
+      }
+
+      /* 6) 정거장 */
+      log(`정거장 ${n.stops.length}건 처리…`);
+      if (!dryRun && n.stops.length) {
+        if (replaceStops) {
+          const ids = [...routeMap.values()];
+          if (ids.length) {
+            const { error } = await supabase.from('route_stops').delete().in('route_id', ids);
+            if (error) throw new Error(`route_stops delete: ${error.message}`);
+            log(`  기존 정거장 삭제 완료`);
+          }
+        }
+        const payloads = n.stops.map(s => ({
+          route_id: routeMap.get(s.route_key),
+          delivery_point_id: pointMap.get(s.point_code),
+          stop_order: s.stop_order,
+          arrival_text:                 s.arrival_text,
+          arrival_business_min:         s.arrival_business_min,
+          unloading_start_text:         s.unloading_start_text,
+          unloading_start_business_min: s.unloading_start_business_min,
+          unloading_end_text:           s.unloading_end_text,
+          unloading_end_business_min:   s.unloading_end_business_min,
+          deadline_text:                s.deadline_text,
+          deadline_business_min:        s.deadline_business_min,
+          memo:                         s.memo,
+        })).filter(p => p.route_id && p.delivery_point_id);
+
+        for (let i = 0; i < payloads.length; i += 100) {
+          const batch = payloads.slice(i, i + 100);
+          const { error } = await supabase.from('route_stops').insert(batch);
+          if (error) throw new Error(`route_stops insert[${i}]: ${error.message}`);
+          log(`  정거장 ${Math.min(i+100, payloads.length)}/${payloads.length}`);
+        }
+      }
+
+      log(`✅ 완료!`, 'text-emerald-400 font-bold');
+      toast('가져오기 완료', 'success');
+    } catch (err) {
+      console.error(err);
+      log(`❌ 오류: ${err.message}`, 'text-red-400');
+      toast(`실패: ${err.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+</script>
+
+
+</body>
+</html>

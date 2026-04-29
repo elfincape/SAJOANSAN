@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>로그인 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex items-center justify-center px-4">
+
+  <!-- 로그인 카드 -->
+  <main class="w-full max-w-sm">
+    <!-- 로고 / 타이틀 영역 -->
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-emerald-600/20 border border-emerald-600/40 mb-3">
+        <!-- 트럭 아이콘 (SVG) -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-emerald-400"
+             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+        </svg>
+      </div>
+      <h1 class="text-lg font-semibold tracking-tight">코스표 관리 시스템</h1>
+      <p class="text-xs text-zinc-500 mt-1">내부 관리자 전용</p>
+    </div>
+
+    <!-- 폼 카드 -->
+    <form id="login-form"
+          class="bg-zinc-800/60 border border-zinc-700 rounded-lg p-5 shadow-xl space-y-4"
+          autocomplete="on" novalidate>
+
+      <div>
+        <label for="email" class="app-label">이메일</label>
+        <input id="email"
+               name="email"
+               type="email"
+               required
+               autocomplete="username"
+               class="app-input"
+               placeholder="name@company.com">
+      </div>
+
+      <div>
+        <label for="password" class="app-label">비밀번호</label>
+        <input id="password"
+               name="password"
+               type="password"
+               required
+               autocomplete="current-password"
+               class="app-input"
+               placeholder="••••••••">
+      </div>
+
+      <!-- 인라인 에러 영역 -->
+      <div id="form-error"
+           class="hidden text-xs text-red-400 bg-red-900/20 border border-red-900/40 rounded-md px-3 py-2">
+      </div>
+
+      <button id="submit-btn"
+              type="submit"
+              class="w-full btn btn-primary justify-center py-2.5 disabled:opacity-60 disabled:cursor-not-allowed">
+        <span id="btn-label">로그인</span>
+        <svg id="btn-spinner"
+             xmlns="http://www.w3.org/2000/svg"
+             class="hidden w-4 h-4 animate-spin"
+             viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.25"/>
+          <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </form>
+
+    <p class="text-[11px] text-zinc-600 text-center mt-6 leading-relaxed">
+      계정 문의는 시스템 관리자에게 요청하세요.<br>
+      이 시스템은 내부 사용자 전용이며 외부 접근이 제한됩니다.
+    </p>
+  </main>
+
+  <script type="module">
+    import { supabase } from '/js/supabase.js';
+    import { toast }    from '/js/ui.js';
+
+    const form      = document.getElementById('login-form');
+    const emailEl   = document.getElementById('email');
+    const pwEl      = document.getElementById('password');
+    const errorBox  = document.getElementById('form-error');
+    const submitBtn = document.getElementById('submit-btn');
+    const btnLabel  = document.getElementById('btn-label');
+    const btnSpin   = document.getElementById('btn-spinner');
+
+    // -------------------------------------------------------------------------
+    // 이미 로그인된 경우 즉시 대시보드로
+    // -------------------------------------------------------------------------
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // 활성 프로필이 있는지 가볍게 확인 후 이동
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('id, active')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profile && profile.active) {
+            location.replace('/');
+            return;
+          }
+          // 비활성 또는 프로필 없음 → 세션 정리하고 로그인 폼 표시
+          await supabase.auth.signOut();
+        }
+      } catch (e) {
+        // 세션 확인 실패는 조용히 무시 (로그인 폼 그대로 표시)
+      }
+
+      // 쿼리스트링으로 들어온 사유 안내
+      const params = new URLSearchParams(location.search);
+      const reason = params.get('reason');
+      if (reason === 'inactive') {
+        showError('비활성화된 계정입니다. 관리자에게 문의하세요.');
+      } else if (reason === 'expired') {
+        showError('세션이 만료되었습니다. 다시 로그인해주세요.');
+      }
+
+      // 첫 입력 포커스
+      emailEl.focus();
+    })();
+
+    // -------------------------------------------------------------------------
+    // 로그인 처리
+    // -------------------------------------------------------------------------
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const email = emailEl.value.trim();
+      const password = pwEl.value;
+
+      if (!email || !password) {
+        showError('이메일과 비밀번호를 입력해주세요.');
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        // 1) 인증
+        const { data: signInData, error: signInError } =
+          await supabase.auth.signInWithPassword({ email, password });
+
+        if (signInError) {
+          // Supabase가 돌려주는 메시지를 사용자 친화적으로 매핑
+          const msg = mapAuthError(signInError);
+          showError(msg);
+          toast(msg, 'error');
+          return;
+        }
+
+        const userId = signInData?.user?.id;
+        if (!userId) {
+          showError('로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+          return;
+        }
+
+        // 2) user_profiles에서 활성 상태/역할 확인
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('id, role, active')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (profileError) {
+          await supabase.auth.signOut();
+          showError('사용자 정보를 확인하지 못했습니다. 관리자에게 문의하세요.');
+          toast('프로필 조회 실패', 'error');
+          return;
+        }
+
+        if (!profile) {
+          // auth.users엔 있지만 user_profiles엔 등록되지 않은 경우
+          await supabase.auth.signOut();
+          showError('등록되지 않은 계정입니다. 관리자에게 문의하세요.');
+          return;
+        }
+
+        if (!profile.active) {
+          await supabase.auth.signOut();
+          showError('비활성화된 계정입니다. 관리자에게 문의하세요.');
+          return;
+        }
+
+        // 3) 통과 → 대시보드로 이동
+        toast('로그인되었습니다.', 'success');
+        // 토스트가 잠깐 보이도록 살짝 지연
+        setTimeout(() => location.replace('/'), 250);
+
+      } catch (err) {
+        showError('알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        toast('로그인 중 오류가 발생했습니다.', 'error');
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // 헬퍼
+    // -------------------------------------------------------------------------
+    function setLoading(on) {
+      submitBtn.disabled = on;
+      emailEl.disabled = on;
+      pwEl.disabled = on;
+      if (on) {
+        btnLabel.textContent = '로그인 중...';
+        btnSpin.classList.remove('hidden');
+      } else {
+        btnLabel.textContent = '로그인';
+        btnSpin.classList.add('hidden');
+      }
+    }
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.classList.remove('hidden');
+      // 입력 필드에 에러 톤
+      [emailEl, pwEl].forEach(el => {
+        el.classList.add('border-red-600/60');
+      });
+    }
+
+    function hideError() {
+      errorBox.classList.add('hidden');
+      errorBox.textContent = '';
+      [emailEl, pwEl].forEach(el => {
+        el.classList.remove('border-red-600/60');
+      });
+    }
+
+    // Supabase Auth 에러 메시지를 한국어로 매핑
+    function mapAuthError(err) {
+      const msg = (err?.message || '').toLowerCase();
+      if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+        return '이메일 또는 비밀번호가 올바르지 않습니다.';
+      }
+      if (msg.includes('email not confirmed')) {
+        return '이메일 인증이 완료되지 않았습니다. 관리자에게 문의하세요.';
+      }
+      if (msg.includes('too many requests') || msg.includes('rate')) {
+        return '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.';
+      }
+      if (msg.includes('network') || msg.includes('failed to fetch')) {
+        return '네트워크 오류입니다. 연결을 확인해주세요.';
+      }
+      return '로그인에 실패했습니다. 입력 정보를 확인해주세요.';
+    }
+  </script>
+</body>
+</html>

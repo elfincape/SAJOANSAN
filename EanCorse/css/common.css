@@ -1,0 +1,229 @@
+/* =============================================================================
+   공통 스타일
+   - Pretendard 폰트
+   - 다크모드 기본 (zinc-900)
+   - 토스트/모달은 ui.js가 Tailwind 클래스로 그리지만, 보강 스타일을 여기에 둔다
+   - 테이블/폼 공통: sticky header, 줄무늬, 포커스 링
+   - 인쇄 관련 스타일 없음
+   ============================================================================= */
+
+/* Pretendard (CDN) */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+
+:root {
+  color-scheme: dark;
+  --bg:        #18181b;  /* zinc-900 */
+  --bg-soft:   #27272a;  /* zinc-800 */
+  --bg-softer: #3f3f46;  /* zinc-700 */
+  --fg:        #f4f4f5;  /* zinc-100 */
+  --fg-mute:   #a1a1aa;  /* zinc-400 */
+  --border:    #3f3f46;  /* zinc-700 */
+  --accent:    #10b981;  /* emerald-500 */
+  --danger:    #ef4444;  /* red-500 */
+  --warn:      #f59e0b;  /* amber-500 */
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    'Pretendard Variable', Pretendard,
+    -apple-system, BlinkMacSystemFont, system-ui,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  font-feature-settings: 'tnum' on; /* 숫자 폭 고정 (시간/표 정렬용) */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 숫자/시간 컬럼은 등폭 숫자 */
+.tnum, td.num, th.num, .biz-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- 스크롤바 (어두운 톤) ------------------------------------------------- */
+* {
+  scrollbar-color: #52525b #18181b; /* zinc-600 / zinc-900 */
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #18181b;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* ----- 테이블 공통 ---------------------------------------------------------- */
+table.app-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem; /* text-sm */
+}
+table.app-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-soft);
+  color: var(--fg-mute);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.app-table tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #27272a; /* zinc-800 */
+  vertical-align: middle;
+}
+/* 줄무늬 */
+table.app-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+table.app-table tbody tr:hover td {
+  background: rgba(16, 185, 129, 0.06); /* emerald 살짝 */
+}
+table.app-table tbody tr.selected td {
+  background: rgba(16, 185, 129, 0.12);
+}
+
+/* ----- 폼 컨트롤 공통 ------------------------------------------------------- */
+.app-input,
+.app-select,
+.app-textarea {
+  width: 100%;
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.app-input:focus,
+.app-select:focus,
+.app-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+.app-input[disabled],
+.app-select[disabled],
+.app-textarea[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.app-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--fg-mute);
+  margin-bottom: 0.25rem;
+}
+
+/* 버튼 공통 (Tailwind와 병행 사용 가능) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  background: var(--bg-softer);
+  color: var(--fg);
+}
+.btn:hover { background: #52525b; }
+.btn-primary {
+  background: var(--accent);
+  color: #052e1f;
+  font-weight: 600;
+}
+.btn-primary:hover { background: #34d399; }
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover { background: #f87171; }
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+.btn-ghost:hover { background: var(--bg-soft); }
+
+/* ----- 토스트/모달 보강 (ui.js 클래스와 함께) ------------------------------ */
+#toast-container > div {
+  min-width: 220px;
+  max-width: 360px;
+  word-break: keep-all;
+}
+
+/* 모달 패널 내부 기본 여백/타이포 */
+#modal-root h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* ----- 유틸 클래스 ---------------------------------------------------------- */
+.muted    { color: var(--fg-mute); }
+.divider  { height: 1px; background: var(--border); margin: 0.75rem 0; }
+
+/* 여유시간 표시용 색상 (양수=여유, 0=정시, 음수=부족) */
+.slack-pos { color: #34d399; } /* emerald-400 */
+.slack-zero { color: #a1a1aa; }
+.slack-neg { color: #fb7185; } /* rose-400 */
+
+/* 페이지 공통 컨테이너 */
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+.page h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+/* sticky 헤더가 있는 표를 감싸는 스크롤 영역 */
+.table-wrap {
+  position: relative;
+  overflow: auto;
+  max-height: calc(100vh - 200px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+/* 체크박스 라벨 */
+.cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  user-select: none;
+  color: var(--fg);
+}
+.cb input[type="checkbox"] {
+  accent-color: #10b981;
+  width: 14px;
+  height: 14px;
+}
+
+/* 다중선택 트리거 */
+.ms-button {
+  cursor: pointer;
+}
+.ms-button:hover {
+  border-color: #52525b;
+}
