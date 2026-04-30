@@ -7,9 +7,7 @@
 <title>코스표 내려받기 · 관리자</title>
 <link rel="stylesheet" href="/css/common.css" />
 <script src="https://cdn.tailwindcss.com"></script>
-<!-- CSV 파서 -->
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<!-- XLSX 파서 (엑셀 내보내기용) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen">
@@ -28,19 +26,18 @@
   <section class="bg-zinc-800/60 border border-zinc-700 rounded-lg p-4 text-sm leading-relaxed">
     <h2 class="font-semibold text-zinc-100 mb-2">사용 방법</h2>
     <ol class="list-decimal list-inside space-y-1 text-zinc-300">
-      <li>아래 옵션에서 <strong>파일 형식</strong>(CSV / XLSX)과 <strong>필터 조건</strong>을 선택합니다.</li>
-      <li><strong>"미리보기 새로고침"</strong> 버튼으로 데이터 건수와 샘플을 확인합니다.</li>
-      <li><strong>"내려받기"</strong> 버튼을 누르면 파일이 저장됩니다.</li>
+      <li>출력 옵션과 정렬 순서를 설정합니다 (기본: 기사명 ▲ → 하차종료시간 ▲).</li>
+      <li><strong>"미리보기 새로고침"</strong> 으로 결과를 확인합니다.</li>
+      <li><strong>"내려받기"</strong> 버튼으로 파일을 저장합니다.</li>
     </ol>
     <p class="mt-2 text-amber-300/90 text-xs">
-      ⚠️ 출력 형식은 <code>admin/import.html</code> 의 입력 형식과 동일합니다. 내려받은 파일을 수정 후 다시 import 페이지로 업로드하면 변경사항이 반영됩니다.
+      ⚠️ 출력 형식은 <code>admin/import.html</code> 의 입력 형식과 동일합니다. 수정 후 다시 import 하면 그대로 반영됩니다.
     </p>
   </section>
 
-  <!-- 옵션 -->
+  <!-- 출력 옵션 -->
   <section class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
     <h2 class="font-semibold mb-3">출력 옵션</h2>
-
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       <label class="flex flex-col gap-1 text-sm">
         <span class="text-zinc-400">파일 형식</span>
@@ -49,14 +46,12 @@
           <option value="xlsx">XLSX (엑셀)</option>
         </select>
       </label>
-
       <label class="flex flex-col gap-1 text-sm">
         <span class="text-zinc-400">운수사 필터</span>
         <select id="opt-company" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5">
           <option value="">— 전체 —</option>
         </select>
       </label>
-
       <label class="flex flex-col gap-1 text-sm">
         <span class="text-zinc-400">코스 활성 상태</span>
         <select id="opt-active" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5">
@@ -65,7 +60,6 @@
           <option value="inactive">비활성 코스만</option>
         </select>
       </label>
-
       <label class="flex flex-col gap-1 text-sm">
         <span class="text-zinc-400">시간 표기</span>
         <select id="opt-time-format" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5">
@@ -73,21 +67,47 @@
           <option value="24h">24시간 (22:00)</option>
         </select>
       </label>
-
-      <label class="flex flex-col gap-1 text-sm md:col-span-2 lg:col-span-3">
+      <label class="flex flex-col gap-1 text-sm md:col-span-2">
         <span class="text-zinc-400">파일명</span>
         <input id="opt-filename" type="text" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5"
                placeholder="코스표_YYYYMMDD" />
       </label>
     </div>
+  </section>
 
-    <div class="mt-4 flex flex-wrap gap-2">
-      <button id="btn-refresh" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">
-        🔄 미리보기 새로고침
-      </button>
-      <button id="btn-download" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded font-semibold text-sm" disabled>
-        📥 내려받기
-      </button>
+  <!-- 정렬 설정 -->
+  <section class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold">정렬 순서</h2>
+      <div class="flex gap-2">
+        <button id="btn-preset-default" class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" title="기사명 → 하차종료시간">
+          📋 기본 (기사 → 하차종료)
+        </button>
+        <button id="btn-preset-route"   class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" title="운수사 → 호차 → 정거장순">
+          🚚 코스순
+        </button>
+        <button id="btn-preset-time"    class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" title="입차시간순">
+          ⏰ 시간순
+        </button>
+        <button id="btn-sort-clear"     class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">
+          🗑 초기화
+        </button>
+      </div>
+    </div>
+    <p class="text-xs text-zinc-400 mb-3">
+      위에서 아래 순서대로 1차 → 2차 → 3차 정렬이 적용됩니다. 행을 드래그해서 순서를 변경할 수 있습니다.
+    </p>
+    <div id="sort-list" class="space-y-2"></div>
+    <button id="btn-sort-add" class="mt-3 px-3 py-1.5 text-sm bg-emerald-700 hover:bg-emerald-600 rounded">
+      ➕ 정렬 키 추가
+    </button>
+  </section>
+
+  <!-- 액션 -->
+  <section class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
+    <div class="flex flex-wrap gap-2">
+      <button id="btn-refresh"  class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">🔄 미리보기 새로고침</button>
+      <button id="btn-download" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded font-semibold text-sm" disabled>📥 내려받기</button>
     </div>
   </section>
 
@@ -95,7 +115,7 @@
   <section class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
     <h2 class="font-semibold mb-3">미리보기</h2>
     <div id="summary" class="text-sm text-zinc-300 mb-3">데이터를 불러오려면 "미리보기 새로고침"을 누르세요.</div>
-    <div class="overflow-auto max-h-96 bg-zinc-900 rounded">
+    <div class="overflow-auto max-h-[28rem] bg-zinc-900 rounded">
       <table class="text-xs w-full" id="preview-table">
         <thead class="bg-zinc-800 sticky top-0"></thead>
         <tbody></tbody>
@@ -111,13 +131,12 @@
   import { bizMinToDisplay } from '/js/time.js';
   import { toast } from '/js/ui.js';
 
-  /* ─────────── 인증 가드 ─────────── */
-  await requireRole('editor'); // editor 이상 다운로드 가능
+  await requireRole('editor');
   const profile = await getCurrentProfile();
   document.getElementById('user-badge').textContent =
     `${profile?.display_name ?? ''} (${profile?.role ?? ''})`;
 
-  /* ─────────── 출력 헤더 (import.html 과 동일 순서) ─────────── */
+  /* ─────────── 출력 헤더 ─────────── */
   const HEADERS = [
     '호차','운수사','코스명','톤수','차량번호','운전자명','연락처',
     '입차시간','하차시작','하차종료','납품마감',
@@ -129,17 +148,56 @@
     '주소','비고',
   ];
 
-  /* ─────────── 상태 ─────────── */
-  const state = { rows: [], companies: [] };
+  /* ─────────── 정렬 가능 키 정의 ─────────── */
+  // type: 'string' | 'number' | 'plate' (차량번호 자연정렬)
+  const SORT_KEYS = [
+    { key: 'driver_name',    label: '주기사명',         type: 'string' },
+    { key: 'company_name',   label: '운수사명',         type: 'string' },
+    { key: 'route_name',     label: '코스명',           type: 'string' },
+    { key: 'car_number',     label: '호차',             type: 'plate'  },
+    { key: 'plate_number',   label: '차량번호',         type: 'plate'  },
+    { key: 'tonnage',        label: '톤수',             type: 'number' },
+    { key: 'arrival_min',    label: '입차시간',         type: 'number' },
+    { key: 'unload_start',   label: '하차시작시간',     type: 'number' },
+    { key: 'unload_end',     label: '하차종료시간',     type: 'number' },
+    { key: 'deadline',       label: '납품마감시간',     type: 'number' },
+    { key: 'stop_order',     label: '코스 내 정거장순', type: 'number' },
+    { key: 'point_code',     label: '납품처 코드',      type: 'string' },
+    { key: 'point_name',     label: '납품처명',         type: 'string' },
+    { key: 'region',         label: '지역',             type: 'string' },
+  ];
+  const KEY_LABEL = Object.fromEntries(SORT_KEYS.map(k => [k.key, k.label]));
 
-  /* ─────────── 운수사 목록 로드 ─────────── */
+  /* ─────────── 프리셋 ─────────── */
+  const PRESETS = {
+    default: [
+      { key: 'driver_name', dir: 'asc' },
+      { key: 'unload_end',  dir: 'asc' },
+    ],
+    route: [
+      { key: 'company_name', dir: 'asc' },
+      { key: 'car_number',   dir: 'asc' },
+      { key: 'stop_order',   dir: 'asc' },
+    ],
+    time: [
+      { key: 'arrival_min', dir: 'asc' },
+      { key: 'driver_name', dir: 'asc' },
+    ],
+  };
+
+  /* ─────────── 상태 ─────────── */
+  const state = {
+    rows: [],            // DB rows
+    flattened: [],       // 정렬 적용 후 평면화 결과
+    sorts: [...PRESETS.default],
+  };
+
+  /* ─────────── 운수사 로드 ─────────── */
   async function loadCompanies() {
-    const { data, error } = await supabase
-      .from('companies').select('id, name').order('name');
+    const { data, error } = await supabase.from('companies').select('id, name').order('name');
     if (error) { toast(`운수사 로드 실패: ${error.message}`, 'error'); return; }
-    state.companies = data || [];
     const sel = document.getElementById('opt-company');
-    state.companies.forEach(c => {
+    (data || []).forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.id; opt.textContent = c.name;
       sel.appendChild(opt);
@@ -149,30 +207,9 @@
   /* ─────────── 시간 포맷 ─────────── */
   function fmtTime(min, mode) {
     if (min == null) return '';
-    let s;
-    try { s = bizMinToDisplay(min); } catch { return ''; }
-    // s: "HH:MM" (24h, 04:00 ~ 27:59 표기 가능)
+    let s; try { s = bizMinToDisplay(min); } catch { return ''; }
     if (mode === '24h') return s;
-    // 12h AM/PM 변환
-    const [h, m] = s.split(':').map(Number);
-    const realH = h >= 24 ? h - 24 : h;
-    const ampm = realH < 12 ? 'AM' : 'PM';
-    let h12 = realH % 12; if (h12 === 0) h12 = 12;
-    return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
-  }
-  function fmtDeadline(min, text, mode) {
-    // 마감 시간은 텍스트 원문이 우선 (예: "X", "10시이후", "15:00~16:00")
-    if (text && text.trim() !== '') {
-      const t = text.trim();
-      // datetime 형식("1900-01-01 22:00:00") 정리
-      const m = t.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
-      if (/^\d{4}-\d{2}-\d{2}/.test(t) && m) {
-        return mode === '24h' ? `${m[1].padStart(2,'0')}:${m[2]}` : convertToAmPm(`${m[1]}:${m[2]}`);
-      }
-      // "X", "미운행", "10시이후", "15:00~16:00" 등은 그대로
-      return t;
-    }
-    return fmtTime(min, mode);
+    return convertToAmPm(s);
   }
   function convertToAmPm(hhmm) {
     const [h, m] = hhmm.split(':').map(Number);
@@ -181,18 +218,22 @@
     let h12 = realH % 12; if (h12 === 0) h12 = 12;
     return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
   }
-
-  /* ─────────── 톤수 포맷 ("3.5" → "3.5톤") ─────────── */
-  function fmtTonnage(n) {
-    if (n == null || n === '') return '';
-    return `${n}톤`;
+  function fmtDeadline(min, text, mode) {
+    if (text && text.trim() !== '') {
+      const t = text.trim();
+      const m = t.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (/^\d{4}-\d{2}-\d{2}/.test(t) && m) {
+        return mode === '24h' ? `${m[1].padStart(2,'0')}:${m[2]}` : convertToAmPm(`${m[1]}:${m[2]}`);
+      }
+      return t;
+    }
+    return fmtTime(min, mode);
   }
-
-  /* ─────────── 진입조건/방식/장소 텍스트 → 체크 변환 ─────────── */
+  function fmtTonnage(n) { return (n == null || n === '') ? '' : `${n}톤`; }
   function ck(b) { return b ? 'O' : ''; }
   function eq(v, target) { return v === target ? 'O' : ''; }
 
-  /* ─────────── 데이터 로드 + 행 변환 ─────────── */
+  /* ─────────── 데이터 로드 ─────────── */
   async function loadData() {
     document.getElementById('summary').textContent = '불러오는 중…';
     document.getElementById('btn-download').disabled = true;
@@ -200,7 +241,6 @@
     const companyId = document.getElementById('opt-company').value || null;
     const activeMode = document.getElementById('opt-active').value;
 
-    // route_stops + 조인
     let query = supabase
       .from('route_stops')
       .select(`
@@ -212,7 +252,7 @@
         memo,
         override_delivery_method, override_access_method, override_delivery_location,
         delivery_points (
-          code, name, address,
+          code, name, address, region,
           allow_under_1ton, allow_under_3_5ton, allow_over_5ton, allow_unmanned_yard,
           delivery_method, access_method, delivery_location,
           deadline_text, deadline_business_min
@@ -223,10 +263,9 @@
           drivers:primary_driver_id ( name, phone, contact ),
           vehicles:primary_vehicle_id ( plate_number, tonnage )
         )
-      `)
-      .order('stop_order', { ascending: true });
+      `);
 
-    if (companyId) query = query.eq('routes.company_id', companyId);
+    if (companyId)              query = query.eq('routes.company_id', companyId);
     if (activeMode === 'active')   query = query.eq('routes.active', true);
     if (activeMode === 'inactive') query = query.eq('routes.active', false);
 
@@ -236,13 +275,71 @@
       document.getElementById('summary').textContent = `오류: ${error.message}`;
       return;
     }
-
     state.rows = data || [];
-    renderPreview();
+    applySortAndRender();
     document.getElementById('btn-download').disabled = state.rows.length === 0;
   }
 
-  /* ─────────── 행 → CSV 객체 변환 ─────────── */
+  /* ─────────── 정렬 키 추출 (raw 값) ─────────── */
+  function getSortVal(stop, key) {
+    const r  = stop.routes || {};
+    const c  = r.companies || {};
+    const dr = r.drivers || {};
+    const v  = r.vehicles || {};
+    const p  = stop.delivery_points || {};
+    switch (key) {
+      case 'driver_name':  return dr.name || '';
+      case 'company_name': return c.name || '';
+      case 'route_name':   return r.name || '';
+      case 'car_number':   return r.car_number || '';
+      case 'plate_number': return v.plate_number || '';
+      case 'tonnage':      return v.tonnage ?? null;
+      case 'arrival_min':  return stop.arrival_business_min ?? null;
+      case 'unload_start': return stop.unloading_start_business_min ?? null;
+      case 'unload_end':   return stop.unloading_end_business_min ?? null;
+      case 'deadline':     return stop.deadline_business_min ?? p.deadline_business_min ?? null;
+      case 'stop_order':   return stop.stop_order ?? null;
+      case 'point_code':   return p.code || '';
+      case 'point_name':   return p.name || '';
+      case 'region':       return p.region || '';
+      default:             return '';
+    }
+  }
+
+  /* ─────────── 비교 함수 ─────────── */
+  function compareVal(a, b, type) {
+    // null/빈값은 항상 뒤로
+    const aEmpty = (a === null || a === undefined || a === '');
+    const bEmpty = (b === null || b === undefined || b === '');
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    if (type === 'number') return Number(a) - Number(b);
+    if (type === 'plate')  {
+      // 한글+숫자 혼합 자연정렬 ("대-14호차" vs "대-2호차")
+      return String(a).localeCompare(String(b), 'ko', { numeric: true });
+    }
+    return String(a).localeCompare(String(b), 'ko');
+  }
+
+  /* ─────────── 정렬 적용 ─────────── */
+  function applySort(rows) {
+    const sorts = state.sorts;
+    if (!sorts.length) return rows;
+    const arr = [...rows];
+    arr.sort((x, y) => {
+      for (const s of sorts) {
+        const def = SORT_KEYS.find(k => k.key === s.key);
+        if (!def) continue;
+        const cmp = compareVal(getSortVal(x, s.key), getSortVal(y, s.key), def.type);
+        if (cmp !== 0) return s.dir === 'desc' ? -cmp : cmp;
+      }
+      return 0;
+    });
+    return arr;
+  }
+
+  /* ─────────── 행 → 평면 객체 ─────────── */
   function rowToFlat(stop) {
     const r  = stop.routes || {};
     const c  = r.companies || {};
@@ -250,16 +347,11 @@
     const v  = r.vehicles || {};
     const p  = stop.delivery_points || {};
     const tm = document.getElementById('opt-time-format').value;
-
-    // 오버라이드 우선
     const dm = stop.override_delivery_method   ?? p.delivery_method;
     const am = stop.override_access_method     ?? p.access_method;
     const dl = stop.override_delivery_location ?? p.delivery_location;
-
-    // 마감: 정거장 우선, 없으면 납품처
     const dlText = stop.deadline_text ?? p.deadline_text;
     const dlMin  = stop.deadline_business_min ?? p.deadline_business_min;
-
     return {
       '호차':       r.car_number ?? '',
       '운수사':     c.name ?? '',
@@ -292,31 +384,96 @@
     };
   }
 
-  /* ─────────── 미리보기 렌더 ─────────── */
-  function renderPreview() {
-    const flat = state.rows.map(rowToFlat);
-    const summary = document.getElementById('summary');
-    summary.textContent = `총 ${flat.length}건의 정거장이 출력됩니다.`;
+  /* ─────────── 정렬 + 렌더 ─────────── */
+  function applySortAndRender() {
+    const sorted = applySort(state.rows);
+    state.flattened = sorted.map(rowToFlat);
+    renderPreview();
+  }
 
-    // 운수사별 카운트
-    const byCompany = {};
-    flat.forEach(r => { byCompany[r['운수사'] || '(미지정)'] = (byCompany[r['운수사'] || '(미지정)'] || 0) + 1; });
-    const breakdown = Object.entries(byCompany)
-      .sort((a,b) => b[1]-a[1])
-      .map(([k,v]) => `${k}: ${v}건`).join(' · ');
-    if (breakdown) summary.textContent += ` (${breakdown})`;
+  function renderPreview() {
+    const flat = state.flattened;
+    const summary = document.getElementById('summary');
+    const sortDesc = state.sorts.length
+      ? state.sorts.map(s => `${KEY_LABEL[s.key] || s.key} ${s.dir === 'asc' ? '▲' : '▼'}`).join(' → ')
+      : '(정렬 없음)';
+    summary.innerHTML = `총 <b class="text-emerald-400">${flat.length}</b>건의 정거장, 정렬: <span class="text-zinc-100">${escapeHtml(sortDesc)}</span>`;
 
     const thead = document.querySelector('#preview-table thead');
     const tbody = document.querySelector('#preview-table tbody');
     thead.innerHTML = `<tr>${HEADERS.map(h => `<th class="px-2 py-1 text-left whitespace-nowrap text-zinc-300 border-b border-zinc-700">${h}</th>`).join('')}</tr>`;
-    tbody.innerHTML = flat.slice(0, 50).map(r => `
+    tbody.innerHTML = flat.slice(0, 100).map(r => `
       <tr class="hover:bg-zinc-800/50">
         ${HEADERS.map(h => `<td class="px-2 py-1 whitespace-nowrap border-b border-zinc-800/60">${escapeHtml(r[h])}</td>`).join('')}
       </tr>
     `).join('');
-    if (flat.length > 50) {
-      tbody.innerHTML += `<tr><td colspan="${HEADERS.length}" class="px-2 py-2 text-center text-zinc-500">… 미리보기는 50행까지 표시 (전체 ${flat.length}행)</td></tr>`;
+    if (flat.length > 100) {
+      tbody.innerHTML += `<tr><td colspan="${HEADERS.length}" class="px-2 py-2 text-center text-zinc-500">… 미리보기는 100행까지 (전체 ${flat.length}행)</td></tr>`;
     }
+  }
+
+  /* ─────────── 정렬 UI 렌더 ─────────── */
+  function renderSortList() {
+    const list = document.getElementById('sort-list');
+    if (!state.sorts.length) {
+      list.innerHTML = `<div class="text-xs text-zinc-500 italic px-2 py-3 bg-zinc-900/40 rounded">정렬 키가 없습니다. "➕ 정렬 키 추가"를 클릭하세요.</div>`;
+      return;
+    }
+    list.innerHTML = state.sorts.map((s, i) => {
+      const usedKeys = state.sorts.filter((_, j) => j !== i).map(x => x.key);
+      const opts = SORT_KEYS
+        .filter(k => k.key === s.key || !usedKeys.includes(k.key))
+        .map(k => `<option value="${k.key}" ${k.key === s.key ? 'selected' : ''}>${k.label}</option>`)
+        .join('');
+      return `
+        <div class="flex items-center gap-2 bg-zinc-900/60 border border-zinc-700 rounded px-2 py-1.5" data-idx="${i}">
+          <span class="text-xs text-zinc-500 w-8 text-center">${i+1}차</span>
+          <select data-action="change-key" class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
+            ${opts}
+          </select>
+          <button data-action="toggle-dir" class="px-2 py-1 text-xs rounded border ${s.dir === 'asc' ? 'border-emerald-500 text-emerald-400' : 'border-amber-500 text-amber-400'}" title="오름/내림차순 전환">
+            ${s.dir === 'asc' ? '▲ 오름' : '▼ 내림'}
+          </button>
+          <button data-action="up"     class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded disabled:opacity-30" ${i===0 ? 'disabled' : ''}>↑</button>
+          <button data-action="down"   class="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded disabled:opacity-30" ${i===state.sorts.length-1 ? 'disabled' : ''}>↓</button>
+          <button data-action="remove" class="px-2 py-1 text-xs bg-red-700/70 hover:bg-red-600 rounded">✕</button>
+        </div>`;
+    }).join('');
+
+    // 이벤트 바인딩
+    list.querySelectorAll('[data-idx]').forEach(row => {
+      const i = Number(row.dataset.idx);
+      row.querySelector('[data-action="change-key"]').addEventListener('change', e => {
+        state.sorts[i].key = e.target.value;
+        applySortAndRender();
+      });
+      row.querySelector('[data-action="toggle-dir"]').addEventListener('click', () => {
+        state.sorts[i].dir = state.sorts[i].dir === 'asc' ? 'desc' : 'asc';
+        renderSortList(); applySortAndRender();
+      });
+      row.querySelector('[data-action="up"]')?.addEventListener('click', () => {
+        if (i === 0) return;
+        [state.sorts[i-1], state.sorts[i]] = [state.sorts[i], state.sorts[i-1]];
+        renderSortList(); applySortAndRender();
+      });
+      row.querySelector('[data-action="down"]')?.addEventListener('click', () => {
+        if (i >= state.sorts.length - 1) return;
+        [state.sorts[i+1], state.sorts[i]] = [state.sorts[i], state.sorts[i+1]];
+        renderSortList(); applySortAndRender();
+      });
+      row.querySelector('[data-action="remove"]').addEventListener('click', () => {
+        state.sorts.splice(i, 1);
+        renderSortList(); applySortAndRender();
+      });
+    });
+  }
+
+  function addSortKey() {
+    const used = state.sorts.map(s => s.key);
+    const next = SORT_KEYS.find(k => !used.includes(k.key));
+    if (!next) { toast('더 이상 추가할 정렬 키가 없습니다', 'info'); return; }
+    state.sorts.push({ key: next.key, dir: 'asc' });
+    renderSortList(); applySortAndRender();
   }
 
   /* ─────────── 다운로드 ─────────── */
@@ -327,15 +484,20 @@
     const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
     return `코스표_${ymd}.${ext}`;
   }
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   document.getElementById('btn-download').addEventListener('click', () => {
-    if (!state.rows.length) { toast('내려받을 데이터가 없습니다', 'error'); return; }
-    const flat = state.rows.map(rowToFlat);
+    if (!state.flattened.length) { toast('내려받을 데이터가 없습니다', 'error'); return; }
+    const flat = state.flattened;
     const fmt = document.getElementById('opt-format').value;
-
     if (fmt === 'csv') {
       const csv = Papa.unparse({ fields: HEADERS, data: flat.map(r => HEADERS.map(h => r[h] ?? '')) });
-      // BOM 포함하여 한글 엑셀 호환
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
       saveBlob(blob, buildFilename('csv'));
     } else {
@@ -347,21 +509,28 @@
     toast(`${flat.length}건 내려받기 완료`, 'success');
   });
 
-  function saveBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
   /* ─────────── 이벤트 ─────────── */
   document.getElementById('btn-refresh').addEventListener('click', loadData);
   document.getElementById('opt-time-format').addEventListener('change', () => {
-    if (state.rows.length) renderPreview();
+    if (state.rows.length) applySortAndRender();
+  });
+  document.getElementById('btn-sort-add').addEventListener('click', addSortKey);
+  document.getElementById('btn-sort-clear').addEventListener('click', () => {
+    state.sorts = []; renderSortList(); applySortAndRender();
+  });
+  document.getElementById('btn-preset-default').addEventListener('click', () => {
+    state.sorts = JSON.parse(JSON.stringify(PRESETS.default));
+    renderSortList(); applySortAndRender();
+  });
+  document.getElementById('btn-preset-route').addEventListener('click', () => {
+    state.sorts = JSON.parse(JSON.stringify(PRESETS.route));
+    renderSortList(); applySortAndRender();
+  });
+  document.getElementById('btn-preset-time').addEventListener('click', () => {
+    state.sorts = JSON.parse(JSON.stringify(PRESETS.time));
+    renderSortList(); applySortAndRender();
   });
 
-  /* ─────────── 유틸 ─────────── */
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -370,7 +539,8 @@
 
   /* ─────────── 초기 ─────────── */
   await loadCompanies();
-  await loadData(); // 진입 시 자동 로드
+  renderSortList();
+  await loadData();
 </script>
 
 </body>
