@@ -59,9 +59,9 @@
         icon: iconTruck(), color: 'violet' },
       { href: '/admin/companies.html',       title: '운수사 관리',    desc: '운수사 정보',
         icon: iconBuilding(), color: 'rose' },
-      { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
-      { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
       ...(isAdmin ? [
+        { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
+        { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
         { href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태 (관리자 전용)',
           icon: iconShield(), color: 'cyan',  adminOnly: true },
         { href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그 (관리자 전용)',
