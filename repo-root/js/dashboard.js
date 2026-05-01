@@ -411,11 +411,17 @@ function renderFlatTable() {
     const sortable = c.sortable !== false;
     const cls = sortable ? 'cursor-pointer hover:text-zinc-200' : '';
     const align = c.align === 'right' ? 'text-right' : '';
-    return `
-      <th data-sortkey="${sortKey}" data-idx="${i}" data-key="${c.key}" class="${cls} ${align}">
-        <span class="th-inner"><span>${escapeHtml(c.label)}</span>${badge}</span>
-        <span class="col-resizer" data-resize="${c.key}"></span>
-      </th>`;
+return `
+  <th draggable="true"
+      data-sortkey="${sortKey}" data-idx="${i}" data-key="${c.key}"
+      class="th-draggable ${cls} ${align}">
+    <span class="th-inner">
+      <span class="th-grip" title="드래그해서 순서 변경">⋮⋮</span>
+      <span>${escapeHtml(c.label)}</span>${badge}
+    </span>
+    <span class="col-resizer" data-resize="${c.key}"></span>
+  </th>`;
+
   }).join('')}</tr></thead>`;
 
   const tbody = `<tbody>${state.filtered.map(row => {
@@ -457,6 +463,8 @@ function renderFlatTable() {
   // 컬럼 폭 드래그
   bindColumnResizers(host);
 }
+bindHeaderDragReorder(host);
+
 
 function bindColumnResizers(host) {
   host.querySelectorAll('.col-resizer').forEach(el => {
@@ -480,6 +488,70 @@ function bindColumnResizers(host) {
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+function bindHeaderDragReorder(host) {
+  let dragKey = null;
+
+  host.querySelectorAll('thead th.th-draggable').forEach(th => {
+    th.addEventListener('dragstart', e => {
+      // 리사이저 위에서 시작된 드래그는 무시
+      if (e.target.classList.contains('col-resizer')) {
+        e.preventDefault();
+        return;
+      }
+      dragKey = th.dataset.key;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragKey);
+      th.classList.add('opacity-40');
+    });
+
+    th.addEventListener('dragend', () => {
+      th.classList.remove('opacity-40');
+      host.querySelectorAll('thead th').forEach(x => {
+        x.classList.remove('drop-left', 'drop-right');
+      });
+      dragKey = null;
+    });
+
+    th.addEventListener('dragover', e => {
+      if (!dragKey || dragKey === th.dataset.key) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      // 마우스가 셀의 왼/오 어느 쪽에 있는지로 삽입 위치 표시
+      const rect = th.getBoundingClientRect();
+      const isLeft = (e.clientX - rect.left) < rect.width / 2;
+      th.classList.toggle('drop-left',  isLeft);
+      th.classList.toggle('drop-right', !isLeft);
+    });
+
+    th.addEventListener('dragleave', () => {
+      th.classList.remove('drop-left', 'drop-right');
+    });
+
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      const targetKey = th.dataset.key;
+      if (!dragKey || dragKey === targetKey) return;
+
+      const rect = th.getBoundingClientRect();
+      const insertBefore = (e.clientX - rect.left) < rect.width / 2;
+
+      // 현재 보이는 컬럼 순서를 가져와서 재배치
+      const order = orderedColumns().map(c => c.key);
+      const from = order.indexOf(dragKey);
+      const to   = order.indexOf(targetKey);
+      if (from < 0 || to < 0) return;
+
+      order.splice(from, 1);
+      const newTo = order.indexOf(targetKey);
+      order.splice(insertBefore ? newTo : newTo + 1, 0, dragKey);
+
+      state.colOrder = order;
+      saveColumnPrefs();
+      render(); // 새 순서로 다시 그리기
     });
   });
 }
