@@ -69,56 +69,60 @@
   <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg">
     <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
       <span>🔍 필터 <span id="filter-badge" class="ml-2 text-xs text-emerald-400"></span></span>
-      <span class="text-xs text-zinc-500">운수사 · 코스 · 호차 · 기사 · 지역 (모두 교집합)</span>
+      <span class="text-xs text-zinc-500">운수사 · 코스 · 호차 · 기사 · 지역 · 납품처 (모두 교집합)</span>
     </summary>
     <div class="px-4 pb-4 pt-1 space-y-3">
-      <div class="flex items-center gap-2">
-        <input id="filter-search" type="text" placeholder="검색어 (납품처/주소/코드/비고)"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm"/>
+      <div class="flex justify-end">
         <button id="btn-filter-clear" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">필터 초기화</button>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div>
+        <div class="filter-group" data-key="company_name">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>운수사</span>
             <span class="filter-count text-emerald-400" data-for="company_name"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-company_name" class="filter-box"></div>
         </div>
-        <div>
+        <div class="filter-group" data-key="route_name">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>코스명</span>
             <span class="filter-count text-emerald-400" data-for="route_name"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-route_name" class="filter-box"></div>
         </div>
-        <div>
+        <div class="filter-group" data-key="car_number">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>호차</span>
             <span class="filter-count text-emerald-400" data-for="car_number"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-car_number" class="filter-box"></div>
         </div>
-        <div>
+        <div class="filter-group" data-key="driver_name">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>운전자명</span>
             <span class="filter-count text-emerald-400" data-for="driver_name"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-driver_name" class="filter-box"></div>
         </div>
-        <div>
+        <div class="filter-group" data-key="region">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>지역</span>
             <span class="filter-count text-emerald-400" data-for="region"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-region" class="filter-box"></div>
         </div>
-        <div>
+        <div class="filter-group" data-key="point_name">
           <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
             <span>납품처</span>
             <span class="filter-count text-emerald-400" data-for="point_name"></span>
           </div>
+          <input type="text" class="filter-search w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs mb-1" placeholder="검색…"/>
           <div id="filter-point_name" class="filter-box"></div>
         </div>
       </div>
@@ -145,7 +149,7 @@
     </div>
   </details>
 
-  <!-- 포함 컬럼 (요청에 따라 드롭다운으로 접힘) -->
+  <!-- 포함 컬럼 -->
   <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg">
     <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
       <span>📋 포함 컬럼 <span id="cols-badge" class="ml-2 text-xs text-emerald-400"></span></span>
@@ -245,7 +249,6 @@ const PRESETS = {
   ]
 };
 
-// 필터 가능한 키 (모두 _sort 필드에 존재)
 const FILTER_KEYS = ['company_name','route_name','car_number','driver_name','region','point_name'];
 
 const DEFAULT_COLS = [...HEADERS];
@@ -254,9 +257,9 @@ const DEFAULT_COLS = [...HEADERS];
 // 상태
 // -----------------------------------------------------------------------------
 const state = {
-  rows:     [],   // 원본 (rowToFlat 적용 전)
-  flat:     [],   // 전체 변환 결과
-  filtered: [],   // 필터 적용 후
+  rows:     [],
+  flat:     [],
+  filtered: [],
   sorts:    [...PRESETS.default],
   cols:     loadJSON('export.cols', DEFAULT_COLS),
   filters:  {
@@ -266,8 +269,17 @@ const state = {
     driver_name:  new Set(),
     region:       new Set(),
     point_name:   new Set(),
-    search: ''
   }
+};
+
+// 박스별 검색어
+const filterQueries = {
+  company_name: '',
+  route_name:   '',
+  car_number:   '',
+  driver_name:  '',
+  region:       '',
+  point_name:   '',
 };
 
 // HEADERS 변경에 대한 보정
@@ -347,7 +359,6 @@ function rowToFlat(stop) {
   const ck = (b) => b ? 'O' : '';
   const eq = (val, target) => val === target ? 'O' : '';
 
-  // 마감: stop의 텍스트 우선 → stop의 분 → dp의 텍스트 → dp의 분
   const deadlineDisplay =
        stop.deadline_text
     || (stop.deadline_business_min != null ? fmtTime(stop.deadline_business_min) : '')
@@ -407,45 +418,58 @@ function rowToFlat(stop) {
 }
 
 // -----------------------------------------------------------------------------
-// 필터 옵션 빌드 (모든 행에서 distinct 값 수집)
+// 필터 옵션 빌드
 // -----------------------------------------------------------------------------
-function rebuildFilterOptions() {
-  FILTER_KEYS.forEach(key => {
-    const host = document.getElementById(`filter-${key}`);
-    if (!host) return;
+function buildFilterBoxHtml(key) {
+  const host = document.getElementById(`filter-${key}`);
+  if (!host) return;
 
-    const values = new Set();
-    state.flat.forEach(r => {
-      const v = r._sort?.[key];
-      if (v != null && v !== '') values.add(String(v));
-    });
-    const sorted = [...values].sort((a,b) => a.localeCompare(b, 'ko', { numeric: true }));
+  const values = new Set();
+  state.flat.forEach(r => {
+    const v = r._sort?.[key];
+    if (v != null && v !== '') values.add(String(v));
+  });
+  let sorted = [...values].sort((a,b) => a.localeCompare(b, 'ko', { numeric: true }));
 
-    if (sorted.length === 0) {
-      host.innerHTML = `<div class="text-xs text-zinc-500 italic px-1 py-2">데이터 없음</div>`;
-      return;
-    }
+  const q = (filterQueries[key] || '').trim().toLowerCase();
+  if (q) {
+    sorted = sorted.filter(v =>
+      v.toLowerCase().includes(q) || state.filters[key].has(v)
+    );
+  }
 
-    host.innerHTML = sorted.map(v => {
-      const checked = state.filters[key].has(v) ? 'checked' : '';
-      return `
-        <label class="flex items-center gap-1.5 px-1.5 py-0.5 text-xs hover:bg-zinc-700/50 rounded cursor-pointer">
-          <input type="checkbox" data-filter="${key}" value="${escapeAttr(v)}" ${checked}
-                 class="rounded border-zinc-600 bg-zinc-800"/>
-          <span class="truncate">${escapeHtml(v)}</span>
-        </label>`;
-    }).join('');
+  if (sorted.length === 0) {
+    host.innerHTML = `<div class="text-xs text-zinc-500 italic px-1 py-2">${q ? '일치 없음' : '데이터 없음'}</div>`;
+    return;
+  }
 
-    host.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      cb.addEventListener('change', e => {
-        const k = e.target.dataset.filter;
-        const v = e.target.value;
-        if (e.target.checked) state.filters[k].add(v);
-        else                  state.filters[k].delete(v);
-        applyFiltersAndRender();
-      });
+  host.innerHTML = sorted.map(v => {
+    const checked = state.filters[key].has(v) ? 'checked' : '';
+    return `
+      <label class="flex items-center gap-1.5 px-1.5 py-0.5 text-xs hover:bg-zinc-700/50 rounded cursor-pointer">
+        <input type="checkbox" data-filter="${key}" value="${escapeAttr(v)}" ${checked}
+               class="rounded border-zinc-600 bg-zinc-800"/>
+        <span class="truncate">${escapeHtml(v)}</span>
+      </label>`;
+  }).join('');
+
+  host.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const k = e.target.dataset.filter;
+      const v = e.target.value;
+      if (e.target.checked) state.filters[k].add(v);
+      else                  state.filters[k].delete(v);
+      applyFiltersAndRender();
     });
   });
+}
+
+function rebuildFilterOptions() {
+  FILTER_KEYS.forEach(key => buildFilterBoxHtml(key));
+}
+
+function rebuildSingleFilter(key) {
+  buildFilterBoxHtml(key);
 }
 
 // -----------------------------------------------------------------------------
@@ -453,8 +477,6 @@ function rebuildFilterOptions() {
 // -----------------------------------------------------------------------------
 function applyFilters() {
   const f = state.filters;
-  const search = (f.search || '').trim().toLowerCase();
-
   state.filtered = state.flat.filter(r => {
     for (const key of FILTER_KEYS) {
       const set = f[key];
@@ -462,10 +484,6 @@ function applyFilters() {
         const v = r._sort?.[key] ?? '';
         if (!set.has(String(v))) return false;
       }
-    }
-    if (search) {
-      const blob = [r['납품처명'], r['주소'], r['코드'], r['비고']].join(' ').toLowerCase();
-      if (!blob.includes(search)) return false;
     }
     return true;
   });
@@ -683,7 +701,6 @@ function updateFilterBadges() {
     const badge = document.querySelector(`.filter-count[data-for="${k}"]`);
     if (badge) badge.textContent = n > 0 ? `${n}개 선택` : '';
   });
-  if (state.filters.search) total += 1;
   const fb = document.getElementById('filter-badge');
   if (fb) fb.textContent = total > 0 ? `${total}개 적용` : '';
 }
@@ -824,21 +841,28 @@ document.getElementById('opt-active-only').addEventListener('change', loadData);
 document.getElementById('btn-refresh').addEventListener('click', loadData);
 document.getElementById('btn-download').addEventListener('click', download);
 
-// 검색 입력 (디바운스 200ms)
-let searchTimer = null;
-document.getElementById('filter-search').addEventListener('input', e => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.filters.search = e.target.value;
-    applyFiltersAndRender();
-  }, 200);
+// 박스별 검색 입력 (디바운스 150ms, 해당 박스만 다시 그림)
+const searchTimers = {};
+document.querySelectorAll('.filter-group').forEach(group => {
+  const key = group.dataset.key;
+  const input = group.querySelector('.filter-search');
+  if (!input) return;
+  input.addEventListener('input', e => {
+    clearTimeout(searchTimers[key]);
+    searchTimers[key] = setTimeout(() => {
+      filterQueries[key] = e.target.value;
+      rebuildSingleFilter(key);
+    }, 150);
+  });
 });
 
 // 필터 전체 초기화
 document.getElementById('btn-filter-clear').addEventListener('click', () => {
-  FILTER_KEYS.forEach(k => state.filters[k].clear());
-  state.filters.search = '';
-  document.getElementById('filter-search').value = '';
+  FILTER_KEYS.forEach(k => {
+    state.filters[k].clear();
+    filterQueries[k] = '';
+  });
+  document.querySelectorAll('.filter-search').forEach(i => { i.value = ''; });
   rebuildFilterOptions();
   applyFiltersAndRender();
 });
