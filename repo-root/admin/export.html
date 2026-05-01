@@ -22,85 +22,148 @@
   </div>
 </header>
 
-<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
 
   <!-- 사용 안내 -->
   <section class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
     <h2 class="text-sm font-semibold text-zinc-200 mb-2">사용 안내</h2>
     <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
-      <li>파일 형식(CSV/XLSX)을 선택하고, 필요 시 정렬 순서·포함 컬럼을 조정합니다.</li>
-      <li>미리보기에서 데이터를 확인한 뒤 "다운로드" 버튼을 누르세요.</li>
-      <li>다운로드한 파일은 <code class="text-emerald-400">/admin/import.html</code> 에서 그대로 다시 업로드 가능합니다 (단, 모든 컬럼을 포함한 경우).</li>
+      <li>필터로 원하는 데이터를 좁힌 뒤(여러 항목 선택 시 교집합), 정렬·포함 컬럼을 조정합니다.</li>
+      <li>미리보기로 확인 후 "다운로드" 버튼을 누르세요. (CSV / XLSX)</li>
+      <li>모든 컬럼을 포함해 받으면 <code>/admin/import.html</code> 으로 그대로 다시 업로드할 수 있습니다.</li>
     </ol>
   </section>
 
   <!-- 옵션 -->
-  <section class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 space-y-4">
-    <h2 class="text-sm font-semibold text-zinc-200">옵션</h2>
+  <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg" open>
+    <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
+      <span>⚙️ 기본 옵션</span>
+      <span class="text-xs text-zinc-500">파일 형식 · 파일명 · 활성 코스</span>
+    </summary>
+    <div class="px-4 pb-4 pt-1 space-y-3">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label class="block">
+          <span class="text-xs text-zinc-400">파일 형식</span>
+          <select id="opt-format" class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+            <option value="csv">CSV (UTF-8)</option>
+            <option value="xlsx">XLSX (Excel)</option>
+          </select>
+        </label>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <label class="block">
-        <span class="text-xs text-zinc-400">파일 형식</span>
-        <select id="opt-format" class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm">
-          <option value="csv">CSV (UTF-8)</option>
-          <option value="xlsx">XLSX (Excel)</option>
-        </select>
-      </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-zinc-400">파일명 (확장자 제외, 비우면 자동)</span>
+          <input id="opt-filename" type="text" placeholder="코스표_YYYYMMDD"
+                 class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm"/>
+        </label>
+      </div>
 
-      <label class="block">
-        <span class="text-xs text-zinc-400">시간 표기</span>
-        <select id="opt-timefmt" class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm">
-          <option value="standard">표준 (0~24시)</option>
-          <option value="business">업무 기준 (04시 시작)</option>
-        </select>
+      <label class="inline-flex items-center gap-2 text-xs text-zinc-300">
+        <input id="opt-active-only" type="checkbox" checked class="rounded border-zinc-600 bg-zinc-900"/>
+        활성 코스만 포함
       </label>
-
-      <label class="block">
-        <span class="text-xs text-zinc-400">파일명 (확장자 제외)</span>
-        <input id="opt-filename" type="text" placeholder="자동 생성"
-               class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm"/>
-      </label>
+      <p class="text-xs text-zinc-500">시간 표기는 24시간제(0~24시) 표준만 사용합니다.</p>
     </div>
+  </details>
 
-    <label class="inline-flex items-center gap-2 text-xs text-zinc-300">
-      <input id="opt-active-only" type="checkbox" checked class="rounded border-zinc-600 bg-zinc-900"/>
-      활성 코스만 포함
-    </label>
-  </section>
+  <!-- 필터 -->
+  <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg">
+    <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
+      <span>🔍 필터 <span id="filter-badge" class="ml-2 text-xs text-emerald-400"></span></span>
+      <span class="text-xs text-zinc-500">운수사 · 코스 · 호차 · 기사 · 지역 (모두 교집합)</span>
+    </summary>
+    <div class="px-4 pb-4 pt-1 space-y-3">
+      <div class="flex items-center gap-2">
+        <input id="filter-search" type="text" placeholder="검색어 (납품처/주소/코드/비고)"
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm"/>
+        <button id="btn-filter-clear" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">필터 초기화</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>운수사</span>
+            <span class="filter-count text-emerald-400" data-for="company_name"></span>
+          </div>
+          <div id="filter-company_name" class="filter-box"></div>
+        </div>
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>코스명</span>
+            <span class="filter-count text-emerald-400" data-for="route_name"></span>
+          </div>
+          <div id="filter-route_name" class="filter-box"></div>
+        </div>
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>호차</span>
+            <span class="filter-count text-emerald-400" data-for="car_number"></span>
+          </div>
+          <div id="filter-car_number" class="filter-box"></div>
+        </div>
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>운전자명</span>
+            <span class="filter-count text-emerald-400" data-for="driver_name"></span>
+          </div>
+          <div id="filter-driver_name" class="filter-box"></div>
+        </div>
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>지역</span>
+            <span class="filter-count text-emerald-400" data-for="region"></span>
+          </div>
+          <div id="filter-region" class="filter-box"></div>
+        </div>
+        <div>
+          <div class="text-xs text-zinc-400 mb-1 flex items-center justify-between">
+            <span>납품처</span>
+            <span class="filter-count text-emerald-400" data-for="point_name"></span>
+          </div>
+          <div id="filter-point_name" class="filter-box"></div>
+        </div>
+      </div>
+    </div>
+  </details>
 
   <!-- 정렬 -->
-  <section class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 space-y-3">
-    <div class="flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-zinc-200">정렬 순서</h2>
-      <div class="flex gap-2">
+  <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg">
+    <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
+      <span>↕ 정렬 순서</span>
+      <span id="sort-summary" class="text-xs text-zinc-500"></span>
+    </summary>
+    <div class="px-4 pb-4 pt-1 space-y-3">
+      <div class="flex flex-wrap gap-2">
         <button data-preset="default" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">📋 기본</button>
         <button data-preset="route"   class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">🚚 코스순</button>
         <button data-preset="time"    class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">⏰ 시간순</button>
         <button id="btn-sort-clear"   class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">🗑 초기화</button>
       </div>
+      <div id="sort-list" class="space-y-2"></div>
+      <button id="btn-sort-add" class="text-xs px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-600/50 rounded">
+        ➕ 정렬 키 추가
+      </button>
     </div>
-    <div id="sort-list" class="space-y-2"></div>
-    <button id="btn-sort-add" class="text-xs px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-600/50 rounded">
-      ➕ 정렬 키 추가
-    </button>
-  </section>
+  </details>
 
-  <!-- 포함 컬럼 -->
-  <section class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 space-y-3">
-    <div class="flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-zinc-200">포함 컬럼</h2>
-      <div class="flex gap-2">
+  <!-- 포함 컬럼 (요청에 따라 드롭다운으로 접힘) -->
+  <details class="bg-zinc-800/50 border border-zinc-700 rounded-lg">
+    <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
+      <span>📋 포함 컬럼 <span id="cols-badge" class="ml-2 text-xs text-emerald-400"></span></span>
+      <span class="text-xs text-zinc-500">파일에 포함할 컬럼/순서 선택</span>
+    </summary>
+    <div class="px-4 pb-4 pt-1 space-y-3">
+      <div class="flex flex-wrap gap-2">
         <button id="btn-cols-all"     class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">전체 선택</button>
         <button id="btn-cols-none"    class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">전체 해제</button>
         <button id="btn-cols-default" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">기본값</button>
       </div>
+      <p class="text-xs text-zinc-500">
+        체크된 컬럼만 파일에 포함됩니다. 다시 import 하려면 모든 컬럼을 포함하세요.
+        드래그(⋮⋮)로 순서를 변경할 수 있습니다.
+      </p>
+      <div id="cols-list" class="grid grid-cols-2 md:grid-cols-3 gap-1.5"></div>
     </div>
-    <p class="text-xs text-zinc-500">
-      체크된 컬럼만 파일에 포함됩니다. 다시 import 하려면 모든 컬럼을 포함하세요.
-      드래그(⋮⋮)로 순서를 변경할 수 있습니다.
-    </p>
-    <div id="cols-list" class="grid grid-cols-2 md:grid-cols-3 gap-1.5"></div>
-  </section>
+  </details>
 
   <!-- 미리보기 -->
   <section class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
@@ -117,9 +180,9 @@
   </section>
 
   <!-- 다운로드 -->
-  <section class="flex justify-end">
+  <section class="flex justify-end sticky bottom-3 z-10">
     <button id="btn-download"
-            class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium">
+            class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium shadow-lg">
       ⬇ 다운로드
     </button>
   </section>
@@ -128,7 +191,7 @@
 <script type="module">
 import { supabase } from '/js/supabase.js';
 import { requireRole, getCurrentProfile } from '/js/auth.js';
-import { bizMinToDisplay, bizMinToStandard } from '/js/time.js';
+import { bizMinToStandard } from '/js/time.js';
 import { toast } from '/js/ui.js';
 
 await requireRole('editor');
@@ -149,7 +212,6 @@ const HEADERS = [
   '주소','비고'
 ];
 
-// 정렬 키 목록
 const SORT_KEYS = [
   { key:'driver_name',   label:'운전자명' },
   { key:'company_name',  label:'운수사' },
@@ -183,24 +245,37 @@ const PRESETS = {
   ]
 };
 
-const DEFAULT_COLS = [...HEADERS]; // 기본은 전체 포함
+// 필터 가능한 키 (모두 _sort 필드에 존재)
+const FILTER_KEYS = ['company_name','route_name','car_number','driver_name','region','point_name'];
+
+const DEFAULT_COLS = [...HEADERS];
 
 // -----------------------------------------------------------------------------
 // 상태
 // -----------------------------------------------------------------------------
 const state = {
-  rows: [],          // route_stops 원본 (관계 포함)
-  flat: [],          // rowToFlat 결과
-  sorts: [...PRESETS.default],
-  cols: loadJSON('export.cols', DEFAULT_COLS), // 사용자가 선택한 컬럼 (순서 포함)
+  rows:     [],   // 원본 (rowToFlat 적용 전)
+  flat:     [],   // 전체 변환 결과
+  filtered: [],   // 필터 적용 후
+  sorts:    [...PRESETS.default],
+  cols:     loadJSON('export.cols', DEFAULT_COLS),
+  filters:  {
+    company_name: new Set(),
+    route_name:   new Set(),
+    car_number:   new Set(),
+    driver_name:  new Set(),
+    region:       new Set(),
+    point_name:   new Set(),
+    search: ''
+  }
 };
 
-// 누락된 헤더 보정 (HEADERS가 늘어난 경우 대비)
+// HEADERS 변경에 대한 보정
 state.cols = state.cols.filter(c => HEADERS.includes(c));
 HEADERS.forEach(h => { if (!state.cols.includes(h)) state.cols.push(h); });
 
 // -----------------------------------------------------------------------------
-// 데이터 로드 (대시보드와 동일한 필터: 활성 코스 옵션)
+// 데이터 로드
 // -----------------------------------------------------------------------------
 async function loadData() {
   const activeOnly = document.getElementById('opt-active-only').checked;
@@ -241,17 +316,18 @@ async function loadData() {
     return;
   }
 
-  // 활성 필터 시 route가 null인 행 제거 (inner join 보장이지만 방어)
   state.rows = (data || []).filter(r => r.route);
   state.flat = state.rows.map(rowToFlat);
-  applySortAndRender();
+
+  rebuildFilterOptions();
+  applyFiltersAndRender();
 }
 
 // -----------------------------------------------------------------------------
-// 변환: route_stop → flat object (HEADERS 키)
+// 변환: route_stop → flat object
 // -----------------------------------------------------------------------------
 function rowToFlat(stop) {
-  const route = stop.route || {};
+  const route   = stop.route || {};
   const company = route.company || {};
   const driver  = route.primary_driver || {};
   const vehicle = route.primary_vehicle || {};
@@ -259,9 +335,7 @@ function rowToFlat(stop) {
 
   const fmtTime = (min, text) => {
     if (min == null) return text || '';
-    return document.getElementById('opt-timefmt').value === 'business'
-      ? bizMinToDisplay(min)
-      : bizMinToStandard(min);
+    return bizMinToStandard(min); // 24시간제 표준만 사용
   };
 
   const fmtTon = (t) => {
@@ -274,14 +348,14 @@ function rowToFlat(stop) {
   const eq = (val, target) => val === target ? 'O' : '';
 
   // 마감: stop의 텍스트 우선 → stop의 분 → dp의 텍스트 → dp의 분
-  const deadlineDisplay = stop.deadline_text
+  const deadlineDisplay =
+       stop.deadline_text
     || (stop.deadline_business_min != null ? fmtTime(stop.deadline_business_min) : '')
     || dp.deadline_text
     || (dp.deadline_business_min != null ? fmtTime(dp.deadline_business_min) : '');
 
-  // override가 있으면 우선
-  const dm = stop.override_delivery_method || dp.delivery_method || '';
-  const am = stop.override_access_method   || dp.access_method   || '';
+  const dm = stop.override_delivery_method   || dp.delivery_method   || '';
+  const am = stop.override_access_method     || dp.access_method     || '';
   const dl = stop.override_delivery_location || dp.delivery_location || '';
 
   return {
@@ -313,7 +387,6 @@ function rowToFlat(stop) {
     '야적':       eq(dl, 'yard'),
     '주소':       dp.address || '',
     '비고':       stop.memo || dp.memo || '',
-    // 정렬 보조 필드 (HEADERS에는 포함 안 됨)
     _sort: {
       driver_name:  driver.name || '',
       company_name: company.name || '',
@@ -334,13 +407,75 @@ function rowToFlat(stop) {
 }
 
 // -----------------------------------------------------------------------------
-// 정렬
+// 필터 옵션 빌드 (모든 행에서 distinct 값 수집)
 // -----------------------------------------------------------------------------
+function rebuildFilterOptions() {
+  FILTER_KEYS.forEach(key => {
+    const host = document.getElementById(`filter-${key}`);
+    if (!host) return;
+
+    const values = new Set();
+    state.flat.forEach(r => {
+      const v = r._sort?.[key];
+      if (v != null && v !== '') values.add(String(v));
+    });
+    const sorted = [...values].sort((a,b) => a.localeCompare(b, 'ko', { numeric: true }));
+
+    if (sorted.length === 0) {
+      host.innerHTML = `<div class="text-xs text-zinc-500 italic px-1 py-2">데이터 없음</div>`;
+      return;
+    }
+
+    host.innerHTML = sorted.map(v => {
+      const checked = state.filters[key].has(v) ? 'checked' : '';
+      return `
+        <label class="flex items-center gap-1.5 px-1.5 py-0.5 text-xs hover:bg-zinc-700/50 rounded cursor-pointer">
+          <input type="checkbox" data-filter="${key}" value="${escapeAttr(v)}" ${checked}
+                 class="rounded border-zinc-600 bg-zinc-800"/>
+          <span class="truncate">${escapeHtml(v)}</span>
+        </label>`;
+    }).join('');
+
+    host.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', e => {
+        const k = e.target.dataset.filter;
+        const v = e.target.value;
+        if (e.target.checked) state.filters[k].add(v);
+        else                  state.filters[k].delete(v);
+        applyFiltersAndRender();
+      });
+    });
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 필터 적용 + 정렬 + 렌더
+// -----------------------------------------------------------------------------
+function applyFilters() {
+  const f = state.filters;
+  const search = (f.search || '').trim().toLowerCase();
+
+  state.filtered = state.flat.filter(r => {
+    for (const key of FILTER_KEYS) {
+      const set = f[key];
+      if (set && set.size > 0) {
+        const v = r._sort?.[key] ?? '';
+        if (!set.has(String(v))) return false;
+      }
+    }
+    if (search) {
+      const blob = [r['납품처명'], r['주소'], r['코드'], r['비고']].join(' ').toLowerCase();
+      if (!blob.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
 function compareVals(a, b, dir) {
   const nullA = a == null || a === '';
   const nullB = b == null || b === '';
   if (nullA && nullB) return 0;
-  if (nullA) return 1;   // null은 항상 뒤
+  if (nullA) return 1;
   if (nullB) return -1;
   let cmp;
   if (typeof a === 'number' && typeof b === 'number') cmp = a - b;
@@ -350,7 +485,7 @@ function compareVals(a, b, dir) {
 
 function applySort() {
   const sorts = state.sorts;
-  state.flat.sort((ra, rb) => {
+  state.filtered.sort((ra, rb) => {
     for (const s of sorts) {
       const va = ra._sort?.[s.key];
       const vb = rb._sort?.[s.key];
@@ -361,18 +496,21 @@ function applySort() {
   });
 }
 
-function applySortAndRender() {
+function applyFiltersAndRender() {
+  applyFilters();
   applySort();
+  updateFilterBadges();
   renderPreview();
 }
 
 // -----------------------------------------------------------------------------
-// 렌더: 정렬 UI
+// 정렬 UI
 // -----------------------------------------------------------------------------
 function renderSortList() {
   const host = document.getElementById('sort-list');
   if (state.sorts.length === 0) {
     host.innerHTML = `<div class="text-xs text-zinc-500 italic">정렬 키가 없습니다 (입력 순서대로 출력).</div>`;
+    updateSortSummary();
     return;
   }
   host.innerHTML = state.sorts.map((s, i) => {
@@ -385,7 +523,7 @@ function renderSortList() {
         <select data-act="key" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs flex-1">
           ${opts}
         </select>
-        <button data-act="dir" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded w-12">
+        <button data-act="dir" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded w-16">
           ${s.dir === 'asc' ? '▲ 오름' : '▼ 내림'}
         </button>
         <button data-act="up"   class="text-xs px-1.5 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" ${i === 0 ? 'disabled' : ''}>↑</button>
@@ -398,31 +536,33 @@ function renderSortList() {
     const i = Number(row.dataset.i);
     row.querySelector('[data-act="key"]').addEventListener('change', e => {
       state.sorts[i].key = e.target.value;
-      applySortAndRender();
+      applyFiltersAndRender();
+      updateSortSummary();
     });
     row.querySelector('[data-act="dir"]').addEventListener('click', () => {
       state.sorts[i].dir = state.sorts[i].dir === 'asc' ? 'desc' : 'asc';
       renderSortList();
-      applySortAndRender();
+      applyFiltersAndRender();
     });
     row.querySelector('[data-act="up"]').addEventListener('click', () => {
       if (i === 0) return;
       [state.sorts[i - 1], state.sorts[i]] = [state.sorts[i], state.sorts[i - 1]];
       renderSortList();
-      applySortAndRender();
+      applyFiltersAndRender();
     });
     row.querySelector('[data-act="down"]').addEventListener('click', () => {
       if (i === state.sorts.length - 1) return;
       [state.sorts[i], state.sorts[i + 1]] = [state.sorts[i + 1], state.sorts[i]];
       renderSortList();
-      applySortAndRender();
+      applyFiltersAndRender();
     });
     row.querySelector('[data-act="del"]').addEventListener('click', () => {
       state.sorts.splice(i, 1);
       renderSortList();
-      applySortAndRender();
+      applyFiltersAndRender();
     });
   });
+  updateSortSummary();
 }
 
 function addSortKey() {
@@ -434,15 +574,23 @@ function addSortKey() {
   const next = SORT_KEYS.find(k => !used.has(k.key)) || SORT_KEYS[0];
   state.sorts.push({ key: next.key, dir: 'asc' });
   renderSortList();
-  applySortAndRender();
+  applyFiltersAndRender();
+}
+
+function updateSortSummary() {
+  const el = document.getElementById('sort-summary');
+  if (!el) return;
+  if (state.sorts.length === 0) { el.textContent = '정렬 없음'; return; }
+  el.textContent = state.sorts.map((s, i) =>
+    `${i+1}.${SORT_KEYS.find(k => k.key === s.key)?.label || s.key}${s.dir === 'asc' ? '↑' : '↓'}`
+  ).join(' → ');
 }
 
 // -----------------------------------------------------------------------------
-// 렌더: 컬럼 선택 UI (드래그로 순서 변경)
+// 컬럼 선택 UI (드래그로 순서 변경)
 // -----------------------------------------------------------------------------
 function renderColsList() {
   const host = document.getElementById('cols-list');
-  // state.cols 순서대로 표시 (체크된 것 먼저), 그 다음 미체크된 것
   const ordered = [...state.cols];
   HEADERS.forEach(h => { if (!ordered.includes(h)) ordered.push(h); });
 
@@ -450,10 +598,10 @@ function renderColsList() {
     const checked = state.cols.includes(name);
     return `
       <label draggable="true" data-col="${escapeAttr(name)}"
-             class="col-item flex items-center gap-2 bg-zinc-900/50 border border-zinc-700 rounded px-2 py-1.5 text-xs cursor-grab hover:border-zinc-500">
+             class="col-item flex items-center gap-2 bg-zinc-900/50 border border-zinc-700 rounded px-2 py-1.5 text-xs cursor-grab">
         <span class="text-zinc-500 select-none">⋮⋮</span>
         <input type="checkbox" ${checked ? 'checked' : ''} class="rounded border-zinc-600 bg-zinc-800"/>
-        <span class="flex-1">${escapeHtml(name)}</span>
+        <span class="flex-1 truncate">${escapeHtml(name)}</span>
       </label>`;
   }).join('');
 
@@ -467,6 +615,7 @@ function renderColsList() {
         state.cols = state.cols.filter(c => c !== name);
       }
       saveJSON('export.cols', state.cols);
+      updateColsBadge();
       renderPreview();
     });
 
@@ -497,7 +646,6 @@ function renderColsList() {
       const rect = el.getBoundingClientRect();
       const before = (e.clientY - rect.top) < rect.height / 2;
 
-      // 전체 순서 배열에서 이동 (체크 여부와 무관하게 표시 순서를 결정)
       let order = [...state.cols];
       HEADERS.forEach(h => { if (!order.includes(h)) order.push(h); });
 
@@ -508,14 +656,36 @@ function renderColsList() {
       if (to < 0) to = order.length;
       order.splice(before ? to : to + 1, 0, src);
 
-      // 체크된 것만 state.cols에 반영하되, 새 순서를 따름
       const checked = new Set(state.cols);
       state.cols = order.filter(c => checked.has(c));
       saveJSON('export.cols', state.cols);
       renderColsList();
+      updateColsBadge();
       renderPreview();
     });
   });
+  updateColsBadge();
+}
+
+function updateColsBadge() {
+  const el = document.getElementById('cols-badge');
+  if (el) el.textContent = `${state.cols.length}/${HEADERS.length}`;
+}
+
+// -----------------------------------------------------------------------------
+// 필터 배지 / 카운트
+// -----------------------------------------------------------------------------
+function updateFilterBadges() {
+  let total = 0;
+  FILTER_KEYS.forEach(k => {
+    const n = state.filters[k].size;
+    total += n;
+    const badge = document.querySelector(`.filter-count[data-for="${k}"]`);
+    if (badge) badge.textContent = n > 0 ? `${n}개 선택` : '';
+  });
+  if (state.filters.search) total += 1;
+  const fb = document.getElementById('filter-badge');
+  if (fb) fb.textContent = total > 0 ? `${total}개 적용` : '';
 }
 
 // -----------------------------------------------------------------------------
@@ -525,15 +695,12 @@ function renderPreview() {
   const host = document.getElementById('preview');
   const summary = document.getElementById('summary');
   const cols = state.cols.length > 0 ? state.cols : HEADERS;
-  const rows = state.flat;
+  const rows = state.filtered;
 
-  const sortDesc = state.sorts.length > 0
-    ? state.sorts.map((s, i) => `${i + 1}.${SORT_KEYS.find(k => k.key === s.key)?.label || s.key}(${s.dir === 'asc' ? '↑' : '↓'})`).join(' → ')
-    : '없음';
-  summary.textContent = `총 ${rows.length}건 · 컬럼 ${cols.length}/${HEADERS.length} · 정렬: ${sortDesc}`;
+  summary.textContent = `총 ${rows.length}건 / 전체 ${state.flat.length}건 · 컬럼 ${cols.length}/${HEADERS.length}`;
 
   if (rows.length === 0) {
-    host.innerHTML = `<div class="text-center text-xs text-zinc-500 py-12">조회된 데이터가 없습니다.</div>`;
+    host.innerHTML = `<div class="text-center text-xs text-zinc-500 py-12">조회된 데이터가 없습니다. 필터를 조정해 보세요.</div>`;
     return;
   }
 
@@ -575,10 +742,9 @@ function saveBlob(blob, filename) {
 
 function download() {
   const cols = state.cols.length > 0 ? state.cols : HEADERS;
-  if (state.flat.length === 0) { toast('다운로드할 데이터가 없습니다.', 'warn'); return; }
+  if (state.filtered.length === 0) { toast('다운로드할 데이터가 없습니다.', 'warn'); return; }
 
-  // 선택 컬럼만 추출한 행 배열
-  const data = state.flat.map(r => {
+  const data = state.filtered.map(r => {
     const o = {};
     cols.forEach(c => { o[c] = r[c] ?? ''; });
     return o;
@@ -625,13 +791,13 @@ document.querySelectorAll('[data-preset]').forEach(btn => {
     const p = btn.dataset.preset;
     state.sorts = JSON.parse(JSON.stringify(PRESETS[p] || []));
     renderSortList();
-    applySortAndRender();
+    applyFiltersAndRender();
   });
 });
 document.getElementById('btn-sort-clear').addEventListener('click', () => {
   state.sorts = [];
   renderSortList();
-  applySortAndRender();
+  applyFiltersAndRender();
 });
 document.getElementById('btn-sort-add').addEventListener('click', addSortKey);
 
@@ -654,13 +820,28 @@ document.getElementById('btn-cols-default').addEventListener('click', () => {
   renderPreview();
 });
 
-document.getElementById('opt-timefmt').addEventListener('change', () => {
-  state.flat = state.rows.map(rowToFlat);
-  applySortAndRender();
-});
 document.getElementById('opt-active-only').addEventListener('change', loadData);
 document.getElementById('btn-refresh').addEventListener('click', loadData);
 document.getElementById('btn-download').addEventListener('click', download);
+
+// 검색 입력 (디바운스 200ms)
+let searchTimer = null;
+document.getElementById('filter-search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.filters.search = e.target.value;
+    applyFiltersAndRender();
+  }, 200);
+});
+
+// 필터 전체 초기화
+document.getElementById('btn-filter-clear').addEventListener('click', () => {
+  FILTER_KEYS.forEach(k => state.filters[k].clear());
+  state.filters.search = '';
+  document.getElementById('filter-search').value = '';
+  rebuildFilterOptions();
+  applyFiltersAndRender();
+});
 
 // -----------------------------------------------------------------------------
 // 초기화
