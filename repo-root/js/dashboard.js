@@ -8,6 +8,7 @@ import { supabase }              from './supabase.js';
 import { requireAuth, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToDisplay, formatSlack }            from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
+import { bizMinToStandard } from '/js/time.js';
 
 // -----------------------------------------------------------------------------
 // 컬럼 정의 (헤더 / 정렬키 / 셀 렌더러)
@@ -20,11 +21,10 @@ const COLUMNS = [
   { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate' },
   { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name', render: renderDriver },
   { key: 'stop_order',             label: '순서',       sortKey: 'stop_order', align: 'right' },
-  { key: 'arrival_business_min',   label: '입차',       sortKey: 'arrival_business_min', render: r => bizMinToDisplay(r.arrival_business_min), cls: 'biz-time' },
-  { key: 'unloading_start_business_min', label: '하차시작', sortKey: 'unloading_start_business_min', render: r => bizMinToDisplay(r.unloading_start_business_min), cls: 'biz-time' },
-  { key: 'unloading_end_business_min',   label: '하차종료', sortKey: 'unloading_end_business_min',   render: r => bizMinToDisplay(r.unloading_end_business_min),   cls: 'biz-time' },
-  { key: 'effective_deadline_business_min', label: '마감', sortKey: 'effective_deadline_business_min', render: r => bizMinToDisplay(r.effective_deadline_business_min), cls: 'biz-time' },
-  { key: 'slack_minutes',          label: '여유',       sortKey: 'slack_minutes', render: renderSlack, cls: 'biz-time' },
+  { key: 'arrival_business_min',            label: '입차',     sortKey: 'arrival_business_min',            render: r => bizMinToStandard(r.arrival_business_min),            cls: 'biz-time' },
+  { key: 'unloading_start_business_min',    label: '하차시작', sortKey: 'unloading_start_business_min',    render: r => bizMinToStandard(r.unloading_start_business_min),    cls: 'biz-time' },
+  { key: 'unloading_end_business_min',      label: '하차종료', sortKey: 'unloading_end_business_min',      render: r => bizMinToStandard(r.unloading_end_business_min),      cls: 'biz-time' },
+  { key: 'effective_deadline_business_min', label: '마감',     sortKey: 'effective_deadline_business_min', render: r => bizMinToStandard(r.effective_deadline_business_min), cls: 'biz-time' },
   { key: 'dp_code',                label: '코드',       sortKey: 'dp_code' },
   { key: 'dp_name',                label: '납품처',     sortKey: 'dp_name' },
   { key: 'dp_region',              label: '지역',       sortKey: 'dp_region' },
