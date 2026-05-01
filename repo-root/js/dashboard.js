@@ -4,39 +4,39 @@
 // 상태: state 객체 1개. 변경 시 syncUrl() + render()
 // =============================================================================
 
-import { supabase }              from './supabase.js';
+import { supabase }                              from './supabase.js';
 import { requireAuth, getCurrentProfile, signOut } from './auth.js';
-import { bizMinToDisplay, bizMinToStandard }       from './time.js';
+import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
 
 // -----------------------------------------------------------------------------
 // 컬럼 정의
 // -----------------------------------------------------------------------------
 const COLUMNS = [
-  { key: 'company_name',           label: '운수사',     sortKey: 'company_name',           defaultWidth: 130 },
-  { key: 'car_number',             label: '호차',       sortKey: 'car_number',             defaultWidth: 90  },
-  { key: 'route_name',             label: '코스',       sortKey: 'route_name',             defaultWidth: 160 },
+  { key: 'company_name',           label: '운수사',     sortKey: 'company_name',            defaultWidth: 130 },
+  { key: 'car_number',             label: '호차',       sortKey: 'car_number',              defaultWidth: 90  },
+  { key: 'route_name',             label: '코스',       sortKey: 'route_name',              defaultWidth: 160 },
   { key: 'primary_vehicle_tonnage',label: '톤수',       sortKey: 'primary_vehicle_tonnage', align: 'right', defaultWidth: 70 },
-  { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate',  defaultWidth: 110 },
-  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',    render: renderDriver, defaultWidth: 110 },
+  { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate',   defaultWidth: 110 },
+  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 110 },
   { key: 'stop_order',             label: '순서',       sortKey: 'stop_order', align: 'right', defaultWidth: 60 },
   { key: 'arrival_business_min',            label: '입차',     sortKey: 'arrival_business_min',            render: r => bizMinToStandard(r.arrival_business_min),            cls: 'biz-time', defaultWidth: 70 },
   { key: 'unloading_start_business_min',    label: '하차시작', sortKey: 'unloading_start_business_min',    render: r => bizMinToStandard(r.unloading_start_business_min),    cls: 'biz-time', defaultWidth: 80 },
   { key: 'unloading_end_business_min',      label: '하차종료', sortKey: 'unloading_end_business_min',      render: r => bizMinToStandard(r.unloading_end_business_min),      cls: 'biz-time', defaultWidth: 80 },
   { key: 'effective_deadline_business_min', label: '마감',     sortKey: 'effective_deadline_business_min', render: r => bizMinToStandard(r.effective_deadline_business_min), cls: 'biz-time', defaultWidth: 70 },
-  { key: 'dp_code',                label: '코드',       sortKey: 'dp_code',                defaultWidth: 90  },
-  { key: 'dp_name',                label: '납품처',     sortKey: 'dp_name',                defaultWidth: 180 },
-  { key: 'dp_region',              label: '지역',       sortKey: 'dp_region',              defaultWidth: 100 },
-  { key: 'entry_cond',             label: '진입조건',   sortable: false, render: renderEntryCond,          defaultWidth: 140 },
-  { key: 'delivery_method',        label: '납품방식',   sortKey: 'delivery_method',        render: r => renderOverridable(r.delivery_method,   r.override_delivery_method),   defaultWidth: 90 },
-  { key: 'access_method',          label: '진입방식',   sortKey: 'access_method',          render: r => renderOverridable(r.access_method,     r.override_access_method),     defaultWidth: 90 },
-  { key: 'delivery_location',      label: '납품장소',   sortKey: 'delivery_location',      render: r => renderOverridable(r.delivery_location, r.override_delivery_location), defaultWidth: 90 },
-  { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',             render: renderAddress, defaultWidth: 240 },
-  { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                  defaultWidth: 90  },
+  { key: 'dp_code',                label: '코드',       sortKey: 'dp_code',                 defaultWidth: 90  },
+  { key: 'dp_name',                label: '납품처',     sortKey: 'dp_name',                 defaultWidth: 180 },
+  { key: 'dp_region',              label: '지역',       sortKey: 'dp_region',               defaultWidth: 100 },
+  { key: 'entry_cond',             label: '진입조건',   sortable: false, render: renderEntryCond,           defaultWidth: 140 },
+  { key: 'delivery_method',        label: '납품방식',   sortKey: 'delivery_method',         render: r => renderOverridable(r.delivery_method,   r.override_delivery_method),   defaultWidth: 90 },
+  { key: 'access_method',          label: '진입방식',   sortKey: 'access_method',           render: r => renderOverridable(r.access_method,     r.override_access_method),     defaultWidth: 90 },
+  { key: 'delivery_location',      label: '납품장소',   sortKey: 'delivery_location',       render: r => renderOverridable(r.delivery_location, r.override_delivery_location), defaultWidth: 90 },
+  { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',              render: renderAddress, defaultWidth: 240 },
+  { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                   defaultWidth: 90  },
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
   { key: 'stop_memo',              label: '비고',       sortable: false, render: r => escapeHtml(r.stop_memo || ''), defaultWidth: 200 }
 ];
-const COL_MAP = Object.fromEntries(COLUMNS.map(c => [c.key, c]));
+const COL_MAP  = Object.fromEntries(COLUMNS.map(c => [c.key, c]));
 const ALL_KEYS = COLUMNS.map(c => c.key);
 
 // -----------------------------------------------------------------------------
@@ -114,10 +114,9 @@ function visibleColumns() {
 })();
 
 // -----------------------------------------------------------------------------
-// "⚙️ 컬럼 설정" 버튼 자동 삽입 (정렬 초기화 버튼 옆 또는 상단 어딘가)
+// "⚙️ 컬럼 설정" 버튼 자동 삽입
 // -----------------------------------------------------------------------------
 function injectColumnConfigButton() {
-  // 이미 있으면 스킵
   if (document.getElementById('btn-col-config')) return;
   const btn = document.createElement('button');
   btn.id = 'btn-col-config';
@@ -126,7 +125,6 @@ function injectColumnConfigButton() {
   btn.textContent = '⚙️ 컬럼 설정';
   btn.addEventListener('click', openColumnConfig);
 
-  // 정렬 리셋 버튼 옆에 두는 게 자연스러움
   const ref = document.getElementById('reset-sort')
            || document.getElementById('reset-filters')
            || document.getElementById('admin-link');
@@ -200,9 +198,9 @@ function populateMultiSelect(key, options) {
     </div>`;
   root.classList.add('relative');
 
-  const btn = root.querySelector('.ms-button');
-  const menu = root.querySelector('.ms-menu');
-  const opts = root.querySelector('.ms-options');
+  const btn    = root.querySelector('.ms-button');
+  const menu   = root.querySelector('.ms-menu');
+  const opts   = root.querySelector('.ms-options');
   const search = root.querySelector('.ms-search');
 
   function renderOptions(filterText = '') {
@@ -238,7 +236,7 @@ function populateMultiSelect(key, options) {
     }
   }
   updateMsButtonLabel();
-  root._refreshLabel = updateMsButtonLabel;
+  root._refreshLabel   = updateMsButtonLabel;
   root._refreshOptions = () => renderOptions(search.value);
 
   btn.addEventListener('click', () => {
@@ -409,19 +407,18 @@ function renderFlatTable() {
       ? `<span class="text-[10px] text-emerald-400 ml-1">${sortIdx + 1}${state.sort[sortIdx].dir === 'asc' ? '↑' : '↓'}</span>`
       : '';
     const sortable = c.sortable !== false;
-    const cls = sortable ? 'cursor-pointer hover:text-zinc-200' : '';
+    const cls   = sortable ? 'cursor-pointer hover:text-zinc-200' : '';
     const align = c.align === 'right' ? 'text-right' : '';
-return `
-  <th draggable="true"
-      data-sortkey="${sortKey}" data-idx="${i}" data-key="${c.key}"
-      class="th-draggable ${cls} ${align}">
-    <span class="th-inner">
-      <span class="th-grip" title="드래그해서 순서 변경">⋮⋮</span>
-      <span>${escapeHtml(c.label)}</span>${badge}
-    </span>
-    <span class="col-resizer" data-resize="${c.key}"></span>
-  </th>`;
-
+    return `
+      <th draggable="true"
+          data-sortkey="${sortKey}" data-idx="${i}" data-key="${c.key}"
+          class="th-draggable ${cls} ${align}">
+        <span class="th-inner">
+          <span class="th-grip" title="드래그해서 순서 변경">⋮⋮</span>
+          <span>${escapeHtml(c.label)}</span>${badge}
+        </span>
+        <span class="col-resizer" data-resize="${c.key}"></span>
+      </th>`;
   }).join('')}</tr></thead>`;
 
   const tbody = `<tbody>${state.filtered.map(row => {
@@ -442,10 +439,10 @@ return `
   // 헤더 클릭 (정렬)
   host.querySelectorAll('thead th').forEach(th => {
     const sortKey = th.dataset.sortkey;
-    const colDef = cols[Number(th.dataset.idx)];
+    const colDef  = cols[Number(th.dataset.idx)];
     if (!colDef || colDef.sortable === false) return;
     th.addEventListener('click', e => {
-      // 리사이저 클릭은 무시
+      // 리사이저/그립 위에서의 클릭은 무시
       if (e.target.classList.contains('col-resizer')) return;
       onHeaderClick(sortKey, e.shiftKey);
     });
@@ -460,22 +457,21 @@ return `
     });
   });
 
-  // 컬럼 폭 드래그
+  // 컬럼 폭 드래그 + 헤더 순서 변경
   bindColumnResizers(host);
+  bindHeaderDragReorder(host);
 }
-bindHeaderDragReorder(host);
-
 
 function bindColumnResizers(host) {
   host.querySelectorAll('.col-resizer').forEach(el => {
     el.addEventListener('mousedown', e => {
       e.preventDefault(); e.stopPropagation();
       const key = el.dataset.resize;
-      const th = el.closest('th');
+      const th  = el.closest('th');
       const idx = Number(th.dataset.idx);
       const startX = e.clientX;
       const startW = th.getBoundingClientRect().width;
-      const colEl = host.querySelector(`colgroup col:nth-child(${idx + 1})`);
+      const colEl  = host.querySelector(`colgroup col:nth-child(${idx + 1})`);
       const onMove = ev => {
         const newW = Math.max(40, startW + (ev.clientX - startX));
         state.colWidth[key] = newW;
@@ -520,7 +516,6 @@ function bindHeaderDragReorder(host) {
       if (!dragKey || dragKey === th.dataset.key) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      // 마우스가 셀의 왼/오 어느 쪽에 있는지로 삽입 위치 표시
       const rect = th.getBoundingClientRect();
       const isLeft = (e.clientX - rect.left) < rect.width / 2;
       th.classList.toggle('drop-left',  isLeft);
@@ -539,7 +534,6 @@ function bindHeaderDragReorder(host) {
       const rect = th.getBoundingClientRect();
       const insertBefore = (e.clientX - rect.left) < rect.width / 2;
 
-      // 현재 보이는 컬럼 순서를 가져와서 재배치
       const order = orderedColumns().map(c => c.key);
       const from = order.indexOf(dragKey);
       const to   = order.indexOf(targetKey);
@@ -551,7 +545,7 @@ function bindHeaderDragReorder(host) {
 
       state.colOrder = order;
       saveColumnPrefs();
-      render(); // 새 순서로 다시 그리기
+      render();
     });
   });
 }
@@ -763,11 +757,11 @@ async function showMyInfo() {
 }
 
 // -----------------------------------------------------------------------------
-// 컬럼 설정 모달
+// 컬럼 설정 모달 (표시/숨김 + 보조 ↑↓ 순서 변경)
 // -----------------------------------------------------------------------------
 function openColumnConfig() {
   const work = {
-    order: orderedColumns().map(c => c.key),
+    order:   orderedColumns().map(c => c.key),
     visible: { ...state.colVisible }
   };
 
@@ -778,7 +772,7 @@ function openColumnConfig() {
         <h2 class="text-base font-semibold">컬럼 설정</h2>
         <button id="cc-close" class="btn btn-ghost text-xs">×</button>
       </div>
-      <p class="text-xs text-zinc-400 mb-2">표시할 컬럼을 선택하고 ↑↓ 으로 순서를 조정하세요.</p>
+      <p class="text-xs text-zinc-400 mb-2">표시할 컬럼을 선택하세요. 순서는 헤더를 직접 드래그하거나 ↑↓ 으로 조정 가능합니다.</p>
       <div id="cc-list" class="space-y-1 max-h-[55vh] overflow-auto"></div>
       <div class="flex justify-between pt-3 mt-3 border-t border-zinc-700">
         <button id="cc-reset"  class="px-3 py-1.5 text-sm bg-red-700/70 hover:bg-red-600 rounded">기본값</button>
