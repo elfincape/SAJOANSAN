@@ -226,4 +226,49 @@ table.app-table tbody tr.selected td {
 }
 .ms-button:hover {
   border-color: #52525b;
+   /* 대시보드 테이블: 한 줄 고정 + 가로 스크롤 */
+#flat-view, .data-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+}
+.data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed; /* 컬럼 폭을 colgroup으로 제어 */
+  width: max-content;  /* 내용에 따라 가로 확장 */
+  min-width: 100%;
+}
+.data-table th, .data-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgb(39 39 42); /* zinc-800 */
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: rgb(24 24 27); /* zinc-900 */
+  color: rgb(212 212 216);   /* zinc-300 */
+  font-weight: 600;
+  user-select: none;
+  position: relative;
+}
+.data-table tbody tr:nth-child(even) { background: rgba(39,39,42,0.35); }
+.data-table tbody tr:hover           { background: rgba(63,63,70,0.55); cursor: pointer; }
+
+/* 컬럼 리사이저(헤더 우측 6px 영역 드래그) */
+.col-resizer {
+  position: absolute;
+  top: 0; right: 0;
+  width: 6px; height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+.col-resizer:hover { background: rgba(16,185,129,0.4); }
+
+/* 셀 내용이 잘리면 hover 시 전체 보기 (title 속성으로 처리) */
+
 }
