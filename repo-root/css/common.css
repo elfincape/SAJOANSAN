@@ -322,6 +322,14 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
 .col-item.opacity-40 {
   opacity: 0.4;
 }
+.filter-box {
+  max-height: 160px;
+  overflow-y: auto;
+  background: rgba(24, 24, 27, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
 
 /* 드롭 위치 표시 (위/아래 가장자리에 녹색 줄) */
 .col-item.drop-before {
