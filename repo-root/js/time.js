@@ -1,15 +1,4 @@
-// 영업일(Day) 시간 변환 유틸
-// =============================================================================
-// 영업일은 04:00에 시작해 다음날 03:59에 끝난다 (24시간).
-// DB에는 business_minute(정수, 0~1439)로 저장한다.
-//   04:00 → 0
-//   22:00 → 1080
-//   01:00 → 1260 (다음날 1시이므로 04시 기준으로 +21시간)
-//   03:59 → 1439
-// 표시는 24시 넘기는 표기를 사용한다 (24:00, 25:30, 27:59 등).
-// =============================================================================
 
-// business_minute → "HH:MM" 문자열 (24시 넘기는 표기)
 export function bizMinToDisplay(min) {
   if (min == null || Number.isNaN(min)) return '';
   const totalMin = min + 4 * 60; // 04:00 기준 보정
@@ -60,6 +49,16 @@ export function formatSlack(min) {
   else                     core = `${m}분`;
 
   return negative ? `${core} 부족` : core;
+}
+
+// 표시 전용: 항상 0~23:59 표기
+export function bizMinToStandard(min) {
+  if (min == null) return '';
+  // business_minute는 04:00=0 기준, 실제 시각 = (min + 240) % 1440
+  const real = ((Number(min) + 240) % 1440 + 1440) % 1440;
+  const h = Math.floor(real / 60);
+  const m = real % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
 // -----------------------------------------------------------------------------
