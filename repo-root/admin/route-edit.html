@@ -41,8 +41,8 @@
 
     <!-- 툴바 -->
     <div class="flex flex-wrap items-center gap-2 mb-2">
-      <button id="add-stop-btn"   class="btn btn-primary">+ 정거장 추가</button>
-      <button id="dup-last-btn"   class="btn btn-ghost text-xs" title="마지막 정거장을 복제 (시간 +30분)">마지막 복제</button>
+      <button id="add-stop-btn"   class="btn btn-primary">+ 납품처 추가</button>
+      <button id="dup-last-btn"   class="btn btn-ghost text-xs" title="마지막 납품처를 복제 (시간 +30분)">마지막 복제</button>
       <button id="shift-plus-btn"  class="btn btn-ghost text-xs">선택 +30분</button>
       <button id="shift-minus-btn" class="btn btn-ghost text-xs">선택 -30분</button>
       <button id="auto-sort-btn"  class="btn btn-ghost text-xs" title="입차시간 오름차순으로 순서 재배정">입차시간순 재정렬</button>
@@ -50,7 +50,7 @@
       <span id="result-count" class="text-xs text-zinc-400"></span>
     </div>
 
-    <!-- 정거장 테이블 -->
+    <!-- 납품처 테이블 -->
     <div class="table-wrap" style="max-height: calc(100vh - 280px);">
       <table class="app-table" id="stops-table">
         <thead>
@@ -72,7 +72,7 @@
         <tbody id="stops-tbody"></tbody>
       </table>
       <div id="empty-msg" class="hidden text-center text-sm text-zinc-500 py-12">
-        등록된 정거장이 없습니다. "+ 정거장 추가"로 시작하세요.
+        등록된 납품처가 없습니다. "+ 납품처 추가"로 시작하세요.
       </div>
     </div>
   </main>
@@ -177,7 +177,7 @@
     }
 
     // =========================================================================
-    // 4. 렌더 - 코스 정보 / 정거장 표
+    // 4. 렌더 - 코스 정보 / 납품처 표
     // =========================================================================
     function renderRouteInfo() {
       const r = state.route;
@@ -203,11 +203,11 @@
 
       if (state.stops.length === 0) {
         empty.classList.remove('hidden');
-        $('result-count').textContent = '정거장 0개';
+        $('result-count').textContent = '납품처 0개';
         return;
       }
       empty.classList.add('hidden');
-      $('result-count').textContent = `정거장 ${state.stops.length}개`;
+      $('result-count').textContent = `납품처 ${state.stops.length}개`;
 
       // stop_order 오름차순으로 정렬해 표시
       state.stops.sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
@@ -305,7 +305,7 @@
 
           try {
             // 충돌 방지: stop_order에 일시적으로 큰 음수 부여 후 정식 번호로 재할당
-            // 단순화를 위해 그냥 upsert(merge)로 한 번에 보낸다 (정거장 수가 많지 않다고 가정).
+            // 단순화를 위해 그냥 upsert(merge)로 한 번에 보낸다 (납품처 수가 많지 않다고 가정).
             const payload = reordered.map(s => ({ id: s.id, route_id: routeId, delivery_point_id: s.delivery_point_id, stop_order: s.stop_order }));
             const { error } = await supabase.from('route_stops').upsert(payload, { onConflict: 'id' });
             if (error) throw error;
@@ -320,7 +320,7 @@
     }
 
     // =========================================================================
-    // 6. 정거장 추가/편집 모달
+    // 6. 납품처 추가/편집 모달
     // =========================================================================
     function openStopForm(stop) {
       const isEdit = !!stop;
@@ -329,7 +329,7 @@
       wrap.className = 'p-5 max-h-[85vh] overflow-auto';
       wrap.innerHTML = `
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-base font-semibold">${isEdit ? '정거장 편집' : '정거장 추가'}</h2>
+          <h2 class="text-base font-semibold">${isEdit ? '납품처 편집' : '납품처 추가'}</h2>
           <button data-x class="btn btn-ghost text-xs">닫기</button>
         </div>
         <form id="stop-form" class="space-y-3" novalidate>
@@ -359,7 +359,7 @@
               <input id="s-uend" class="app-input biz-time" placeholder="예: 22:30">
             </div>
             <div class="col-span-2">
-              <label class="app-label">마감 (정거장 단위 오버라이드, 비우면 납품처 기본값)</label>
+              <label class="app-label">마감 (납품처 단위 오버라이드, 비우면 납품처 기본값)</label>
               <input id="s-deadline" class="app-input biz-time" placeholder="비워두면 납품처 마감 사용">
             </div>
           </div>
@@ -503,7 +503,7 @@
     }
 
     // =========================================================================
-    // 7. 정거장 저장 (검증 포함)
+    // 7. 납품처 저장 (검증 포함)
     // =========================================================================
     async function saveStop({ wrap, isEdit, stop }) {
       const dpId = wrap.querySelector('#dp-id').value;
@@ -609,13 +609,13 @@
     }
 
     // =========================================================================
-    // 8. 정거장 삭제
+    // 8. 납품처 삭제
     // =========================================================================
     async function deleteStop(id) {
       const s = state.stops.find(x => x.id === id);
       const dp = s ? state.pointById.get(s.delivery_point_id) : null;
       const ok = await confirmDialog(
-        `정거장 "${dp?.name || s?.delivery_point_id || ''}"을(를) 삭제할까요?`,
+        `납품처 "${dp?.name || s?.delivery_point_id || ''}"을(를) 삭제할까요?`,
         { okText: '삭제', cancelText: '취소', danger: true }
       );
       if (!ok) return;
@@ -650,7 +650,7 @@
 
     async function duplicateLast() {
       if (state.stops.length === 0) {
-        toast('복제할 정거장이 없습니다.', 'warn');
+        toast('복제할 납품처가 없습니다.', 'warn');
         return;
       }
       const last = state.stops[state.stops.length - 1];
@@ -677,7 +677,7 @@
       try {
         const { error } = await supabase.from('route_stops').insert(payload);
         if (error) throw error;
-        toast('마지막 정거장을 복제했습니다 (시간 +30분).', 'success');
+        toast('마지막 납품처를 복제했습니다 (시간 +30분).', 'success');
         await loadAll();
         renderStops();
       } catch (e) {
@@ -688,11 +688,11 @@
     async function shiftSelected(deltaMin) {
       const ids = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.dataset.id);
       if (ids.length === 0) {
-        toast('대상 정거장을 선택해주세요.', 'warn');
+        toast('대상 납품처를 선택해주세요.', 'warn');
         return;
       }
       const ok = await confirmDialog(
-        `${ids.length}개 정거장의 시간을 ${deltaMin > 0 ? '+' : ''}${deltaMin}분 이동할까요?`,
+        `${ids.length}개 납품처의 시간을 ${deltaMin > 0 ? '+' : ''}${deltaMin}분 이동할까요?`,
         { okText: '이동', cancelText: '취소' }
       );
       if (!ok) return;
@@ -738,7 +738,7 @@
     async function autoSortByArrival() {
       if (state.stops.length < 2) return;
       const ok = await confirmDialog(
-        '입차시간 오름차순으로 모든 정거장의 순서를 재배정할까요?',
+        '입차시간 오름차순으로 모든 납품처의 순서를 재배정할까요?',
         { okText: '재정렬', cancelText: '취소' }
       );
       if (!ok) return;

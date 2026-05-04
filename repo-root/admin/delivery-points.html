@@ -542,7 +542,7 @@
       if (!id) return;
       const r = state.rows.find(x => x.id === id);
 
-      // 사용 중인 정거장 수
+      // 사용 중인 코스 항목 수
       let inUse = 0;
       try {
         const { count } = await supabase
@@ -556,9 +556,9 @@
 
       let msg = `"${r?.name || '이 납품처'}"를 삭제할까요?`;
       if (inUse > 0) {
-        msg += `\n\n⚠ 이 납품처를 사용 중인 정거장이 ${inUse}개 있습니다.\n` +
-               `정거장에서 사용 중이면 DB 제약상 삭제가 거부됩니다.\n` +
-               `먼저 해당 정거장들을 정리한 뒤 다시 시도하세요.`;
+        msg += `\n\n⚠ 이 납품처가 ${inUse}개 코스에 등록되어 있습니다.\n` +
+               `코스에 등록된 상태이면 DB 제약상 삭제가 거부됩니다.\n` +
+               `먼저 해당 코스에서 제거한 뒤 다시 시도하세요.`;
       }
       const ok = await confirmDialog(msg, { okText: '삭제', cancelText: '취소', danger: true });
       if (!ok) return;
@@ -570,7 +570,7 @@
           .eq('id', id);
         if (error) {
           if (error.code === '23503') {
-            toast('정거장에서 사용 중이라 삭제할 수 없습니다.', 'error');
+            toast('코스에 등록된 납품처라 삭제할 수 없습니다.', 'error');
           } else {
             toast(`삭제 실패: ${error.message}`, 'error');
           }

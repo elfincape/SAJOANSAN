@@ -165,6 +165,15 @@
     <span id="toast-msg">복사됨</span>
   </div>
 
+  <!-- ── 인증 (editor 이상만 접근) ──────────────────────── -->
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    const profile = await requireRole('editor');
+    if (!profile) { /* 리다이렉트 됨 */ }
+    const badge = document.getElementById('user-badge');
+    if (badge) badge.textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+  </script>
+
   <!-- ── 스크립트 ─────────────────────────────────────── -->
   <script>
   'use strict';

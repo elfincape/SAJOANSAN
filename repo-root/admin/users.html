@@ -60,7 +60,6 @@
             <option value="">역할(전체)</option>
             <option value="admin">admin</option>
             <option value="editor">editor</option>
-            <option value="viewer">viewer</option>
           </select>
           <select id="filter-active" class="app-select w-28">
             <option value="">상태(전체)</option>
@@ -132,7 +131,6 @@
             <div>
               <label class="app-label">역할 *</label>
               <select id="f-role" class="app-select">
-                <option value="viewer">viewer</option>
                 <option value="editor">editor</option>
                 <option value="admin">admin</option>
               </select>
@@ -327,7 +325,7 @@
       $('f-email').classList.toggle('opacity-60', isEdit);
 
       $('f-name').value    = r?.display_name || '';
-      $('f-role').value    = r?.role || 'viewer';
+      $('f-role').value    = r?.role || 'editor';
       $('f-active').checked = r ? !!r.active : true;
 
       $('form-title').textContent =

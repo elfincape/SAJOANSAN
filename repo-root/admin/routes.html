@@ -43,7 +43,8 @@
             <th>주기사</th>
             <th>보조기사</th>
             <th>주차량</th>
-            <th class="text-right">정거장</th>
+            <th class="text-right">납품처</th>
+            <th>휴무일</th>
             <th>상태</th>
             <th class="text-right">작업</th>
           </tr>
@@ -79,7 +80,7 @@
     // -------------------------------------------------------------------------
     const state = {
       routes: [],            // 코스 본체
-      stopCounts: new Map(), // route_id -> 정거장 개수
+      stopCounts: new Map(), // route_id -> 납품처 개수
       companies: [],
       drivers: [],
       vehicles: [],
@@ -129,7 +130,7 @@
         if (error) throw error;
         state.routes = data || [];
 
-        // 정거장 개수 (route_id 별)
+        // 납품처 개수 (route_id 별)
         const { data: counts, error: cErr } = await supabase
           .from('route_stops')
           .select('route_id');
@@ -219,9 +220,10 @@
           <td class="text-zinc-400">${escapeHtml(drvById.get(r.secondary_driver_id)?.name || '')}</td>
           <td>${escapeHtml(vehById.get(r.primary_vehicle_id)?.plate_number || '')}</td>
           <td class="text-right">${stops}</td>
+          <td>${renderClosedDays(r.closed_days)}</td>
           <td>${r.active === false ? '<span class="text-rose-400 text-xs">비활성</span>' : '<span class="text-emerald-400 text-xs">활성</span>'}</td>
           <td class="text-right whitespace-nowrap">
-            <a class="btn btn-ghost text-xs" href="/admin/route-edit.html?id=${encodeURIComponent(r.id)}">정거장 ${stops}</a>
+            <a class="btn btn-ghost text-xs" href="/admin/route-edit.html?id=${encodeURIComponent(r.id)}">납품처 ${stops}</a>
             <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${r.id}">편집</button>
             <button class="btn btn-ghost text-xs text-rose-400" data-act="delete" data-id="${r.id}">삭제</button>
           </td>
@@ -305,6 +307,19 @@
             </div>
           </div>
           <label class="cb"><input type="checkbox" id="r-active" checked> 활성</label>
+          <div>
+            <label class="app-label">휴무일</label>
+            <div class="flex gap-3 flex-wrap mt-1">
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="0"> 일</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="1"> 월</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="2"> 화</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="3"> 수</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="4"> 목</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="5"> 금</label>
+              <label class="cb text-xs"><input type="checkbox" class="cd-check" value="6"> 토</label>
+            </div>
+            <p class="text-[10px] text-zinc-500 mt-1">체크한 요일에는 이 코스가 운행하지 않습니다.</p>
+          </div>
           <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" class="btn btn-primary">저장</button>
             <button type="button" data-x class="btn btn-ghost">취소</button>
@@ -323,6 +338,10 @@
         wrap.querySelector('#r-car').value     = route.car_number || '';
         wrap.querySelector('#r-company').value = route.company_id || '';
         wrap.querySelector('#r-active').checked = route.active !== false;
+        const cd = route.closed_days || [];
+        wrap.querySelectorAll('.cd-check').forEach(cb => {
+          cb.checked = cd.includes(Number(cb.value));
+        });
       }
 
       // 운수사 변경 → 기사/차량 셀렉트 필터
@@ -360,6 +379,9 @@
           toast('코스명은 필수입니다.', 'warn');
           return;
         }
+        const closedDays = [...wrap.querySelectorAll('.cd-check:checked')]
+          .map(cb => Number(cb.value))
+          .sort((a, b) => a - b);
         const payload = {
           name,
           car_number: nullIfEmpty(wrap.querySelector('#r-car').value.trim()),
@@ -368,7 +390,8 @@
           primary_vehicle_id:   nullIfEmpty(vehSel.value),
           secondary_driver_id:  nullIfEmpty(drvSel2.value),
           secondary_vehicle_id: nullIfEmpty(vehSel2.value),
-          active: wrap.querySelector('#r-active').checked
+          active:      wrap.querySelector('#r-active').checked,
+          closed_days: closedDays
         };
         if (isEdit) payload.id = route.id;
 
@@ -407,8 +430,8 @@
 
       let msg = `"${r.name}" 코스를 삭제할까요?`;
       if (stops > 0) {
-        msg += `\n\n⚠ 이 코스에는 정거장 ${stops}개가 등록되어 있습니다.\n` +
-               `코스를 삭제하면 정거장도 함께 삭제됩니다 (되돌릴 수 없음).`;
+        msg += `\n\n⚠ 이 코스에는 납품처 ${stops}개가 등록되어 있습니다.\n` +
+               `코스를 삭제하면 납품처도 함께 삭제됩니다 (되돌릴 수 없음).`;
       }
       const ok = await confirmDialog(msg, { okText: '삭제', cancelText: '취소', danger: true });
       if (!ok) return;
@@ -430,6 +453,13 @@
     // -------------------------------------------------------------------------
     // 헬퍼
     // -------------------------------------------------------------------------
+    function renderClosedDays(days) {
+      if (!days || days.length === 0) return '<span class="text-zinc-600 text-xs">-</span>';
+      const labels = ['일','월','화','수','목','금','토'];
+      return days.slice().sort((a, b) => a - b).map(d =>
+        `<span class="text-[10px] px-1 py-0.5 rounded bg-rose-900/40 border border-rose-700/50 text-rose-300">${labels[d] ?? d}</span>`
+      ).join(' ');
+    }
     function nullIfEmpty(v) { return v === '' || v == null ? null : v; }
     function escapeHtml(s) {
       return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')

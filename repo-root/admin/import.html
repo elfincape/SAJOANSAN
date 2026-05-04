@@ -29,10 +29,10 @@
       <li>엑셀 시트를 <strong>UTF-8 CSV</strong>로 저장합니다 (엑셀 → 다른 이름으로 저장 → "CSV UTF-8").</li>
       <li>아래 <strong>1단계</strong>에서 CSV 파일을 선택하면 자동으로 컬럼이 인식되고 미리보기가 표시됩니다.</li>
       <li><strong>2단계</strong>에서 컬럼 매핑을 확인/수정합니다 (헤더가 다를 경우).</li>
-      <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/정거장).</li>
+      <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/납품처 항목).</li>
       <li><strong>4단계</strong>에서 "DB에 저장" 버튼을 눌러 일괄 upsert를 실행합니다.</li>
     </ol>
-    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 정거장은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 정거장이 덮어써질 수 있습니다.</p>
+    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
   </section>
 
   <!-- 1단계: 파일 선택 -->
@@ -85,7 +85,7 @@
         <div id="preview-routes" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
       </div>
       <div>
-        <h3 class="text-sm font-semibold mb-1">정거장 (route_stops)</h3>
+        <h3 class="text-sm font-semibold mb-1">납품처 항목 (route_stops)</h3>
         <div id="preview-stops" class="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs"></div>
       </div>
     </div>
@@ -102,7 +102,7 @@
     <div class="flex flex-wrap items-center gap-2 mb-3">
       <label class="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" id="opt-replace-stops" class="accent-emerald-500" checked />
-        기존 코스의 정거장을 모두 삭제하고 다시 입력 (권장)
+        기존 코스의 납품처 항목을 모두 삭제하고 다시 입력 (권장)
       </label>
       <label class="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" id="opt-dry-run" class="accent-amber-500" />
@@ -398,7 +398,7 @@
     const cards = [
       ['회사', n.companies.length], ['기사', n.drivers.length],
       ['차량', n.vehicles.length],  ['납품처', n.points.length],
-      ['코스', n.routes.length],    ['정거장', n.stops.length],
+      ['코스', n.routes.length],    ['납품처 항목', n.stops.length],
     ];
     document.getElementById('summary-cards').innerHTML = cards.map(([l,c]) => `
       <div class="bg-zinc-900 rounded p-2 text-center">
@@ -559,15 +559,15 @@
         }
       }
 
-      /* 6) 정거장 */
-      log(`정거장 ${n.stops.length}건 처리…`);
+      /* 6) 납품처 항목 */
+      log(`납품처 항목 ${n.stops.length}건 처리…`);
       if (!dryRun && n.stops.length) {
         if (replaceStops) {
           const ids = [...routeMap.values()];
           if (ids.length) {
             const { error } = await supabase.from('route_stops').delete().in('route_id', ids);
             if (error) throw new Error(`route_stops delete: ${error.message}`);
-            log(`  기존 정거장 삭제 완료`);
+            log(`  기존 납품처 항목 삭제 완료`);
           }
         }
         const payloads = n.stops.map(s => ({
@@ -589,7 +589,7 @@
           const batch = payloads.slice(i, i + 100);
           const { error } = await supabase.from('route_stops').insert(batch);
           if (error) throw new Error(`route_stops insert[${i}]: ${error.message}`);
-          log(`  정거장 ${Math.min(i+100, payloads.length)}/${payloads.length}`);
+          log(`  납품처 항목 ${Math.min(i+100, payloads.length)}/${payloads.length}`);
         }
       }
 

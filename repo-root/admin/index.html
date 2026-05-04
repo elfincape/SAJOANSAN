@@ -49,7 +49,7 @@
     // 메뉴 정의
     const isAdmin = profile.role === 'admin';
     const menus = [
-      { href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 정거장(운행시간) 편집',
+      { href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 납품처(운행시간) 편집',
         icon: iconRoute(), color: 'emerald' },
       { href: '/admin/delivery-points.html', title: '납품처 관리',    desc: '납품처 마스터(주소·진입조건·마감시간)',
         icon: iconStore(), color: 'sky' },
@@ -59,7 +59,7 @@
         icon: iconTruck(), color: 'violet' },
       { href: '/admin/companies.html',       title: '운수사 관리',    desc: '운수사 정보',
         icon: iconBuilding(), color: 'rose' },
-      { href: '/admin/dispatch-parser.html', title: '배차정보 파서',  desc: '배차 문자 자동 파싱',
+      { href: '/admin/dispatch-parser.html', title: '배차정보 파서',  desc: '타 운수사 배차 문자 자동 파싱',
         icon: iconParser(), color: 'sky' },
       ...(isAdmin ? [
         { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
@@ -138,15 +138,4 @@
       </svg>`;
     }
     function iconShield() {
-      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z"/>
-      </svg>`;
-    }
-    function iconLog() {
-      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5h10M9 12h10M9 19h10M5 5h.01M5 12h.01M5 19h.01"/>
-      </svg>`;
-    }
-  </script>
-</body>
-</html>
+      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width=

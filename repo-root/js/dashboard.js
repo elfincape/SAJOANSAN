@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { supabase }                              from './supabase.js';
-import { requireAuth, getCurrentProfile, signOut } from './auth.js';
+import { requireRole, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
 
@@ -90,14 +90,13 @@ function visibleColumns() {
 // 부트스트랩
 // -----------------------------------------------------------------------------
 (async function init() {
-  const profile = await requireAuth();
+  // 대시보드는 editor 이상만 접근 가능 (내부 관리자 전용)
+  const profile = await requireRole('editor');
   if (!profile) return;
 
   document.getElementById('user-badge').textContent =
     `${profile.display_name || profile.email || ''} (${profile.role})`;
-  if (profile.role === 'editor' || profile.role === 'admin') {
-    document.getElementById('admin-link').classList.remove('hidden');
-  }
+  document.getElementById('admin-link').classList.remove('hidden');
   document.getElementById('logout-btn').addEventListener('click', signOut);
   document.getElementById('me-btn').addEventListener('click', showMyInfo);
 
@@ -598,7 +597,7 @@ function renderGroups() {
         <span class="text-zinc-400">${escapeHtml(head.company_name || '')}</span>
         <span class="text-zinc-400">${escapeHtml(head.primary_driver_name || '')}${head.secondary_driver_name ? ' / ' + escapeHtml(head.secondary_driver_name) : ''}</span>
         <span class="text-zinc-500 text-xs">${escapeHtml(head.primary_vehicle_plate || '')}</span>
-        <span class="ml-auto text-xs text-zinc-500">정거장 ${stops.length}개</span>
+        <span class="ml-auto text-xs text-zinc-500">납품처 ${stops.length}개</span>
       </header>
       <div class="overflow-auto">
         <table class="data-table">
@@ -887,4 +886,4 @@ function escapeHtml(s) {
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
-function escapeAttr(s) { return escapeHtml(s); }
+function escapeAttr(s) { return es
