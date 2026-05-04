@@ -97,8 +97,7 @@
         <button id="parse-btn" class="btn btn-primary">▶ 파싱 실행</button>
       </div>
       <div class="p-3">
-        <textarea id="raw-input" class="app-textarea w-full" rows="9"
-          placeholder="타 운수사에서 받은 배차 정보를 여기에 붙여넣으세요."></textarea>
+        <textarea id="raw-input" class="app-textarea w-full" rows="9"></textarea>
       </div>
       <div class="px-3 pb-2 text-xs text-zinc-500">
         ※ 레코드 구분자 <code> / </code> (공백·슬래시·공백) &nbsp;|&nbsp;
@@ -204,17 +203,26 @@
 
   function parseDispatch(raw) {
     const text   = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    /* ── 포맷 1: " / " 구분자가 있는 경우 분할, 없으면 전체를 1개 청크로 ── */
     const chunks = text.split(/[ \t]\/(?=[ \t\n])/);
+
     const results = [];
+
     for (const chunk of chunks) {
+      /* 빈 줄 제거 후 라인 배열 */
       const lines = chunk.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length < 3) continue;
-      const { name, ton }       = parseNameTon(lines[0]);
-      const { driver, vehicle } = parseDriverVehicle(lines[1]);
-      const phone               = normalizePhone(lines[2]);
-      if (!name) continue;
-      results.push({ name, ton, driver, vehicle, phone, _warn: !driver || !vehicle || !ton });
+
+      /* ── 포맷 2: 3줄 단위로 반복 처리 (구분자 없는 다량 데이터 지원) ── */
+      for (let i = 0; i + 2 < lines.length; i += 3) {
+        const { name, ton }       = parseNameTon(lines[i]);
+        const { driver, vehicle } = parseDriverVehicle(lines[i + 1]);
+        const phone               = normalizePhone(lines[i + 2]);
+        if (!name) continue;
+        results.push({ name, ton, driver, vehicle, phone, _warn: !driver || !vehicle || !ton });
+      }
     }
+
     return results;
   }
 
