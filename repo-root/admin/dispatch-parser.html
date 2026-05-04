@@ -184,14 +184,33 @@
     return raw.trim();
   }
 
+  /** 해당 줄에 톤수/축냉 표기가 있는지 여부 — 레코드 시작 줄 판별 */
+  function hasTonnage(line) {
+    return /\d+(?:\.\d+)?(?:톤|축)/.test(line);
+  }
+
   function parseNameTon(line) {
-    const beforeAltSlash = line.split(/\s\/(?!\s*\d)/)[0];
+    // ① 번호 접두사 제거: "1. ", "2. " 등
+    const noPrefix = line.replace(/^\d+\.\s*/, '');
+
+    // ② 공백+슬래시 이후 제거 ("오산 5톤 /후레스써브" → "오산 5톤")
+    const beforeAltSlash = noPrefix.split(/\s\/(?!\s*\d)/)[0];
     const beforeSlash    = beforeAltSlash.split(/\s\//)[0].trim();
+
+    // ③ "경유" 키워드 제거
     const cleaned = beforeSlash.replace(/\s*경유\s*/g, ' ').replace(/\s+/g, ' ').trim();
-    const tonMatch = cleaned.match(/(\d+(?:\.\d+)?톤)/);
+
+    // ④ 톤수 추출: N톤 또는 N축(축냉차 표기) 모두 인식
+    //    톤수 뒤 시간정보("12시 입문", "19시" 등)는 자동으로 무시됨
+    const tonMatch = cleaned.match(/(\d+(?:\.\d+)?(?:톤|축))/);
     const ton = tonMatch ? tonMatch[1] : '';
-    let name = ton ? cleaned.slice(0, cleaned.indexOf(ton)).trim() : cleaned;
+
+    // ⑤ 거래처명: 톤수 앞부분 정리, 이름 내 "/" → "+"
+    let name = ton
+      ? cleaned.slice(0, cleaned.indexOf(ton)).trim()
+      : cleaned;
     name = name.replace(/\//g, '+').trim();
+
     return { name, ton };
   }
 
@@ -212,13 +231,20 @@
       /* 빈 줄 제거 후 라인 배열 */
       const lines = chunk.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-      /* ── 포맷 2: 3줄 단위로 반복 처리 (구분자 없는 다량 데이터 지원) ── */
-      for (let i = 0; i + 2 < lines.length; i += 3) {
+      /* ── 슬라이딩 윈도우: 톤수 표기가 없는 줄(날짜행 등)은 건너뜀 ── */
+      let i = 0;
+      while (i < lines.length) {
+        // 레코드 시작 줄에 톤수가 없으면 1줄 스킵
+        if (!hasTonnage(lines[i])) { i++; continue; }
+        // 남은 줄이 3줄 미만이면 중단
+        if (i + 2 >= lines.length) break;
+
         const { name, ton }       = parseNameTon(lines[i]);
         const { driver, vehicle } = parseDriverVehicle(lines[i + 1]);
         const phone               = normalizePhone(lines[i + 2]);
-        if (!name) continue;
+        if (!name) { i++; continue; }
         results.push({ name, ton, driver, vehicle, phone, _warn: !driver || !vehicle || !ton });
+        i += 3;
       }
     }
 
