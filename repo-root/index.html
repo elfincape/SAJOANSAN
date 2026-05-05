@@ -13,9 +13,15 @@
       overflow: hidden;
       box-sizing: border-box;
     }
+
+    *, *::before, *::after {
+      box-sizing: inherit;
+    }
+
     body {
       padding: 10px 12px;
     }
+
     #app {
       display: flex;
       flex-direction: column;
@@ -24,18 +30,42 @@
       border-radius: 10px;
       overflow: hidden;
       background: #18181b;
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.25),
+        0 14px 40px rgba(0, 0, 0, 0.35);
     }
-    #filter-bar { flex-shrink: 0; }
-    #table-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-    #flat-view  { flex: 1; overflow: auto; }
-    #group-view { flex: 1; overflow: auto; }
+
+    #filter-bar {
+      flex-shrink: 0;
+    }
+
+    #table-area {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: #18181b;
+    }
+
+    #flat-view {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      background: #18181b;
+    }
+
+    #group-view {
+      flex: 1;
+      overflow: auto;
+    }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100">
 <div id="app">
 
   <!-- 헤더 -->
-  <header class="border-b border-zinc-800 shrink-0">
+  <header class="border-b border-zinc-800 shrink-0 bg-zinc-900">
     <div class="max-w-[1600px] mx-auto px-4 py-2 flex items-center gap-3 flex-wrap">
       <div class="flex items-center gap-2 min-w-0">
         <div class="w-7 h-7 rounded-md bg-emerald-600/20 border border-emerald-600/40 flex items-center justify-center">
@@ -47,7 +77,9 @@
         </div>
         <span class="text-sm font-semibold">코스표</span>
       </div>
+
       <div class="flex-1"></div>
+
       <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
       <a id="admin-link" href="/admin/" class="btn btn-ghost text-xs hidden">관리 허브</a>
       <button id="me-btn" class="btn btn-ghost text-xs">내 정보</button>
@@ -107,6 +139,7 @@
   </div>
 
 </div>
+
 <script type="module" src="/js/dashboard.js"></script>
 </body>
 </html>
