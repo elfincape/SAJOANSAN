@@ -287,6 +287,50 @@ state.cols = state.cols.filter(c => HEADERS.includes(c));
 HEADERS.forEach(h => { if (!state.cols.includes(h)) state.cols.push(h); });
 
 // -----------------------------------------------------------------------------
+// enum/value 통일
+// 기준 저장값: 한글
+// 기존 DB에 영어 enum 값이 남아 있어도 다운로드 시 한글 기준으로 정규화한다.
+// -----------------------------------------------------------------------------
+function normalizeDeliveryMethod(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return '';
+  return {
+    face_to_face: '대면',
+    inspection:   '검수',
+    unmanned:     '무인',
+    대면:         '대면',
+    검수:         '검수',
+    무인:         '무인'
+  }[v] || v;
+}
+
+function normalizeAccessMethod(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return '';
+  return {
+    security_key: '보안키',
+    key:          '열쇠',
+    none:         '없음',
+    보안키:       '보안키',
+    열쇠:         '열쇠',
+    없음:         '없음'
+  }[v] || v;
+}
+
+function normalizeDeliveryLocation(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return '';
+  return {
+    warehouse: '창고',
+    truck:     '탑차',
+    yard:      '야적',
+    창고:      '창고',
+    탑차:      '탑차',
+    야적:      '야적'
+  }[v] || v;
+}
+
+// -----------------------------------------------------------------------------
 // 데이터 로드
 // -----------------------------------------------------------------------------
 async function loadData() {
@@ -365,9 +409,15 @@ function rowToFlat(stop) {
     || dp.deadline_text
     || (dp.deadline_business_min != null ? fmtTime(dp.deadline_business_min) : '');
 
-  const dm = stop.override_delivery_method   || dp.delivery_method   || '';
-  const am = stop.override_access_method     || dp.access_method     || '';
-  const dl = stop.override_delivery_location || dp.delivery_location || '';
+  const dm = normalizeDeliveryMethod(
+    stop.override_delivery_method || dp.delivery_method || ''
+  );
+  const am = normalizeAccessMethod(
+    stop.override_access_method || dp.access_method || ''
+  );
+  const dl = normalizeDeliveryLocation(
+    stop.override_delivery_location || dp.delivery_location || ''
+  );
 
   return {
     '호차':       route.car_number || '',
@@ -387,15 +437,15 @@ function rowToFlat(stop) {
     '3.5톤이하':  ck(dp.allow_under_3_5ton),
     '5톤이상':    ck(dp.allow_over_5ton),
     '무인야적납': ck(dp.allow_unmanned_yard),
-    '대면':       eq(dm, 'face_to_face'),
-    '검수':       eq(dm, 'inspection'),
-    '무인':       eq(dm, 'unmanned'),
-    '보안키':     eq(am, 'security_key'),
-    '열쇠':       eq(am, 'key'),
-    '없음':       eq(am, 'none'),
-    '창고':       eq(dl, 'warehouse'),
-    '탑차':       eq(dl, 'truck'),
-    '야적':       eq(dl, 'yard'),
+    '대면':       eq(dm, '대면'),
+    '검수':       eq(dm, '검수'),
+    '무인':       eq(dm, '무인'),
+    '보안키':     eq(am, '보안키'),
+    '열쇠':       eq(am, '열쇠'),
+    '없음':       eq(am, '없음'),
+    '창고':       eq(dl, '창고'),
+    '탑차':       eq(dl, '탑차'),
+    '야적':       eq(dl, '야적'),
     '주소':       dp.address || '',
     '비고':       stop.memo || dp.memo || '',
     _sort: {
