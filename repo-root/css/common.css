@@ -1,10 +1,9 @@
 /* =============================================================================
    공통 스타일
    - Pretendard 폰트
-   - 다크모드 기본 (zinc-900)
-   - 토스트/모달은 ui.js가 Tailwind 클래스로 그리지만, 보강 스타일을 여기에 둔다
-   - 테이블/폼 공통: sticky header, 줄무늬, 포커스 링
-   - 인쇄 관련 스타일 없음
+   - 다크모드 기본
+   - 테이블/폼 공통
+   - 대시보드 테이블 열 구분선 포함
    ============================================================================= */
 
 /* Pretendard (CDN) */
@@ -13,12 +12,13 @@
 :root {
   color-scheme: dark;
   --bg:        #18181b;  /* zinc-900 */
-  --bg-page:   #09090b;  /* zinc-950 — 대시보드 body 배경 */
+  --bg-page:   #09090b;  /* zinc-950 */
   --bg-soft:   #27272a;  /* zinc-800 */
   --bg-softer: #3f3f46;  /* zinc-700 */
   --fg:        #f4f4f5;  /* zinc-100 */
   --fg-mute:   #a1a1aa;  /* zinc-400 */
   --border:    #3f3f46;  /* zinc-700 */
+  --border-soft: #27272a; /* zinc-800 */
   --accent:    #10b981;  /* emerald-500 */
   --danger:    #ef4444;  /* red-500 */
   --warn:      #f59e0b;  /* amber-500 */
@@ -32,17 +32,18 @@ html, body {
     -apple-system, BlinkMacSystemFont, system-ui,
     'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
-  font-feature-settings: 'tnum' on; /* 숫자 폭 고정 (시간/표 정렬용) */
+  font-feature-settings: 'tnum' on;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 숫자/시간 컬럼은 등폭 숫자 */
-.tnum, td.num, th.num, .biz-time {
+.tnum,
+td.num,
+th.num,
+.biz-time {
   font-variant-numeric: tabular-nums;
 }
 
-/* 인라인 코드 (안내 텍스트 등에서 사용) */
 code {
   background: rgba(63, 63, 70, 0.5);
   padding: 1px 5px;
@@ -51,16 +52,30 @@ code {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* ----- 스크롤바 (어두운 톤) ------------------------------------------------- */
+/* ----- 스크롤바 ------------------------------------------------------------- */
 * {
-  scrollbar-color: #52525b #18181b; /* zinc-600 / zinc-900 */
+  scrollbar-color: #52525b #18181b;
 }
-*::-webkit-scrollbar      { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track{ background: #18181b; }
-*::-webkit-scrollbar-thumb{ background: #3f3f46; border-radius: 6px; }
-*::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
-/* 파일 입력 (CSV 업로드 등) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* 파일 입력 */
 input[type="file"]::file-selector-button {
   background: var(--bg-softer);
   color: var(--fg);
@@ -71,12 +86,13 @@ input[type="file"]::file-selector-button {
   cursor: pointer;
   font-size: 0.8rem;
 }
+
 input[type="file"]::file-selector-button:hover {
   background: #52525b;
 }
 
 /* =============================================================================
-   범용 표 (admin CRUD 페이지 등에서 사용)
+   범용 표
    ============================================================================= */
 table.app-table {
   width: 100%;
@@ -84,6 +100,7 @@ table.app-table {
   border-spacing: 0;
   font-size: 0.875rem;
 }
+
 table.app-table thead th {
   position: sticky;
   top: 0;
@@ -94,16 +111,36 @@ table.app-table thead th {
   text-align: left;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border-soft);
   white-space: nowrap;
 }
+
+table.app-table thead th:last-child {
+  border-right: none;
+}
+
 table.app-table tbody td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid #27272a;
+  border-right: 1px solid rgba(63, 63, 70, 0.55);
   vertical-align: middle;
 }
-table.app-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
-table.app-table tbody tr:hover td           { background: rgba(16, 185, 129, 0.06); }
-table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.12); }
+
+table.app-table tbody td:last-child {
+  border-right: none;
+}
+
+table.app-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+table.app-table tbody tr:hover td {
+  background: rgba(16, 185, 129, 0.06);
+}
+
+table.app-table tbody tr.selected td {
+  background: rgba(16, 185, 129, 0.12);
+}
 
 /* =============================================================================
    폼 컨트롤
@@ -121,6 +158,7 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   line-height: 1.4;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
+
 .app-input:focus,
 .app-select:focus,
 .app-textarea:focus {
@@ -128,12 +166,14 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
 }
+
 .app-input[disabled],
 .app-select[disabled],
 .app-textarea[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
 .app-label {
   display: block;
   font-size: 0.75rem;
@@ -157,22 +197,48 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   background: var(--bg-softer);
   color: var(--fg);
 }
-.btn:hover         { background: #52525b; }
-.btn-primary       { background: var(--accent); color: #052e1f; font-weight: 600; }
-.btn-primary:hover { background: #34d399; }
-.btn-danger        { background: var(--danger); color: #fff; }
-.btn-danger:hover  { background: #f87171; }
-.btn-ghost         { background: transparent; border-color: var(--border); }
-.btn-ghost:hover   { background: var(--bg-soft); }
+
+.btn:hover {
+  background: #52525b;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #052e1f;
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: #34d399;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #f87171;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-soft);
+}
 
 /* =============================================================================
-   토스트/모달 보강 (ui.js 클래스와 병행)
+   토스트/모달 보강
    ============================================================================= */
 #toast-container > div {
   min-width: 220px;
   max-width: 360px;
   word-break: keep-all;
 }
+
 #modal-root h2 {
   font-size: 1rem;
   font-weight: 600;
@@ -182,19 +248,34 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
 /* =============================================================================
    유틸/공통
    ============================================================================= */
-.muted    { color: var(--fg-mute); }
-.divider  { height: 1px; background: var(--border); margin: 0.75rem 0; }
+.muted {
+  color: var(--fg-mute);
+}
 
-/* 여유시간 (현재 대시보드에서 미사용이지만 다른 페이지 호환 위해 유지) */
-.slack-pos  { color: #34d399; }
-.slack-zero { color: #a1a1aa; }
-.slack-neg  { color: #fb7185; }
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.75rem 0;
+}
+
+.slack-pos {
+  color: #34d399;
+}
+
+.slack-zero {
+  color: #a1a1aa;
+}
+
+.slack-neg {
+  color: #fb7185;
+}
 
 .page {
   max-width: 1400px;
   margin: 0 auto;
   padding: 1rem 1.25rem 3rem;
 }
+
 .page h1 {
   font-size: 1.25rem;
   font-weight: 700;
@@ -219,23 +300,31 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   user-select: none;
   color: var(--fg);
 }
+
 .cb input[type="checkbox"] {
   accent-color: var(--accent);
   width: 14px;
   height: 14px;
 }
 
-/* 다중선택 드롭다운 트리거 */
-.ms-button         { cursor: pointer; }
-.ms-button:hover   { border-color: #52525b; }
+/* 다중선택 드롭다운 */
+.ms-button {
+  cursor: pointer;
+}
+
+.ms-button:hover {
+  border-color: #52525b;
+}
 
 /* =============================================================================
-   대시보드 테이블 (data-table)
-   - 한 줄 고정, 가로 스크롤, 컬럼 리사이즈, 헤더 드래그로 순서 변경
+   대시보드 테이블
+   - 좌우 공백 있는 앱 내부 표
+   - 행/열 구분선 포함
    ============================================================================= */
 #flat-view {
   overflow-x: auto;
   overflow-y: auto;
+  background: #18181b;
 }
 
 .data-table {
@@ -244,34 +333,66 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   table-layout: fixed;
   width: max-content;
   min-width: 100%;
+  background: #18181b;
 }
 
+/* 셀 공통 */
 .data-table th,
 .data-table td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 6px 10px;
-  border-bottom: 1px solid #27272a; /* zinc-800 */
   font-size: 12.5px;
   line-height: 1.4;
+  border-bottom: 1px solid #27272a;
+  border-right: 1px solid rgba(63, 63, 70, 0.65);
 }
 
+/* 마지막 열 우측선 제거 */
+.data-table th:last-child,
+.data-table td:last-child {
+  border-right: none;
+}
+
+/* 헤더 */
 .data-table th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #18181b; /* zinc-900 */
-  color: #d4d4d8;      /* zinc-300 */
+  background: #18181b;
+  color: #d4d4d8;
   font-weight: 600;
   user-select: none;
   text-align: left;
+  box-shadow: inset 0 -1px 0 #3f3f46;
 }
 
-.data-table tbody tr:nth-child(even) { background: rgba(39, 39, 42, 0.35); }
-.data-table tbody tr:hover           { background: rgba(63, 63, 70, 0.55); cursor: pointer; }
+/* 헤더 열 경계 강조 */
+.data-table th {
+  border-right-color: #3f3f46;
+}
 
-/* 헤더 셀 내부 레이아웃 */
+/* 행 배경 */
+.data-table tbody tr:nth-child(even) {
+  background: rgba(39, 39, 42, 0.35);
+}
+
+.data-table tbody tr:nth-child(odd) {
+  background: rgba(24, 24, 27, 0.35);
+}
+
+.data-table tbody tr:hover {
+  background: rgba(63, 63, 70, 0.55);
+  cursor: pointer;
+}
+
+/* 행 hover 시 셀 경계 유지 */
+.data-table tbody tr:hover td {
+  border-right-color: rgba(82, 82, 91, 0.85);
+}
+
+/* 헤더 셀 내부 */
 .data-table th > .th-inner {
   position: relative;
   display: flex;
@@ -280,7 +401,7 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   padding-right: 8px;
 }
 
-/* 컬럼 폭 리사이저 (헤더 우측 6px 영역) */
+/* 컬럼 리사이저 */
 .col-resizer {
   position: absolute;
   top: 0;
@@ -290,39 +411,62 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   cursor: col-resize;
   user-select: none;
 }
-.col-resizer:hover { background: rgba(16, 185, 129, 0.4); }
 
-/* 헤더 드래그(컬럼 순서 변경) */
-.th-draggable        { cursor: grab; }
-.th-draggable:active { cursor: grabbing; }
+.col-resizer:hover {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+/* 헤더 드래그 */
+.th-draggable {
+  cursor: grab;
+}
+
+.th-draggable:active {
+  cursor: grabbing;
+}
 
 .th-grip {
   display: inline-block;
   margin-right: 4px;
-  color: #52525b;     /* zinc-600 */
+  color: #52525b;
   font-size: 10px;
   letter-spacing: -2px;
   cursor: grab;
 }
-.th-draggable:hover .th-grip { color: #a1a1aa; } /* zinc-400 */
 
-/* 드롭 위치 표시 (왼쪽/오른쪽 가장자리에 녹색 줄) */
-.data-table thead th.drop-left  { box-shadow: inset  3px 0 0 0 var(--accent); }
-.data-table thead th.drop-right { box-shadow: inset -3px 0 0 0 var(--accent); }
+.th-draggable:hover .th-grip {
+  color: #a1a1aa;
+}
+
+/* 드롭 위치 표시 */
+.data-table thead th.drop-left {
+  box-shadow:
+    inset 3px 0 0 0 var(--accent),
+    inset 0 -1px 0 #3f3f46;
+}
+
+.data-table thead th.drop-right {
+  box-shadow:
+    inset -3px 0 0 0 var(--accent),
+    inset 0 -1px 0 #3f3f46;
+}
 
 /* =============================================================================
-   Export 페이지 - 컬럼 선택 항목 (드래그로 순서 변경)
+   Export 페이지 - 컬럼 선택 항목
    ============================================================================= */
 .col-item {
   position: relative;
   transition: border-color 0.12s, background 0.12s;
 }
+
 .col-item:hover {
   background: rgba(39, 39, 42, 0.7);
 }
+
 .col-item.opacity-40 {
   opacity: 0.4;
 }
+
 .filter-box {
   max-height: 160px;
   overflow-y: auto;
@@ -332,10 +476,10 @@ table.app-table tbody tr.selected td        { background: rgba(16, 185, 129, 0.1
   padding: 4px;
 }
 
-/* 드롭 위치 표시 (위/아래 가장자리에 녹색 줄) */
 .col-item.drop-before {
-  box-shadow: inset 0  3px 0 0 var(--accent);
+  box-shadow: inset 0 3px 0 0 var(--accent);
 }
+
 .col-item.drop-after {
   box-shadow: inset 0 -3px 0 0 var(--accent);
 }
