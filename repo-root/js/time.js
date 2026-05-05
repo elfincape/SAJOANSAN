@@ -1,45 +1,118 @@
+// 시간 유틸
+// =============================================================================
+// 현재 정책:
+//   - 04:00 기준 business_minute 정책 폐기
+//   - 모든 시간은 00:00 기준 "하루 내 분(minute of day)"으로 저장/표시
+//   - 허용 범위: 00:00 ~ 23:59
+//   - 24:00, 25:30, 27:59 같은 익일/초과 표기 사용 안 함
+//
+// 주의:
+//   DB 컬럼명이 *_business_min 으로 남아 있어도 값의 의미는 이제
+//   "00:00 기준 분"으로 사용한다.
+// =============================================================================
 
-export function bizMinToDisplay(min) {
-  if (min == null || Number.isNaN(min)) return '';
-  const totalMin = min + 4 * 60; // 04:00 기준 보정
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
+// -----------------------------------------------------------------------------
+// 분 → "HH:MM"
+//   0    → "00:00"
+//   60   → "01:00"
+//   1320 → "22:00"
+//   1439 → "23:59"
+// -----------------------------------------------------------------------------
+export function minToDisplay(min) {
+  if (min == null || Number.isNaN(Number(min))) return '';
+
+  const n = Number(min);
+  if (!Number.isFinite(n)) return '';
+  if (n < 0 || n >= 1440) return '';
+
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// "HH:MM" 문자열 → business_minute
-// 04시 미만으로 입력된 시간(예: "01:00")은 다음날로 해석한다.
-// "25:30" 같은 24시 넘기는 표기도 자연스럽게 처리된다.
-export function displayToBizMin(str) {
+// -----------------------------------------------------------------------------
+// "HH:MM" → 분
+//   "00:00" → 0
+//   "01:00" → 60
+//   "22:00" → 1320
+//   "23:59" → 1439
+//
+// 허용:
+//   "9:5"    → 545
+//   "09:05"  → 545
+//   "9시5분" → 545
+//   "9.05"   → 545
+//
+// 불허:
+//   "24:00"
+//   "25:30"
+//   "27:59"
+//   "03:99"
+// -----------------------------------------------------------------------------
+export function displayToMin(str) {
   if (!str) return null;
-  const parts = String(str).trim().split(':');
-  if (parts.length < 2) return null;
-  const h = Number(parts[0]);
-  const m = Number(parts[1]);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  if (m < 0 || m > 59) return null;
 
-  let total = h * 60 + m;
-  if (h < 4) total += 24 * 60; // 새벽 0~3시 → 다음날 처리
-  const biz = total - 4 * 60;
+  const s = String(str).trim();
+  if (!s) return null;
 
-  // 영업일 범위 [0, 1440) 강제
-  if (biz < 0 || biz >= 1440) return null;
-  return biz;
+  const m = s.match(/^(\d{1,2})\s*[:.시]\s*(\d{1,2})\s*분?$/);
+  if (!m) return null;
+
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+
+  if (!Number.isInteger(h) || !Number.isInteger(min)) return null;
+  if (h < 0 || h > 23) return null;
+  if (min < 0 || min > 59) return null;
+
+  return h * 60 + min;
 }
 
-// 여유시간(분) → 사람이 읽는 문자열
-//   90  → "1시간 30분"
-//   30  → "30분"
-//   0   → "정시"
-//   -45 → "45분 부족"
-//   -90 → "1시간 30분 부족"
-export function formatSlack(min) {
-  if (min == null || Number.isNaN(min)) return '';
-  if (min === 0) return '정시';
+// -----------------------------------------------------------------------------
+// 입력 시간 문자열 정규화
+//   "9:5"    → "09:05"
+//   "9시5분" → "09:05"
+//   "9.05"   → "09:05"
+// -----------------------------------------------------------------------------
+export function normalizeTime(str) {
+  const min = displayToMin(str);
+  return min == null ? '' : minToDisplay(min);
+}
 
-  const negative = min < 0;
-  const abs = Math.abs(min);
+// -----------------------------------------------------------------------------
+// 기존 코드 호환용 alias
+// -----------------------------------------------------------------------------
+// 기존 파일들이 bizMinToDisplay/displayToBizMin/bizMinToStandard 이름을 import하고
+// 있으므로 이름은 유지한다.
+// 단, 더 이상 04:00 기준 보정은 하지 않는다.
+
+export function bizMinToDisplay(min) {
+  return minToDisplay(min);
+}
+
+export function displayToBizMin(str) {
+  return displayToMin(str);
+}
+
+export function bizMinToStandard(min) {
+  return minToDisplay(min);
+}
+
+// -----------------------------------------------------------------------------
+// 여유시간 포맷
+// -----------------------------------------------------------------------------
+// 여유시간 정책은 폐기되었지만, 기존 화면(route-edit 등)에서 import 중일 수 있어
+// 런타임 오류 방지를 위해 함수는 유지한다.
+// 새 화면/정책에서는 사용하지 않는 것을 권장한다.
+export function formatSlack(min) {
+  if (min == null || Number.isNaN(Number(min))) return '';
+
+  const n = Number(min);
+  if (n === 0) return '정시';
+
+  const negative = n < 0;
+  const abs = Math.abs(n);
   const h = Math.floor(abs / 60);
   const m = abs % 60;
 
@@ -51,29 +124,21 @@ export function formatSlack(min) {
   return negative ? `${core} 부족` : core;
 }
 
-// 표시 전용: 항상 0~23:59 표기
-export function bizMinToStandard(min) {
-  if (min == null) return '';
-  // business_minute는 04:00=0 기준, 실제 시각 = (min + 240) % 1440
-  const real = ((Number(min) + 240) % 1440 + 1440) % 1440;
-  const h = Math.floor(real / 60);
-  const m = real % 60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-}
-
 // -----------------------------------------------------------------------------
-// 단위 테스트 예시 (실제 실행되지 않음, 주석)
+// 단위 테스트 예시
 // -----------------------------------------------------------------------------
-// displayToBizMin('22:00')   === 1080
-// displayToBizMin('01:00')   === 1260
-// displayToBizMin('25:00')   === 1260
-// displayToBizMin('04:00')   === 0
-// displayToBizMin('03:59')   === 1439
-// bizMinToDisplay(0)         === '04:00'
-// bizMinToDisplay(1080)      === '22:00'
-// bizMinToDisplay(1260)      === '25:00'   // 24시 넘김 표기
-// bizMinToDisplay(1439)      === '27:59'
-// formatSlack(90)            === '1시간 30분'
-// formatSlack(30)            === '30분'
-// formatSlack(-45)           === '45분 부족'
-// formatSlack(0)             === '정시'
+// displayToMin('00:00')      === 0
+// displayToMin('01:00')      === 60
+// displayToMin('04:00')      === 240
+// displayToMin('22:00')      === 1320
+// displayToMin('23:59')      === 1439
+// displayToMin('24:00')      === null
+// displayToMin('25:30')      === null
+// minToDisplay(0)            === '00:00'
+// minToDisplay(60)           === '01:00'
+// minToDisplay(240)          === '04:00'
+// minToDisplay(1320)         === '22:00'
+// minToDisplay(1439)         === '23:59'
+// bizMinToDisplay(240)       === '04:00'
+// displayToBizMin('04:00')   === 240
+// bizMinToStandard(1320)     === '22:00'
