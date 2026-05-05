@@ -36,6 +36,7 @@ const COLUMNS = [
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
   { key: 'stop_memo',              label: '비고',       sortable: false, render: r => escapeHtml(r.stop_memo || ''), defaultWidth: 200 }
 ];
+
 const COL_MAP  = Object.fromEntries(COLUMNS.map(c => [c.key, c]));
 const ALL_KEYS = COLUMNS.map(c => c.key);
 
@@ -69,19 +70,26 @@ const state = {
 };
 
 function loadJSON(key, fallback) {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
 }
+
 function saveColumnPrefs() {
   localStorage.setItem('dash.colOrder',   JSON.stringify(state.colOrder));
   localStorage.setItem('dash.colVisible', JSON.stringify(state.colVisible));
   localStorage.setItem('dash.colWidth',   JSON.stringify(state.colWidth));
 }
+
 function orderedColumns() {
   const known = state.colOrder.filter(k => COL_MAP[k]);
   const extra = ALL_KEYS.filter(k => !known.includes(k));
   return [...known, ...extra].map(k => COL_MAP[k]);
 }
+
 function visibleColumns() {
   return orderedColumns().filter(c => state.colVisible[c.key] !== false);
 }
@@ -140,9 +148,11 @@ function injectColumnConfigButton() {
 async function loadData() {
   const ind = document.getElementById('loading-indicator');
   ind?.classList.remove('hidden');
+
   try {
     const { data, error } = await supabase.from('course_view').select('*');
     if (error) throw error;
+
     state.rows = data || [];
 
     populateMultiSelect('company_name', uniqVals('company_name'));
@@ -157,6 +167,7 @@ async function loadData() {
     }
     populateMultiSelect('driver_name', [...drivers].sort());
   } catch (e) {
+    console.error(e);
     toast('데이터를 불러오지 못했습니다.', 'error');
     state.rows = [];
   } finally {
@@ -181,8 +192,11 @@ function populateMultiSelect(key, options) {
   if (!root) return;
 
   const labelMap = {
-    company_name: '운수사', route_name: '코스', car_number: '호차',
-    driver_name: '기사', dp_region: '지역'
+    company_name: '운수사',
+    route_name: '코스',
+    car_number: '호차',
+    driver_name: '기사',
+    dp_region: '지역'
   };
 
   root.innerHTML = `
@@ -205,20 +219,22 @@ function populateMultiSelect(key, options) {
   function renderOptions(filterText = '') {
     const ft = filterText.toLowerCase();
     opts.innerHTML = '';
-    options.filter(v => !ft || String(v).toLowerCase().includes(ft)).forEach(v => {
-      const id = `${key}__${v}`.replace(/\s+/g, '_');
-      const checked = state.filters[key].has(v) ? 'checked' : '';
-      const row = document.createElement('label');
-      row.className = 'flex items-center gap-2 text-xs px-1 py-1 rounded hover:bg-zinc-700/60 cursor-pointer';
-      row.innerHTML = `<input type="checkbox" id="${id}" ${checked}><span class="truncate">${escapeHtml(String(v))}</span>`;
-      row.querySelector('input').addEventListener('change', e => {
-        if (e.target.checked) state.filters[key].add(v);
-        else                  state.filters[key].delete(v);
-        updateMsButtonLabel();
-        scheduleApply();
+    options
+      .filter(v => !ft || String(v).toLowerCase().includes(ft))
+      .forEach(v => {
+        const id = `${key}__${v}`.replace(/\s+/g, '_');
+        const checked = state.filters[key].has(v) ? 'checked' : '';
+        const row = document.createElement('label');
+        row.className = 'flex items-center gap-2 text-xs px-1 py-1 rounded hover:bg-zinc-700/60 cursor-pointer';
+        row.innerHTML = `<input type="checkbox" id="${escapeAttr(id)}" ${checked}><span class="truncate">${escapeHtml(String(v))}</span>`;
+        row.querySelector('input').addEventListener('change', e => {
+          if (e.target.checked) state.filters[key].add(v);
+          else                  state.filters[key].delete(v);
+          updateMsButtonLabel();
+          scheduleApply();
+        });
+        opts.appendChild(row);
       });
-      opts.appendChild(row);
-    });
   }
   renderOptions();
 
@@ -234,15 +250,21 @@ function populateMultiSelect(key, options) {
       btn.classList.add('border-emerald-500');
     }
   }
+
   updateMsButtonLabel();
+
   root._refreshLabel   = updateMsButtonLabel;
   root._refreshOptions = () => renderOptions(search.value);
 
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.ms-menu').forEach(m => { if (m !== menu) m.classList.add('hidden'); });
+    document.querySelectorAll('.ms-menu').forEach(m => {
+      if (m !== menu) m.classList.add('hidden');
+    });
     menu.classList.toggle('hidden');
   });
+
   search.addEventListener('input', () => renderOptions(search.value));
+
   document.addEventListener('click', e => {
     if (!root.contains(e.target)) menu.classList.add('hidden');
   });
@@ -257,6 +279,7 @@ function bindFilterEvents() {
     state.filters.search = searchInput.value.trim();
     scheduleApply();
   });
+
   document.querySelectorAll('input[data-cb]').forEach(cb => {
     cb.addEventListener('change', () => {
       const group = cb.dataset.cb;
@@ -278,6 +301,7 @@ function bindViewToggle() {
   });
   refreshViewToggleStyle();
 }
+
 function refreshViewToggleStyle() {
   document.querySelectorAll('.view-toggle').forEach(b => {
     if (b.dataset.view === state.view) {
@@ -296,12 +320,19 @@ function bindResetButtons() {
       if (state.filters[k] instanceof Set) state.filters[k].clear();
     });
     state.filters.search = '';
-    const si = document.getElementById('search-input'); if (si) si.value = '';
+
+    const si = document.getElementById('search-input');
+    if (si) si.value = '';
+
     document.querySelectorAll('input[data-cb]').forEach(cb => cb.checked = false);
     document.querySelectorAll('[data-multi]').forEach(root => {
-      root._refreshLabel?.(); root._refreshOptions?.();
+      root._refreshLabel?.();
+      root._refreshOptions?.();
     });
-    applyFiltersAndSort(); render(); syncUrl();
+
+    applyFiltersAndSort();
+    render();
+    syncUrl();
   });
 
   document.getElementById('reset-sort')?.addEventListener('click', () => {
@@ -309,14 +340,21 @@ function bindResetButtons() {
       { key: 'primary_driver_name',  dir: 'asc' },
       { key: 'arrival_business_min', dir: 'asc' }
     ];
-    applyFiltersAndSort(); render(); syncUrl();
+    applyFiltersAndSort();
+    render();
+    syncUrl();
   });
 }
 
 let applyTimer = null;
+
 function scheduleApply() {
   clearTimeout(applyTimer);
-  applyTimer = setTimeout(() => { applyFiltersAndSort(); render(); syncUrl(); }, 200);
+  applyTimer = setTimeout(() => {
+    applyFiltersAndSort();
+    render();
+    syncUrl();
+  }, 200);
 }
 
 // -----------------------------------------------------------------------------
@@ -325,26 +363,36 @@ function scheduleApply() {
 function applyFiltersAndSort() {
   const f = state.filters;
   const q = f.search.toLowerCase();
+
   state.filtered = state.rows.filter(r => {
     if (f.company_name.size && !f.company_name.has(r.company_name)) return false;
     if (f.route_name.size   && !f.route_name.has(r.route_name))     return false;
     if (f.car_number.size   && !f.car_number.has(r.car_number))     return false;
     if (f.dp_region.size    && !f.dp_region.has(r.dp_region))       return false;
+
     if (f.driver_name.size) {
       const ok = f.driver_name.has(r.primary_driver_name) || f.driver_name.has(r.secondary_driver_name);
       if (!ok) return false;
     }
+
     if (f.delivery_method.size   && !f.delivery_method.has(r.delivery_method))     return false;
     if (f.access_method.size     && !f.access_method.has(r.access_method))         return false;
     if (f.delivery_location.size && !f.delivery_location.has(r.delivery_location)) return false;
+
     if (f.entry_cond.size) {
-      for (const cond of f.entry_cond) if (!r[cond]) return false;
+      for (const cond of f.entry_cond) {
+        if (!r[cond]) return false;
+      }
     }
+
     if (q) {
       const hay = [r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate]
-        .filter(Boolean).join(' ').toLowerCase();
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       if (!hay.includes(q)) return false;
     }
+
     return true;
   });
 
@@ -361,9 +409,11 @@ function applyFiltersAndSort() {
 function compareVal(a, b) {
   const aN = a == null || a === '';
   const bN = b == null || b === '';
+
   if (aN && bN) return 0;
   if (aN) return 1;
   if (bN) return -1;
+
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   return String(a).localeCompare(String(b), 'ko', { numeric: true });
 }
@@ -375,6 +425,7 @@ function render() {
   refreshViewToggleStyle();
   updateActiveFilterCount();
   updateResultCount();
+
   if (state.view === 'flat') {
     document.getElementById('flat-view')?.classList.remove('hidden');
     document.getElementById('group-view')?.classList.add('hidden');
@@ -389,6 +440,7 @@ function render() {
 function renderFlatTable() {
   const host = document.getElementById('flat-view');
   if (!host) return;
+
   const cols = visibleColumns();
 
   if (state.filtered.length === 0) {
@@ -408,15 +460,16 @@ function renderFlatTable() {
     const sortable = c.sortable !== false;
     const cls   = sortable ? 'cursor-pointer hover:text-zinc-200' : '';
     const align = c.align === 'right' ? 'text-right' : '';
+
     return `
       <th draggable="true"
-          data-sortkey="${sortKey}" data-idx="${i}" data-key="${c.key}"
+          data-sortkey="${escapeAttr(sortKey)}" data-idx="${i}" data-key="${escapeAttr(c.key)}"
           class="th-draggable ${cls} ${align}">
         <span class="th-inner">
           <span class="th-grip" title="드래그해서 순서 변경">⋮⋮</span>
           <span>${escapeHtml(c.label)}</span>${badge}
         </span>
-        <span class="col-resizer" data-resize="${c.key}"></span>
+        <span class="col-resizer" data-resize="${escapeAttr(c.key)}"></span>
       </th>`;
   }).join('')}</tr></thead>`;
 
@@ -425,11 +478,14 @@ function renderFlatTable() {
       let html;
       if (c.render) html = c.render(row);
       else          html = row[c.key] != null ? escapeHtml(String(row[c.key])) : '';
-      const cls   = c.cls   ? c.cls : '';
+
+      const cls   = c.cls ? c.cls : '';
       const align = c.align === 'right' ? 'text-right' : '';
       const tip   = escapeAttr(stripHtml(html));
+
       return `<td class="${cls} ${align}" title="${tip}">${html ?? ''}</td>`;
     }).join('');
+
     return `<tr data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
   }).join('')}</tbody>`;
 
@@ -440,8 +496,9 @@ function renderFlatTable() {
     const sortKey = th.dataset.sortkey;
     const colDef  = cols[Number(th.dataset.idx)];
     if (!colDef || colDef.sortable === false) return;
+
     th.addEventListener('click', e => {
-      // 리사이저/그립 위에서의 클릭은 무시
+      // 리사이저 위에서의 클릭은 무시
       if (e.target.classList.contains('col-resizer')) return;
       onHeaderClick(sortKey, e.shiftKey);
     });
@@ -464,23 +521,28 @@ function renderFlatTable() {
 function bindColumnResizers(host) {
   host.querySelectorAll('.col-resizer').forEach(el => {
     el.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
+
       const key = el.dataset.resize;
       const th  = el.closest('th');
       const idx = Number(th.dataset.idx);
       const startX = e.clientX;
       const startW = th.getBoundingClientRect().width;
       const colEl  = host.querySelector(`colgroup col:nth-child(${idx + 1})`);
+
       const onMove = ev => {
         const newW = Math.max(40, startW + (ev.clientX - startX));
         state.colWidth[key] = newW;
         if (colEl) colEl.style.width = `${newW}px`;
       };
+
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         saveColumnPrefs();
       };
+
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
@@ -492,11 +554,11 @@ function bindHeaderDragReorder(host) {
 
   host.querySelectorAll('thead th.th-draggable').forEach(th => {
     th.addEventListener('dragstart', e => {
-      // 리사이저 위에서 시작된 드래그는 무시
       if (e.target.classList.contains('col-resizer')) {
         e.preventDefault();
         return;
       }
+
       dragKey = th.dataset.key;
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', dragKey);
@@ -513,10 +575,13 @@ function bindHeaderDragReorder(host) {
 
     th.addEventListener('dragover', e => {
       if (!dragKey || dragKey === th.dataset.key) return;
+
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
+
       const rect = th.getBoundingClientRect();
       const isLeft = (e.clientX - rect.left) < rect.width / 2;
+
       th.classList.toggle('drop-left',  isLeft);
       th.classList.toggle('drop-right', !isLeft);
     });
@@ -527,6 +592,7 @@ function bindHeaderDragReorder(host) {
 
     th.addEventListener('drop', e => {
       e.preventDefault();
+
       const targetKey = th.dataset.key;
       if (!dragKey || dragKey === targetKey) return;
 
@@ -536,9 +602,11 @@ function bindHeaderDragReorder(host) {
       const order = orderedColumns().map(c => c.key);
       const from = order.indexOf(dragKey);
       const to   = order.indexOf(targetKey);
+
       if (from < 0 || to < 0) return;
 
       order.splice(from, 1);
+
       const newTo = order.indexOf(targetKey);
       order.splice(insertBefore ? newTo : newTo + 1, 0, dragKey);
 
@@ -551,6 +619,7 @@ function bindHeaderDragReorder(host) {
 
 function onHeaderClick(key, shift) {
   const idx = state.sort.findIndex(s => s.key === key);
+
   if (!shift) {
     if (idx >= 0 && state.sort.length === 1) {
       state.sort = [{ key, dir: state.sort[0].dir === 'asc' ? 'desc' : 'asc' }];
@@ -566,13 +635,18 @@ function onHeaderClick(key, shift) {
       state.sort.push({ key, dir: 'asc' });
     }
   }
-  applyFiltersAndSort(); render(); syncUrl();
+
+  applyFiltersAndSort();
+  render();
+  syncUrl();
 }
 
 function renderGroups() {
   const root = document.getElementById('group-view');
   if (!root) return;
+
   root.innerHTML = '';
+
   if (state.filtered.length === 0) {
     root.innerHTML = `<div class="text-center text-sm text-zinc-500 py-12">조건에 맞는 코스가 없습니다.</div>`;
     return;
@@ -587,6 +661,7 @@ function renderGroups() {
 
   for (const [, stops] of groups) {
     stops.sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
+
     const head = stops[0];
     const card = document.createElement('section');
     card.className = 'border border-zinc-700 rounded-lg overflow-hidden bg-zinc-900/40';
@@ -609,7 +684,7 @@ function renderGroups() {
           </tr></thead>
           <tbody>
             ${stops.map(s => `
-              <tr data-stop-id="${s.stop_id}">
+              <tr data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
                 <td class="text-right">${s.stop_order ?? ''}</td>
                 <td class="biz-time">${bizMinToStandard(s.arrival_business_min)}</td>
                 <td class="biz-time">${bizMinToStandard(s.unloading_start_business_min)}</td>
@@ -627,6 +702,7 @@ function renderGroups() {
           </tbody>
         </table>
       </div>`;
+
     card.querySelectorAll('tbody tr').forEach(tr => {
       tr.addEventListener('click', () => {
         const id = tr.dataset.stopId;
@@ -634,6 +710,7 @@ function renderGroups() {
         if (stop) openDetailModal(stop);
       });
     });
+
     root.appendChild(card);
   }
 }
@@ -648,6 +725,7 @@ function renderDriver(r) {
   }
   return main;
 }
+
 function renderEntryCond(r) {
   const items = [
     { ok: r.allow_under_1ton,    label: '1t' },
@@ -655,18 +733,21 @@ function renderEntryCond(r) {
     { ok: r.allow_over_5ton,     label: '5t+' },
     { ok: r.allow_unmanned_yard, label: '야적' }
   ];
+
   return `<span class="inline-flex gap-1">${items.map(i => `
     <span class="px-1.5 py-0.5 rounded text-[10px] border
       ${i.ok ? 'bg-emerald-600/20 border-emerald-600/40 text-emerald-300'
             : 'bg-zinc-800 border-zinc-700 text-zinc-600 line-through'}">${i.label}</span>
   `).join('')}</span>`;
 }
+
 function renderOverridable(value, override) {
   if (!value && !override) return '';
   const text = escapeHtml(String(value || ''));
   if (override != null) return `<span class="text-amber-300">★ ${text}</span>`;
   return text;
 }
+
 function renderAddress(r) {
   const a = r.dp_address || '';
   if (!a) return '';
@@ -678,20 +759,26 @@ function renderAddress(r) {
 // -----------------------------------------------------------------------------
 function updateActiveFilterCount() {
   let n = 0;
+
   for (const k of Object.keys(state.filters)) {
     const v = state.filters[k];
     if (v instanceof Set && v.size > 0) n++;
     else if (typeof v === 'string' && v) n++;
   }
+
   const el = document.getElementById('active-filter-count');
   if (el) el.textContent = n > 0 ? `필터 ${n}개 적용 중` : '';
 }
+
 function updateResultCount() {
   const el = document.getElementById('result-count');
   if (!el) return;
+
   const total = state.rows.length;
   const shown = state.filtered.length;
-  el.textContent = total === 0 ? '데이터 없음'
+
+  el.textContent = total === 0
+    ? '데이터 없음'
     : (shown === total ? `총 ${total}건` : `총 ${shown}건 (전체 ${total}건 중)`);
 }
 
@@ -703,6 +790,7 @@ function openDetailModal(r) {
   const telLink = r.dp_contact
     ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
     : '';
+
   const html = `
     <div class="p-5 max-h-[80vh] overflow-auto">
       <div class="flex items-start justify-between mb-3">
@@ -730,8 +818,10 @@ function openDetailModal(r) {
         <dt class="muted">비고</dt>          <dd class="whitespace-pre-line">${escapeHtml(r.stop_memo || '')}</dd>
       </dl>
     </div>`;
+
   const wrap = document.createElement('div');
   wrap.innerHTML = html;
+
   openModal(wrap, { width: 'xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
 }
@@ -739,6 +829,7 @@ function openDetailModal(r) {
 async function showMyInfo() {
   const p = await getCurrentProfile();
   if (!p) return;
+
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <div class="p-5">
@@ -751,6 +842,7 @@ async function showMyInfo() {
       </dl>
       <div class="mt-4 text-right"><button id="me-close" class="btn">닫기</button></div>
     </div>`;
+
   openModal(wrap, { width: 'sm' });
   wrap.querySelector('#me-close').addEventListener('click', closeModal);
 }
@@ -781,32 +873,41 @@ function openColumnConfig() {
         </div>
       </div>
     </div>`;
+
   openModal(wrap, { width: 'md' });
 
   const list = wrap.querySelector('#cc-list');
+
   function rerender() {
     list.innerHTML = work.order.map((k, i) => {
-      const c = COL_MAP[k]; if (!c) return '';
+      const c = COL_MAP[k];
+      if (!c) return '';
+
       const checked = work.visible[k] !== false ? 'checked' : '';
+
       return `
-        <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700 rounded px-2 py-1.5" data-key="${k}" data-idx="${i}">
+        <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700 rounded px-2 py-1.5" data-key="${escapeAttr(k)}" data-idx="${i}">
           <input type="checkbox" data-action="toggle" ${checked} class="accent-emerald-500">
           <span class="flex-1 text-sm">${escapeHtml(c.label)}</span>
           <button data-action="up"   class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===0 ? 'disabled' : ''}>↑</button>
           <button data-action="down" class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===work.order.length-1 ? 'disabled' : ''}>↓</button>
         </div>`;
     }).join('');
+
     list.querySelectorAll('[data-key]').forEach(row => {
       const key = row.dataset.key;
       const idx = Number(row.dataset.idx);
+
       row.querySelector('[data-action="toggle"]').addEventListener('change', e => {
         work.visible[key] = e.target.checked;
       });
+
       row.querySelector('[data-action="up"]')?.addEventListener('click', () => {
         if (idx === 0) return;
         [work.order[idx-1], work.order[idx]] = [work.order[idx], work.order[idx-1]];
         rerender();
       });
+
       row.querySelector('[data-action="down"]')?.addEventListener('click', () => {
         if (idx >= work.order.length - 1) return;
         [work.order[idx+1], work.order[idx]] = [work.order[idx], work.order[idx+1]];
@@ -814,10 +915,12 @@ function openColumnConfig() {
       });
     });
   }
+
   rerender();
 
   wrap.querySelector('#cc-close').addEventListener('click', closeModal);
   wrap.querySelector('#cc-cancel').addEventListener('click', closeModal);
+
   wrap.querySelector('#cc-reset').addEventListener('click', () => {
     state.colOrder   = ALL_KEYS.slice();
     state.colVisible = Object.fromEntries(ALL_KEYS.map(k => [k, true]));
@@ -826,6 +929,7 @@ function openColumnConfig() {
     closeModal();
     render();
   });
+
   wrap.querySelector('#cc-apply').addEventListener('click', () => {
     state.colOrder   = work.order;
     state.colVisible = work.visible;
@@ -840,29 +944,47 @@ function openColumnConfig() {
 // -----------------------------------------------------------------------------
 function syncUrl() {
   const params = new URLSearchParams();
+
   for (const k of Object.keys(state.filters)) {
     const v = state.filters[k];
     if (v instanceof Set && v.size > 0) params.set(k, [...v].join('|'));
     else if (typeof v === 'string' && v) params.set(k, v);
   }
-  if (state.sort.length) params.set('sort', state.sort.map(s => `${s.key}:${s.dir}`).join(','));
-  if (state.view !== 'flat') params.set('view', state.view);
+
+  if (state.sort.length) {
+    params.set('sort', state.sort.map(s => `${s.key}:${s.dir}`).join(','));
+  }
+
+  if (state.view !== 'flat') {
+    params.set('view', state.view);
+  }
+
   const qs = params.toString();
   history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
 }
+
 function loadStateFromUrl() {
   const params = new URLSearchParams(location.search);
+
   for (const k of Object.keys(state.filters)) {
     const raw = params.get(k);
     if (!raw) continue;
-    if (state.filters[k] instanceof Set) raw.split('|').filter(Boolean).forEach(v => state.filters[k].add(v));
-    else state.filters[k] = raw;
+
+    if (state.filters[k] instanceof Set) {
+      raw.split('|').filter(Boolean).forEach(v => state.filters[k].add(v));
+    } else {
+      state.filters[k] = raw;
+    }
   }
-  const si = document.getElementById('search-input'); if (si) si.value = state.filters.search || '';
+
+  const si = document.getElementById('search-input');
+  if (si) si.value = state.filters.search || '';
+
   document.querySelectorAll('input[data-cb]').forEach(cb => {
     const group = cb.dataset.cb;
     cb.checked = state.filters[group].has(cb.value);
   });
+
   const sortRaw = params.get('sort');
   if (sortRaw) {
     state.sort = sortRaw.split(',').map(s => {
@@ -870,6 +992,7 @@ function loadStateFromUrl() {
       return { key, dir: dir === 'desc' ? 'desc' : 'asc' };
     }).filter(s => s.key);
   }
+
   const view = params.get('view');
   if (view === 'group' || view === 'flat') state.view = view;
 }
@@ -881,9 +1004,16 @@ function stripHtml(s) {
   if (s == null) return '';
   return String(s).replace(/<[^>]*>/g, '').trim();
 }
+
 function escapeHtml(s) {
   return String(s ?? '')
-    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
-function escapeAttr(s) { return escapeHtml(s); }
+
+function escapeAttr(s) {
+  return escapeHtml(s);
+}
