@@ -318,12 +318,16 @@
 
       if (!companies.has(company)) companies.set(company, { name: company });
 
-      if (vehicleNo && !vehicles.has(vehicleNo)) {
-        vehicles.set(vehicleNo, {
-          plate_number: vehicleNo,
-          tonnage: parseTonnageNumeric(tonnage),
-          company_name: company,
-        });
+      if (vehicleNo) {
+        const vehicleKey = `${vehicleNo}|${company}`;
+        if (!vehicles.has(vehicleKey)) {
+          vehicles.set(vehicleKey, {
+            key: vehicleKey,
+            plate_number: vehicleNo,
+            tonnage: parseTonnageNumeric(tonnage),
+            company_name: company,
+          });
+        }
       }
 
       if (driverName) {
