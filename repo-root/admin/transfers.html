@@ -9,6 +9,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
+
 <body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
 <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
@@ -137,17 +138,24 @@
 
   <!-- 목록 -->
   <section class="border border-zinc-700 rounded-lg overflow-hidden">
-    <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2">
+    <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2 flex-wrap">
       <span class="text-sm font-semibold">이배송 목록</span>
       <span id="row-count" class="text-xs text-zinc-400"></span>
       <div class="flex-1"></div>
-      <button id="btn-save-db" class="btn btn-ghost text-xs">DB 저장</button>
+
+      <button id="btn-reload-db" class="btn btn-ghost text-xs">DB 새로고침</button>
+      <button id="btn-delete-selected" class="btn btn-ghost text-xs text-rose-300">선택 삭제</button>
+      <button id="btn-clear-list" class="btn btn-ghost text-xs text-rose-400">전체 초기화</button>
+      <button id="btn-save-db" class="btn btn-primary text-xs">DB 저장</button>
     </div>
 
     <div class="table-wrap" style="border:none;border-radius:0;max-height:360px;">
       <table class="app-table">
         <thead>
           <tr>
+            <th>
+              <input id="chk-all" type="checkbox">
+            </th>
             <th>순서</th>
             <th>센터</th>
             <th>일자</th>
@@ -158,6 +166,7 @@
             <th>차량번호</th>
             <th>사진</th>
             <th>비고</th>
+            <th>상태</th>
             <th class="text-right">작업</th>
           </tr>
         </thead>
@@ -191,6 +200,7 @@ import { toast, confirmDialog, formatPhone } from '/js/ui.js';
 await requireRole('editor');
 
 const profile = await getCurrentProfile();
+
 document.getElementById('user-badge').textContent =
   `${profile?.display_name || profile?.email || ''} (${profile?.role || ''})`;
 
@@ -210,9 +220,11 @@ const state = {
   formPhotos: [null, null, null, null]
 };
 
-await loadMasters();
-bindEvents();
 setToday();
+await loadMasters();
+await loadSavedRows();
+
+bindEvents();
 renderRows();
 
 // -----------------------------------------------------------------------------
@@ -247,6 +259,102 @@ async function loadMasters() {
     state.companies.map(x => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');
 
   refreshDependentSelects();
+}
+
+async function loadSavedRows() {
+  const { data, error } = await supabase
+    .from('transfer_deliveries')
+    .select(`
+      id,
+      center,
+      delivery_date,
+      company_id,
+      route_id,
+      driver_id,
+      vehicle_id,
+      company_name,
+      route_name,
+      driver_name,
+      driver_phone,
+      vehicle_plate,
+      photo1_data_url,
+      photo2_data_url,
+      photo3_data_url,
+      photo4_data_url,
+      memo,
+      created_by,
+      created_at,
+      updated_at
+    `)
+    .order('delivery_date', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(1000);
+
+  if (error) {
+    toast(`저장된 이배송 목록을 불러오지 못했습니다: ${error.message}`, 'error');
+    return;
+  }
+
+  state.rows = (data || []).map(dbRowToStateRow);
+}
+
+function dbRowToStateRow(x) {
+  return {
+    _uid: makeUid(),
+    id: x.id,
+
+    center: x.center || '',
+    delivery_date: x.delivery_date || '',
+
+    company_id: x.company_id,
+    route_id: x.route_id,
+    driver_id: x.driver_id,
+    vehicle_id: x.vehicle_id,
+
+    company_name: x.company_name || '',
+    route_name: x.route_name || '',
+    driver_name: x.driver_name || '',
+    driver_phone: x.driver_phone || '',
+    vehicle_plate: x.vehicle_plate || '',
+
+    photos: [
+      x.photo1_data_url || null,
+      x.photo2_data_url || null,
+      x.photo3_data_url || null,
+      x.photo4_data_url || null
+    ],
+
+    memo: x.memo || '',
+    created_at: x.created_at,
+    updated_at: x.updated_at,
+    _dirty: false
+  };
+}
+
+function stateRowToPayload(r) {
+  return {
+    center: r.center,
+    delivery_date: r.delivery_date,
+
+    company_id: r.company_id,
+    route_id: r.route_id,
+    driver_id: r.driver_id,
+    vehicle_id: r.vehicle_id,
+
+    company_name: r.company_name,
+    route_name: r.route_name,
+    driver_name: r.driver_name,
+    driver_phone: r.driver_phone,
+    vehicle_plate: r.vehicle_plate,
+
+    photo1_data_url: r.photos?.[0] || null,
+    photo2_data_url: r.photos?.[1] || null,
+    photo3_data_url: r.photos?.[2] || null,
+    photo4_data_url: r.photos?.[3] || null,
+
+    memo: r.memo || '',
+    created_by: profile?.id || null
+  };
 }
 
 function setToday() {
@@ -284,6 +392,16 @@ function bindEvents() {
   $('btn-clear-form').addEventListener('click', clearForm);
   $('btn-save-db').addEventListener('click', saveDb);
   $('btn-download').addEventListener('click', downloadExcel);
+  $('btn-reload-db').addEventListener('click', reloadDbRows);
+  $('btn-delete-selected').addEventListener('click', deleteSelectedRows);
+  $('btn-clear-list').addEventListener('click', clearAllRows);
+
+  $('chk-all').addEventListener('change', () => {
+    const checked = $('chk-all').checked;
+    document.querySelectorAll('.row-check').forEach(chk => {
+      chk.checked = checked;
+    });
+  });
 
   bindPhotoInputs();
 }
@@ -340,6 +458,9 @@ async function addRow() {
   const photos = [...state.formPhotos];
 
   state.rows.push({
+    _uid: makeUid(),
+    id: null,
+
     center: $('f-center').value.trim() || '안산사조센터',
     delivery_date: $('f-date').value,
 
@@ -355,12 +476,14 @@ async function addRow() {
     vehicle_plate: vehicle.plate_number,
 
     photos,
-    memo: $('f-memo').value.trim()
+    memo: $('f-memo').value.trim(),
+
+    _dirty: true
   });
 
   renderRows();
   clearPhotos();
-  toast('행을 추가했습니다.', 'success');
+  toast('행을 추가했습니다. DB 저장을 눌러야 저장됩니다.', 'success');
 }
 
 function renderRows() {
@@ -370,11 +493,20 @@ function renderRows() {
   $('row-count').textContent = `${state.rows.length}건`;
   $('empty-msg').classList.toggle('hidden', state.rows.length > 0);
 
+  if ($('chk-all')) {
+    $('chk-all').checked = false;
+  }
+
   state.rows.forEach((r, i) => {
-    const photoCount = r.photos.filter(Boolean).length;
+    const photoCount = (r.photos || []).filter(Boolean).length;
+    const savedText = r.id ? '저장됨' : '미저장';
+    const savedClass = r.id ? 'text-emerald-300' : 'text-amber-300';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td>
+        <input type="checkbox" class="row-check" data-idx="${i}">
+      </td>
       <td>${i + 1}</td>
       <td>${escapeHtml(r.center)}</td>
       <td>${escapeHtml(formatDateKr(r.delivery_date))}</td>
@@ -385,6 +517,7 @@ function renderRows() {
       <td>${escapeHtml(r.vehicle_plate)}</td>
       <td>${photoCount}/4</td>
       <td>${escapeHtml(r.memo || '')}</td>
+      <td class="${savedClass} text-xs">${savedText}</td>
       <td class="text-right">
         <button class="btn btn-ghost text-xs text-rose-400" data-del="${i}">삭제</button>
       </td>
@@ -395,16 +528,129 @@ function renderRows() {
   tbody.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = Number(btn.dataset.del);
-      const ok = await confirmDialog(
-        '이 행을 삭제할까요?',
-        { okText: '삭제', cancelText: '취소', danger: true }
-      );
-      if (!ok) return;
-
-      state.rows.splice(idx, 1);
-      renderRows();
+      await deleteOneRow(idx);
     });
   });
+}
+
+async function deleteOneRow(idx) {
+  const row = state.rows[idx];
+  if (!row) return;
+
+  const ok = await confirmDialog(
+    '이 행을 삭제할까요?',
+    { okText: '삭제', cancelText: '취소', danger: true }
+  );
+
+  if (!ok) return;
+
+  if (row.id) {
+    const { error } = await supabase
+      .from('transfer_deliveries')
+      .delete()
+      .eq('id', row.id);
+
+    if (error) {
+      toast(`DB 삭제 실패: ${error.message}`, 'error');
+      return;
+    }
+  }
+
+  state.rows.splice(idx, 1);
+  renderRows();
+  toast('삭제했습니다.', 'success');
+}
+
+async function deleteSelectedRows() {
+  const checked = [...document.querySelectorAll('.row-check:checked')];
+  if (checked.length === 0) {
+    toast('삭제할 행을 선택하세요.', 'warn');
+    return;
+  }
+
+  const ok = await confirmDialog(
+    `선택한 ${checked.length}개 행을 삭제할까요? 저장된 행은 DB에서도 삭제됩니다.`,
+    { okText: '삭제', cancelText: '취소', danger: true }
+  );
+
+  if (!ok) return;
+
+  const indexes = checked
+    .map(chk => Number(chk.dataset.idx))
+    .filter(n => !Number.isNaN(n))
+    .sort((a, b) => b - a);
+
+  const dbIds = indexes
+    .map(i => state.rows[i])
+    .filter(Boolean)
+    .map(r => r.id)
+    .filter(Boolean);
+
+  if (dbIds.length > 0) {
+    const { error } = await supabase
+      .from('transfer_deliveries')
+      .delete()
+      .in('id', dbIds);
+
+    if (error) {
+      toast(`선택 삭제 실패: ${error.message}`, 'error');
+      return;
+    }
+  }
+
+  indexes.forEach(i => {
+    state.rows.splice(i, 1);
+  });
+
+  renderRows();
+  toast('선택한 행을 삭제했습니다.', 'success');
+}
+
+async function clearAllRows() {
+  if (state.rows.length === 0) {
+    toast('초기화할 항목이 없습니다.', 'warn');
+    return;
+  }
+
+  const ok = await confirmDialog(
+    '현재 목록 전체를 초기화할까요? 저장된 행은 DB에서도 삭제됩니다.',
+    { okText: '전체 초기화', cancelText: '취소', danger: true }
+  );
+
+  if (!ok) return;
+
+  const dbIds = state.rows
+    .map(r => r.id)
+    .filter(Boolean);
+
+  if (dbIds.length > 0) {
+    const { error } = await supabase
+      .from('transfer_deliveries')
+      .delete()
+      .in('id', dbIds);
+
+    if (error) {
+      toast(`전체 초기화 실패: ${error.message}`, 'error');
+      return;
+    }
+  }
+
+  state.rows = [];
+  renderRows();
+  toast('전체 목록을 초기화했습니다.', 'success');
+}
+
+async function reloadDbRows() {
+  const ok = await confirmDialog(
+    'DB에서 다시 불러오면 현재 미저장 행은 사라질 수 있습니다. 계속할까요?',
+    { okText: '새로고침', cancelText: '취소' }
+  );
+
+  if (!ok) return;
+
+  await loadSavedRows();
+  renderRows();
+  toast('DB 목록을 다시 불러왔습니다.', 'success');
 }
 
 function clearForm() {
@@ -594,40 +840,90 @@ async function saveDb() {
     return;
   }
 
-  const payload = state.rows.map(r => ({
-    center: r.center,
-    delivery_date: r.delivery_date,
+  const btn = $('btn-save-db');
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = '저장 중...';
 
-    company_id: r.company_id,
-    route_id: r.route_id,
-    driver_id: r.driver_id,
-    vehicle_id: r.vehicle_id,
+  try {
+    const savedRows = [];
 
-    company_name: r.company_name,
-    route_name: r.route_name,
-    driver_name: r.driver_name,
-    driver_phone: r.driver_phone,
-    vehicle_plate: r.vehicle_plate,
+    for (const row of state.rows) {
+      const payload = stateRowToPayload(row);
 
-    photo1_data_url: r.photos[0],
-    photo2_data_url: r.photos[1],
-    photo3_data_url: r.photos[2],
-    photo4_data_url: r.photos[3],
+      if (row.id) {
+        const { data, error } = await supabase
+          .from('transfer_deliveries')
+          .update(payload)
+          .eq('id', row.id)
+          .select(`
+            id,
+            center,
+            delivery_date,
+            company_id,
+            route_id,
+            driver_id,
+            vehicle_id,
+            company_name,
+            route_name,
+            driver_name,
+            driver_phone,
+            vehicle_plate,
+            photo1_data_url,
+            photo2_data_url,
+            photo3_data_url,
+            photo4_data_url,
+            memo,
+            created_by,
+            created_at,
+            updated_at
+          `)
+          .single();
 
-    memo: r.memo,
-    created_by: profile.id
-  }));
+        if (error) throw error;
+        savedRows.push(dbRowToStateRow(data));
+      } else {
+        const { data, error } = await supabase
+          .from('transfer_deliveries')
+          .insert(payload)
+          .select(`
+            id,
+            center,
+            delivery_date,
+            company_id,
+            route_id,
+            driver_id,
+            vehicle_id,
+            company_name,
+            route_name,
+            driver_name,
+            driver_phone,
+            vehicle_plate,
+            photo1_data_url,
+            photo2_data_url,
+            photo3_data_url,
+            photo4_data_url,
+            memo,
+            created_by,
+            created_at,
+            updated_at
+          `)
+          .single();
 
-  const { error } = await supabase
-    .from('transfer_deliveries')
-    .insert(payload);
+        if (error) throw error;
+        savedRows.push(dbRowToStateRow(data));
+      }
+    }
 
-  if (error) {
-    toast(`DB 저장 실패: ${error.message}`, 'error');
-    return;
+    state.rows = savedRows;
+    renderRows();
+    toast('DB에 저장했습니다.', 'success');
+  } catch (err) {
+    toast(`DB 저장 실패: ${err.message || err}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
   }
-
-  toast('DB에 저장했습니다.', 'success');
 }
 
 // -----------------------------------------------------------------------------
@@ -644,70 +940,102 @@ async function downloadExcel() {
     return;
   }
 
-  const res = await fetch(TEMPLATE_URL);
-  if (!res.ok) {
-    toast('엑셀 템플릿을 불러오지 못했습니다.', 'error');
-    return;
+  const btn = $('btn-download');
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = '생성 중...';
+
+  try {
+    const res = await fetch(TEMPLATE_URL, { cache: 'no-store' });
+
+    if (!res.ok) {
+      throw new Error(`엑셀 템플릿을 불러오지 못했습니다. HTTP ${res.status}`);
+    }
+
+    const templateBuf = await res.arrayBuffer();
+
+    const workbook = new ExcelJSLib.Workbook();
+    await workbook.xlsx.load(templateBuf);
+
+    const worksheet =
+      workbook.getWorksheet('Sheet1 (2)') ||
+      workbook.getWorksheet('Sheet1') ||
+      workbook.worksheets[0];
+
+    if (!worksheet) {
+      throw new Error('엑셀 시트를 찾지 못했습니다.');
+    }
+
+    const startRow = 5;
+
+    state.rows.forEach((item, index) => {
+      const rowNum = startRow + index;
+
+      if (index > 0) {
+        copyRowStyle(worksheet, startRow, rowNum);
+      }
+
+      const row = worksheet.getRow(rowNum);
+      if (!row.height || row.height < 70) {
+        row.height = 85;
+      }
+
+      worksheet.getCell(`A${rowNum}`).value = index + 1;
+      worksheet.getCell(`B${rowNum}`).value = item.center || '';
+      worksheet.getCell(`C${rowNum}`).value = item.delivery_date || '';
+      worksheet.getCell(`D${rowNum}`).value = item.company_name || '';
+      worksheet.getCell(`E${rowNum}`).value = item.route_name || '';
+      worksheet.getCell(`F${rowNum}`).value = item.driver_name || '';
+      worksheet.getCell(`G${rowNum}`).value = item.driver_phone || '';
+      worksheet.getCell(`H${rowNum}`).value = item.vehicle_plate || '';
+      worksheet.getCell(`M${rowNum}`).value = item.memo || '';
+
+      addImageToCell(workbook, worksheet, item.photos?.[0], 9, rowNum);   // I열
+      addImageToCell(workbook, worksheet, item.photos?.[1], 10, rowNum);  // J열
+      addImageToCell(workbook, worksheet, item.photos?.[2], 11, rowNum);  // K열
+      addImageToCell(workbook, worksheet, item.photos?.[3], 12, rowNum);  // L열
+    });
+
+    const buf = await workbook.xlsx.writeBuffer();
+
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    saveBlob(blob, buildFilename());
+    toast('엑셀 파일을 다운로드했습니다.', 'success');
+  } catch (err) {
+    console.error(err);
+    toast(`엑셀 다운로드 실패: ${err.message || err}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
   }
-
-  const templateBuf = await res.arrayBuffer();
-
-  const workbook = new ExcelJSLib.Workbook();
-  await workbook.xlsx.load(templateBuf);
-
-  const ws = workbook.getWorksheet('Sheet1 (2)') || workbook.worksheets[0];
-
-  const startRow = 5;
-
-state.rows.forEach((item, index) => {
-  const rowNum = startRow + index;
-
-  if (index > 0) {
-    copyRowStyle(worksheet, startRow, rowNum);
-  }
-
-  worksheet.getCell(`A${rowNum}`).value = index + 1;
-  worksheet.getCell(`B${rowNum}`).value = item.center;
-  worksheet.getCell(`C${rowNum}`).value = item.delivery_date;
-  worksheet.getCell(`D${rowNum}`).value = item.company_name;
-  worksheet.getCell(`E${rowNum}`).value = item.route_name;
-  worksheet.getCell(`F${rowNum}`).value = item.driver_name;
-  worksheet.getCell(`G${rowNum}`).value = item.driver_phone;
-  worksheet.getCell(`H${rowNum}`).value = item.vehicle_plate;
-  worksheet.getCell(`M${rowNum}`).value = item.memo || '';
-
-  addImageToCell(worksheet, workbook, item.photos?.[0], rowNum, 9);
-  addImageToCell(worksheet, workbook, item.photos?.[1], rowNum, 10);
-  addImageToCell(worksheet, workbook, item.photos?.[2], rowNum, 11);
-  addImageToCell(worksheet, workbook, item.photos?.[3], rowNum, 12);
-});
-
-  const buf = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  });
-
-  saveBlob(blob, buildFilename());
-  toast('엑셀 파일을 다운로드했습니다.', 'success');
 }
 
-function addImageToCell(workbook, worksheet, dataUrl, colLetter, rowNumber) {
+function addImageToCell(workbook, worksheet, dataUrl, colNumber, rowNumber) {
   if (!dataUrl) return;
 
   const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpeg';
-  const base64 = dataUrl.split(',')[1];
+  const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
 
   const imageId = workbook.addImage({
     base64,
     extension: ext
   });
 
-  const colIndex = columnLetterToNumber(colLetter) - 1;
+  const colIndex = colNumber - 1;
   const rowIndex = rowNumber - 1;
 
   worksheet.addImage(imageId, {
-    tl: { col: colIndex, row: rowIndex },
-    br: { col: colIndex + 1, row: rowIndex + 1 },
+    tl: {
+      col: colIndex + 0.05,
+      row: rowIndex + 0.08
+    },
+    br: {
+      col: colIndex + 0.95,
+      row: rowIndex + 0.92
+    },
     editAs: 'oneCell'
   });
 }
@@ -721,12 +1049,15 @@ function copyRowStyle(ws, fromRowNum, toRowNum) {
   from.eachCell({ includeEmpty: true }, (cell, colNumber) => {
     const target = to.getCell(colNumber);
 
-    target.style = JSON.parse(JSON.stringify(cell.style || {}));
+    target.style = clone(cell.style || {});
     target.numFmt = cell.numFmt;
-    target.alignment = cell.alignment ? { ...cell.alignment } : undefined;
-    target.border = cell.border ? { ...cell.border } : undefined;
-    target.fill = cell.fill ? { ...cell.fill } : undefined;
+    target.alignment = cell.alignment ? clone(cell.alignment) : undefined;
+    target.border = cell.border ? clone(cell.border) : undefined;
+    target.fill = cell.fill ? clone(cell.fill) : undefined;
+    target.font = cell.font ? clone(cell.font) : undefined;
   });
+
+  to.commit?.();
 }
 
 // -----------------------------------------------------------------------------
@@ -839,16 +1170,6 @@ function formatDateKr(dateStr) {
   return `${d.getMonth() + 1}월${d.getDate()}일`;
 }
 
-function columnLetterToNumber(letter) {
-  let num = 0;
-
-  for (const ch of letter.toUpperCase()) {
-    num = num * 26 + (ch.charCodeAt(0) - 64);
-  }
-
-  return num;
-}
-
 function formatBytes(bytes) {
   if (bytes == null || Number.isNaN(bytes)) return '';
 
@@ -856,6 +1177,18 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
 
   return `${(bytes / 1024 / 1024).toFixed(2)}MB`;
+}
+
+function makeUid() {
+  if (crypto?.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return `uid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj || {}));
 }
 
 function escapeHtml(s) {
@@ -867,5 +1200,6 @@ function escapeHtml(s) {
     .replaceAll("'",'&#39;');
 }
 </script>
+
 </body>
 </html>
