@@ -466,10 +466,11 @@
         for (const d of n.drivers) {
           const compId = companyMap.get(d.company_name) || null;
           const { data: ex } = await supabase
-            .from('drivers').select('id')
-            .eq('name', d.name)
-            .eq('company_id', compId)
-            .maybeSingle();
+        .from('vehicles')
+        .select('id')
+        .eq('plate_number', v.plate_number)
+        .eq('company_id', compId)
+        .maybeSingle();
           let driverId;
           if (ex) {
             const { error } = await supabase.from('drivers')
@@ -512,7 +513,7 @@
             if (error) throw new Error(`vehicles insert: ${error.message}`);
             vehicleId = ins.id;
           }
-          vehicleMap.set(v.plate_number, vehicleId);
+          vehicleMap.set(v.key, vehicleId);
         }
       }
 
@@ -538,7 +539,7 @@
         for (const r of n.routes) {
           const compId    = companyMap.get(r.company_name);
           const driverId  = r.driver_name ? driverMap.get(`${r.driver_name}|${r.company_name}`) : null;
-          const vehicleId = r.vehicle_no  ? vehicleMap.get(r.vehicle_no) : null;
+          const vehicleId = r.vehicle_key ? vehicleMap.get(r.vehicle_key) : null;
           const payload = {
             name: r.name,
             car_number: r.car_number,
