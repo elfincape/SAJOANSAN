@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>이배송 관리 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+
+<header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+  <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
+    <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+    <h1 class="text-base font-semibold">이배송 관리</h1>
+    <div class="flex-1"></div>
+    <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+    <a href="/" class="btn btn-ghost">대시보드</a>
+  </div>
+</header>
+
+<main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-4 space-y-4">
+
+  <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
+    <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+      <div>
+        <label class="app-label">센터</label>
+        <input id="f-center" class="app-input" value="안산사조센터">
+      </div>
+      <div>
+        <label class="app-label">일자</label>
+        <input id="f-date" type="date" class="app-input">
+      </div>
+      <div>
+        <label class="app-label">운수사</label>
+        <select id="f-company" class="app-select"></select>
+      </div>
+      <div>
+        <label class="app-label">코스번호</label>
+        <select id="f-route" class="app-select"></select>
+      </div>
+      <div>
+        <label class="app-label">기사명</label>
+        <select id="f-driver" class="app-select"></select>
+      </div>
+      <div>
+        <label class="app-label">차량번호</label>
+        <select id="f-vehicle" class="app-select"></select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mt-3">
+      <div>
+        <label class="app-label">연락처</label>
+        <input id="f-phone" class="app-input">
+      </div>
+      <div>
+        <label class="app-label">상차리스트</label>
+        <input id="f-photo1" type="file" accept="image/*" class="app-input">
+      </div>
+      <div>
+        <label class="app-label">상차사진</label>
+        <input id="f-photo2" type="file" accept="image/*" class="app-input">
+      </div>
+      <div>
+        <label class="app-label">추가파레트 1</label>
+        <input id="f-photo3" type="file" accept="image/*" class="app-input">
+      </div>
+      <div>
+        <label class="app-label">추가파레트 2</label>
+        <input id="f-photo4" type="file" accept="image/*" class="app-input">
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <label class="app-label">비고</label>
+      <input id="f-memo" class="app-input">
+    </div>
+
+    <div class="flex items-center gap-2 mt-4">
+      <button id="btn-add" class="btn btn-primary">행 추가</button>
+      <button id="btn-clear-form" class="btn btn-ghost">입력 초기화</button>
+      <div class="flex-1"></div>
+      <span class="text-xs text-zinc-500">사진은 각 파일 1MB 이하로 압축됩니다.</span>
+    </div>
+  </section>
+
+  <section class="border border-zinc-700 rounded-lg overflow-hidden">
+    <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2">
+      <span class="text-sm font-semibold">이배송 목록</span>
+      <span id="row-count" class="text-xs text-zinc-400"></span>
+      <div class="flex-1"></div>
+      <button id="btn-save-db" class="btn btn-ghost text-xs">DB 저장</button>
+    </div>
+
+    <div class="table-wrap" style="border:none;border-radius:0;max-height:360px;">
+      <table class="app-table">
+        <thead>
+          <tr>
+            <th>순서</th>
+            <th>센터</th>
+            <th>일자</th>
+            <th>소속</th>
+            <th>코스</th>
+            <th>DM</th>
+            <th>차량번호</th>
+            <th>사진</th>
+            <th>비고</th>
+            <th class="text-right">작업</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="empty-msg" class="text-center text-sm text-zinc-500 py-12">
+        추가된 이배송 항목이 없습니다.
+      </div>
+    </div>
+  </section>
+
+  <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+      <div>
+        <label class="app-label">다운로드 파일명</label>
+        <input id="f-filename" class="app-input" placeholder="이배송_202604">
+      </div>
+      <button id="btn-download" class="btn btn-primary">엑셀 다운로드</button>
+    </div>
+  </section>
+
+</main>
+
+<script type="module">
+import { supabase } from '/js/supabase.js';
+import { requireRole, getCurrentProfile } from '/js/auth.js';
+import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+
+await requireRole('editor');
+const profile = await getCurrentProfile();
+document.getElementById('user-badge').textContent =
+  `${profile?.display_name || profile?.email || ''} (${profile?.role || ''})`;
+
+const TEMPLATE_URL = '/assets/templates/transfer-template.xlsx';
+const MAX_PHOTO_BYTES = 1024 * 1024;
+
+const $ = id => document.getElementById(id);
+
+const state = {
+  companies: [],
+  routes: [],
+  drivers: [],
+  vehicles: [],
+  rows: []
+};
+
+await loadMasters();
+bindEvents();
+setToday();
+renderRows();
+
+async function loadMasters() {
+  const [co, ro, dr, ve] = await Promise.all([
+    supabase.from('companies').select('id, name').order('name'),
+    supabase.from('routes').select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id').order('car_number'),
+    supabase.from('drivers').select('id, name, phone, contact, company_id').order('name'),
+    supabase.from('vehicles').select('id, plate_number, company_id').order('plate_number')
+  ]);
+
+  if (co.error || ro.error || dr.error || ve.error) {
+    toast('마스터 데이터를 불러오지 못했습니다.', 'error');
+    return;
+  }
+
+  state.companies = co.data || [];
+  state.routes    = ro.data || [];
+  state.drivers   = dr.data || [];
+  state.vehicles  = ve.data || [];
+
+  $('f-company').innerHTML =
+    '<option value="">선택</option>' +
+    state.companies.map(x => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');
+
+  refreshDependentSelects();
+}
+
+function setToday() {
+  const d = new Date();
+  $('f-date').value =
+    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function bindEvents() {
+  $('f-company').addEventListener('change', () => {
+    refreshDependentSelects();
+  });
+
+  $('f-route').addEventListener('change', () => {
+    const route = state.routes.find(r => r.id === $('f-route').value);
+    if (!route) return;
+
+    if (route.primary_driver_id) $('f-driver').value = route.primary_driver_id;
+    if (route.primary_vehicle_id) $('f-vehicle').value = route.primary_vehicle_id;
+
+    syncPhoneFromDriver();
+  });
+
+  $('f-driver').addEventListener('change', syncPhoneFromDriver);
+
+  $('btn-add').addEventListener('click', addRow);
+  $('btn-clear-form').addEventListener('click', clearForm);
+  $('btn-save-db').addEventListener('click', saveDb);
+  $('btn-download').addEventListener('click', downloadExcel);
+}
+
+function refreshDependentSelects() {
+  const companyId = $('f-company').value;
+
+  const routes = state.routes.filter(r => !companyId || r.company_id === companyId);
+  const drivers = state.drivers.filter(d => !companyId || d.company_id === companyId);
+  const vehicles = state.vehicles.filter(v => !companyId || v.company_id === companyId);
+
+  $('f-route').innerHTML =
+    '<option value="">선택</option>' +
+    routes.map(r => `<option value="${r.id}">${escapeHtml(r.car_number || r.name || '')}</option>`).join('');
+
+  $('f-driver').innerHTML =
+    '<option value="">선택</option>' +
+    drivers.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+
+  $('f-vehicle').innerHTML =
+    '<option value="">선택</option>' +
+    vehicles.map(v => `<option value="${v.id}">${escapeHtml(v.plate_number)}</option>`).join('');
+
+  $('f-phone').value = '';
+}
+
+function syncPhoneFromDriver() {
+  const d = state.drivers.find(x => x.id === $('f-driver').value);
+  $('f-phone').value = d ? formatPhone(d.phone || d.contact || '') : '';
+}
+
+async function addRow() {
+  const company = state.companies.find(x => x.id === $('f-company').value);
+  const route   = state.routes.find(x => x.id === $('f-route').value);
+  const driver  = state.drivers.find(x => x.id === $('f-driver').value);
+  const vehicle = state.vehicles.find(x => x.id === $('f-vehicle').value);
+
+  if (!$('f-date').value) {
+    toast('일자를 입력하세요.', 'warn');
+    return;
+  }
+  if (!company || !route || !driver || !vehicle) {
+    toast('운수사, 코스, 기사, 차량을 선택하세요.', 'warn');
+    return;
+  }
+
+  const photos = [];
+  for (let i = 1; i <= 4; i++) {
+    const file = $(`f-photo${i}`).files[0];
+    photos[i - 1] = file ? await compressImageToDataUrl(file, MAX_PHOTO_BYTES) : null;
+  }
+
+  state.rows.push({
+    center: $('f-center').value.trim() || '안산사조센터',
+    delivery_date: $('f-date').value,
+    company_id: company.id,
+    route_id: route.id,
+    driver_id: driver.id,
+    vehicle_id: vehicle.id,
+    company_name: company.name,
+    route_name: route.car_number || route.name || '',
+    driver_name: driver.name,
+    driver_phone: $('f-phone').value.trim(),
+    vehicle_plate: vehicle.plate_number,
+    photos,
+    memo: $('f-memo').value.trim()
+  });
+
+  renderRows();
+  clearPhotos();
+  toast('행을 추가했습니다.', 'success');
+}
+
+function renderRows() {
+  const tbody = $('tbody');
+  tbody.innerHTML = '';
+
+  $('row-count').textContent = `${state.rows.length}건`;
+  $('empty-msg').classList.toggle('hidden', state.rows.length > 0);
+
+  state.rows.forEach((r, i) => {
+    const photoCount = r.photos.filter(Boolean).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td>${escapeHtml(r.center)}</td>
+      <td>${escapeHtml(formatDateKr(r.delivery_date))}</td>
+      <td>${escapeHtml(r.company_name)}</td>
+      <td>${escapeHtml(r.route_name)}</td>
+      <td>${escapeHtml(r.driver_name)}</td>
+      <td>${escapeHtml(r.vehicle_plate)}</td>
+      <td>${photoCount}/4</td>
+      <td>${escapeHtml(r.memo || '')}</td>
+      <td class="text-right">
+        <button class="btn btn-ghost text-xs text-rose-400" data-del="${i}">삭제</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = Number(btn.dataset.del);
+      const ok = await confirmDialog('이 행을 삭제할까요?', { okText: '삭제', cancelText: '취소', danger: true });
+      if (!ok) return;
+      state.rows.splice(idx, 1);
+      renderRows();
+    });
+  });
+}
+
+function clearForm() {
+  $('f-company').value = '';
+  refreshDependentSelects();
+  $('f-center').value = '안산사조센터';
+  $('f-memo').value = '';
+  $('f-phone').value = '';
+  clearPhotos();
+  setToday();
+}
+
+function clearPhotos() {
+  for (let i = 1; i <= 4; i++) {
+    $(`f-photo${i}`).value = '';
+  }
+}
+
+async function saveDb() {
+  if (state.rows.length === 0) {
+    toast('저장할 항목이 없습니다.', 'warn');
+    return;
+  }
+
+  const payload = state.rows.map(r => ({
+    center: r.center,
+    delivery_date: r.delivery_date,
+    company_id: r.company_id,
+    route_id: r.route_id,
+    driver_id: r.driver_id,
+    vehicle_id: r.vehicle_id,
+    company_name: r.company_name,
+    route_name: r.route_name,
+    driver_name: r.driver_name,
+    driver_phone: r.driver_phone,
+    vehicle_plate: r.vehicle_plate,
+    photo1_data_url: r.photos[0],
+    photo2_data_url: r.photos[1],
+    photo3_data_url: r.photos[2],
+    photo4_data_url: r.photos[3],
+    memo: r.memo,
+    created_by: profile.id
+  }));
+
+  const { error } = await supabase
+    .from('transfer_deliveries')
+    .insert(payload);
+
+  if (error) {
+    toast(`DB 저장 실패: ${error.message}`, 'error');
+    return;
+  }
+
+  toast('DB에 저장했습니다.', 'success');
+}
+
+async function downloadExcel() {
+  if (state.rows.length === 0) {
+    toast('다운로드할 항목이 없습니다.', 'warn');
+    return;
+  }
+
+  const res = await fetch(TEMPLATE_URL);
+  if (!res.ok) {
+    toast('엑셀 템플릿을 불러오지 못했습니다.', 'error');
+    return;
+  }
+
+  const templateBuf = await res.arrayBuffer();
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(templateBuf);
+
+  const ws = workbook.getWorksheet('Sheet1 (2)') || workbook.worksheets[0];
+
+  const startRow = 4;
+
+  state.rows.forEach((r, idx) => {
+    const rowNum = startRow + idx;
+
+    // 템플릿이 1행만 있는 경우 아래 행 스타일 복사
+    if (idx > 0) {
+      copyRowStyle(ws, startRow, rowNum);
+    }
+
+    ws.getCell(`B${rowNum}`).value = idx + 1;
+    ws.getCell(`C${rowNum}`).value = r.center;
+    ws.getCell(`D${rowNum}`).value = formatDateKr(r.delivery_date);
+    ws.getCell(`E${rowNum}`).value = r.company_name;
+    ws.getCell(`F${rowNum}`).value = r.route_name;
+    ws.getCell(`G${rowNum}`).value = r.driver_name;
+    ws.getCell(`H${rowNum}`).value = r.vehicle_plate;
+    ws.getCell(`M${rowNum}`).value = r.memo || '';
+
+    addImageToCell(workbook, ws, r.photos[0], 'I', rowNum);
+    addImageToCell(workbook, ws, r.photos[1], 'J', rowNum);
+    addImageToCell(workbook, ws, r.photos[2], 'K', rowNum);
+    addImageToCell(workbook, ws, r.photos[3], 'L', rowNum);
+  });
+
+  const buf = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+
+  const filename = buildFilename();
+  saveBlob(blob, filename);
+  toast('엑셀 파일을 다운로드했습니다.', 'success');
+}
+
+function addImageToCell(workbook, worksheet, dataUrl, colLetter, rowNumber) {
+  if (!dataUrl) return;
+
+  const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpeg';
+  const base64 = dataUrl.split(',')[1];
+
+  const imageId = workbook.addImage({
+    base64,
+    extension: ext
+  });
+
+  const colIndex = columnLetterToNumber(colLetter) - 1;
+  const rowIndex = rowNumber - 1;
+
+  worksheet.addImage(imageId, {
+    tl: { col: colIndex, row: rowIndex },
+    br: { col: colIndex + 1, row: rowIndex + 1 },
+    editAs: 'oneCell'
+  });
+}
+
+function copyRowStyle(ws, fromRowNum, toRowNum) {
+  const from = ws.getRow(fromRowNum);
+  const to = ws.getRow(toRowNum);
+
+  to.height = from.height;
+
+  from.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const target = to.getCell(colNumber);
+    target.style = JSON.parse(JSON.stringify(cell.style || {}));
+    target.numFmt = cell.numFmt;
+    target.alignment = cell.alignment ? { ...cell.alignment } : undefined;
+    target.border = cell.border ? { ...cell.border } : undefined;
+    target.fill = cell.fill ? { ...cell.fill } : undefined;
+  });
+}
+
+async function compressImageToDataUrl(file, maxBytes) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('이미지 파일만 첨부할 수 있습니다.');
+  }
+
+  const img = await fileToImage(file);
+
+  let maxSide = 1600;
+  let quality = 0.85;
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const { width, height } = fitSize(img.width, img.height, maxSide);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    const bytes = dataUrlBytes(dataUrl);
+
+    if (bytes <= maxBytes) return dataUrl;
+
+    if (quality > 0.45) quality -= 0.1;
+    else maxSide = Math.floor(maxSide * 0.85);
+  }
+
+  throw new Error('사진을 1MB 이하로 압축하지 못했습니다.');
+}
+
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function fitSize(w, h, maxSide) {
+  const ratio = Math.min(1, maxSide / Math.max(w, h));
+  return {
+    width: Math.round(w * ratio),
+    height: Math.round(h * ratio)
+  };
+}
+
+function dataUrlBytes(dataUrl) {
+  const base64 = dataUrl.split(',')[1] || '';
+  return Math.ceil(base64.length * 3 / 4);
+}
+
+function buildFilename() {
+  const custom = $('f-filename').value.trim();
+  if (custom) return custom.endsWith('.xlsx') ? custom : `${custom}.xlsx`;
+
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  return `이배송_${ymd}.xlsx`;
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function formatDateKr(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${d.getMonth() + 1}월${d.getDate()}일`;
+}
+
+function columnLetterToNumber(letter) {
+  let num = 0;
+  for (const ch of letter.toUpperCase()) {
+    num = num * 26 + (ch.charCodeAt(0) - 64);
+  }
+  return num;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#39;');
+}
+</script>
+</body>
+</html>
