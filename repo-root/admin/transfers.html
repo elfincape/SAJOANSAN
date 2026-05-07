@@ -24,7 +24,6 @@
 
 <main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-4 space-y-4">
 
-  <!-- 입력 영역 -->
   <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
 
     <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -59,7 +58,6 @@
       </div>
     </div>
 
-    <!-- 사진 영역 -->
     <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mt-3">
       <div>
         <label class="app-label">연락처</label>
@@ -136,7 +134,6 @@
     </div>
   </section>
 
-  <!-- 목록 -->
   <section class="border border-zinc-700 rounded-lg overflow-hidden">
     <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2 flex-wrap">
       <span class="text-sm font-semibold">이배송 목록</span>
@@ -153,9 +150,7 @@
       <table class="app-table">
         <thead>
           <tr>
-            <th>
-              <input id="chk-all" type="checkbox">
-            </th>
+            <th><input id="chk-all" type="checkbox"></th>
             <th>순서</th>
             <th>센터</th>
             <th>일자</th>
@@ -179,7 +174,6 @@
     </div>
   </section>
 
-  <!-- 다운로드 -->
   <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
     <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
       <div>
@@ -504,9 +498,7 @@ function renderRows() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>
-        <input type="checkbox" class="row-check" data-idx="${i}">
-      </td>
+      <td><input type="checkbox" class="row-check" data-idx="${i}"></td>
       <td>${i + 1}</td>
       <td>${escapeHtml(r.center)}</td>
       <td>${escapeHtml(formatDateKr(r.delivery_date))}</td>
@@ -563,6 +555,7 @@ async function deleteOneRow(idx) {
 
 async function deleteSelectedRows() {
   const checked = [...document.querySelectorAll('.row-check:checked')];
+
   if (checked.length === 0) {
     toast('삭제할 행을 선택하세요.', 'warn');
     return;
@@ -619,9 +612,7 @@ async function clearAllRows() {
 
   if (!ok) return;
 
-  const dbIds = state.rows
-    .map(r => r.id)
-    .filter(Boolean);
+  const dbIds = state.rows.map(r => r.id).filter(Boolean);
 
   if (dbIds.length > 0) {
     const { error } = await supabase
@@ -976,20 +967,29 @@ async function downloadExcel() {
       }
 
       const row = worksheet.getRow(rowNum);
-      if (!row.height || row.height < 70) {
-        row.height = 85;
+
+      if (!row.height || row.height < 80) {
+        row.height = 90;
       }
 
-      worksheet.getCell(`A${rowNum}`).value = index + 1;
-      worksheet.getCell(`B${rowNum}`).value = item.center || '';
-      worksheet.getCell(`C${rowNum}`).value = item.delivery_date || '';
-      worksheet.getCell(`D${rowNum}`).value = item.company_name || '';
-      worksheet.getCell(`E${rowNum}`).value = item.route_name || '';
-      worksheet.getCell(`F${rowNum}`).value = item.driver_name || '';
-      worksheet.getCell(`G${rowNum}`).value = item.driver_phone || '';
+      // 요청한 엑셀 위치
+      // C: 센터
+      // D: 일자
+      // E: 소속
+      // F: 코스
+      // G: 기사명
+      // H: 차량번호
+      // I~L: 사진
+      // M: 비고
+      worksheet.getCell(`C${rowNum}`).value = item.center || '';
+      worksheet.getCell(`D${rowNum}`).value = item.delivery_date || '';
+      worksheet.getCell(`E${rowNum}`).value = item.company_name || '';
+      worksheet.getCell(`F${rowNum}`).value = item.route_name || '';
+      worksheet.getCell(`G${rowNum}`).value = item.driver_name || '';
       worksheet.getCell(`H${rowNum}`).value = item.vehicle_plate || '';
       worksheet.getCell(`M${rowNum}`).value = item.memo || '';
 
+      // 사진은 각 셀 I/J/K/L에 셀 크기와 딱 맞게 삽입
       addImageToCell(workbook, worksheet, item.photos?.[0], 9, rowNum);   // I열
       addImageToCell(workbook, worksheet, item.photos?.[1], 10, rowNum);  // J열
       addImageToCell(workbook, worksheet, item.photos?.[2], 11, rowNum);  // K열
@@ -1027,14 +1027,17 @@ function addImageToCell(workbook, worksheet, dataUrl, colNumber, rowNumber) {
   const colIndex = colNumber - 1;
   const rowIndex = rowNumber - 1;
 
+  // 핵심 수정:
+  // 여백 없이 현재 셀 경계 전체에 맞춤.
+  // I5면 tl = I5 좌상단, br = J6 좌상단이므로 I5 셀 전체를 채움.
   worksheet.addImage(imageId, {
     tl: {
-      col: colIndex + 0.05,
-      row: rowIndex + 0.08
+      col: colIndex,
+      row: rowIndex
     },
     br: {
-      col: colIndex + 0.95,
-      row: rowIndex + 0.92
+      col: colIndex + 1,
+      row: rowIndex + 1
     },
     editAs: 'oneCell'
   });
@@ -1055,6 +1058,7 @@ function copyRowStyle(ws, fromRowNum, toRowNum) {
     target.border = cell.border ? clone(cell.border) : undefined;
     target.fill = cell.fill ? clone(cell.fill) : undefined;
     target.font = cell.font ? clone(cell.font) : undefined;
+    target.protection = cell.protection ? clone(cell.protection) : undefined;
   });
 
   to.commit?.();
