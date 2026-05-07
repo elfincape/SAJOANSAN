@@ -657,29 +657,30 @@ async function downloadExcel() {
 
   const ws = workbook.getWorksheet('Sheet1 (2)') || workbook.worksheets[0];
 
-  const startRow = 4;
+  const startRow = 5;
 
-  state.rows.forEach((r, idx) => {
-    const rowNum = startRow + idx;
+state.rows.forEach((item, index) => {
+  const rowNum = startRow + index;
 
-    if (idx > 0) {
-      copyRowStyle(ws, startRow, rowNum);
-    }
+  if (index > 0) {
+    copyRowStyle(worksheet, startRow, rowNum);
+  }
 
-    ws.getCell(`B${rowNum}`).value = idx + 1;
-    ws.getCell(`C${rowNum}`).value = r.center;
-    ws.getCell(`D${rowNum}`).value = formatDateKr(r.delivery_date);
-    ws.getCell(`E${rowNum}`).value = r.company_name;
-    ws.getCell(`F${rowNum}`).value = r.route_name;
-    ws.getCell(`G${rowNum}`).value = r.driver_name;
-    ws.getCell(`H${rowNum}`).value = r.vehicle_plate;
-    ws.getCell(`M${rowNum}`).value = r.memo || '';
+  worksheet.getCell(`A${rowNum}`).value = index + 1;
+  worksheet.getCell(`B${rowNum}`).value = item.center;
+  worksheet.getCell(`C${rowNum}`).value = item.delivery_date;
+  worksheet.getCell(`D${rowNum}`).value = item.company_name;
+  worksheet.getCell(`E${rowNum}`).value = item.route_name;
+  worksheet.getCell(`F${rowNum}`).value = item.driver_name;
+  worksheet.getCell(`G${rowNum}`).value = item.driver_phone;
+  worksheet.getCell(`H${rowNum}`).value = item.vehicle_plate;
+  worksheet.getCell(`M${rowNum}`).value = item.memo || '';
 
-    addImageToCell(workbook, ws, r.photos[0], 'I', rowNum);
-    addImageToCell(workbook, ws, r.photos[1], 'J', rowNum);
-    addImageToCell(workbook, ws, r.photos[2], 'K', rowNum);
-    addImageToCell(workbook, ws, r.photos[3], 'L', rowNum);
-  });
+  addImageToCell(worksheet, workbook, item.photos?.[0], rowNum, 9);
+  addImageToCell(worksheet, workbook, item.photos?.[1], rowNum, 10);
+  addImageToCell(worksheet, workbook, item.photos?.[2], rowNum, 11);
+  addImageToCell(worksheet, workbook, item.photos?.[3], rowNum, 12);
+});
 
   const buf = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buf], {
