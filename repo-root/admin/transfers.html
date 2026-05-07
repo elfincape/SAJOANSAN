@@ -57,22 +57,52 @@
         <input id="f-phone" class="app-input">
       </div>
       <div>
-        <label class="app-label">상차리스트</label>
-        <input id="f-photo1" type="file" accept="image/*" class="app-input">
-      </div>
-      <div>
-        <label class="app-label">상차사진</label>
-        <input id="f-photo2" type="file" accept="image/*" class="app-input">
-      </div>
-      <div>
-        <label class="app-label">추가파레트 1</label>
-        <input id="f-photo3" type="file" accept="image/*" class="app-input">
-      </div>
-      <div>
-        <label class="app-label">추가파레트 2</label>
-        <input id="f-photo4" type="file" accept="image/*" class="app-input">
-      </div>
+  <label class="app-label">상차리스트</label>
+  <input id="f-photo1" type="file" accept="image/*" class="app-input text-xs">
+  <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+       tabindex="0" data-photo="1">
+    <div class="photo-preview text-xs text-zinc-500 text-center py-6">
+      클릭 후 Ctrl+V로 붙여넣기
     </div>
+  </div>
+  <button type="button" data-clear-photo="1" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">사진 삭제</button>
+</div>
+
+<div>
+  <label class="app-label">상차사진</label>
+  <input id="f-photo2" type="file" accept="image/*" class="app-input text-xs">
+  <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+       tabindex="0" data-photo="2">
+    <div class="photo-preview text-xs text-zinc-500 text-center py-6">
+      클릭 후 Ctrl+V로 붙여넣기
+    </div>
+  </div>
+  <button type="button" data-clear-photo="2" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">사진 삭제</button>
+</div>
+
+<div>
+  <label class="app-label">추가파레트 1</label>
+  <input id="f-photo3" type="file" accept="image/*" class="app-input text-xs">
+  <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+       tabindex="0" data-photo="3">
+    <div class="photo-preview text-xs text-zinc-500 text-center py-6">
+      클릭 후 Ctrl+V로 붙여넣기
+    </div>
+  </div>
+  <button type="button" data-clear-photo="3" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">사진 삭제</button>
+</div>
+
+<div>
+  <label class="app-label">추가파레트 2</label>
+  <input id="f-photo4" type="file" accept="image/*" class="app-input text-xs">
+  <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+       tabindex="0" data-photo="4">
+    <div class="photo-preview text-xs text-zinc-500 text-center py-6">
+      클릭 후 Ctrl+V로 붙여넣기
+    </div>
+  </div>
+  <button type="button" data-clear-photo="4" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">사진 삭제</button>
+</div>
 
     <div class="mt-3">
       <label class="app-label">비고</label>
@@ -151,7 +181,8 @@ const state = {
   routes: [],
   drivers: [],
   vehicles: [],
-  rows: []
+  rows: [],
+  formPhotos: [null, null, null, null]
 };
 
 await loadMasters();
@@ -211,6 +242,7 @@ function bindEvents() {
   $('btn-clear-form').addEventListener('click', clearForm);
   $('btn-save-db').addEventListener('click', saveDb);
   $('btn-download').addEventListener('click', downloadExcel);
+  bindPhotoInputs();
 }
 
 function refreshDependentSelects() {
@@ -255,11 +287,23 @@ async function addRow() {
     return;
   }
 
-  const photos = [];
-  for (let i = 1; i <= 4; i++) {
-    const file = $(`f-photo${i}`).files[0];
-    photos[i - 1] = file ? await compressImageToDataUrl(file, MAX_PHOTO_BYTES) : null;
-  }
+  const photos = [...state.formPhotos];
+
+state.rows.push({
+  center: $('f-center').value.trim() || '안산사조센터',
+  delivery_date: $('f-date').value,
+  company_id: company.id,
+  route_id: route.id,
+  driver_id: driver.id,
+  vehicle_id: vehicle.id,
+  company_name: company.name,
+  route_name: route.car_number || route.name || '',
+  driver_name: driver.name,
+  driver_phone: $('f-phone').value.trim(),
+  vehicle_plate: vehicle.plate_number,
+  photos,
+  memo: $('f-memo').value.trim()
+});
 
   state.rows.push({
     center: $('f-center').value.trim() || '안산사조센터',
@@ -281,7 +325,171 @@ async function addRow() {
   clearPhotos();
   toast('행을 추가했습니다.', 'success');
 }
+function bindPhotoInputs() {
+  // 파일 선택 처리
+  for (let i = 1; i <= 4; i++) {
+    const input = $(`f-photo${i}`);
 
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      try {
+        const dataUrl = await compressImageToDataUrl(file, MAX_PHOTO_BYTES);
+        setFormPhoto(i, dataUrl);
+        toast(`${photoLabel(i)} 사진을 등록했습니다.`, 'success');
+      } catch (err) {
+        input.value = '';
+        setFormPhoto(i, null);
+        toast(err.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+      }
+    });
+  }
+
+  // 붙여넣기 영역 처리
+  document.querySelectorAll('.paste-zone').forEach(zone => {
+    zone.addEventListener('click', () => {
+      zone.focus();
+    });
+
+    zone.addEventListener('paste', async (e) => {
+      const idx = Number(zone.dataset.photo);
+      const file = getImageFileFromPasteEvent(e);
+
+      if (!file) {
+        toast('클립보드에 이미지가 없습니다.', 'warn');
+        return;
+      }
+
+      e.preventDefault();
+
+      try {
+        const dataUrl = await compressImageToDataUrl(file, MAX_PHOTO_BYTES);
+        setFormPhoto(idx, dataUrl);
+
+        // 같은 칸의 file input은 비움
+        const input = $(`f-photo${idx}`);
+        if (input) input.value = '';
+
+        toast(`${photoLabel(idx)} 사진을 붙여넣었습니다.`, 'success');
+      } catch (err) {
+        setFormPhoto(idx, null);
+        toast(err.message || '붙여넣은 사진 처리 중 오류가 발생했습니다.', 'error');
+      }
+    });
+
+    // 드래그 앤 드롭도 같이 지원
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('border-emerald-500');
+    });
+
+    zone.addEventListener('dragleave', () => {
+      zone.classList.remove('border-emerald-500');
+    });
+
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('border-emerald-500');
+
+      const idx = Number(zone.dataset.photo);
+      const file = [...(e.dataTransfer?.files || [])]
+        .find(f => f.type.startsWith('image/'));
+
+      if (!file) {
+        toast('이미지 파일을 넣어주세요.', 'warn');
+        return;
+      }
+
+      try {
+        const dataUrl = await compressImageToDataUrl(file, MAX_PHOTO_BYTES);
+        setFormPhoto(idx, dataUrl);
+
+        const input = $(`f-photo${idx}`);
+        if (input) input.value = '';
+
+        toast(`${photoLabel(idx)} 사진을 등록했습니다.`, 'success');
+      } catch (err) {
+        setFormPhoto(idx, null);
+        toast(err.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+      }
+    });
+  });
+
+  // 개별 사진 삭제
+  document.querySelectorAll('[data-clear-photo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.clearPhoto);
+      setFormPhoto(idx, null);
+
+      const input = $(`f-photo${idx}`);
+      if (input) input.value = '';
+
+      toast(`${photoLabel(idx)} 사진을 삭제했습니다.`, 'info');
+    });
+  });
+}
+
+function getImageFileFromPasteEvent(e) {
+  const items = e.clipboardData?.items;
+  if (!items) return null;
+
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      return item.getAsFile();
+    }
+  }
+
+  return null;
+}
+
+function setFormPhoto(index, dataUrl) {
+  state.formPhotos[index - 1] = dataUrl;
+
+  const zone = document.querySelector(`.paste-zone[data-photo="${index}"]`);
+  if (!zone) return;
+
+  const preview = zone.querySelector('.photo-preview');
+  if (!preview) return;
+
+  if (!dataUrl) {
+    preview.innerHTML = `
+      <div class="text-xs text-zinc-500 text-center py-6">
+        클릭 후 Ctrl+V로 붙여넣기
+      </div>
+    `;
+    zone.classList.remove('border-emerald-500');
+    return;
+  }
+
+  preview.innerHTML = `
+    <div class="flex items-center gap-2">
+      <img src="${dataUrl}" class="w-16 h-16 object-cover rounded border border-zinc-700">
+      <div class="text-xs text-zinc-300">
+        <div>${escapeHtml(photoLabel(index))}</div>
+        <div class="text-zinc-500">${formatBytes(dataUrlBytes(dataUrl))}</div>
+      </div>
+    </div>
+  `;
+  zone.classList.add('border-emerald-500');
+}
+
+function photoLabel(index) {
+  return {
+    1: '상차리스트',
+    2: '상차사진',
+    3: '추가파레트 1',
+    4: '추가파레트 2'
+  }[index] || `사진 ${index}`;
+}
+
+function formatBytes(bytes) {
+  if (bytes == null || Number.isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)}MB`;
+}
+  
 function renderRows() {
   const tbody = $('tbody');
   tbody.innerHTML = '';
@@ -331,8 +539,12 @@ function clearForm() {
 }
 
 function clearPhotos() {
+  state.formPhotos = [null, null, null, null];
+
   for (let i = 1; i <= 4; i++) {
-    $(`f-photo${i}`).value = '';
+    const input = $(`f-photo${i}`);
+    if (input) input.value = '';
+    setFormPhoto(i, null);
   }
 }
 
