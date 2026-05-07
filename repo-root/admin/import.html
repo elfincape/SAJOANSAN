@@ -345,13 +345,14 @@
       const routeKey = `${company}|${carNumber}|${routeName}`;
       if (!routes.has(routeKey)) {
         routes.set(routeKey, {
-          key: routeKey,
-          name: routeName,
-          car_number: carNumber,
-          company_name: company,
-          driver_name: driverName,
-          vehicle_no: vehicleNo,
-        });
+        key: routeKey,
+        name: routeName,
+        car_number: carNumber,
+        company_name: company,
+        driver_name: driverName,
+        vehicle_no: vehicleNo,
+        vehicle_key: vehicleNo ? `${vehicleNo}|${company}` : null,
+      });
         orderMap.set(routeKey, 0);
       }
 
