@@ -61,6 +61,8 @@
         icon: iconBuilding(), color: 'rose' },
       { href: '/admin/dispatch-parser.html', title: '배차정보 파서',  desc: '배차 문자 자동 파싱',
         icon: iconParser(), color: 'sky' },
+      { href: '/admin/transfers.html', title: '이배송 관리', desc: '',
+        icon: iconTransfer(), color: 'emerald' },
       ...(isAdmin ? [
         { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
         { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
@@ -135,6 +137,12 @@
       return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round"
               d="M4 6h16M4 12h10M4 18h7M15 15l2 2 4-4"/>
+      </svg>`;
+    }
+    function iconTransfer() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9 17h6M9 13h6M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/>
       </svg>`;
     }
     function iconShield() {
