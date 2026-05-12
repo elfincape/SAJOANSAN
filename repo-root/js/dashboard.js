@@ -10,6 +10,7 @@ import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
 import {
   forceCenterSelectionFromUrl,
+  filterRowsByCenter,
   getRequiredCenter,
   mountHeaderCenterSwitcher,
   requireSelectedCenter,
@@ -163,13 +164,22 @@ async function loadData() {
   ind?.classList.remove('hidden');
 
   try {
-    const { data, error } = await scopeByCenter(
+    const center = getRequiredCenter();
+    let { data, error } = await scopeByCenter(
       supabase.from('course_view').select('*'),
-      getRequiredCenter()
+      center
     );
+
+    if (error) {
+      console.warn('[dashboard] center_code 필터 조회 실패, 전체 조회 후 클라이언트 필터로 보정:', error);
+      const retry = await supabase.from('course_view').select('*');
+      data = retry.data;
+      error = retry.error;
+    }
+
     if (error) throw error;
 
-    state.rows = data || [];
+    state.rows = filterRowsByCenter(data || [], center);
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));

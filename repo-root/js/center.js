@@ -54,7 +54,7 @@ export function setSelectedCenterCode(code, { updateUrl = true } = {}) {
 
   if (updateUrl) {
     const url = new URL(location.href);
-    url.searchParams.set('center', normalized);
+    url.searchParams.set('center', getCenterByCode(normalized)?.slug || normalized);
     url.searchParams.delete('center_code');
     url.searchParams.delete('selectCenter');
     history.replaceState(null, '', url.pathname + url.search + url.hash);
@@ -73,7 +73,7 @@ export function forceCenterSelectionFromUrl() {
 
 export function withCenterParam(href, center = getRequiredCenter()) {
   const url = new URL(href, location.origin);
-  url.searchParams.set('center', center.code);
+  url.searchParams.set('center', center.slug);
   url.searchParams.delete('center_code');
   url.searchParams.delete('selectCenter');
   return url.pathname + url.search + url.hash;
@@ -98,6 +98,25 @@ export function centerPayload(extra = {}, center = getRequiredCenter()) {
 
 export function scopeByCenter(query, center = getRequiredCenter(), column = 'center_code') {
   return query.eq(column, center.code);
+}
+
+
+export function filterRowsByCenter(rows, center = getRequiredCenter()) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+
+  const hasCenterCode = rows.some(r => r?.center_code || r?.route_center_code);
+  if (hasCenterCode) {
+    return rows.filter(r => (r.center_code || r.route_center_code) === center.code);
+  }
+
+  const names = new Set([center.name, center.shortName, center.slug]);
+  const hasCenterName = rows.some(r => r?.center || r?.center_name || r?.center_slug);
+  if (hasCenterName) {
+    return rows.filter(r => names.has(r.center) || names.has(r.center_name) || names.has(r.center_slug));
+  }
+
+  // 구버전 view처럼 센터 컬럼이 아직 없는 경우: 조회 오류/빈 화면을 막기 위해 원본 반환.
+  return rows;
 }
 
 export async function requireSelectedCenter({ force = false } = {}) {
@@ -163,7 +182,7 @@ function openCenterSelectionModal() {
             <button type="button" data-center-code="${c.code}"
                     class="rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-emerald-600/20 hover:border-emerald-500 p-4 text-left transition">
               <div class="text-sm font-semibold">${c.name}</div>
-              <div class="text-xs text-zinc-500 mt-1">센터 코드 ${c.code}</div>
+              <div class="text-xs text-zinc-500 mt-1">이 센터 데이터로 이동합니다</div>
             </button>
           `).join('')}
         </div>
