@@ -190,6 +190,7 @@
 import { supabase } from '/js/supabase.js';
 import { requireRole, getCurrentProfile } from '/js/auth.js';
 import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, scopeByCenter, withCenterParam } from '/js/center.js';
 
 await requireRole('editor');
 
@@ -197,6 +198,9 @@ const profile = await getCurrentProfile();
 
 document.getElementById('user-badge').textContent =
   `${profile?.display_name || profile?.email || ''} (${profile?.role || ''})`;
+const selectedCenter = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+decorateCenterLinks(document);
 
 const ExcelJSLib = window.ExcelJS;
 
@@ -215,6 +219,8 @@ const state = {
 };
 
 setToday();
+$('f-center').value = selectedCenter.name;
+$('f-center').readOnly = true;
 await loadMasters();
 await loadSavedRows();
 
@@ -226,16 +232,16 @@ renderRows();
 // -----------------------------------------------------------------------------
 async function loadMasters() {
   const [co, ro, dr, ve] = await Promise.all([
-    supabase.from('companies').select('id, name').order('name'),
-    supabase.from('routes')
+    scopeByCenter(supabase.from('companies').select('id, name').order('name')),
+    scopeByCenter(supabase.from('routes')
       .select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id')
-      .order('car_number'),
-    supabase.from('drivers')
+      .order('car_number')),
+    scopeByCenter(supabase.from('drivers')
       .select('id, name, phone, contact, company_id')
-      .order('name'),
-    supabase.from('vehicles')
+      .order('name')),
+    scopeByCenter(supabase.from('vehicles')
       .select('id, plate_number, company_id')
-      .order('plate_number')
+      .order('plate_number'))
   ]);
 
   if (co.error || ro.error || dr.error || ve.error) {
@@ -261,6 +267,7 @@ async function loadSavedRows() {
     .select(`
       id,
       center,
+      center_code,
       delivery_date,
       company_id,
       route_id,
@@ -280,6 +287,7 @@ async function loadSavedRows() {
       created_at,
       updated_at
     `)
+    .eq('center_code', selectedCenter.code)
     .order('delivery_date', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(1000);
@@ -297,7 +305,8 @@ function dbRowToStateRow(x) {
     _uid: makeUid(),
     id: x.id,
 
-    center: x.center || '',
+    center: x.center || selectedCenter.name,
+    center_code: x.center_code || selectedCenter.code,
     delivery_date: x.delivery_date || '',
 
     company_id: x.company_id,
@@ -327,7 +336,8 @@ function dbRowToStateRow(x) {
 
 function stateRowToPayload(r) {
   return {
-    center: r.center,
+    center: r.center || selectedCenter.name,
+    center_code: selectedCenter.code,
     delivery_date: r.delivery_date,
 
     company_id: r.company_id,
@@ -455,7 +465,8 @@ async function addRow() {
     _uid: makeUid(),
     id: null,
 
-    center: $('f-center').value.trim() || '안산사조센터',
+    center: selectedCenter.name,
+    center_code: selectedCenter.code,
     delivery_date: $('f-date').value,
 
     company_id: company.id,
@@ -540,6 +551,7 @@ async function deleteOneRow(idx) {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .eq('id', row.id);
 
     if (error) {
@@ -583,6 +595,7 @@ async function deleteSelectedRows() {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .in('id', dbIds);
 
     if (error) {
@@ -618,6 +631,7 @@ async function clearAllRows() {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .in('id', dbIds);
 
     if (error) {
@@ -648,7 +662,7 @@ function clearForm() {
   $('f-company').value = '';
   refreshDependentSelects();
 
-  $('f-center').value = '안산사조센터';
+  $('f-center').value = selectedCenter.name;
   $('f-memo').value = '';
   $('f-phone').value = '';
 
@@ -846,10 +860,12 @@ async function saveDb() {
         const { data, error } = await supabase
           .from('transfer_deliveries')
           .update(payload)
+          .eq('center_code', selectedCenter.code)
           .eq('id', row.id)
           .select(`
             id,
             center,
+            center_code,
             delivery_date,
             company_id,
             route_id,
@@ -880,6 +896,7 @@ async function saveDb() {
           .select(`
             id,
             center,
+            center_code,
             delivery_date,
             company_id,
             route_id,

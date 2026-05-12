@@ -200,6 +200,7 @@
     import { requireRole, getCurrentProfile } from '/js/auth.js';
     import { bizMinToDisplay, displayToBizMin } from '/js/time.js';
     import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+    import { centerPayload, decorateCenterLinks, forceCenterSelectionFromUrl, getRequiredCenter, mountHeaderCenterSwitcher, requireSelectedCenter, scopeByCenter, withCenterParam } from '/js/center.js';
 
     // -------------------------------------------------------------------------
     // 컬럼 / 스키마 매핑
@@ -213,6 +214,9 @@
     // -------------------------------------------------------------------------
     const profile = await requireRole('editor');
     if (!profile) { /* 리다이렉트 */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
     document.getElementById('user-badge').textContent =
       `${profile.display_name || profile.email || ''} (${profile.role})`;
 
@@ -244,9 +248,9 @@
     async function loadList() {
       $('loading-indicator').classList.remove('hidden');
       try {
-        const { data, error } = await supabase
-          .from('delivery_points')
-          .select('*');
+        const { data, error } = await scopeByCenter(
+          supabase.from('delivery_points').select('*')
+        );
         if (error) throw error;
         state.rows = data || [];
         // 지역 필터 옵션 채우기
@@ -503,7 +507,7 @@
       $('btn-save').disabled = true;
       try {
         // id 없으면 신규
-        const payload = { ...row };
+        const payload = centerPayload({ ...row });
         if (!payload.id) delete payload.id;
 
         const { data, error } = await supabase
@@ -567,6 +571,7 @@
         const { error } = await supabase
           .from('delivery_points')
           .delete()
+          .eq('center_code', getRequiredCenter().code)
           .eq('id', id);
         if (error) {
           if (error.code === '23503') {

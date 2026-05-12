@@ -82,6 +82,7 @@
     import { requireRole } from '/js/auth.js';
     import { bizMinToDisplay, displayToBizMin, formatSlack } from '/js/time.js';
     import { toast, openModal, closeModal, confirmDialog } from '/js/ui.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, scopeByCenter, withCenterParam } from '/js/center.js';
 
     // =========================================================================
     // 0. 권한 + URL 파라미터
@@ -90,12 +91,15 @@
     if (!profile) { /* 리다이렉트 */ }
     document.getElementById('user-badge').textContent =
       `${profile.display_name || profile.email || ''} (${profile.role})`;
+    const selectedCenter = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam('/admin/routes.html', next)));
+    decorateCenterLinks(document);
 
     const params = new URLSearchParams(location.search);
     const routeId = params.get('id');
     if (!routeId) {
       toast('잘못된 접근입니다.', 'error');
-      setTimeout(() => location.replace('/admin/routes.html'), 600);
+      setTimeout(() => location.replace(withCenterParam('/admin/routes.html', selectedCenter)), 600);
       throw new Error('no route id');
     }
 
@@ -131,15 +135,15 @@
     async function loadAll() {
       try {
         const [route, stops, points] = await Promise.all([
-          supabase.from('routes').select('*').eq('id', routeId).maybeSingle(),
+          scopeByCenter(supabase.from('routes').select('*').eq('id', routeId)).maybeSingle(),
           supabase.from('route_stops').select('*').eq('route_id', routeId).order('stop_order'),
-          supabase.from('delivery_points').select('id, code, name, region, deadline_text, deadline_business_min, delivery_method, access_method, delivery_location').order('code')
+          scopeByCenter(supabase.from('delivery_points').select('id, code, name, region, deadline_text, deadline_business_min, delivery_method, access_method, delivery_location').order('code'))
         ]);
 
         if (route.error) throw route.error;
         if (!route.data) {
           toast('해당 코스를 찾을 수 없습니다.', 'error');
-          setTimeout(() => location.replace('/admin/routes.html'), 600);
+          setTimeout(() => location.replace(withCenterParam('/admin/routes.html', selectedCenter)), 600);
           return;
         }
         state.route = route.data;
@@ -156,11 +160,11 @@
         if (need.length) {
           const [cc, dd, vv] = await Promise.all([
             state.route.company_id
-              ? supabase.from('companies').select('id, name').eq('id', state.route.company_id).maybeSingle()
+              ? scopeByCenter(supabase.from('companies').select('id, name').eq('id', state.route.company_id)).maybeSingle()
               : Promise.resolve({ data: null }),
-            supabase.from('drivers').select('id, name, phone')
+            scopeByCenter(supabase.from('drivers').select('id, name, phone'))
               .in('id', [state.route.primary_driver_id, state.route.secondary_driver_id].filter(Boolean)),
-            supabase.from('vehicles').select('id, plate_number, tonnage')
+            scopeByCenter(supabase.from('vehicles').select('id, plate_number, tonnage'))
               .in('id', [state.route.primary_vehicle_id, state.route.secondary_vehicle_id].filter(Boolean))
           ]);
           state.company = cc.data;
@@ -191,7 +195,7 @@
           <div><span class="muted">주차량</span> ${escapeHtml(state.primaryVehicle?.plate_number || '-')}${state.primaryVehicle?.tonnage ? ' · ' + state.primaryVehicle.tonnage + 't' : ''}</div>
           ${state.secondaryDriver  ? `<div><span class="muted">보조기사</span> ${escapeHtml(state.secondaryDriver.name)}</div>` : ''}
           ${state.secondaryVehicle ? `<div><span class="muted">보조차량</span> ${escapeHtml(state.secondaryVehicle.plate_number)}</div>` : ''}
-          <div class="ml-auto"><a href="/admin/routes.html" class="text-xs text-emerald-400 hover:underline">코스 정보 편집 →</a></div>
+          <div class="ml-auto"><a href="${withCenterParam('/admin/routes.html', selectedCenter)}" class="text-xs text-emerald-400 hover:underline">코스 정보 편집 →</a></div>
         </div>
       `;
     }
