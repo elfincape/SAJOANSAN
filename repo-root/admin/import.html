@@ -32,7 +32,7 @@
       <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/납품처 항목).</li>
       <li><strong>4단계</strong>에서 "DB에 저장" 버튼을 눌러 일괄 upsert를 실행합니다.</li>
     </ol>
-    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
+    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 센터+unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
   </section>
 
   <!-- 1단계: 파일 선택 -->
@@ -122,12 +122,16 @@
   import { requireRole, getCurrentProfile } from '/js/auth.js';
   import { displayToBizMin } from '/js/time.js';
   import { toast } from '/js/ui.js';
+  import { centerPayload, decorateCenterLinks, forceCenterSelectionFromUrl, getRequiredCenter, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
 
   /* ─────────── 인증 가드 ─────────── */
   await requireRole('admin');
   const profile = await getCurrentProfile();
   document.getElementById('user-badge').textContent =
     `${profile?.display_name ?? ''} (${profile?.role ?? ''})`;
+  const selectedCenter = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+  mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+  decorateCenterLinks(document);
 
   /* ─────────── 컬럼 매핑 정의 ─────────── */
   const FIELDS = [
@@ -446,14 +450,14 @@
 
     try {
       const n = state.normalized;
-      log(`▶ 시작 (${dryRun ? 'DRY-RUN' : '실제 저장'})`);
+      log(`▶ 시작 (${dryRun ? 'DRY-RUN' : '실제 저장'}) / 대상 센터: ${selectedCenter.name} (${selectedCenter.code})`);
 
       /* 1) 회사 */
       log(`회사 ${n.companies.length}건 upsert…`);
       const companyMap = new Map();
       if (!dryRun && n.companies.length) {
         const { data, error } = await supabase
-          .from('companies').upsert(n.companies, { onConflict: 'name' })
+          .from('companies').upsert(n.companies.map(row => centerPayload(row, selectedCenter)), { onConflict: 'center_code,name' })
           .select('id, name');
         if (error) throw new Error(`companies: ${error.message}`);
         data.forEach(c => companyMap.set(c.name, c.id));
@@ -466,21 +470,23 @@
         for (const d of n.drivers) {
           const compId = companyMap.get(d.company_name) || null;
           const { data: ex } = await supabase
-        .from('vehicles')
-        .select('id')
-        .eq('plate_number', v.plate_number)
-        .eq('company_id', compId)
-        .maybeSingle();
+            .from('drivers')
+            .select('id')
+            .eq('center_code', selectedCenter.code)
+            .eq('name', d.name)
+            .eq('company_id', compId)
+            .maybeSingle();
           let driverId;
           if (ex) {
             const { error } = await supabase.from('drivers')
-              .update({ phone: d.phone, contact: d.contact })
+              .update(centerPayload({ phone: d.phone, contact: d.contact }, selectedCenter))
+              .eq('center_code', selectedCenter.code)
               .eq('id', ex.id);
             if (error) throw new Error(`drivers update: ${error.message}`);
             driverId = ex.id;
           } else {
             const { data: ins, error } = await supabase.from('drivers')
-              .insert({ name: d.name, phone: d.phone, contact: d.contact, company_id: compId })
+              .insert(centerPayload({ name: d.name, phone: d.phone, contact: d.contact, company_id: compId }, selectedCenter))
               .select('id').single();
             if (error) throw new Error(`drivers insert: ${error.message}`);
             driverId = ins.id;
@@ -497,18 +503,20 @@
           const compId = companyMap.get(v.company_name) || null;
           const { data: ex } = await supabase
             .from('vehicles').select('id')
+            .eq('center_code', selectedCenter.code)
             .eq('plate_number', v.plate_number)
             .maybeSingle();
           let vehicleId;
           if (ex) {
             const { error } = await supabase.from('vehicles')
-              .update({ tonnage: v.tonnage, company_id: compId })
+              .update(centerPayload({ tonnage: v.tonnage, company_id: compId }, selectedCenter))
+              .eq('center_code', selectedCenter.code)
               .eq('id', ex.id);
             if (error) throw new Error(`vehicles update: ${error.message}`);
             vehicleId = ex.id;
           } else {
             const { data: ins, error } = await supabase.from('vehicles')
-              .insert({ plate_number: v.plate_number, tonnage: v.tonnage, company_id: compId })
+              .insert(centerPayload({ plate_number: v.plate_number, tonnage: v.tonnage, company_id: compId }, selectedCenter))
               .select('id').single();
             if (error) throw new Error(`vehicles insert: ${error.message}`);
             vehicleId = ins.id;
@@ -522,9 +530,9 @@
       const pointMap = new Map();
       if (!dryRun) {
         for (let i = 0; i < n.points.length; i += 100) {
-          const batch = n.points.slice(i, i + 100);
+          const batch = n.points.slice(i, i + 100).map(row => centerPayload(row, selectedCenter));
           const { data, error } = await supabase
-            .from('delivery_points').upsert(batch, { onConflict: 'code' })
+            .from('delivery_points').upsert(batch, { onConflict: 'center_code,code' })
             .select('id, code');
           if (error) throw new Error(`delivery_points[${i}]: ${error.message}`);
           data.forEach(p => pointMap.set(p.code, p.id));
@@ -540,20 +548,20 @@
           const compId    = companyMap.get(r.company_name);
           const driverId  = r.driver_name ? driverMap.get(`${r.driver_name}|${r.company_name}`) : null;
           const vehicleId = r.vehicle_key ? vehicleMap.get(r.vehicle_key) : null;
-          const payload = {
+          const payload = centerPayload({
             name: r.name,
             car_number: r.car_number,
             company_id: compId,
             primary_driver_id: driverId,
             primary_vehicle_id: vehicleId,
             active: true,
-          };
+          }, selectedCenter);
           const { data: ex } = await supabase.from('routes').select('id')
-            .eq('company_id', compId).eq('car_number', r.car_number).eq('name', r.name)
+            .eq('center_code', selectedCenter.code).eq('company_id', compId).eq('car_number', r.car_number).eq('name', r.name)
             .maybeSingle();
           let routeId;
           if (ex) {
-            const { error } = await supabase.from('routes').update(payload).eq('id', ex.id);
+            const { error } = await supabase.from('routes').update(payload).eq('center_code', selectedCenter.code).eq('id', ex.id);
             if (error) throw new Error(`routes update: ${error.message}`);
             routeId = ex.id;
           } else {

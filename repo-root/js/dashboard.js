@@ -8,6 +8,14 @@ import { supabase }                              from './supabase.js';
 import { requireRole, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
+import {
+  forceCenterSelectionFromUrl,
+  getRequiredCenter,
+  mountHeaderCenterSwitcher,
+  requireSelectedCenter,
+  scopeByCenter,
+  withCenterParam
+} from './center.js';
 
 // -----------------------------------------------------------------------------
 // 컬럼 정의
@@ -104,7 +112,12 @@ function visibleColumns() {
 
   document.getElementById('user-badge').textContent =
     `${profile.display_name || profile.email || ''} (${profile.role})`;
-  document.getElementById('admin-link').classList.remove('hidden');
+  const center = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+  mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+
+  const adminLink = document.getElementById('admin-link');
+  adminLink.href = withCenterParam('/admin/', center);
+  adminLink.classList.remove('hidden');
   document.getElementById('logout-btn').addEventListener('click', signOut);
   document.getElementById('me-btn').addEventListener('click', showMyInfo);
 
@@ -150,7 +163,10 @@ async function loadData() {
   ind?.classList.remove('hidden');
 
   try {
-    const { data, error } = await supabase.from('course_view').select('*');
+    const { data, error } = await scopeByCenter(
+      supabase.from('course_view').select('*'),
+      getRequiredCenter()
+    );
     if (error) throw error;
 
     state.rows = data || [];

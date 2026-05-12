@@ -197,10 +197,14 @@ import { supabase } from '/js/supabase.js';
 import { requireRole, getCurrentProfile } from '/js/auth.js';
 import { bizMinToStandard } from '/js/time.js';
 import { toast } from '/js/ui.js';
+import { decorateCenterLinks, forceCenterSelectionFromUrl, getRequiredCenter, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
 
 await requireRole('editor');
 const profile = await getCurrentProfile();
 document.getElementById('user-badge').textContent = `${profile?.display_name ?? ''} (${profile?.role ?? ''})`;
+const selectedCenter = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+decorateCenterLinks(document);
 
 // -----------------------------------------------------------------------------
 // 헤더 정의 (import.html 형식과 동일 순서)
@@ -360,6 +364,8 @@ async function loadData() {
       )
     `)
     .order('stop_order', { ascending: true });
+
+  query = query.eq('route.center_code', getRequiredCenter().code);
 
   if (activeOnly) {
     query = query.eq('route.active', true);
@@ -793,7 +799,7 @@ function buildFilename(ext) {
   if (custom) return `${custom}.${ext}`;
   const d = new Date();
   const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-  return `코스표_${ymd}.${ext}`;
+  return `코스표_${selectedCenter.name}_${ymd}.${ext}`;
 }
 
 function saveBlob(blob, filename) {
