@@ -165,21 +165,8 @@ async function loadData() {
 
   try {
     const center = getRequiredCenter();
-    let { data, error } = await scopeByCenter(
-      supabase.from('course_view').select('*'),
-      center
-    );
-
-    if (error) {
-      console.warn('[dashboard] center_code 필터 조회 실패, 전체 조회 후 클라이언트 필터로 보정:', error);
-      const retry = await supabase.from('course_view').select('*');
-      data = retry.data;
-      error = retry.error;
-    }
-
-    if (error) throw error;
-
-    state.rows = filterRowsByCenter(data || [], center);
+    const data = await loadCourseRowsForCenter(center);
+    state.rows = data;
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
@@ -199,6 +186,84 @@ async function loadData() {
   } finally {
     ind?.classList.add('hidden');
   }
+}
+
+async function loadCourseRowsForCenter(center) {
+  // 1차: course_view 자체가 center_code를 제공하는 경우 서버에서 바로 센터 필터링
+  const scoped = await scopeByCenter(
+    supabase.from('course_view').select('*'),
+    center
+  );
+
+  if (!scoped.error) return scoped.data || [];
+
+  console.warn('[dashboard] course_view.center_code 조회 실패, 관계 테이블 기준으로 센터 범위를 보정합니다:', scoped.error);
+
+  // 2차: course_view에 센터 컬럼명이 다르거나 없는 경우 전체 조회 후 보정
+  const retry = await supabase.from('course_view').select('*');
+  if (retry.error) throw retry.error;
+
+  const rows = retry.data || [];
+  const markerFiltered = filterRowsByCenter(rows, center);
+  if (markerFiltered.length || rows.some(row => row?.center_code || row?.route_center_code || row?.center || row?.center_name || row?.center_slug)) {
+    return markerFiltered;
+  }
+
+  // 3차: course_view에 센터 컬럼이 아예 없으면 routes에서 선택 센터의 route_id를 구해 강제 분리
+  const routeIds = await loadRouteIdsForCenter(center);
+  if (!routeIds.size) return [];
+
+  return rows.filter(row => routeIds.has(row.route_id || row.route?.id));
+}
+
+async function loadRouteIdsForCenter(center) {
+  const attempts = [
+    { column: 'center_code', value: center.code },
+    { column: 'center', value: center.name },
+    { column: 'center_name', value: center.name },
+    { column: 'center_slug', value: center.slug }
+  ];
+
+  const centerIds = await loadPossibleCenterIds(center);
+  centerIds.forEach(id => attempts.push({ column: 'center_id', value: id }));
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('routes')
+      .select('id')
+      .eq(attempt.column, attempt.value);
+
+    if (!error) return new Set((data || []).map(row => row.id).filter(Boolean));
+    lastError = error;
+  }
+
+  console.error('[dashboard] routes에서 선택 센터의 코스 범위를 확인하지 못했습니다:', lastError);
+  throw lastError || new Error('센터별 코스 범위를 확인하지 못했습니다.');
+}
+
+async function loadPossibleCenterIds(center) {
+  const ids = new Set();
+  const attempts = [
+    { column: 'code', value: center.code },
+    { column: 'center_code', value: center.code },
+    { column: 'slug', value: center.slug },
+    { column: 'name', value: center.name }
+  ];
+
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('centers')
+      .select('id')
+      .eq(attempt.column, attempt.value)
+      .limit(1);
+
+    if (!error) (data || []).forEach(row => row?.id && ids.add(row.id));
+  }
+
+  // center_id를 코드값으로 직접 쓰는 설계도 지원한다. 화면에는 노출하지 않는다.
+  ids.add(center.code);
+  return [...ids];
 }
 
 function uniqVals(key) {
@@ -970,6 +1035,7 @@ function openColumnConfig() {
 // -----------------------------------------------------------------------------
 function syncUrl() {
   const params = new URLSearchParams();
+  params.set('center', getRequiredCenter().slug);
 
   for (const k of Object.keys(state.filters)) {
     const v = state.filters[k];
@@ -986,7 +1052,7 @@ function syncUrl() {
   }
 
   const qs = params.toString();
-  history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  history.replaceState(null, '', `${location.pathname}?${qs}`);
 }
 
 function loadStateFromUrl() {

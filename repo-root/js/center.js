@@ -101,22 +101,50 @@ export function scopeByCenter(query, center = getRequiredCenter(), column = 'cen
 }
 
 
+export function rowMatchesCenter(row, center = getRequiredCenter()) {
+  if (!row) return false;
+
+  const codeCandidates = [
+    row.center_code,
+    row.route_center_code,
+    row.company_center_code,
+    row.dp_center_code
+  ].filter(Boolean).map(v => String(v).trim());
+  if (codeCandidates.length) return codeCandidates.includes(center.code);
+
+  const normalizedNameCandidates = [
+    row.center,
+    row.center_name,
+    row.route_center_name,
+    row.center_slug
+  ].filter(Boolean).map(v => String(v).trim().toLowerCase());
+  if (normalizedNameCandidates.length) {
+    const names = [center.name, center.shortName, center.slug].map(v => v.toLowerCase());
+    return normalizedNameCandidates.some(v => names.includes(v));
+  }
+
+  return false;
+}
+
 export function filterRowsByCenter(rows, center = getRequiredCenter()) {
   if (!Array.isArray(rows) || rows.length === 0) return rows || [];
 
-  const hasCenterCode = rows.some(r => r?.center_code || r?.route_center_code);
-  if (hasCenterCode) {
-    return rows.filter(r => (r.center_code || r.route_center_code) === center.code);
-  }
+  const hasCenterMarker = rows.some(r =>
+    r?.center_code ||
+    r?.route_center_code ||
+    r?.company_center_code ||
+    r?.dp_center_code ||
+    r?.center ||
+    r?.center_name ||
+    r?.route_center_name ||
+    r?.center_slug
+  );
 
-  const names = new Set([center.name, center.shortName, center.slug]);
-  const hasCenterName = rows.some(r => r?.center || r?.center_name || r?.center_slug);
-  if (hasCenterName) {
-    return rows.filter(r => names.has(r.center) || names.has(r.center_name) || names.has(r.center_slug));
-  }
+  if (hasCenterMarker) return rows.filter(r => rowMatchesCenter(r, center));
 
-  // 구버전 view처럼 센터 컬럼이 아직 없는 경우: 조회 오류/빈 화면을 막기 위해 원본 반환.
-  return rows;
+  // 센터 컬럼이 없는 데이터를 그대로 반환하면 안산/평택 전환이 실제로 분리되지 않는다.
+  // 호출부에서 route_id 같은 관계 컬럼으로 한 번 더 보정할 수 있도록 빈 배열을 반환한다.
+  return [];
 }
 
 export async function requireSelectedCenter({ force = false } = {}) {
