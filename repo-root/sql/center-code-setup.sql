@@ -51,6 +51,8 @@ alter table public.companies          add column if not exists center_code text;
 alter table public.drivers            add column if not exists center_code text;
 alter table public.vehicles           add column if not exists center_code text;
 alter table public.delivery_points    add column if not exists center_code text;
+alter table public.delivery_points    add column if not exists security_key_location text;
+alter table public.delivery_points    add column if not exists security_password text;
 alter table public.routes             add column if not exists center_code text;
 alter table public.transfer_deliveries add column if not exists center_code text;
 alter table public.audit_log          add column if not exists center_code text;

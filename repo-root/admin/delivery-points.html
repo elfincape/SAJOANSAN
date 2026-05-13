@@ -154,6 +154,17 @@
             </fieldset>
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="app-label">열쇠보관장소</label>
+              <input id="f-security-key-location" class="app-input" placeholder="예: 경비실, 출입문 상단, 키박스">
+            </div>
+            <div>
+              <label class="app-label">비밀번호</label>
+              <input id="f-security-password" class="app-input" placeholder="보안키/키박스/출입문 비밀번호">
+            </div>
+          </div>
+
           <div class="divider"></div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -206,7 +217,8 @@
     // 컬럼 / 스키마 매핑
     //   ※ 컨텍스트의 delivery_points 필드 + 추가 연락처 필드를 확장 매핑한다.
     //     스키마에 contact_name / contact_office / contact_mobile / rep_name /
-    //     rep_phone 컬럼이 없다면 마이그레이션이 필요할 수 있다 (하단 메모 참고).
+    //     rep_phone / security_key_location / security_password 컬럼이 없다면
+    //     마이그레이션이 필요할 수 있다 (하단 메모 참고).
     // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
@@ -277,7 +289,7 @@
         if (f.region && r.region !== f.region) return false;
         if (f.method && r.delivery_method !== f.method) return false;
         if (q) {
-          const hay = [r.code, r.name, r.address].filter(Boolean).join(' ').toLowerCase();
+          const hay = [r.code, r.name, r.address, r.security_key_location, r.security_password].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -339,6 +351,9 @@
       setRadio('amethod', r?.access_method   || '');
       setRadio('dloc',    r?.delivery_location || '');
 
+      $('f-security-key-location').value = r?.security_key_location || '';
+      $('f-security-password').value     = r?.security_password || '';
+
       $('f-rep-name').value    = r?.rep_name      || '';
       $('f-rep-phone').value   = r?.rep_phone     || '';
       $('f-mgr-name').value    = r?.contact_name  || '';
@@ -375,6 +390,8 @@
         delivery_method:   getRadio('dmethod') || null,
         access_method:     getRadio('amethod') || null,
         delivery_location: getRadio('dloc')    || null,
+        security_key_location: emptyToNull($('f-security-key-location').value.trim()),
+        security_password:     emptyToNull($('f-security-password').value.trim()),
 
         deadline_text:         deadlineText ? normalizeTime(deadlineText) : null,
         deadline_business_min: deadlineBiz,

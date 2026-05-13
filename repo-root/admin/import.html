@@ -47,7 +47,7 @@
       <summary class="cursor-pointer hover:text-zinc-200">엑셀에서 헤더를 어떻게 정리해야 하나요?</summary>
       <div class="mt-2 pl-3 border-l border-zinc-700">
         <p>1행에 다음 헤더(또는 유사 이름)가 있어야 합니다. 정확히 일치하지 않아도 2단계에서 수동 매핑 가능:</p>
-        <code class="block bg-zinc-900 rounded p-2 mt-1 text-zinc-300 whitespace-pre">호차, 운수사, 코스명, 톤수, 차량번호, 운전자명, 연락처, 입차시간, 하차시작, 하차종료, 납품마감, 코드, 납품처명, 1톤이하, 3.5톤이하, 5톤이상, 무인야적납, 대면, 검수, 무인, 보안키, 열쇠, 없음, 창고, 탑차, 야적, 주소, 비고</code>
+        <code class="block bg-zinc-900 rounded p-2 mt-1 text-zinc-300 whitespace-pre">호차, 운수사, 코스명, 톤수, 차량번호, 운전자명, 연락처, 입차시간, 하차시작, 하차종료, 납품마감, 코드, 납품처명, 1톤이하, 3.5톤이하, 5톤이상, 무인야적납, 대면, 검수, 무인, 보안키, 열쇠, 없음, 창고, 탑차, 야적, 주소, 열쇠보관장소, 비밀번호, 비고</code>
       </div>
     </details>
   </section>
@@ -162,6 +162,8 @@
     ['dl_box',      '탑차',          ['탑차']],
     ['dl_yard',     '야적',          ['야적']],
     ['address',     '주소',          ['주소','address','실제납품지']],
+    ['security_key_location', '열쇠보관장소', ['열쇠보관장소','열쇠보관','키보관장소','키보관','keylocation','securitykeylocation']],
+    ['security_password',     '비밀번호',     ['비밀번호','패스워드','보안비밀번호','출입비밀번호','password','securitypassword']],
     ['notes',       '비고',          ['비고','메모','note','notes','memo']],
   ];
 
@@ -310,6 +312,8 @@
             isCheck(pick(r,'dl_warehouse')) ? '창고' :
             isCheck(pick(r,'dl_box'))       ? '탑차' :
             isCheck(pick(r,'dl_yard'))      ? '야적' : null,
+          security_key_location: pick(r,'security_key_location'),
+          security_password:     pick(r,'security_password'),
           deadline_business_min: parseTimeToBizMin(pick(r,'deadline')),
           deadline_text:         pick(r,'deadline'),
         });
