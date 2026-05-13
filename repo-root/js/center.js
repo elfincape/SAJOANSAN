@@ -203,7 +203,6 @@ function openCenterSelectionModal() {
       <div class="w-full max-w-md rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-6">
         <div class="text-center mb-5">
           <div class="text-lg font-semibold">센터를 선택하세요</div>
-          <p class="text-xs text-zinc-400 mt-1">센터는 완전한 데이터 경계로 분리됩니다.</p>
         </div>
         <div class="grid grid-cols-1 gap-3">
           ${CENTERS.map(c => `
