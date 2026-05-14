@@ -76,9 +76,9 @@
       ...(isAdmin ? [
         { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
         { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
-        { href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태 (관리자 전용)',
+        { href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태',
           icon: iconShield(), color: 'cyan',  adminOnly: true },
-        { href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그 (관리자 전용)',
+        { href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
           icon: iconLog(),    color: 'zinc',  adminOnly: true }
       ] : [])
     ];
@@ -107,7 +107,6 @@
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <h3 class="text-sm font-semibold">${m.title}</h3>
-                ${m.adminOnly ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">관리자</span>' : ''}
               </div>
               ${m.desc ? `<p class="text-xs text-zinc-400 mt-0.5">${m.desc}</p>` : ''}
             </div>
