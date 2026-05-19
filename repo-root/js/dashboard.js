@@ -9,6 +9,7 @@ import { requireRole, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
 import {
+  centerPayload,
   forceCenterSelectionFromUrl,
   filterRowsByCenter,
   getRequiredCenter,
@@ -896,6 +897,10 @@ function openDetailModal(r) {
   const telLink = r.dp_contact
     ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
     : '';
+  const routeEditHref = r.route_id
+    ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
+    : '';
+  const stopId = r.stop_id;
 
   const html = `
     <div class="p-5 max-h-[80vh] overflow-auto">
@@ -904,7 +909,10 @@ function openDetailModal(r) {
           <h2 class="text-base font-semibold">${escapeHtml(r.dp_name || '(납품처 미지정)')}</h2>
           <div class="text-xs text-zinc-400 mt-0.5">${escapeHtml(r.dp_code || '')} · ${escapeHtml(r.dp_region || '')}</div>
         </div>
-        <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        <div class="flex items-center gap-2">
+          ${routeEditHref ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>` : ''}
+          <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        </div>
       </div>
       <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt class="muted">코스</dt>          <dd>${escapeHtml(r.route_name || '')} <span class="text-zinc-500">${escapeHtml(r.car_number || '')}</span></dd>
@@ -925,6 +933,19 @@ function openDetailModal(r) {
         <dt class="muted">연락처</dt>        <dd>${telLink || '-'}</dd>
         <dt class="muted">비고</dt>          <dd class="whitespace-pre-line">${escapeHtml(r.stop_memo || '')}</dd>
       </dl>
+      ${stopId ? `
+      <div class="mt-4 pt-4 border-t border-zinc-700">
+        <h3 class="text-sm font-semibold mb-2">팝업에서 바로 수정</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+          <input id="quick-dmethod" class="app-input" placeholder="납품방식" value="${escapeAttr(r.override_delivery_method ?? '')}">
+          <input id="quick-amethod" class="app-input" placeholder="진입방식" value="${escapeAttr(r.override_access_method ?? '')}">
+          <input id="quick-dloc" class="app-input" placeholder="납품장소" value="${escapeAttr(r.override_delivery_location ?? '')}">
+        </div>
+        <textarea id="quick-memo" rows="3" class="app-textarea" placeholder="비고">${escapeHtml(r.stop_memo || '')}</textarea>
+        <div class="mt-2 flex justify-end">
+          <button id="quick-save" class="btn btn-primary text-xs">이 내용으로 저장</button>
+        </div>
+      </div>` : ''}
     </div>`;
 
   const wrap = document.createElement('div');
@@ -932,6 +953,33 @@ function openDetailModal(r) {
 
   openModal(wrap, { width: 'xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
+
+  if (stopId) {
+    wrap.querySelector('#quick-save')?.addEventListener('click', async () => {
+      const toNullable = (v) => {
+        const s = (v || '').trim();
+        return s ? s : null;
+      };
+      const payload = centerPayload({
+        override_delivery_method: toNullable(wrap.querySelector('#quick-dmethod')?.value),
+        override_access_method: toNullable(wrap.querySelector('#quick-amethod')?.value),
+        override_delivery_location: toNullable(wrap.querySelector('#quick-dloc')?.value),
+        memo: toNullable(wrap.querySelector('#quick-memo')?.value)
+      });
+      const { error } = await scopeByCenter(
+        supabase.from('route_stops').update(payload).eq('id', stopId)
+      );
+      if (error) {
+        toast(`저장 실패: ${error.message}`, 'error');
+        return;
+      }
+      toast('코스 정보가 수정되었습니다.', 'success');
+      await loadData();
+      applyFiltersAndSort();
+      render();
+      closeModal();
+    });
+  }
 }
 
 async function showMyInfo() {
