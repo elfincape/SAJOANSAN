@@ -8,6 +8,16 @@ import { supabase }                              from './supabase.js';
 import { requireRole, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToStandard }                      from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
+import {
+  centerPayload,
+  forceCenterSelectionFromUrl,
+  filterRowsByCenter,
+  getRequiredCenter,
+  mountHeaderCenterSwitcher,
+  requireSelectedCenter,
+  scopeByCenter,
+  withCenterParam
+} from './center.js';
 
 // -----------------------------------------------------------------------------
 // 컬럼 정의
@@ -31,6 +41,8 @@ const COLUMNS = [
   { key: 'delivery_method',        label: '납품방식',   sortKey: 'delivery_method',         render: r => renderOverridable(r.delivery_method,   r.override_delivery_method),   defaultWidth: 90 },
   { key: 'access_method',          label: '진입방식',   sortKey: 'access_method',           render: r => renderOverridable(r.access_method,     r.override_access_method),     defaultWidth: 90 },
   { key: 'delivery_location',      label: '납품장소',   sortKey: 'delivery_location',       render: r => renderOverridable(r.delivery_location, r.override_delivery_location), defaultWidth: 90 },
+  { key: 'security_key_location',  label: '열쇠보관장소', sortKey: 'security_key_location',  defaultWidth: 140 },
+  { key: 'security_password',      label: '비밀번호',   sortKey: 'security_password',      defaultWidth: 120 },
   { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',              render: renderAddress, defaultWidth: 240 },
   { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                   defaultWidth: 90  },
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
@@ -55,6 +67,8 @@ const state = {
     delivery_method:   new Set(),
     access_method:     new Set(),
     delivery_location: new Set(),
+    security_key_location: new Set(),
+    security_password:     new Set(),
     entry_cond:        new Set(),
     search: ''
   },
@@ -104,7 +118,12 @@ function visibleColumns() {
 
   document.getElementById('user-badge').textContent =
     `${profile.display_name || profile.email || ''} (${profile.role})`;
-  document.getElementById('admin-link').classList.remove('hidden');
+  const center = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+  mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+
+  const adminLink = document.getElementById('admin-link');
+  adminLink.href = withCenterParam('/admin/', center);
+  adminLink.classList.remove('hidden');
   document.getElementById('logout-btn').addEventListener('click', signOut);
   document.getElementById('me-btn').addEventListener('click', showMyInfo);
 
@@ -150,15 +169,16 @@ async function loadData() {
   ind?.classList.remove('hidden');
 
   try {
-    const { data, error } = await supabase.from('course_view').select('*');
-    if (error) throw error;
-
-    state.rows = data || [];
+    const center = getRequiredCenter();
+    const data = await loadCourseRowsForCenter(center);
+    state.rows = data;
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
     populateMultiSelect('car_number',   uniqVals('car_number'));
     populateMultiSelect('dp_region',    uniqVals('dp_region'));
+    populateMultiSelect('security_key_location', uniqVals('security_key_location'));
+    populateMultiSelect('security_password',     uniqVals('security_password'));
 
     const drivers = new Set();
     for (const r of state.rows) {
@@ -173,6 +193,84 @@ async function loadData() {
   } finally {
     ind?.classList.add('hidden');
   }
+}
+
+async function loadCourseRowsForCenter(center) {
+  // 1차: course_view 자체가 center_code를 제공하는 경우 서버에서 바로 센터 필터링
+  const scoped = await scopeByCenter(
+    supabase.from('course_view').select('*'),
+    center
+  );
+
+  if (!scoped.error) return scoped.data || [];
+
+  console.warn('[dashboard] course_view.center_code 조회 실패, 관계 테이블 기준으로 센터 범위를 보정합니다:', scoped.error);
+
+  // 2차: course_view에 센터 컬럼명이 다르거나 없는 경우 전체 조회 후 보정
+  const retry = await supabase.from('course_view').select('*');
+  if (retry.error) throw retry.error;
+
+  const rows = retry.data || [];
+  const markerFiltered = filterRowsByCenter(rows, center);
+  if (markerFiltered.length || rows.some(row => row?.center_code || row?.route_center_code || row?.center || row?.center_name || row?.center_slug)) {
+    return markerFiltered;
+  }
+
+  // 3차: course_view에 센터 컬럼이 아예 없으면 routes에서 선택 센터의 route_id를 구해 강제 분리
+  const routeIds = await loadRouteIdsForCenter(center);
+  if (!routeIds.size) return [];
+
+  return rows.filter(row => routeIds.has(row.route_id || row.route?.id));
+}
+
+async function loadRouteIdsForCenter(center) {
+  const attempts = [
+    { column: 'center_code', value: center.code },
+    { column: 'center', value: center.name },
+    { column: 'center_name', value: center.name },
+    { column: 'center_slug', value: center.slug }
+  ];
+
+  const centerIds = await loadPossibleCenterIds(center);
+  centerIds.forEach(id => attempts.push({ column: 'center_id', value: id }));
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('routes')
+      .select('id')
+      .eq(attempt.column, attempt.value);
+
+    if (!error) return new Set((data || []).map(row => row.id).filter(Boolean));
+    lastError = error;
+  }
+
+  console.error('[dashboard] routes에서 선택 센터의 코스 범위를 확인하지 못했습니다:', lastError);
+  throw lastError || new Error('센터별 코스 범위를 확인하지 못했습니다.');
+}
+
+async function loadPossibleCenterIds(center) {
+  const ids = new Set();
+  const attempts = [
+    { column: 'code', value: center.code },
+    { column: 'center_code', value: center.code },
+    { column: 'slug', value: center.slug },
+    { column: 'name', value: center.name }
+  ];
+
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('centers')
+      .select('id')
+      .eq(attempt.column, attempt.value)
+      .limit(1);
+
+    if (!error) (data || []).forEach(row => row?.id && ids.add(row.id));
+  }
+
+  // center_id를 코드값으로 직접 쓰는 설계도 지원한다. 화면에는 노출하지 않는다.
+  ids.add(center.code);
+  return [...ids];
 }
 
 function uniqVals(key) {
@@ -196,7 +294,9 @@ function populateMultiSelect(key, options) {
     route_name: '코스',
     car_number: '호차',
     driver_name: '기사',
-    dp_region: '지역'
+    dp_region: '지역',
+    security_key_location: '열쇠보관장소',
+    security_password: '비밀번호'
   };
 
   root.innerHTML = `
@@ -378,6 +478,8 @@ function applyFiltersAndSort() {
     if (f.delivery_method.size   && !f.delivery_method.has(r.delivery_method))     return false;
     if (f.access_method.size     && !f.access_method.has(r.access_method))         return false;
     if (f.delivery_location.size && !f.delivery_location.has(r.delivery_location)) return false;
+    if (f.security_key_location.size && !f.security_key_location.has(r.security_key_location)) return false;
+    if (f.security_password.size && !f.security_password.has(r.security_password)) return false;
 
     if (f.entry_cond.size) {
       for (const cond of f.entry_cond) {
@@ -386,7 +488,10 @@ function applyFiltersAndSort() {
     }
 
     if (q) {
-      const hay = [r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate]
+      const hay = [
+        r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate,
+        r.security_key_location, r.security_password
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -680,7 +785,7 @@ function renderGroups() {
             <th>순서</th><th>입차</th><th>하차시작</th><th>하차종료</th>
             <th>마감</th><th>코드</th><th>납품처</th>
             <th>지역</th><th>납품방식</th><th>진입방식</th><th>납품장소</th>
-            <th>주소</th><th>비고</th>
+            <th>열쇠보관장소</th><th>비밀번호</th><th>주소</th><th>비고</th>
           </tr></thead>
           <tbody>
             ${stops.map(s => `
@@ -696,6 +801,8 @@ function renderGroups() {
                 <td>${renderOverridable(s.delivery_method,   s.override_delivery_method)}</td>
                 <td>${renderOverridable(s.access_method,     s.override_access_method)}</td>
                 <td>${renderOverridable(s.delivery_location, s.override_delivery_location)}</td>
+                <td>${escapeHtml(s.security_key_location || '')}</td>
+                <td>${escapeHtml(s.security_password || '')}</td>
                 <td>${renderAddress(s)}</td>
                 <td>${escapeHtml(s.stop_memo || '')}</td>
               </tr>`).join('')}
@@ -790,6 +897,10 @@ function openDetailModal(r) {
   const telLink = r.dp_contact
     ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
     : '';
+  const routeEditHref = r.route_id
+    ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
+    : '';
+  const stopId = r.stop_id;
 
   const html = `
     <div class="p-5 max-h-[80vh] overflow-auto">
@@ -798,7 +909,12 @@ function openDetailModal(r) {
           <h2 class="text-base font-semibold">${escapeHtml(r.dp_name || '(납품처 미지정)')}</h2>
           <div class="text-xs text-zinc-400 mt-0.5">${escapeHtml(r.dp_code || '')} · ${escapeHtml(r.dp_region || '')}</div>
         </div>
-        <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        <div class="flex items-center gap-2">
+          ${routeEditHref
+            ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>`
+            : ''}
+          <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        </div>
       </div>
       <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt class="muted">코스</dt>          <dd>${escapeHtml(r.route_name || '')} <span class="text-zinc-500">${escapeHtml(r.car_number || '')}</span></dd>
@@ -812,11 +928,26 @@ function openDetailModal(r) {
         <dt class="muted">납품방식</dt>      <dd>${renderOverridable(r.delivery_method,   r.override_delivery_method)}</dd>
         <dt class="muted">진입방식</dt>      <dd>${renderOverridable(r.access_method,     r.override_access_method)}</dd>
         <dt class="muted">납품장소</dt>      <dd>${renderOverridable(r.delivery_location, r.override_delivery_location)}</dd>
+        <dt class="muted">열쇠보관장소</dt>  <dd>${escapeHtml(r.security_key_location || '-')}</dd>
+        <dt class="muted">비밀번호</dt>      <dd>${escapeHtml(r.security_password || '-')}</dd>
         <dt class="muted">진입조건</dt>      <dd>${renderEntryCond(r)}</dd>
         <dt class="muted">주소</dt>          <dd>${escapeHtml(r.dp_address || '')}</dd>
         <dt class="muted">연락처</dt>        <dd>${telLink || '-'}</dd>
         <dt class="muted">비고</dt>          <dd class="whitespace-pre-line">${escapeHtml(r.stop_memo || '')}</dd>
       </dl>
+      ${stopId ? `
+      <div class="mt-4 pt-4 border-t border-zinc-700">
+        <h3 class="text-sm font-semibold mb-2">팝업에서 바로 수정</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+          <input id="quick-dmethod" class="app-input" placeholder="납품방식" value="${escapeAttr(r.override_delivery_method ?? '')}">
+          <input id="quick-amethod" class="app-input" placeholder="진입방식" value="${escapeAttr(r.override_access_method ?? '')}">
+          <input id="quick-dloc" class="app-input" placeholder="납품장소" value="${escapeAttr(r.override_delivery_location ?? '')}">
+        </div>
+        <textarea id="quick-memo" rows="3" class="app-textarea" placeholder="비고">${escapeHtml(r.stop_memo || '')}</textarea>
+        <div class="mt-2 flex justify-end">
+          <button id="quick-save" class="btn btn-primary text-xs">이 내용으로 저장</button>
+        </div>
+      </div>` : ''}
     </div>`;
 
   const wrap = document.createElement('div');
@@ -824,6 +955,34 @@ function openDetailModal(r) {
 
   openModal(wrap, { width: 'xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
+
+  if (stopId) {
+    wrap.querySelector('#quick-save')?.addEventListener('click', async () => {
+      const toNullable = (v) => {
+        const s = (v || '').trim();
+        return s ? s : null;
+      };
+      const payload = centerPayload({
+        override_delivery_method: toNullable(wrap.querySelector('#quick-dmethod')?.value),
+        override_access_method: toNullable(wrap.querySelector('#quick-amethod')?.value),
+        override_delivery_location: toNullable(wrap.querySelector('#quick-dloc')?.value),
+        memo: toNullable(wrap.querySelector('#quick-memo')?.value)
+      });
+
+      const { error } = await scopeByCenter(
+        supabase.from('route_stops').update(payload).eq('id', stopId)
+      );
+      if (error) {
+        toast(`저장 실패: ${error.message}`, 'error');
+        return;
+      }
+      toast('코스 정보가 수정되었습니다.', 'success');
+      await loadData();
+      applyFiltersAndSort();
+      render();
+      closeModal();
+    });
+  }
 }
 
 async function showMyInfo() {
@@ -944,6 +1103,7 @@ function openColumnConfig() {
 // -----------------------------------------------------------------------------
 function syncUrl() {
   const params = new URLSearchParams();
+  params.set('center', getRequiredCenter().slug);
 
   for (const k of Object.keys(state.filters)) {
     const v = state.filters[k];
@@ -960,7 +1120,7 @@ function syncUrl() {
   }
 
   const qs = params.toString();
-  history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  history.replaceState(null, '', `${location.pathname}?${qs}`);
 }
 
 function loadStateFromUrl() {

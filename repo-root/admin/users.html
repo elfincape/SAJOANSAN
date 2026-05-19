@@ -163,6 +163,7 @@
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, confirmDialog } from '/js/ui.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
 
     // -------------------------------------------------------------------------
     // 권한
@@ -171,6 +172,9 @@
     if (!me) { /* 리다이렉트 */ }
     document.getElementById('user-badge').textContent =
       `${me.display_name || me.email || ''} (${me.role})`;
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
 
     const $ = (id) => document.getElementById(id);
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
