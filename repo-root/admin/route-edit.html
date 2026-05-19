@@ -65,6 +65,8 @@
             <th class="biz-time">마감</th>
             <th class="biz-time">여유</th>
             <th>★</th>
+            <th>열쇠보관장소</th>
+            <th>비밀번호</th>
             <th>비고</th>
             <th class="text-right">작업</th>
           </tr>
@@ -137,7 +139,7 @@
         const [route, stops, points] = await Promise.all([
           scopeByCenter(supabase.from('routes').select('*').eq('id', routeId)).maybeSingle(),
           supabase.from('route_stops').select('*').eq('route_id', routeId).order('stop_order'),
-          scopeByCenter(supabase.from('delivery_points').select('id, code, name, region, deadline_text, deadline_business_min, delivery_method, access_method, delivery_location').order('code'))
+          scopeByCenter(supabase.from('delivery_points').select('id, code, name, region, deadline_text, deadline_business_min, delivery_method, access_method, delivery_location, security_key_location, security_password').order('code'))
         ]);
 
         if (route.error) throw route.error;
@@ -251,6 +253,8 @@
           <td class="biz-time ${deadlineWarn ? 'text-amber-400' : ''}">${escapeHtml(bizMinToDisplay(effDeadlineMin))}</td>
           <td class="biz-time">${slackHtml}</td>
           <td>${hasOverride ? '<span class="text-amber-300" title="오버라이드 있음">★</span>' : ''}</td>
+          <td class="max-w-[160px] truncate" title="${escapeAttr(dp?.security_key_location || '')}">${escapeHtml(dp?.security_key_location || '')}</td>
+          <td class="max-w-[120px] truncate" title="${escapeAttr(dp?.security_password || '')}">${escapeHtml(dp?.security_password || '')}</td>
           <td class="max-w-[180px] truncate" title="${escapeAttr(s.memo || '')}">${escapeHtml(s.memo || '')}</td>
           <td class="text-right whitespace-nowrap">
             <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${s.id}">편집</button>

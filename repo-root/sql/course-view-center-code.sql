@@ -18,13 +18,13 @@
 -- =============================================================================
 
 -- Safe pre-check: this never errors. Before running the patch it should show
--- zero rows for center_code/route_center_code/center_name if the view has not
+-- zero rows for center/security columns if the view has not
 -- been patched yet.
 select column_name, data_type
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'course_view'
-  and column_name in ('center_code', 'route_center_code', 'center_name')
+  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password')
 order by column_name;
 
 create or replace view public.course_view as
@@ -103,10 +103,12 @@ select
     else null
   end as slack_minutes,
 
-  -- Center columns appended at the end for safe CREATE OR REPLACE VIEW.
+  -- Center/security columns appended at the end for safe CREATE OR REPLACE VIEW.
   r.center_code as center_code,
   r.center_code as route_center_code,
-  cen.name as center_name
+  cen.name as center_name,
+  dp.security_key_location as security_key_location,
+  dp.security_password as security_password
 from public.route_stops rs
 join public.routes r
   on r.id = rs.route_id
@@ -132,12 +134,12 @@ join public.delivery_points dp
  and dp.center_code = r.center_code;
 
 -- Verify step 1: confirm the columns now exist. This query is safe even if the
--- patch did not run, and should return 3 rows after the patch.
+-- patch did not run, and should return 5 rows after the patch.
 select column_name, data_type
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'course_view'
-  and column_name in ('center_code', 'route_center_code', 'center_name')
+  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password')
 order by column_name;
 
 -- Verify step 2: run this only after verify step 1 returns center_code.

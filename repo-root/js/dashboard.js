@@ -40,6 +40,8 @@ const COLUMNS = [
   { key: 'delivery_method',        label: '납품방식',   sortKey: 'delivery_method',         render: r => renderOverridable(r.delivery_method,   r.override_delivery_method),   defaultWidth: 90 },
   { key: 'access_method',          label: '진입방식',   sortKey: 'access_method',           render: r => renderOverridable(r.access_method,     r.override_access_method),     defaultWidth: 90 },
   { key: 'delivery_location',      label: '납품장소',   sortKey: 'delivery_location',       render: r => renderOverridable(r.delivery_location, r.override_delivery_location), defaultWidth: 90 },
+  { key: 'security_key_location',  label: '열쇠보관장소', sortKey: 'security_key_location',  defaultWidth: 140 },
+  { key: 'security_password',      label: '비밀번호',   sortKey: 'security_password',      defaultWidth: 120 },
   { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',              render: renderAddress, defaultWidth: 240 },
   { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                   defaultWidth: 90  },
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
@@ -64,6 +66,8 @@ const state = {
     delivery_method:   new Set(),
     access_method:     new Set(),
     delivery_location: new Set(),
+    security_key_location: new Set(),
+    security_password:     new Set(),
     entry_cond:        new Set(),
     search: ''
   },
@@ -172,6 +176,8 @@ async function loadData() {
     populateMultiSelect('route_name',   uniqVals('route_name'));
     populateMultiSelect('car_number',   uniqVals('car_number'));
     populateMultiSelect('dp_region',    uniqVals('dp_region'));
+    populateMultiSelect('security_key_location', uniqVals('security_key_location'));
+    populateMultiSelect('security_password',     uniqVals('security_password'));
 
     const drivers = new Set();
     for (const r of state.rows) {
@@ -287,7 +293,9 @@ function populateMultiSelect(key, options) {
     route_name: '코스',
     car_number: '호차',
     driver_name: '기사',
-    dp_region: '지역'
+    dp_region: '지역',
+    security_key_location: '열쇠보관장소',
+    security_password: '비밀번호'
   };
 
   root.innerHTML = `
@@ -469,6 +477,8 @@ function applyFiltersAndSort() {
     if (f.delivery_method.size   && !f.delivery_method.has(r.delivery_method))     return false;
     if (f.access_method.size     && !f.access_method.has(r.access_method))         return false;
     if (f.delivery_location.size && !f.delivery_location.has(r.delivery_location)) return false;
+    if (f.security_key_location.size && !f.security_key_location.has(r.security_key_location)) return false;
+    if (f.security_password.size && !f.security_password.has(r.security_password)) return false;
 
     if (f.entry_cond.size) {
       for (const cond of f.entry_cond) {
@@ -477,7 +487,10 @@ function applyFiltersAndSort() {
     }
 
     if (q) {
-      const hay = [r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate]
+      const hay = [
+        r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate,
+        r.security_key_location, r.security_password
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -771,7 +784,7 @@ function renderGroups() {
             <th>순서</th><th>입차</th><th>하차시작</th><th>하차종료</th>
             <th>마감</th><th>코드</th><th>납품처</th>
             <th>지역</th><th>납품방식</th><th>진입방식</th><th>납품장소</th>
-            <th>주소</th><th>비고</th>
+            <th>열쇠보관장소</th><th>비밀번호</th><th>주소</th><th>비고</th>
           </tr></thead>
           <tbody>
             ${stops.map(s => `
@@ -787,6 +800,8 @@ function renderGroups() {
                 <td>${renderOverridable(s.delivery_method,   s.override_delivery_method)}</td>
                 <td>${renderOverridable(s.access_method,     s.override_access_method)}</td>
                 <td>${renderOverridable(s.delivery_location, s.override_delivery_location)}</td>
+                <td>${escapeHtml(s.security_key_location || '')}</td>
+                <td>${escapeHtml(s.security_password || '')}</td>
                 <td>${renderAddress(s)}</td>
                 <td>${escapeHtml(s.stop_memo || '')}</td>
               </tr>`).join('')}
@@ -903,6 +918,8 @@ function openDetailModal(r) {
         <dt class="muted">납품방식</dt>      <dd>${renderOverridable(r.delivery_method,   r.override_delivery_method)}</dd>
         <dt class="muted">진입방식</dt>      <dd>${renderOverridable(r.access_method,     r.override_access_method)}</dd>
         <dt class="muted">납품장소</dt>      <dd>${renderOverridable(r.delivery_location, r.override_delivery_location)}</dd>
+        <dt class="muted">열쇠보관장소</dt>  <dd>${escapeHtml(r.security_key_location || '-')}</dd>
+        <dt class="muted">비밀번호</dt>      <dd>${escapeHtml(r.security_password || '-')}</dd>
         <dt class="muted">진입조건</dt>      <dd>${renderEntryCond(r)}</dd>
         <dt class="muted">주소</dt>          <dd>${escapeHtml(r.dp_address || '')}</dd>
         <dt class="muted">연락처</dt>        <dd>${telLink || '-'}</dd>

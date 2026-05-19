@@ -217,7 +217,7 @@ const HEADERS = [
   '대면','검수','무인',
   '보안키','열쇠','없음',
   '창고','탑차','야적',
-  '주소','비고'
+  '주소','열쇠보관장소','비밀번호','비고'
 ];
 
 const SORT_KEYS = [
@@ -288,6 +288,9 @@ const filterQueries = {
 
 // HEADERS 변경에 대한 보정
 state.cols = state.cols.filter(c => HEADERS.includes(c));
+['열쇠보관장소', '비밀번호'].forEach(c => {
+  if (!state.cols.includes(c)) state.cols.push(c);
+});
 HEADERS.forEach(h => { if (!state.cols.includes(h)) state.cols.push(h); });
 
 // -----------------------------------------------------------------------------
@@ -360,6 +363,7 @@ async function loadData() {
         id, code, name, address, region, contact,
         allow_under_1ton, allow_under_3_5ton, allow_over_5ton, allow_unmanned_yard,
         delivery_method, access_method, delivery_location,
+        security_key_location, security_password,
         deadline_text, deadline_business_min, memo
       )
     `)
@@ -453,6 +457,8 @@ function rowToFlat(stop) {
     '탑차':       eq(dl, '탑차'),
     '야적':       eq(dl, '야적'),
     '주소':       dp.address || '',
+    '열쇠보관장소': dp.security_key_location || '',
+    '비밀번호':   dp.security_password || '',
     '비고':       stop.memo || dp.memo || '',
     _sort: {
       driver_name:  driver.name || '',
