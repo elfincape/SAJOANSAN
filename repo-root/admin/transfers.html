@@ -215,7 +215,8 @@ const state = {
   drivers: [],
   vehicles: [],
   rows: [],
-  formPhotos: [null, null, null, null]
+  formPhotos: [null, null, null, null],
+  editIndex: -1
 };
 
 setToday();
@@ -461,7 +462,7 @@ async function addRow() {
 
   const photos = [...state.formPhotos];
 
-  state.rows.push({
+  const rowPayload = {
     _uid: makeUid(),
     id: null,
 
@@ -484,11 +485,27 @@ async function addRow() {
     memo: $('f-memo').value.trim(),
 
     _dirty: true
-  });
+  };
+
+  if (state.editIndex >= 0 && state.rows[state.editIndex]) {
+    const prev = state.rows[state.editIndex];
+    state.rows[state.editIndex] = {
+      ...rowPayload,
+      _uid: prev._uid,
+      id: prev.id, // DB 저장된 행이면 id 유지
+      photos: photos.length ? photos : (prev.photos || [])
+    };
+    state.editIndex = -1;
+    $('btn-add').textContent = '행 추가';
+    toast('행을 수정했습니다. DB 저장을 눌러 반영하세요.', 'success');
+  } else {
+    state.rows.push(rowPayload);
+    toast('행을 추가했습니다. DB 저장을 눌러야 저장됩니다.', 'success');
+  }
 
   renderRows();
   clearPhotos();
-  toast('행을 추가했습니다. DB 저장을 눌러야 저장됩니다.', 'success');
+  $('f-memo').value = '';
 }
 
 function renderRows() {
@@ -522,10 +539,18 @@ function renderRows() {
       <td>${escapeHtml(r.memo || '')}</td>
       <td class="${savedClass} text-xs">${savedText}</td>
       <td class="text-right">
+        <button class="btn btn-ghost text-xs" data-edit="${i}">수정</button>
         <button class="btn btn-ghost text-xs text-rose-400" data-del="${i}">삭제</button>
       </td>
     `;
     tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.edit);
+      loadRowToForm(idx);
+    });
   });
 
   tbody.querySelectorAll('[data-del]').forEach(btn => {
@@ -534,6 +559,23 @@ function renderRows() {
       await deleteOneRow(idx);
     });
   });
+}
+
+function loadRowToForm(idx) {
+  const r = state.rows[idx];
+  if (!r) return;
+  state.editIndex = idx;
+  $('btn-add').textContent = '행 수정';
+  $('f-date').value = r.delivery_date || '';
+  $('f-company').value = r.company_id || '';
+  refreshDependentSelects();
+  $('f-route').value = r.route_id || '';
+  $('f-driver').value = r.driver_id || '';
+  $('f-vehicle').value = r.vehicle_id || '';
+  $('f-phone').value = r.driver_phone || '';
+  $('f-memo').value = r.memo || '';
+  state.formPhotos = [...(r.photos || [null, null, null, null])];
+  renderPhotoPreview();
 }
 
 async function deleteOneRow(idx) {
