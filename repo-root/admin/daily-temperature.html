@@ -95,7 +95,8 @@
     <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
       <h2 class="text-sm font-semibold mb-2">작업 방식</h2>
       <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
-        <li>업로드한 일일 관리 Excel 템플릿의 Sheet1, <code>5행</code>부터 <code>B~R열</code>을 편집 대상으로 불러옵니다.</li>
+        <li>저장된 기본 템플릿을 먼저 자동으로 불러오고, 필요할 때만 업로드 파일로 임시 교체합니다.</li>
+        <li>템플릿은 Sheet1, <code>5행</code>부터 <code>B~R열</code>을 편집 대상으로 불러옵니다.</li>
         <li><code>I열</code> 차량 구분은 <strong>고정 → 광역 → 임시</strong> 순서를 유지합니다.</li>
         <li>추가 기사 정보는 <code>G열 담당자</code>, <code>H열 차량번호</code>에 들어가며 선택한 구분의 마지막 행 아래에 삽입됩니다.</li>
         <li>삽입 행은 지사/센터/날짜/운송사/기본값을 자동으로 채우고, <code>J~M</code>, <code>P~R</code>은 공란으로 둡니다.</li>
@@ -108,12 +109,20 @@
         <div class="flex items-center gap-2 mb-3">
           <span class="step-badge">1</span>
           <div>
-            <div class="text-sm font-semibold">기준 템플릿 업로드</div>
-            <div class="text-xs text-zinc-500">Sheet1 5행부터 B~R열을 읽습니다.</div>
+            <div class="text-sm font-semibold">기준 템플릿</div>
+            <div class="text-xs text-zinc-500">저장된 기본 템플릿을 우선 사용합니다.</div>
           </div>
         </div>
+        <div class="text-xs text-zinc-400 leading-relaxed mb-3">
+          기본 저장 위치: <code class="text-emerald-300">repo-root/templates/one-top-two-room-template.xlsx</code><br>
+          GitHub에서 이 파일만 교체하면 다음 접속부터 기본 템플릿으로 사용됩니다.
+        </div>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button id="reload-default-btn" class="btn btn-ghost text-xs" type="button">저장된 기본 템플릿 다시 불러오기</button>
+        </div>
+        <label class="app-label">필요 시 임시 업로드로 교체</label>
         <input id="template-file" type="file" accept=".xlsx,.xlsm" class="w-full text-sm">
-        <div id="template-info" class="mt-3 text-xs text-zinc-400">선택된 파일 없음</div>
+        <div id="template-info" class="mt-3 text-xs text-zinc-400">저장된 기본 템플릿을 불러오는 중...</div>
       </div>
 
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4 xl:col-span-2">
@@ -223,7 +232,7 @@
           <tbody id="editor-body"></tbody>
         </table>
       </div>
-      <div id="empty-state" class="p-8 text-center text-sm text-zinc-500">템플릿 Excel을 업로드하면 편집 표가 표시됩니다.</div>
+      <div id="empty-state" class="p-8 text-center text-sm text-zinc-500">저장된 기본 템플릿을 불러오거나, 필요 시 Excel을 업로드하면 편집 표가 표시됩니다.</div>
     </section>
   </main>
 
@@ -297,6 +306,8 @@
   'use strict';
 
   const TABLE_START_ROW = 5;
+  const DEFAULT_TEMPLATE_URL = '/templates/one-top-two-room-template.xlsx';
+  const DEFAULT_TEMPLATE_NAME = '저장된 기본 템플릿';
   const ROLE_ORDER = ['고정', '광역', '임시'];
   const COLS = {
     seq: 2,
@@ -331,6 +342,7 @@
   const $ = id => document.getElementById(id);
 
   $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
+  $('reload-default-btn').addEventListener('click', () => loadDefaultTemplate({ showToast: true }));
   $('apply-day-btn').addEventListener('click', applyDayToAll);
   $('renumber-btn').addEventListener('click', () => { renumberRows(); renderRows(); toast('순번을 재정렬했습니다.', 'success'); });
   $('add-rows-btn').addEventListener('click', addRowsFromText);
@@ -340,6 +352,8 @@
   $('parser-run-btn').addEventListener('click', runEmbeddedParser);
   $('parser-clear-btn').addEventListener('click', clearEmbeddedParser);
   $('parser-apply-btn').addEventListener('click', applyEmbeddedParserResults);
+
+  loadDefaultTemplate();
 
   document.querySelectorAll('[data-drop]').forEach(card => {
     card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
@@ -356,33 +370,80 @@
     });
   });
 
+  async function loadDefaultTemplate({ showToast = false } = {}) {
+    try {
+      $('template-info').innerHTML = `
+        <div class="font-medium text-zinc-200">${escapeHtml(DEFAULT_TEMPLATE_NAME)}</div>
+        <div>저장 위치에서 기본 템플릿을 불러오는 중...</div>
+      `;
+      const response = await fetch(`${DEFAULT_TEMPLATE_URL}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`기본 템플릿 파일을 찾을 수 없습니다. (${response.status})`);
+      await loadTemplateBuffer(await response.arrayBuffer(), {
+        sourceName: DEFAULT_TEMPLATE_NAME,
+        sourceDetail: DEFAULT_TEMPLATE_URL,
+        sourceKind: 'default'
+      });
+      if (showToast) toast('저장된 기본 템플릿을 다시 불러왔습니다.', 'success');
+    } catch (err) {
+      console.warn(err);
+      resetTemplateState();
+      $('template-info').innerHTML = `
+        <div class="font-medium text-amber-200">저장된 기본 템플릿을 불러오지 못했습니다.</div>
+        <div>${escapeHtml(err.message || err)}</div>
+        <div class="mt-1">기본 파일을 <code>${escapeHtml(DEFAULT_TEMPLATE_URL)}</code>에 올리거나, 위 입력으로 임시 업로드하세요.</div>
+      `;
+      if (showToast) toast(`기본 템플릿을 불러오지 못했습니다: ${err.message || err}`, 'error');
+    }
+  }
+
   async function handleTemplateFile(file) {
     if (!file) return;
     try {
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(await file.arrayBuffer());
-      const worksheet = workbook.worksheets[0];
-      if (!worksheet) throw new Error('Sheet1을 찾을 수 없습니다.');
-
-      state.file = file;
-      state.workbook = workbook;
-      state.worksheetName = worksheet.name;
-      state.rows = extractRows(worksheet);
-      state.sourceRowCount = state.rows.length;
-      sortRowsByRole();
-      renumberRows();
-      hydrateDefaultsFromRows();
-      renderRows();
-      updateButtons();
-      $('template-info').innerHTML = `
-        <div class="font-medium text-zinc-200">${escapeHtml(file.name)}</div>
-        <div>Sheet1: ${escapeHtml(worksheet.name)} · 편집 대상 ${state.rows.length}행</div>
-      `;
-      toast('템플릿을 불러왔습니다.', 'success');
+      await loadTemplateBuffer(await file.arrayBuffer(), {
+        sourceName: file.name,
+        sourceDetail: '업로드 파일로 현재 작업 템플릿을 임시 교체했습니다.',
+        sourceKind: 'upload',
+        file
+      });
+      toast('업로드한 템플릿으로 교체했습니다.', 'success');
     } catch (err) {
       console.error(err);
       toast(`템플릿을 읽지 못했습니다: ${err.message || err}`, 'error');
     }
+  }
+
+  async function loadTemplateBuffer(arrayBuffer, { sourceName, sourceDetail, sourceKind, file = null }) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) throw new Error('Sheet1을 찾을 수 없습니다.');
+
+    state.file = file;
+    state.workbook = workbook;
+    state.worksheetName = worksheet.name;
+    state.rows = extractRows(worksheet);
+    state.sourceRowCount = state.rows.length;
+    sortRowsByRole();
+    renumberRows();
+    hydrateDefaultsFromRows();
+    renderRows();
+    updateButtons();
+    $('template-info').innerHTML = `
+      <div class="font-medium text-zinc-200">${escapeHtml(sourceName)}</div>
+      <div>구분: ${sourceKind === 'default' ? '저장된 기본 템플릿' : '임시 업로드 템플릿'}</div>
+      <div>Sheet1: ${escapeHtml(worksheet.name)} · 편집 대상 ${state.rows.length}행</div>
+      <div class="mt-1 text-zinc-500">${escapeHtml(sourceDetail)}</div>
+    `;
+  }
+
+  function resetTemplateState() {
+    state.file = null;
+    state.workbook = null;
+    state.worksheetName = '';
+    state.rows = [];
+    state.sourceRowCount = 0;
+    renderRows();
+    updateButtons();
   }
 
   function extractRows(worksheet) {
