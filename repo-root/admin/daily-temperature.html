@@ -203,6 +203,7 @@
         <span class="text-sm font-semibold">웹 편집 미리보기</span>
         <span id="row-count" class="text-xs text-zinc-400"></span>
         <div class="flex-1"></div>
+        <button id="copy-vba-btn" class="btn btn-ghost" type="button">VB코드복사</button>
         <button id="download-btn" class="btn btn-primary" disabled>Excel 다운로드</button>
       </div>
       <div class="overflow-auto max-h-[62vh]">
@@ -308,6 +309,50 @@
   const TABLE_START_ROW = 5;
   const DEFAULT_TEMPLATE_URL = '/templates/one-top-two-room-template.xlsx';
   const DEFAULT_TEMPLATE_NAME = '저장된 기본 템플릿';
+  const VB_SELECTION_CHANGE_CODE = `Private Sub Worksheet_SelectionChange(ByVal Target As Range)
+    Dim shp As Shape
+    Dim cel As Range
+    Dim realTop As Double
+    Dim realLeft As Double
+    Const SAFE_MARGIN As Double = 3
+
+    On Error Resume Next
+
+    If ActiveSheet.Shapes.Count > 0 Then
+        For Each shp In ActiveSheet.Shapes
+            If Not shp.TopLeftCell Is Nothing Then
+                Set cel = shp.TopLeftCell
+
+                realTop = shp.Top + SAFE_MARGIN
+                realLeft = shp.Left + SAFE_MARGIN
+
+                If realTop > (cel.Top + cel.Height) Then
+                    Set cel = cel.Offset(1, 0)
+                End If
+
+                If realLeft > (cel.Left + cel.Width) Then
+                    Set cel = cel.Offset(0, 1)
+                End If
+
+                If Abs(shp.Left - cel.Left) > 1 Or _
+                   Abs(shp.Top - cel.Top) > 1 Or _
+                   Abs(shp.Width - cel.Width) > 1 Or _
+                   Abs(shp.Height - cel.Height) > 1 Then
+
+                    With shp
+                        .LockAspectRatio = msoFalse
+                        .Left = cel.Left
+                        .Top = cel.Top
+                        .Width = cel.Width
+                        .Height = cel.Height
+                    End With
+                End If
+            End If
+        Next shp
+    End If
+
+    On Error GoTo 0
+End Sub`;
   const ROLE_ORDER = ['고정', '광역', '임시'];
   const COLS = {
     seq: 2,
@@ -347,6 +392,7 @@
   $('renumber-btn').addEventListener('click', () => { renumberRows(); renderRows(); toast('순번을 재정렬했습니다.', 'success'); });
   $('add-rows-btn').addEventListener('click', addRowsFromText);
   $('download-btn').addEventListener('click', downloadWorkbook);
+  $('copy-vba-btn').addEventListener('click', copyVbaCode);
   $('open-parser-btn').addEventListener('click', openParserModal);
   $('parser-close-btn').addEventListener('click', closeParserModal);
   $('parser-run-btn').addEventListener('click', runEmbeddedParser);
@@ -833,6 +879,34 @@
       console.error(err);
       toast(`다운로드 생성 실패: ${err.message || err}`, 'error');
     }
+  }
+
+  async function copyVbaCode() {
+    try {
+      await copyTextToClipboard(VB_SELECTION_CHANGE_CODE);
+      toast('VB 코드를 복사했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`VB 코드 복사 실패: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    if (!ok) throw new Error('브라우저가 복사를 허용하지 않았습니다.');
   }
 
   function writeRowsToWorksheet(worksheet) {
