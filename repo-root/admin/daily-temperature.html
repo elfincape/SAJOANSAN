@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>일일 관리 엑셀 생성 · 코스표 관리 시스템</title>
+  <title>1탑2실 템플릿 생성 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -83,7 +83,7 @@
       <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100 transition">← 관리 허브</a>
       <div class="flex items-center gap-2">
         <div class="w-7 h-7 rounded-md bg-emerald-600/20 border border-emerald-600/40 flex items-center justify-center">🌡️</div>
-        <h1 class="text-base font-semibold">일일 관리 엑셀 생성</h1>
+        <h1 class="text-base font-semibold">1탑2실 템플릿 생성</h1>
       </div>
       <div class="flex-1"></div>
       <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
@@ -124,7 +124,7 @@
             <div class="text-xs text-zinc-500">새로 추가되는 행과 날짜 일괄 적용에 사용합니다.</div>
           </div>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label class="app-label">지사</label>
             <input id="default-branch" class="app-input" value="운영6지사">
@@ -139,10 +139,6 @@
               <input id="default-day" type="number" min="1" max="31" class="app-input" placeholder="일">
               <span class="self-center text-xs text-zinc-400">일</span>
             </div>
-          </div>
-          <div>
-            <label class="app-label">운송사</label>
-            <input id="default-carrier" class="app-input" placeholder="예: 이안물류">
           </div>
           <div>
             <label class="app-label">구획분리</label>
@@ -186,6 +182,7 @@
         </div>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button id="open-parser-btn" class="btn btn-ghost" type="button">배차정보 파서 열기</button>
         <button id="add-rows-btn" class="btn btn-primary" disabled>선택 구분으로 행 추가</button>
         <span class="text-xs text-zinc-500">기본 구분은 임시입니다. 필요한 경우 광역으로 바꾼 뒤 붙여넣으세요. 운송사는 항상 이안물류로 입력됩니다.</span>
       </div>
@@ -229,6 +226,58 @@
       <div id="empty-state" class="p-8 text-center text-sm text-zinc-500">템플릿 Excel을 업로드하면 편집 표가 표시됩니다.</div>
     </section>
   </main>
+
+  <div id="parser-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 px-4 py-6">
+    <div class="w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl flex flex-col">
+      <div class="p-4 border-b border-zinc-700 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-md bg-sky-600/20 border border-sky-600/40 flex items-center justify-center">🔎</div>
+        <div>
+          <h2 class="text-sm font-semibold">배차정보 파서</h2>
+          <p class="text-xs text-zinc-400">배차 문자를 붙여넣고 파싱한 뒤, 결과를 추가차량 입력칸으로 가져옵니다.</p>
+        </div>
+        <div class="flex-1"></div>
+        <button id="parser-close-btn" class="btn btn-ghost text-xs" type="button">닫기</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 overflow-auto">
+        <div class="space-y-2">
+          <label class="app-label">배차 원문</label>
+          <textarea id="parser-raw" rows="18" class="app-input font-mono text-xs" placeholder="예)
+한마루 곤지암 11톤 2대
+이찬모 경기92아5150
+01088582377
+
+윤현식 경기92바6221
+01062041457"></textarea>
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="parser-run-btn" class="btn btn-primary" type="button">파싱 실행</button>
+            <button id="parser-clear-btn" class="btn btn-ghost" type="button">지우기</button>
+            <span id="parser-count" class="text-xs text-zinc-400"></span>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-2">
+            <label class="app-label mb-0">파싱 결과</label>
+            <div class="flex-1"></div>
+            <button id="parser-apply-btn" class="btn btn-primary" type="button" disabled>결과 가져오기</button>
+          </div>
+          <div class="overflow-auto max-h-[430px] border border-zinc-700 rounded-lg">
+            <table class="w-full min-w-[680px] text-xs">
+              <thead class="bg-zinc-800 sticky top-0">
+                <tr class="text-zinc-300 border-b border-zinc-700">
+                  <th class="px-2 py-2 text-left">거래처명</th>
+                  <th class="px-2 py-2 text-left">톤수</th>
+                  <th class="px-2 py-2 text-left">기사명</th>
+                  <th class="px-2 py-2 text-left">차량번호</th>
+                  <th class="px-2 py-2 text-left">연락처</th>
+                </tr>
+              </thead>
+              <tbody id="parser-preview-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 translate-y-2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
 
@@ -277,6 +326,8 @@
     sourceRowCount: 0
   };
 
+  let parserRecords = [];
+
   const $ = id => document.getElementById(id);
 
   $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
@@ -284,6 +335,11 @@
   $('renumber-btn').addEventListener('click', () => { renumberRows(); renderRows(); toast('순번을 재정렬했습니다.', 'success'); });
   $('add-rows-btn').addEventListener('click', addRowsFromText);
   $('download-btn').addEventListener('click', downloadWorkbook);
+  $('open-parser-btn').addEventListener('click', openParserModal);
+  $('parser-close-btn').addEventListener('click', closeParserModal);
+  $('parser-run-btn').addEventListener('click', runEmbeddedParser);
+  $('parser-clear-btn').addEventListener('click', clearEmbeddedParser);
+  $('parser-apply-btn').addEventListener('click', applyEmbeddedParserResults);
 
   document.querySelectorAll('[data-drop]').forEach(card => {
     card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
@@ -354,7 +410,6 @@
     if (!first) return;
     if (first.branch) $('default-branch').value = first.branch;
     if (first.center) $('default-center').value = first.center;
-    if (first.carrier) $('default-carrier').value = first.carrier;
     const day = parseDay(first.date);
     if (day) $('default-day').value = String(day);
   }
@@ -439,6 +494,142 @@
       updateDerivedFields(state.rows[index]);
       renderRows();
     }
+  }
+
+  function openParserModal() {
+    $('parser-modal').classList.remove('hidden');
+    $('parser-modal').classList.add('flex');
+    setTimeout(() => $('parser-raw').focus(), 0);
+  }
+
+  function closeParserModal() {
+    $('parser-modal').classList.add('hidden');
+    $('parser-modal').classList.remove('flex');
+  }
+
+  function clearEmbeddedParser() {
+    $('parser-raw').value = '';
+    parserRecords = [];
+    renderEmbeddedParserResults();
+  }
+
+  function runEmbeddedParser() {
+    parserRecords = parseEmbeddedDispatch($('parser-raw').value);
+    renderEmbeddedParserResults();
+    if (!parserRecords.length) toast('파싱된 배차정보가 없습니다.', 'error');
+  }
+
+  function renderEmbeddedParserResults() {
+    const body = $('parser-preview-body');
+    $('parser-count').textContent = parserRecords.length ? `${parserRecords.length}건` : '';
+    $('parser-apply-btn').disabled = parserRecords.length === 0;
+    body.innerHTML = parserRecords.length
+      ? parserRecords.map(record => `
+        <tr class="border-b border-zinc-800">
+          <td class="px-2 py-1.5">${escapeHtml(record.name)}</td>
+          <td class="px-2 py-1.5 text-zinc-300">${escapeHtml(record.ton)}</td>
+          <td class="px-2 py-1.5">${escapeHtml(record.driver)}</td>
+          <td class="px-2 py-1.5 font-mono">${escapeHtml(record.vehicle)}</td>
+          <td class="px-2 py-1.5 font-mono text-zinc-300">${escapeHtml(record.phone)}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="5" class="px-3 py-8 text-center text-zinc-500">파싱 결과가 없습니다.</td></tr>';
+  }
+
+  function applyEmbeddedParserResults() {
+    if (!parserRecords.length) return;
+    $('add-text').value = parserRecords
+      .map(record => [record.name, record.ton, record.driver, record.vehicle, record.phone].join('\t'))
+      .join('\n');
+    closeParserModal();
+    toast(`배차정보 ${parserRecords.length}건을 입력칸에 가져왔습니다.`, 'success');
+  }
+
+  function parseEmbeddedDispatch(raw) {
+    const text = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const chunks = text.split(/[ \t]\/(?=[ \t\n])/);
+    const results = [];
+
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n').map(line => line.trim()).filter(Boolean);
+      let i = 0;
+      while (i < lines.length) {
+        if (!embeddedHasTonnage(lines[i])) { i++; continue; }
+        if (i + 2 >= lines.length) break;
+
+        const batchSpecs = embeddedTonCountSpecs(lines[i]);
+        if (batchSpecs.length > 0) {
+          const { name, tons } = embeddedBatchNameTon(lines[i], batchSpecs);
+          if (!name) { i++; continue; }
+          let offset = 1;
+          let parsedCount = 0;
+          for (const ton of tons) {
+            if (i + offset + 1 >= lines.length) break;
+            const { driver, vehicle } = embeddedDriverVehicle(lines[i + offset]);
+            const phone = embeddedNormalizePhone(lines[i + offset + 1]);
+            results.push({ name, ton, driver, vehicle, phone });
+            parsedCount++;
+            offset += 2;
+          }
+          i += parsedCount > 0 ? 1 + parsedCount * 2 : 1;
+          continue;
+        }
+
+        const { name, ton } = embeddedNameTon(lines[i]);
+        const { driver, vehicle } = embeddedDriverVehicle(lines[i + 1]);
+        const phone = embeddedNormalizePhone(lines[i + 2]);
+        if (name) results.push({ name, ton, driver, vehicle, phone });
+        i += 3;
+      }
+    }
+    return results;
+  }
+
+  function embeddedNormalizePhone(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('010')) return `${digits.slice(0,3)}-${digits.slice(3,7)}-${digits.slice(7)}`;
+    if (digits.length === 11) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    return String(raw || '').trim();
+  }
+
+  function embeddedHasTonnage(line) {
+    return /\d+(?:\.\d+)?(?:톤|축)/.test(line);
+  }
+
+  function embeddedNameTon(line) {
+    const noPrefix = String(line || '').replace(/^\d+\.\s*/, '');
+    const beforeAltSlash = noPrefix.split(/\s\/(?!\s*\d)/)[0];
+    const cleaned = beforeAltSlash.split(/\s\//)[0].replace(/\s*경유\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    const tonMatch = cleaned.match(/(\d+(?:\.\d+)?(?:톤|축))/);
+    const ton = tonMatch ? tonMatch[1] : '';
+    const name = (ton ? cleaned.slice(0, cleaned.indexOf(ton)).trim() : cleaned).replace(/\//g, '+').trim();
+    return { name, ton };
+  }
+
+  function embeddedTonCountSpecs(line) {
+    const specs = [];
+    const re = /(\d+(?:\.\d+)?(?:톤|축))\s*(\d+)\s*대/g;
+    let match;
+    while ((match = re.exec(line)) !== null) {
+      const count = Number(match[2]);
+      if (Number.isFinite(count) && count > 0) specs.push({ ton: match[1], count });
+    }
+    return specs;
+  }
+
+  function embeddedBatchNameTon(line, specs) {
+    const firstSpecIndex = line.search(/\d+(?:\.\d+)?(?:톤|축)\s*\d+\s*대/);
+    const namePart = firstSpecIndex >= 0 ? line.slice(0, firstSpecIndex).trim() : embeddedNameTon(line).name;
+    return {
+      name: String(namePart || '').replace(/\s+/g, ' ').trim().split(/\s+/)[0] || String(namePart || '').trim(),
+      tons: specs.flatMap(spec => Array.from({ length: spec.count }, () => spec.ton))
+    };
+  }
+
+  function embeddedDriverVehicle(line) {
+    const parts = String(line || '').trim().split(/\s+/);
+    return { driver: parts[0] || '', vehicle: parts[1] || '' };
   }
 
   function addRowsFromText() {
