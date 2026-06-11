@@ -147,8 +147,8 @@
           <div>
             <label class="app-label">구획분리</label>
             <select id="default-partition" class="app-select">
+              <option value="X" selected>X</option>
               <option value="O">O</option>
-              <option value="X">X</option>
               <option value="">공란</option>
             </select>
           </div>
@@ -342,6 +342,8 @@
       if (role && !record.dm && !record.vehicle_no && !record.carrier) continue;
       if (!role && !record.dm && !record.vehicle_no) continue;
       record.vehicle_type = role || record.vehicle_type || '고정';
+      if (!record.compliance) record.compliance = '준수';
+      if (!record.partition_wall) record.partition_wall = 'X';
       rows.push(record);
     }
     return rows;
@@ -513,8 +515,8 @@
       refrigerated_temp: '',
       freezer_normal: '',
       refrigerated_normal: '',
-      compliance: '',
-      partition_wall: $('default-partition').value,
+      compliance: '준수',
+      partition_wall: $('default-partition').value || 'X',
       photo_partition: '',
       photo_temp_log: '',
       remark: ''
@@ -729,9 +731,13 @@
   }
 
   function buildFilename() {
-    const base = state.file?.name?.replace(/\.[^.]+$/, '') || '일일관리';
-    const day = normalizeDay($('default-day').value).replace('일', '') || new Date().getDate();
-    return `${base}_${day}일_관리표.xlsx`;
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const day = parseDay($('default-day').value) || now.getDate();
+    const dd = String(day).padStart(2, '0');
+    const centerName = $('default-center').value.trim() || '안산사조센터';
+    return `${centerName} 일일 온도점검_${yy}${mm}${dd}.xlsx`;
   }
 
   function saveBlob(blob, filename) {
