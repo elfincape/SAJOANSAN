@@ -18,3 +18,14 @@ repo-root/templates/sazocoupang.xlsx
 ```
 
 G6:G23에는 납품시간이 있어야 하며, I/J부터 오른쪽 2칸 단위로 하차지/종사자명이 입력됩니다.
+
+## 쿠팡 입문확인 API 프록시
+
+브라우저에서 AIAPIFlow 직접 호출이 CORS로 막히면 Supabase Edge Function을 배포해야 합니다.
+
+```bash
+supabase functions deploy coupang-vision
+supabase secrets set AIAPIFLOW_API_KEY=<키값>
+```
+
+프론트는 먼저 `coupang-vision` 함수를 호출하고, 실패할 때만 브라우저 직접 호출을 fallback으로 시도합니다.
