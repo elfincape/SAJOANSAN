@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     .drop-card { border:1px dashed #52525b; background:rgba(39,39,42,.55); transition:.15s ease; }
     .drop-card:hover,.drop-card.dragover { border-color:#10b981; background:rgba(16,185,129,.08); transform:translateY(-1px); }
@@ -448,9 +449,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
     const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
     applyEntryDate(workbook, ws);
-    await insertUploadedImage(workbook, ws);
+    // ExcelJS가 기존 도형/조건부서식이 많은 템플릿에 새 drawing을 추가하면 Excel 복구 경고가 발생해 이미지 삽입은 보류한다.
     const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
-    const out = await workbook.xlsx.writeBuffer(); saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
+    const out = await sanitizeWorkbookBuffer(await workbook.xlsx.writeBuffer());
+    saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
   }
   function writeMatchesToWorksheet(ws) {
     const errors = [];
@@ -468,6 +470,36 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     });
     return errors;
   }
+  async function sanitizeWorkbookBuffer(buffer) {
+    if (!window.JSZip) return buffer;
+    const zip = await window.JSZip.loadAsync(buffer);
+    const workbookPath = 'xl/workbook.xml';
+    const workbookFile = zip.file(workbookPath);
+    if (workbookFile) {
+      const xml = await workbookFile.async('string');
+      zip.file(workbookPath, xml.replace(/\sfilterPrivacy="1"/g, '').replace(/\sfilterPrivacy="true"/g, ''));
+    }
+    const worksheetFiles = Object.keys(zip.files).filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+    await Promise.all(worksheetFiles.map(async name => {
+      const xml = await zip.file(name).async('string');
+      zip.file(name, xml
+        .replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, '')
+        .replace(/<drawing\s+[^>]*\/>/g, ''));
+    }));
+    const relFiles = Object.keys(zip.files).filter(name => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name));
+    await Promise.all(relFiles.map(async name => {
+      const xml = await zip.file(name).async('string');
+      zip.file(name, xml.replace(/<Relationship[^>]+Type="[^"]+\/drawing"[^>]*\/>/g, ''));
+    }));
+    Object.keys(zip.files).forEach(name => { if (/^xl\/drawings\//.test(name)) zip.remove(name); });
+    const contentTypes = zip.file('[Content_Types].xml');
+    if (contentTypes) {
+      const xml = await contentTypes.async('string');
+      zip.file('[Content_Types].xml', xml.replace(/<Override[^>]+PartName="\/xl\/drawings\/[^"]+"[^>]*\/>/g, ''));
+    }
+    return zip.generateAsync({ type: 'arraybuffer' });
+  }
+
   async function insertUploadedImage(workbook, ws) {
     if (!state.imageFile) return;
     const base64 = await getImageBase64();
@@ -484,8 +516,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
   function applyGroupFill(centerCell, driverCell, dispatch) {
     if (!dispatch?.groupFill) return;
-    const fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
-    [centerCell, driverCell].forEach(cell => { cell.style = { ...(cell.style || {}), fill: { ...fill, fgColor: { ...fill.fgColor } } }; });
+    [centerCell, driverCell].forEach(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } }; });
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
@@ -496,22 +527,16 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       if (timeCandidates(ws.getRow(r).getCell(TIME_COL)).includes(target)) return r;
     }
 
-    // 2순위: H열 확인필요시간은 납품시간 -30분이므로, H열 후보에 30분을 더해 비교한다.
-    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
-      const hCandidates = timeCandidates(ws.getRow(r).getCell(8));
-      if (hCandidates.some(t => addMinutes(t, 30) === target)) return r;
-    }
-
-    // 3순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~V 범위를 스캔한다.
+    // 2순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~V 범위를 정확한 시간값으로만 스캔한다.
     for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
       const row = ws.getRow(r);
       for (let c = 2; c <= LAST_CENTER_COL; c++) {
         const candidates = timeCandidates(row.getCell(c));
-        if (candidates.includes(target) || candidates.some(t => addMinutes(t, 30) === target)) return r;
+        if (candidates.includes(target)) return r;
       }
     }
 
-    // 4순위: 템플릿 시간 셀을 ExcelJS가 못 읽는 경우 08:00부터 30분 간격으로 행을 추정한다.
+    // 3순위: 템플릿 시간 셀을 ExcelJS가 못 읽는 경우 08:00부터 30분 간격으로 행을 추정한다.
     const fallback = fallbackTimeRowByHalfHour(target);
     if (fallback) {
       console.warn('[coupang-entry] 시간 셀 직접 매칭 실패, 08:00 기준 30분 간격 fallback 사용:', { target, fallback });
