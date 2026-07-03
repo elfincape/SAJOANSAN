@@ -49,6 +49,9 @@
       <div class="drop-card rounded-lg p-3" data-drop="template">
         <div class="flex items-center gap-2 mb-3"><span class="step-badge">1</span><div><div class="text-sm font-semibold">엑셀 템플릿</div><div class="text-xs text-zinc-500">G6:G23 시간 기준 입력</div></div></div>
         <button id="reload-template-btn" class="btn btn-ghost text-xs mb-3" type="button">저장된 템플릿 다시 불러오기</button>
+        <label class="app-label">입문확인 날짜</label>
+        <input id="entry-date" type="date" class="app-input mb-3">
+        <div id="entry-date-label" class="mb-3 text-xs text-sky-300"></div>
         <label class="app-label">필요 시 임시 템플릿 업로드</label>
         <input id="template-file" type="file" accept=".xlsx,.xlsm" class="w-full text-sm">
         <div id="template-info" class="mt-3 text-xs text-zinc-400">저장된 템플릿을 불러오는 중...</div>
@@ -68,12 +71,12 @@
         <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">API호출</button>
       </div>
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
-        <div class="flex items-center gap-2 mb-3"><span class="step-badge">4</span><div><div class="text-sm font-semibold">배차정보 텍스트</div><div class="text-xs text-zinc-500">기존 파서 규칙으로 센터/기사/차량 추출</div></div></div>
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">배차정보 텍스트</div><div class="text-xs text-zinc-500">기존 파서 규칙으로 센터/기사/차량 추출</div></div></div>
         <textarea id="dispatch-text" rows="8" class="app-input font-mono text-xs" placeholder="예)\n쿠팡 인천15/11 5톤\n홍길동 경기92바1234\n01012345678\n\n쿠팡 인천12B2B 5톤\n김기사 경기91자5678\n01098765432"></textarea>
         <div class="mt-3 flex gap-2"><button id="parse-dispatch-btn" class="btn btn-ghost" type="button">배차정보 파싱</button><span id="dispatch-count" class="text-xs text-zinc-400 self-center"></span></div>
       </div>
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
-        <div class="flex items-center gap-2 mb-3"><span class="step-badge">5</span><div><div class="text-sm font-semibold">추출 JSON 직접 붙여넣기</div><div class="text-xs text-zinc-500">API 실패 시 수동 보정 가능</div></div></div>
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">4</span><div><div class="text-sm font-semibold">추출 JSON 직접 붙여넣기</div><div class="text-xs text-zinc-500">API 실패 시 수동 보정 가능</div></div></div>
         <textarea id="schedule-json" rows="8" class="app-input font-mono text-xs" placeholder='[{"centerRaw":"인천12 B2B","centerBase":"인천12","isB2B":true,"reservationTime":"09:00","quantity":276,"cold":1,"frozen":2}]'></textarea>
         <div class="mt-3 flex gap-2"><button id="load-json-btn" class="btn btn-ghost" type="button">JSON 반영</button><button id="match-btn" class="btn btn-primary" type="button">매칭 실행</button></div>
       </div>
@@ -81,7 +84,7 @@
 
     <section class="border border-zinc-700 rounded-lg overflow-hidden">
       <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
-        <span class="step-badge">6</span><span class="text-sm font-semibold">매칭 확인</span><span id="match-count" class="text-xs text-zinc-400"></span>
+        <span class="step-badge">5</span><span class="text-sm font-semibold">매칭 확인</span><span id="match-count" class="text-xs text-zinc-400"></span>
         <div class="flex-1"></div><button id="download-btn" class="btn btn-primary" disabled>엑셀 입력 후 다운로드</button>
       </div>
       <div class="overflow-auto max-h-[62vh]">
@@ -130,11 +133,12 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 예약시간은 HH:mm 형식으로 통일해라.
 물량은 숫자만 number로 변환해라.
 설명하지 말고 JSON 배열만 반환해라.`;
-  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', imageBase64: '', imageMediaType: '', imageSize: null, scheduleRows: [], dispatchRows: [], matches: [], usedGroupFills: new Set() };
+  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', imageBase64: '', imageMediaType: '', imageSize: null, selectedDate: '', scheduleRows: [], dispatchRows: [], matches: [], usedGroupFills: new Set() };
   const GROUP_FILL_COLORS = ['FFE2F0CB','FFFFD6A5','FFCAFFBF','FF9BF6FF','FFA0C4FF','FFBDB2FF','FFFFADAD','FFFDFFB6','FFCDE7BE','FFD7E3FC','FFFFC8DD','FFE0BBE4'];
   const $ = id => document.getElementById(id);
 
   $('reload-template-btn').addEventListener('click', () => loadDefaultTemplate(true));
+  $('entry-date').addEventListener('change', e => setEntryDate(e.target.value));
   $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
   $('image-file').addEventListener('change', e => handleImageFile(e.target.files?.[0]));
   $('image-paste-box').addEventListener('click', () => focusImagePasteBox());
@@ -157,7 +161,45 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       if (card.dataset.drop === 'image') handleImageFile(file);
     });
   });
+  setEntryDate(defaultEntryDate());
   loadDefaultTemplate(false);
+
+  function defaultEntryDate() { return new Date().toISOString().slice(0, 10); }
+  function setEntryDate(value) {
+    state.selectedDate = value || defaultEntryDate();
+    $('entry-date').value = state.selectedDate;
+    $('entry-date-label').textContent = `엑셀 G3/시트명: ${formatEntryDateLabel(state.selectedDate)}`;
+  }
+  function formatEntryDateLabel(value) {
+    const d = parseDateInput(value);
+    if (!d) return '';
+    const days = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
+    return `${d.getMonth() + 1}월${d.getDate()}일(${days[d.getDay()]})`;
+  }
+  function parseDateInput(value) {
+    const s = String(value || '').trim();
+    if (/^\d{6}$/.test(s)) return new Date(2000 + Number(s.slice(0, 2)), Number(s.slice(2, 4)) - 1, Number(s.slice(4, 6)));
+    if (/^\d{8}$/.test(s)) return new Date(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8)));
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  function applyEntryDate(workbook, ws) {
+    const label = formatEntryDateLabel(state.selectedDate);
+    if (!label) return;
+    ws.getCell('G3').value = label;
+    const uniqueName = uniqueWorksheetName(workbook, label, ws);
+    if (uniqueName) ws.name = uniqueName;
+  }
+  function uniqueWorksheetName(workbook, baseName, currentWs) {
+    const safeBase = String(baseName || '').replace(/[\/?*:[\]]/g, '').slice(0, 31) || '입문확인';
+    let name = safeBase;
+    let index = 2;
+    while (workbook.worksheets.some(sheet => sheet !== currentWs && sheet.name === name)) {
+      const suffix = `_${index++}`;
+      name = `${safeBase.slice(0, 31 - suffix.length)}${suffix}`;
+    }
+    return name;
+  }
 
   async function loadDefaultTemplate(showToast) {
     try {
@@ -307,7 +349,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function normalizeScheduleRow(row, index) {
     const raw = normalizeCenterName(String(row.centerRaw || row.center || '').trim());
     const base = normalizeCenterName(String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim());
-    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: normalizeTime(row.reservationTime), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
+    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: roundToNearestHalfHour(normalizeTime(row.reservationTime)), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
   }
   function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
 
@@ -405,14 +447,13 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
     const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
+    applyEntryDate(workbook, ws);
     await insertUploadedImage(workbook, ws);
     const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
     const out = await workbook.xlsx.writeBuffer(); saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
   }
   function writeMatchesToWorksheet(ws) {
     const errors = [];
-    const reservedFills = collectWorksheetFillColors(ws);
-    const groupFillMap = new Map();
     state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
       const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
       const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
@@ -423,7 +464,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       driverCell.value = m.match.matchedDispatch.driver || '';
       centerCell.numFmt = '@';
       driverCell.numFmt = '@';
-      applyGroupFill(centerCell, driverCell, m.match.matchedDispatch, reservedFills, groupFillMap);
+      applyGroupFill(centerCell, driverCell, m.match.matchedDispatch);
     });
     return errors;
   }
@@ -441,29 +482,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
   function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
   function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
-  function applyGroupFill(centerCell, driverCell, dispatch, reservedFills, groupFillMap) {
+  function applyGroupFill(centerCell, driverCell, dispatch) {
     if (!dispatch?.groupFill) return;
-    const key = dispatch.groupId || dispatch.groupFill;
-    if (!groupFillMap.has(key)) groupFillMap.set(key, reserveDistinctFill(dispatch.groupFill, reservedFills));
-    const fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: groupFillMap.get(key) } };
-    centerCell.fill = fill;
-    driverCell.fill = fill;
-  }
-  function collectWorksheetFillColors(ws) {
-    const colors = new Set();
-    ws.eachRow(row => row.eachCell(cell => {
-      const argb = cell.fill?.fgColor?.argb;
-      if (argb) colors.add(String(argb).toUpperCase());
-    }));
-    return colors;
-  }
-  function reserveDistinctFill(preferred, reservedFills) {
-    const preferredColor = String(preferred || '').toUpperCase();
-    if (preferredColor && !reservedFills.has(preferredColor)) { reservedFills.add(preferredColor); return preferredColor; }
-    let color = '';
-    do { color = randomPastelArgb(); } while (reservedFills.has(color));
-    reservedFills.add(color);
-    return color;
+    const fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
+    [centerCell, driverCell].forEach(cell => { cell.style = { ...(cell.style || {}), fill: { ...fill, fgColor: { ...fill.fgColor } } }; });
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
@@ -480,10 +502,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       if (hCandidates.some(t => addMinutes(t, 30) === target)) return r;
     }
 
-    // 3순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~R 범위를 스캔한다.
+    // 3순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~V 범위를 스캔한다.
     for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
       const row = ws.getRow(r);
-      for (let c = 2; c <= 18; c++) {
+      for (let c = 2; c <= LAST_CENTER_COL; c++) {
         const candidates = timeCandidates(row.getCell(c));
         if (candidates.includes(target) || candidates.some(t => addMinutes(t, 30) === target)) return r;
       }
@@ -499,12 +521,19 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     console.warn('[coupang-entry] 시간 행을 찾지 못함:', { target, rows: debugTimeRows(ws) });
     return null;
   }
-  function debugTimeRows(ws) { return Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; return { row, cells: Array.from({ length: 17 }, (_, j) => { const col = j + 2; const cell = ws.getRow(row).getCell(col); return { col, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) }; }); }
+  function debugTimeRows(ws) { return Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; return { row, cells: Array.from({ length: LAST_CENTER_COL - 1 }, (_, j) => { const col = j + 2; const cell = ws.getRow(row).getCell(col); return { col, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) }; }); }
   function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
   function fallbackTimeRowByHalfHour(timeText) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = h * 60 + m; const start = 8 * 60; const diff = total - start; if (diff < 0 || diff % 30 !== 0) return null; const row = TIME_ROW_START + diff / 30; return row >= TIME_ROW_START && row <= TIME_ROW_END ? row : null; }
   function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
   function compactCenterLabel(value) { return normalizeCenterName(value).replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
 
+  function roundToNearestHalfHour(timeText) {
+    const t = normalizeTime(timeText);
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    const roundedTotal = Math.round((h * 60 + m) / 30) * 30;
+    return `${String(Math.floor(roundedTotal / 60) % 24).padStart(2,'0')}:${String(roundedTotal % 60).padStart(2,'0')}`;
+  }
   function normalizeTime(value) {
     if (value == null || value === '') return null;
     if (typeof value === 'number' && Number.isFinite(value)) { const total = Math.round((value % 1) * 24 * 60); return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
