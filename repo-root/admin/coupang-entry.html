@@ -61,7 +61,7 @@
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
         <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">Claude API</div><div class="text-xs text-zinc-500">JSON만 반환하도록 요청</div></div></div>
         <label class="app-label">Base URL</label>
-        <input id="api-base-url" class="app-input mb-2" value="https://aiapiflow.com">
+        <input id="api-base-url" class="app-input mb-2" value="https://aiapiflow.com/v1">
         <label class="app-label">API Key</label>
         <input id="api-key" class="app-input mb-2" type="text" value="sk-d518e242674b4b1ac63b3594bde3643cad68c8d76e95f64914b35a6020e8212f">
         <label class="app-label">Model</label>
@@ -190,31 +190,70 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const apiKey = $('api-key').value.trim(); if (!apiKey) return toast('Claude API Key를 입력하세요.', 'error');
     try {
       const base64 = await fileToBase64(state.imageFile);
-      const res = await fetch(`${$('api-base-url').value.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: $('api-model').value.trim(),
-          temperature: 0,
-          max_tokens: 4000,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: PROMPT },
-              { type: 'image_url', image_url: { url: `data:${state.imageFile.type || 'image/png'};base64,${base64}` } }
-            ]
-          }]
-        })
+      const text = await callClaudeVision({
+        baseURL: $('api-base-url').value.trim(),
+        apiKey,
+        model: $('api-model').value.trim(),
+        mediaType: state.imageFile.type || 'image/png',
+        base64
       });
-      const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || JSON.stringify(json));
-      const text = extractClaudeText(json);
       $('schedule-json').value = extractJsonArrayText(text);
       loadScheduleJson(); toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
     } catch (err) { console.error(err); toast(`이미지 분석 실패: ${err.message || err}`, 'error'); }
   }
+  async function callClaudeVision({ baseURL, apiKey, model, mediaType, base64 }) {
+    const normalizedBase = String(baseURL || '').replace(/\/$/, '');
+    const anthropicURL = `${normalizedBase}/messages`;
+    const anthropicBody = {
+      model,
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: PROMPT }
+        ]
+      }]
+    };
+
+    try {
+      return extractClaudeText(await postJson(anthropicURL, {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      }, anthropicBody));
+    } catch (err) {
+      console.warn('[coupang-entry] Anthropic messages 호출 실패, chat/completions fallback 시도:', err);
+    }
+
+    const rootURL = normalizedBase.replace(/\/v1$/, '');
+    const chatURL = `${rootURL}/v1/chat/completions`;
+    return extractClaudeText(await postJson(chatURL, {
+      'authorization': `Bearer ${apiKey}`
+    }, {
+      model,
+      temperature: 0,
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: PROMPT },
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } }
+        ]
+      }]
+    }));
+  }
+
+  async function postJson(url, extraHeaders, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.error?.message || json?.message || `${res.status} ${res.statusText}`);
+    return json;
+  }
+
   function loadScheduleJson() {
     try { state.scheduleRows = JSON.parse(extractJsonArrayText($('schedule-json').value)).map(normalizeScheduleRow); renderScheduleCount(); toast(`시간표 JSON ${state.scheduleRows.length}행을 반영했습니다.`, 'success'); }
     catch (err) { toast(`JSON 파싱 실패: ${err.message || err}`, 'error'); }
