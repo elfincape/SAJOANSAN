@@ -449,7 +449,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
     const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
     applyEntryDate(workbook, ws);
-    // ExcelJS가 기존 도형/조건부서식이 많은 템플릿에 새 drawing을 추가하면 Excel 복구 경고가 발생해 이미지 삽입은 보류한다.
+    await insertUploadedImage(workbook, ws);
     const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
     const out = await sanitizeWorkbookBuffer(await workbook.xlsx.writeBuffer());
     saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
@@ -483,20 +483,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     await Promise.all(worksheetFiles.map(async name => {
       const xml = await zip.file(name).async('string');
       zip.file(name, xml
-        .replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, '')
-        .replace(/<drawing\s+[^>]*\/>/g, ''));
+        .replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, ''));
     }));
-    const relFiles = Object.keys(zip.files).filter(name => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name));
-    await Promise.all(relFiles.map(async name => {
-      const xml = await zip.file(name).async('string');
-      zip.file(name, xml.replace(/<Relationship[^>]+Type="[^"]+\/drawing"[^>]*\/>/g, ''));
-    }));
-    Object.keys(zip.files).forEach(name => { if (/^xl\/drawings\//.test(name)) zip.remove(name); });
-    const contentTypes = zip.file('[Content_Types].xml');
-    if (contentTypes) {
-      const xml = await contentTypes.async('string');
-      zip.file('[Content_Types].xml', xml.replace(/<Override[^>]+PartName="\/xl\/drawings\/[^"]+"[^>]*\/>/g, ''));
-    }
     return zip.generateAsync({ type: 'arraybuffer' });
   }
 
@@ -509,14 +497,14 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const width = columnsPixelWidth(ws, 1, 5);
     const ratio = state.imageSize?.width && state.imageSize?.height ? state.imageSize.height / state.imageSize.width : 0.62;
     const height = Math.max(80, Math.round(width * ratio));
-    ws.addImage(imageId, { tl: { col: 0, row: 1 }, ext: { width, height }, editAs: 'oneCell' });
+    const rowSpan = Math.max(4, height / 20);
+    ws.addImage(imageId, { tl: { col: 0, row: 1 }, br: { col: 5, row: 1 + rowSpan }, editAs: 'oneCell' });
   }
   async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
   function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
   function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
   function applyGroupFill(centerCell, driverCell, dispatch) {
-    if (!dispatch?.groupFill) return;
-    [centerCell, driverCell].forEach(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } }; });
+    // 현재 템플릿의 병합/공유 스타일 때문에 색상 지정 시 I5:U22 전체가 물드는 문제가 있어 셀 배경색은 적용하지 않는다.
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
@@ -527,16 +515,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       if (timeCandidates(ws.getRow(r).getCell(TIME_COL)).includes(target)) return r;
     }
 
-    // 2순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~V 범위를 정확한 시간값으로만 스캔한다.
-    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
-      const row = ws.getRow(r);
-      for (let c = 2; c <= LAST_CENTER_COL; c++) {
-        const candidates = timeCandidates(row.getCell(c));
-        if (candidates.includes(target)) return r;
-      }
-    }
-
-    // 3순위: 템플릿 시간 셀을 ExcelJS가 못 읽는 경우 08:00부터 30분 간격으로 행을 추정한다.
+    // 2순위: H열 확인시간이 납품시간으로 오인되는 문제를 막기 위해 G열 실패 시 고정 시간표 행으로만 추정한다.
     const fallback = fallbackTimeRowByHalfHour(target);
     if (fallback) {
       console.warn('[coupang-entry] 시간 셀 직접 매칭 실패, 08:00 기준 30분 간격 fallback 사용:', { target, fallback });
