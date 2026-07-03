@@ -29,3 +29,22 @@ supabase secrets set AIAPIFLOW_API_KEY=<키값>
 ```
 
 프론트는 먼저 `coupang-vision` 함수를 호출하고, 실패할 때만 브라우저 직접 호출을 fallback으로 시도합니다.
+
+## GitHub Actions Supabase Edge Function 자동 배포
+
+`main` 브랜치에 `supabase/functions/coupang-vision/**` 변경사항이 push되면 `.github/workflows/deploy-supabase-functions.yml` workflow가 `coupang-vision` 함수를 자동 배포합니다.
+
+GitHub 저장소의 **Settings > Secrets and variables > Actions > Repository secrets**에 아래 3개 값을 추가해야 합니다.
+
+| Secret 이름 | 넣을 값 |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | Supabase 계정 Access Token |
+| `SUPABASE_PROJECT_REF` | Supabase 프로젝트 ref. 현재 프로젝트는 `vvrppotrnpwrwpwqaiet` |
+| `AIAPIFLOW_API_KEY` | AIAPIFlow API 키 |
+
+workflow에서 실행하는 핵심 명령은 아래와 같습니다.
+
+```bash
+supabase secrets set AIAPIFLOW_API_KEY="$AIAPIFLOW_API_KEY" --project-ref "$SUPABASE_PROJECT_REF"
+supabase functions deploy coupang-vision --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+```
