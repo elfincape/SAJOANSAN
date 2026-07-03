@@ -510,7 +510,6 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c++) {
         const cell = row.getCell(c);
         cell.style = cloneCellStyle(cell.style);
-        delete cell.style.fill;
       }
     }
   }
