@@ -302,7 +302,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function normalizeScheduleRow(row, index) {
     const raw = String(row.centerRaw || row.center || '').trim();
     const base = String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim();
-    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: normalizeTime(row.reservationTime), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold), frozen: numberOrNull(row.frozen) };
+    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: normalizeTime(row.reservationTime), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
   }
   function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
 
@@ -390,14 +390,41 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
+    if (!target) return null;
+
+    // 1순위: 명세상 납품시간인 G열을 먼저 확인한다.
     for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
-      const cell = ws.getRow(r).getCell(TIME_COL);
-      const candidates = timeCandidates(cell);
-      if (candidates.includes(target)) return r;
+      if (timeCandidates(ws.getRow(r).getCell(TIME_COL)).includes(target)) return r;
     }
-    console.warn('[coupang-entry] 시간 행을 찾지 못함:', { target, rows: Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; const cell = ws.getRow(row).getCell(TIME_COL); return { row, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) });
+
+    // 2순위: H열 확인필요시간은 납품시간 -30분이므로, H열 후보에 30분을 더해 비교한다.
+    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
+      const hCandidates = timeCandidates(ws.getRow(r).getCell(8));
+      if (hCandidates.some(t => addMinutes(t, 30) === target)) return r;
+    }
+
+    // 3순위: 템플릿에서 시간이 다른 열/병합셀로 들어간 경우를 대비해 B~R 범위를 스캔한다.
+    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
+      const row = ws.getRow(r);
+      for (let c = 2; c <= 18; c++) {
+        const candidates = timeCandidates(row.getCell(c));
+        if (candidates.includes(target) || candidates.some(t => addMinutes(t, 30) === target)) return r;
+      }
+    }
+
+    // 4순위: 템플릿 시간 셀을 ExcelJS가 못 읽는 경우 08:00부터 30분 간격으로 행을 추정한다.
+    const fallback = fallbackTimeRowByHalfHour(target);
+    if (fallback) {
+      console.warn('[coupang-entry] 시간 셀 직접 매칭 실패, 08:00 기준 30분 간격 fallback 사용:', { target, fallback });
+      return fallback;
+    }
+
+    console.warn('[coupang-entry] 시간 행을 찾지 못함:', { target, rows: debugTimeRows(ws) });
     return null;
   }
+  function debugTimeRows(ws) { return Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; return { row, cells: Array.from({ length: 17 }, (_, j) => { const col = j + 2; const cell = ws.getRow(row).getCell(col); return { col, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) }; }); }
+  function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
+  function fallbackTimeRowByHalfHour(timeText) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = h * 60 + m; const start = 8 * 60; const diff = total - start; if (diff < 0 || diff % 30 !== 0) return null; const row = TIME_ROW_START + diff / 30; return row >= TIME_ROW_START && row <= TIME_ROW_END ? row : null; }
   function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
   function compactCenterLabel(value) { return String(value || '').replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
 
