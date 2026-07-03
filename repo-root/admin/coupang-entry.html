@@ -199,10 +199,19 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
         mediaType: state.imageFile.type || 'image/png',
         base64
       });
-      $('schedule-json').value = extractJsonArrayText(text);
-      loadScheduleJson(); toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
+      console.log('[coupang-entry] Claude 원본 응답 문자열:', text);
+      const jsonText = extractJsonArrayText(text);
+      console.log('[coupang-entry] JSON.parse 직전 문자열:', jsonText);
+      const rows = parseScheduleRowsFromText(jsonText);
+      console.log('[coupang-entry] 파싱된 JSON:', rows);
+      console.log('[coupang-entry] 추출된 배열 length:', rows.length);
+      $('schedule-json').value = JSON.stringify(rows, null, 2);
+      state.scheduleRows = rows.map(normalizeScheduleRow);
+      renderScheduleCount();
+      toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
     } catch (err) {
-      console.error(err);
+      console.error('[coupang-entry] 이미지 분석 예외:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
       const msg = String(err.message || err);
       if (msg.includes('Failed to fetch')) {
         toast('이미지 분석 실패: 브라우저 직접 호출이 CORS/네트워크로 차단됐습니다. Supabase Edge Function coupang-vision 배포가 필요합니다.', 'error');
@@ -215,8 +224,9 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const edgeText = await callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 });
     if (edgeText) return edgeText;
 
-    const normalizedBase = String(baseURL || '').replace(/\/$/, '');
+    const normalizedBase = normalizeApiBaseURL(baseURL);
     const anthropicURL = `${normalizedBase}/messages`;
+    console.log('[coupang-entry] Claude API 요청 URL:', anthropicURL);
     const anthropicBody = {
       model,
       max_tokens: 4000,
@@ -240,6 +250,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
     const rootURL = normalizedBase.replace(/\/v1$/, '');
     const chatURL = `${rootURL}/v1/chat/completions`;
+    console.log('[coupang-entry] Claude API 요청 URL:', chatURL);
     return extractClaudeText(await postJson(chatURL, {
       'authorization': `Bearer ${apiKey}`
     }, {
@@ -258,12 +269,22 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
   async function callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 }) {
     try {
-      if (!window.appSupabase?.functions?.invoke) return null;
+      if (!window.appSupabase?.functions?.invoke) {
+        console.warn('[coupang-entry] Supabase client functions.invoke 없음');
+        return null;
+      }
+      console.log('[coupang-entry] Supabase Edge Function 요청:', 'coupang-vision');
       const { data, error } = await window.appSupabase.functions.invoke('coupang-vision', {
-        body: { baseURL, apiKey, model, mediaType, imageBase64: base64, prompt: PROMPT }
+        body: { baseURL: normalizeApiBaseURL(baseURL), apiKey, model, mediaType, imageBase64: base64, prompt: PROMPT }
       });
+      console.log('[coupang-entry] Edge Function 원본 응답:', data);
       if (error) throw error;
-      if (data?.text) return data.text;
+      if (data?.error) throw new Error(data.error);
+      if (typeof data?.text === 'string' && data.text.trim()) {
+        console.log('[coupang-entry] Edge Function provider:', data.provider || '(unknown)');
+        return data.text;
+      }
+      console.warn('[coupang-entry] Edge Function이 text를 반환하지 않음:', data);
       return null;
     } catch (err) {
       console.warn('[coupang-entry] Supabase Edge Function 호출 실패, 브라우저 직접 호출 fallback 시도:', err);
@@ -272,19 +293,38 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
 
   async function postJson(url, extraHeaders, body) {
+    console.log('[coupang-entry] 요청 URL:', url);
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...extraHeaders },
       body: JSON.stringify(body)
     });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(json?.error?.message || json?.message || `${res.status} ${res.statusText}`);
-    return json;
+    const responseText = await res.text();
+    console.log('[coupang-entry] HTTP Status:', res.status, res.statusText);
+    console.log('[coupang-entry] Claude 원본 response body:', responseText);
+    let json = null;
+    try { json = responseText ? JSON.parse(responseText) : null; }
+    catch (err) { console.error('[coupang-entry] API response JSON.parse 실패:', err, responseText); }
+    if (!res.ok) throw new Error(json?.error?.message || json?.message || responseText || `${res.status} ${res.statusText}`);
+    return json ?? responseText;
   }
 
   function loadScheduleJson() {
-    try { state.scheduleRows = JSON.parse(extractJsonArrayText($('schedule-json').value)).map(normalizeScheduleRow); renderScheduleCount(); toast(`시간표 JSON ${state.scheduleRows.length}행을 반영했습니다.`, 'success'); }
-    catch (err) { toast(`JSON 파싱 실패: ${err.message || err}`, 'error'); }
+    try {
+      const raw = $('schedule-json').value;
+      console.log('[coupang-entry] JSON.parse 직전 문자열:', extractJsonArrayText(raw));
+      const rows = parseScheduleRowsFromText(raw);
+      console.log('[coupang-entry] 파싱된 JSON:', rows);
+      console.log('[coupang-entry] 추출된 배열 length:', rows.length);
+      state.scheduleRows = rows.map(normalizeScheduleRow);
+      renderScheduleCount();
+      toast(`시간표 JSON ${state.scheduleRows.length}행을 반영했습니다.`, 'success');
+    }
+    catch (err) {
+      console.error('[coupang-entry] JSON 추출/파싱 실패:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      toast(`JSON 파싱 실패: ${err.message || err}`, 'error');
+    }
   }
   function normalizeScheduleRow(row, index) {
     const raw = String(row.centerRaw || row.center || '').trim();
@@ -380,13 +420,39 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
   function numberOrNull(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? n : null; }
   function extractClaudeText(json) {
-    if (Array.isArray(json.content)) return json.content.map(c => c.text || '').join('\n').trim();
-    if (json.choices?.[0]?.message?.content) return String(json.choices[0].message.content).trim();
-    if (json.output_text) return String(json.output_text).trim();
+    console.log('[coupang-entry] Claude 응답 객체:', json);
+    if (typeof json === 'string') return json.trim();
+    if (Array.isArray(json?.content)) return json.content.map(c => c.text || '').join('\n').trim();
+    if (json?.choices?.[0]?.message?.content) return String(json.choices[0].message.content).trim();
+    if (json?.output_text) return String(json.output_text).trim();
     return JSON.stringify(json);
   }
 
-  function extractJsonArrayText(text) { const s = String(text || '').trim(); const a = s.indexOf('['); const b = s.lastIndexOf(']'); return a >= 0 && b >= a ? s.slice(a, b + 1) : s; }
+  function normalizeApiBaseURL(value) {
+    const raw = String(value || 'https://aiapiflow.com/v1').trim().replace(/\/$/, '');
+    return raw.endsWith('/v1') ? raw : `${raw}/v1`;
+  }
+  function parseScheduleRowsFromText(text) {
+    const jsonText = extractJsonArrayText(text);
+    let parsed;
+    try { parsed = JSON.parse(jsonText); }
+    catch (err) {
+      console.error('[coupang-entry] JSON.parse 실패 원문:', jsonText);
+      throw new Error(`JSON 추출 실패: ${err.message}`);
+    }
+    if (!Array.isArray(parsed)) throw new Error(`JSON 배열이 아닙니다. 실제 타입: ${parsed === null ? 'null' : typeof parsed}`);
+    return parsed;
+  }
+  function extractJsonArrayText(text) {
+    const s = String(text ?? '').trim();
+    console.log('[coupang-entry] JSON 추출 대상 원문:', s);
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const body = fence ? fence[1].trim() : s;
+    const a = body.indexOf('[');
+    const b = body.lastIndexOf(']');
+    if (a >= 0 && b >= a) return body.slice(a, b + 1);
+    throw new Error('응답에서 JSON 배열([ ... ])을 찾지 못했습니다.');
+  }
   async function fileToBase64(file) { const buf = await file.arrayBuffer(); let binary = ''; new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); }); return btoa(binary); }
   function renderScheduleCount() { $('match-count').textContent = state.scheduleRows.length ? `시간표 ${state.scheduleRows.length}행` : ''; }
   function updateButtons() { $('download-btn').disabled = !state.workbook || !state.matches.some(m => m.include && m.match.matchedDispatch); }
