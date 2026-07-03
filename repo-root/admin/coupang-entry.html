@@ -64,7 +64,7 @@
           브라우저에서 AIAPIFlow를 직접 호출하지 않습니다.<br>
           Edge Function: <code class="text-sky-300">/functions/v1/coupang-vision</code><br>
           AIAPIFlow URL: <code class="text-sky-300">https://aiapiflow.com/v1/messages</code><br>
-          Model: <code class="text-sky-300">claude-haiku-4-5</code>
+          Model: <code class="text-sky-300">claude-haiku-4-5-20251001</code>
         </div>
         <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">시간표 이미지 분석</button>
       </div>
@@ -195,7 +195,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     try {
       const base64 = await fileToBase64(state.imageFile);
       const text = await callClaudeVision({
-        model: 'claude-haiku-4-5',
+        model: 'claude-haiku-4-5-20251001',
         mediaType: state.imageFile.type || 'image/png',
         base64
       });
