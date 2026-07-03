@@ -456,6 +456,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
   function writeMatchesToWorksheet(ws) {
     const errors = [];
+    detachWritableCellStyles(ws);
     state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
       const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
       const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
@@ -503,8 +504,27 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
   function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
   function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
+  function detachWritableCellStyles(ws) {
+    for (let r = 5; r <= TIME_ROW_END; r++) {
+      const row = ws.getRow(r);
+      for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c++) {
+        const cell = row.getCell(c);
+        cell.style = cloneCellStyle(cell.style);
+        delete cell.style.fill;
+      }
+    }
+  }
+  function cloneCellStyle(style) {
+    if (!style) return {};
+    try { return JSON.parse(JSON.stringify(style)); }
+    catch (_) { return { ...style }; }
+  }
   function applyGroupFill(centerCell, driverCell, dispatch) {
-    // 현재 템플릿의 병합/공유 스타일 때문에 색상 지정 시 I5:U22 전체가 물드는 문제가 있어 셀 배경색은 적용하지 않는다.
+    if (!dispatch?.groupFill) return;
+    [centerCell, driverCell].forEach(cell => {
+      cell.style = cloneCellStyle(cell.style);
+      cell.style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
+    });
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
