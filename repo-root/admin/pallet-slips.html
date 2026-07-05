@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>파레트 전표관리 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    .drop-card {
+      border: 1px dashed #52525b;
+      background: linear-gradient(180deg, rgba(39,39,42,0.72), rgba(24,24,27,0.55));
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+    .drop-card:hover,
+    .drop-card.dragover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+      transform: translateY(-1px);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .preview-table td,
+    .preview-table th {
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100 transition">← 관리 허브</a>
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-md bg-emerald-600/20 border border-emerald-600/40 flex items-center justify-center">📦</div>
+        <h1 class="text-base font-semibold">파레트 전표관리</h1>
+      </div>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-6 space-y-5">
+    <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
+      <h2 class="text-sm font-semibold mb-2">작업 방식</h2>
+      <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
+        <li><strong>원본 템플릿</strong> Sheet1의 <code>H열</code> 값을 기준값으로 사용합니다.</li>
+        <li><strong>업로드 파일</strong> Sheet1의 <code>P열</code> 값과 비교합니다.</li>
+        <li>일치하는 값이 있으면 같은 업로드 행의 <code>T열</code> 값을 원본 파일의 같은 행 <code>I열</code>에 입력합니다.</li>
+        <li>DB에는 저장하지 않고, 결과 파일을 Excel로 내려받습니다.</li>
+      </ol>
+    </section>
+
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="drop-card rounded-lg p-4" data-drop="source">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="step-badge">1</span>
+          <div>
+            <div class="text-sm font-semibold">원본 템플릿 파일</div>
+            <div class="text-xs text-zinc-500">Sheet1 H열 매칭 → I열에 결과 입력</div>
+          </div>
+        </div>
+        <input id="source-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.csv" class="w-full text-sm">
+        <div id="source-info" class="mt-3 text-xs text-zinc-400">선택된 파일 없음</div>
+      </div>
+
+      <div class="drop-card rounded-lg p-4" data-drop="upload">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="step-badge">2</span>
+          <div>
+            <div class="text-sm font-semibold">업로드용 파일</div>
+            <div class="text-xs text-zinc-500">Sheet1 P열 기준 → T열 값을 가져옴</div>
+          </div>
+        </div>
+        <input id="upload-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.csv" class="w-full text-sm">
+        <div id="upload-info" class="mt-3 text-xs text-zinc-400">선택된 파일 없음</div>
+      </div>
+    </section>
+
+    <section class="border border-zinc-700 rounded-lg overflow-hidden">
+      <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-2">
+          <span class="step-badge">3</span>
+          <span class="text-sm font-semibold">매칭 실행</span>
+        </div>
+        <label class="ml-2 inline-flex items-center gap-1.5 text-xs text-zinc-300">
+          <input id="skip-header" type="checkbox" checked class="rounded bg-zinc-900 border-zinc-600">
+          1행 헤더 제외
+        </label>
+        <label class="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+          <input id="ignore-spaces" type="checkbox" checked class="rounded bg-zinc-900 border-zinc-600">
+          공백 무시 매칭
+        </label>
+        <div class="flex-1"></div>
+        <button id="run-btn" class="btn btn-primary" disabled>매칭 실행</button>
+        <button id="download-btn" class="btn btn-ghost" disabled>결과 Excel 다운로드</button>
+      </div>
+      <div class="p-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+        <div class="rounded bg-zinc-800/60 border border-zinc-700 p-3"><div class="text-zinc-500">원본 대상 행</div><div id="stat-source" class="text-lg font-semibold mt-1">-</div></div>
+        <div class="rounded bg-zinc-800/60 border border-zinc-700 p-3"><div class="text-zinc-500">업로드 기준값</div><div id="stat-upload" class="text-lg font-semibold mt-1">-</div></div>
+        <div class="rounded bg-zinc-800/60 border border-zinc-700 p-3"><div class="text-zinc-500">매칭 성공</div><div id="stat-match" class="text-lg font-semibold text-emerald-400 mt-1">-</div></div>
+        <div class="rounded bg-zinc-800/60 border border-zinc-700 p-3"><div class="text-zinc-500">미매칭</div><div id="stat-miss" class="text-lg font-semibold text-amber-400 mt-1">-</div></div>
+      </div>
+    </section>
+
+    <section id="preview-section" class="border border-zinc-700 rounded-lg overflow-hidden hidden">
+      <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2">
+        <span class="text-sm font-semibold">미리보기</span>
+        <span id="preview-count" class="text-xs text-zinc-400"></span>
+      </div>
+      <div class="overflow-auto max-h-[55vh]">
+        <table class="app-table preview-table">
+          <thead>
+            <tr>
+              <th>원본 행</th>
+              <th>원본 H값</th>
+              <th>기존 I값</th>
+              <th>입력될 T값</th>
+              <th>업로드 행</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="preview-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+
+    const profile = await requireRole('editor');
+    if (!profile) { /* redirected */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
+    document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+  </script>
+
+  <script>
+  'use strict';
+
+  const COL_H = 7;
+  const COL_I = 8;
+  const COL_P = 15;
+  const COL_T = 19;
+
+  const state = {
+    sourceFile: null,
+    uploadFile: null,
+    sourceWorkbook: null,
+    uploadWorkbook: null,
+    matches: [],
+    outputWorkbook: null
+  };
+
+  const $ = id => document.getElementById(id);
+
+  $('source-file').addEventListener('change', e => handleFile('source', e.target.files?.[0]));
+  $('upload-file').addEventListener('change', e => handleFile('upload', e.target.files?.[0]));
+  $('skip-header').addEventListener('change', () => state.outputWorkbook && runMatch());
+  $('ignore-spaces').addEventListener('change', () => state.outputWorkbook && runMatch());
+  $('run-btn').addEventListener('click', runMatch);
+  $('download-btn').addEventListener('click', downloadResult);
+
+  document.querySelectorAll('[data-drop]').forEach(card => {
+    const type = card.dataset.drop;
+    const input = type === 'source' ? $('source-file') : $('upload-file');
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
+    card.addEventListener('dragleave', () => card.classList.remove('dragover'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      handleFile(type, file);
+    });
+  });
+
+  async function handleFile(type, file) {
+    if (!file) return;
+    try {
+      const workbook = await readWorkbook(file);
+      state[`${type}File`] = file;
+      state[`${type}Workbook`] = workbook;
+      const sheet = firstSheet(workbook);
+      const range = sheetRange(sheet);
+      $(`${type}-info`).innerHTML = `
+        <div class="font-medium text-zinc-200">${escapeHtml(file.name)}</div>
+        <div>Sheet1: ${escapeHtml(workbook.SheetNames[0] || '-')} · ${range ? `${range.e.r + 1}행` : '빈 시트'}</div>
+      `;
+      state.outputWorkbook = null;
+      state.matches = [];
+      $('download-btn').disabled = true;
+      $('preview-section').classList.add('hidden');
+      updateRunState();
+    } catch (err) {
+      console.error(err);
+      alert(`파일을 읽지 못했습니다: ${err.message || err}`);
+    }
+  }
+
+  function updateRunState() {
+    $('run-btn').disabled = !(state.sourceWorkbook && state.uploadWorkbook);
+  }
+
+  async function readWorkbook(file) {
+    const buffer = await file.arrayBuffer();
+    return XLSX.read(buffer, { type: 'array', cellDates: true });
+  }
+
+  function firstSheet(workbook) {
+    return workbook.Sheets[workbook.SheetNames[0]];
+  }
+
+  function sheetRange(sheet) {
+    return sheet?.['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null;
+  }
+
+  function cellAddress(row, col) {
+    return XLSX.utils.encode_cell({ r: row, c: col });
+  }
+
+  function getCell(sheet, row, col) {
+    return sheet[cellAddress(row, col)];
+  }
+
+  function getCellText(sheet, row, col) {
+    const cell = getCell(sheet, row, col);
+    if (!cell) return '';
+    return String(cell.w ?? cell.v ?? '').trim();
+  }
+
+  function cloneCell(cell) {
+    if (!cell) return { t: 's', v: '' };
+    const cloned = { ...cell };
+    delete cloned.w;
+    return cloned;
+  }
+
+  function normalizeKey(value) {
+    let key = String(value ?? '').trim();
+    key = key.replace(/\s+/g, ' ');
+    if ($('ignore-spaces').checked) key = key.replace(/\s/g, '');
+    return key.toLowerCase();
+  }
+
+  function buildUploadMap(uploadSheet) {
+    const range = sheetRange(uploadSheet);
+    const map = new Map();
+    if (!range) return map;
+
+    const startRow = $('skip-header').checked ? 1 : 0;
+    for (let r = Math.max(range.s.r, startRow); r <= range.e.r; r++) {
+      const pValue = getCellText(uploadSheet, r, COL_P);
+      const key = normalizeKey(pValue);
+      if (!key || map.has(key)) continue;
+      map.set(key, {
+        row: r,
+        pValue,
+        tText: getCellText(uploadSheet, r, COL_T),
+        tCell: getCell(uploadSheet, r, COL_T)
+      });
+    }
+    return map;
+  }
+
+  function runMatch() {
+    const sourceWb = state.sourceWorkbook;
+    const uploadWb = state.uploadWorkbook;
+    if (!sourceWb || !uploadWb) return;
+
+    const outputWb = XLSX.read(XLSX.write(sourceWb, { bookType: 'xlsx', type: 'array' }), { type: 'array', cellDates: true });
+    const sourceSheet = firstSheet(outputWb);
+    const uploadSheet = firstSheet(uploadWb);
+    const sourceRange = sheetRange(sourceSheet);
+    const uploadMap = buildUploadMap(uploadSheet);
+    const startRow = $('skip-header').checked ? 1 : 0;
+    const matches = [];
+
+    if (sourceRange) {
+      sourceRange.e.c = Math.max(sourceRange.e.c, COL_I);
+      sourceSheet['!ref'] = XLSX.utils.encode_range(sourceRange);
+
+      for (let r = Math.max(sourceRange.s.r, startRow); r <= sourceRange.e.r; r++) {
+        const hValue = getCellText(sourceSheet, r, COL_H);
+        if (!hValue) continue;
+        const hit = uploadMap.get(normalizeKey(hValue));
+        const before = getCellText(sourceSheet, r, COL_I);
+        if (hit) {
+          sourceSheet[cellAddress(r, COL_I)] = cloneCell(hit.tCell || { t: 's', v: hit.tText });
+        }
+        matches.push({
+          sourceRow: r + 1,
+          sourceValue: hValue,
+          before,
+          uploadRow: hit ? hit.row + 1 : null,
+          tText: hit ? hit.tText : '',
+          matched: !!hit
+        });
+      }
+    }
+
+    state.outputWorkbook = outputWb;
+    state.matches = matches;
+    renderStats(matches, uploadMap.size);
+    renderPreview(matches);
+    $('download-btn').disabled = matches.filter(m => m.matched).length === 0;
+  }
+
+  function renderStats(matches, uploadCount) {
+    const sourceCount = matches.length;
+    const matchCount = matches.filter(m => m.matched).length;
+    $('stat-source').textContent = sourceCount.toLocaleString('ko-KR');
+    $('stat-upload').textContent = uploadCount.toLocaleString('ko-KR');
+    $('stat-match').textContent = matchCount.toLocaleString('ko-KR');
+    $('stat-miss').textContent = (sourceCount - matchCount).toLocaleString('ko-KR');
+  }
+
+  function renderPreview(matches) {
+    const tbody = $('preview-body');
+    const preview = matches.slice(0, 300);
+    tbody.innerHTML = preview.map(row => `
+      <tr class="${row.matched ? '' : 'text-zinc-500'}">
+        <td class="text-right">${row.sourceRow}</td>
+        <td>${escapeHtml(row.sourceValue)}</td>
+        <td>${escapeHtml(row.before)}</td>
+        <td class="${row.matched ? 'text-emerald-300' : ''}">${escapeHtml(row.tText)}</td>
+        <td class="text-right">${row.uploadRow || ''}</td>
+        <td>${row.matched ? '<span class="text-emerald-400">매칭</span>' : '<span class="text-amber-400">미매칭</span>'}</td>
+      </tr>
+    `).join('');
+    $('preview-count').textContent = `상위 ${preview.length.toLocaleString('ko-KR')}건 표시 / 전체 ${matches.length.toLocaleString('ko-KR')}건`;
+    $('preview-section').classList.remove('hidden');
+  }
+
+  function downloadResult() {
+    if (!state.outputWorkbook) return;
+    const base = state.sourceFile?.name?.replace(/\.[^.]+$/, '') || '파레트_전표';
+    const date = new Date();
+    const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    XLSX.writeFile(state.outputWorkbook, `${base}_전표반영_${ymd}.xlsx`);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+  </script>
+</body>
+</html>

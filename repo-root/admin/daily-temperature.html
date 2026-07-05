@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>1탑2실 템플릿 생성 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    .drop-card {
+      border: 1px dashed #52525b;
+      background: linear-gradient(180deg, rgba(39,39,42,0.78), rgba(24,24,27,0.58));
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+    .drop-card:hover,
+    .drop-card.dragover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+      transform: translateY(-1px);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .editor-table th,
+    .editor-table td {
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .editor-input,
+    .editor-select {
+      width: 100%;
+      min-width: 7rem;
+      border: 1px solid #3f3f46;
+      border-radius: 0.375rem;
+      background: rgba(24, 24, 27, 0.95);
+      color: #f4f4f5;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.75rem;
+      outline: none;
+    }
+    .editor-input:focus,
+    .editor-select:focus {
+      border-color: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+    }
+    .role-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      border: 1px solid rgba(113, 113, 122, 0.5);
+      background: rgba(63, 63, 70, 0.5);
+    }
+    .role-fixed { color: #34d399; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.08); }
+    .role-wide { color: #38bdf8; border-color: rgba(14, 165, 233, 0.4); background: rgba(14, 165, 233, 0.08); }
+    .role-temp { color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); }
+    #toast {
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    #toast.show {
+      opacity: 1 !important;
+      transform: translateX(-50%) translateY(0) !important;
+    }
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100 transition">← 관리 허브</a>
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-md bg-emerald-600/20 border border-emerald-600/40 flex items-center justify-center">🌡️</div>
+        <h1 class="text-base font-semibold">1탑2실 템플릿 생성</h1>
+      </div>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-6 space-y-5">
+    <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
+      <h2 class="text-sm font-semibold mb-2">작업 방식</h2>
+      <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
+        <li>저장된 기본 템플릿을 먼저 자동으로 불러오고, 필요할 때만 업로드 파일로 임시 교체합니다.</li>
+        <li>템플릿은 Sheet1, <code>5행</code>부터 <code>B~R열</code>을 편집 대상으로 불러옵니다.</li>
+        <li><code>I열</code> 차량 구분은 <strong>고정 → 광역 → 임시</strong> 순서를 유지합니다.</li>
+        <li>추가 기사 정보는 <code>G열 담당자</code>, <code>H열 차량번호</code>에 들어가며 선택한 구분의 마지막 행 아래에 삽입됩니다.</li>
+        <li>삽입 행은 지사/센터/날짜/운송사/기본값을 자동으로 채우고, <code>J~M</code>, <code>P~R</code>은 공란으로 둡니다.</li>
+        <li>결과는 DB 저장 없이 Excel 파일로만 다운로드합니다.</li>
+      </ol>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="drop-card rounded-lg p-4 xl:col-span-1" data-drop="template">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="step-badge">1</span>
+          <div>
+            <div class="text-sm font-semibold">기준 템플릿</div>
+            <div class="text-xs text-zinc-500">저장된 기본 템플릿을 우선 사용합니다.</div>
+          </div>
+        </div>
+        <div class="text-xs text-zinc-400 leading-relaxed mb-3">
+          기본 저장 위치: <code class="text-emerald-300">repo-root/templates/one-top-two-room-template.xlsx</code><br>
+          GitHub에서 이 파일만 교체하면 다음 접속부터 기본 템플릿으로 사용됩니다.
+        </div>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button id="reload-default-btn" class="btn btn-ghost text-xs" type="button">저장된 기본 템플릿 다시 불러오기</button>
+        </div>
+        <label class="app-label">필요 시 임시 업로드로 교체</label>
+        <input id="template-file" type="file" accept=".xlsx,.xlsm" class="w-full text-sm">
+        <div id="template-info" class="mt-3 text-xs text-zinc-400">저장된 기본 템플릿을 불러오는 중...</div>
+      </div>
+
+      <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4 xl:col-span-2">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="step-badge">2</span>
+          <div>
+            <div class="text-sm font-semibold">공통 자동 입력값</div>
+            <div class="text-xs text-zinc-500">새로 추가되는 행과 날짜 일괄 적용에 사용합니다.</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <label class="app-label">지사</label>
+            <input id="default-branch" class="app-input" value="운영6지사">
+          </div>
+          <div>
+            <label class="app-label">센터명</label>
+            <input id="default-center" class="app-input" value="안산사조센터">
+          </div>
+          <div>
+            <label class="app-label">점검일자</label>
+            <div class="flex gap-2">
+              <input id="default-day" type="number" min="1" max="31" class="app-input" placeholder="일">
+              <span class="self-center text-xs text-zinc-400">일</span>
+            </div>
+          </div>
+          <div>
+            <label class="app-label">구획분리</label>
+            <select id="default-partition" class="app-select">
+              <option value="X" selected>X</option>
+              <option value="O">O</option>
+              <option value="">공란</option>
+            </select>
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button id="apply-day-btn" class="btn btn-ghost" disabled>날짜 전체 적용</button>
+          <button id="renumber-btn" class="btn btn-ghost" disabled>순번 재정렬</button>
+          <span class="text-xs text-zinc-500">점검일자는 모든 행에 같은 “nn일” 형태로 적용할 수 있습니다.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="step-badge">3</span>
+        <div>
+          <div class="text-sm font-semibold">기사/차량 추가</div>
+          <div class="text-xs text-zinc-500">복붙 입력을 지원합니다. 기사명과 차량번호 조합은 한 행으로 유지됩니다.</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div class="lg:col-span-2">
+          <label class="app-label">추가 구분</label>
+          <select id="add-role" class="app-select">
+            <option value="임시" selected>임시</option>
+            <option value="광역">광역</option>
+          </select>
+        </div>
+        <div class="lg:col-span-10">
+          <label class="app-label">배차정보 파서 값 붙여넣기</label>
+          <textarea id="add-text" rows="7" class="app-input font-mono text-xs" placeholder="배차정보 파서의 전체 TSV 또는 결과값을 붙여넣으세요.
+예) 거래처명	톤수	기사명	차량번호	연락처
+한마루	11톤	이찬모	경기92아5150	01088582377
+또는 한마루\11톤\이찬모\경기92아5150\01088582377"></textarea>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button id="open-parser-btn" class="btn btn-ghost" type="button">배차정보 파서 열기</button>
+        <button id="add-rows-btn" class="btn btn-primary" disabled>선택 구분으로 행 추가</button>
+        <span class="text-xs text-zinc-500">기본 구분은 임시입니다. 필요한 경우 광역으로 바꾼 뒤 붙여넣으세요. 운송사는 항상 이안물류로 입력됩니다.</span>
+      </div>
+    </section>
+
+    <section class="border border-zinc-700 rounded-lg overflow-hidden">
+      <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
+        <span class="step-badge">4</span>
+        <span class="text-sm font-semibold">웹 편집 미리보기</span>
+        <span id="row-count" class="text-xs text-zinc-400"></span>
+        <div class="flex-1"></div>
+        <button id="copy-vba-btn" class="btn btn-ghost" type="button">VB코드복사</button>
+        <button id="copy-mail-subject-btn" class="btn btn-ghost" type="button">메일제목</button>
+        <button id="copy-mail-body-btn" class="btn btn-ghost" type="button">메일내용</button>
+        <button id="download-btn" class="btn btn-primary" disabled>Excel 다운로드</button>
+      </div>
+      <div class="overflow-auto max-h-[62vh]">
+        <table class="editor-table min-w-[1800px] w-full text-xs">
+          <thead class="bg-zinc-900/80 sticky top-0 z-10">
+            <tr class="text-zinc-300 border-b border-zinc-700">
+              <th class="px-2 py-2 text-left w-16">순번</th>
+              <th class="px-2 py-2 text-left">지사</th>
+              <th class="px-2 py-2 text-left">센터명</th>
+              <th class="px-2 py-2 text-left w-24">점검일자</th>
+              <th class="px-2 py-2 text-left">운송사</th>
+              <th class="px-2 py-2 text-left">담당자</th>
+              <th class="px-2 py-2 text-left">차량번호</th>
+              <th class="px-2 py-2 text-left w-24">구분</th>
+              <th class="px-2 py-2 text-left">냉동온도</th>
+              <th class="px-2 py-2 text-left">냉장온도</th>
+              <th class="px-2 py-2 text-left">냉동 정상</th>
+              <th class="px-2 py-2 text-left">냉장 정상</th>
+              <th class="px-2 py-2 text-left">준수</th>
+              <th class="px-2 py-2 text-left">구획분리</th>
+              <th class="px-2 py-2 text-left">구획분리 사진</th>
+              <th class="px-2 py-2 text-left">온도기록지 사진</th>
+              <th class="px-2 py-2 text-left">비고</th>
+              <th class="px-2 py-2 text-left w-16">삭제</th>
+            </tr>
+          </thead>
+          <tbody id="editor-body"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" class="p-8 text-center text-sm text-zinc-500">저장된 기본 템플릿을 불러오거나, 필요 시 Excel을 업로드하면 편집 표가 표시됩니다.</div>
+    </section>
+  </main>
+
+  <div id="parser-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 px-4 py-6">
+    <div class="w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl flex flex-col">
+      <div class="p-4 border-b border-zinc-700 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-md bg-sky-600/20 border border-sky-600/40 flex items-center justify-center">🔎</div>
+        <div>
+          <h2 class="text-sm font-semibold">배차정보 파서</h2>
+          <p class="text-xs text-zinc-400">배차 문자를 붙여넣고 파싱한 뒤, 결과를 추가차량 입력칸으로 가져옵니다.</p>
+        </div>
+        <div class="flex-1"></div>
+        <button id="parser-close-btn" class="btn btn-ghost text-xs" type="button">닫기</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 overflow-auto">
+        <div class="space-y-2">
+          <label class="app-label">배차 원문</label>
+          <textarea id="parser-raw" rows="18" class="app-input font-mono text-xs" placeholder="예)
+한마루 곤지암 11톤 2대
+이찬모 경기92아5150
+01088582377
+
+윤현식 경기92바6221
+01062041457"></textarea>
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="parser-run-btn" class="btn btn-primary" type="button">파싱 실행</button>
+            <button id="parser-clear-btn" class="btn btn-ghost" type="button">지우기</button>
+            <span id="parser-count" class="text-xs text-zinc-400"></span>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-2">
+            <label class="app-label mb-0">파싱 결과</label>
+            <div class="flex-1"></div>
+            <button id="parser-apply-btn" class="btn btn-primary" type="button" disabled>결과 가져오기</button>
+          </div>
+          <div class="overflow-auto max-h-[430px] border border-zinc-700 rounded-lg">
+            <table class="w-full min-w-[680px] text-xs">
+              <thead class="bg-zinc-800 sticky top-0">
+                <tr class="text-zinc-300 border-b border-zinc-700">
+                  <th class="px-2 py-2 text-left">거래처명</th>
+                  <th class="px-2 py-2 text-left">톤수</th>
+                  <th class="px-2 py-2 text-left">기사명</th>
+                  <th class="px-2 py-2 text-left">차량번호</th>
+                  <th class="px-2 py-2 text-left">연락처</th>
+                </tr>
+              </thead>
+              <tbody id="parser-preview-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 translate-y-2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+
+    const profile = await requireRole('editor');
+    if (!profile) { /* redirected */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
+    document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+  </script>
+
+  <script>
+  'use strict';
+
+  const TABLE_START_ROW = 5;
+  const DEFAULT_TEMPLATE_URL = '/templates/one-top-two-room-template.xlsx';
+  const DEFAULT_TEMPLATE_NAME = '저장된 기본 템플릿';
+  const VB_SELECTION_CHANGE_CODE = `Private Sub Worksheet_SelectionChange(ByVal Target As Range)
+    Dim shp As Shape
+    Dim cel As Range
+    Dim realTop As Double
+    Dim realLeft As Double
+    Const SAFE_MARGIN As Double = 3
+
+    On Error Resume Next
+
+    If ActiveSheet.Shapes.Count > 0 Then
+        For Each shp In ActiveSheet.Shapes
+            If Not shp.TopLeftCell Is Nothing Then
+                Set cel = shp.TopLeftCell
+
+                realTop = shp.Top + SAFE_MARGIN
+                realLeft = shp.Left + SAFE_MARGIN
+
+                If realTop > (cel.Top + cel.Height) Then
+                    Set cel = cel.Offset(1, 0)
+                End If
+
+                If realLeft > (cel.Left + cel.Width) Then
+                    Set cel = cel.Offset(0, 1)
+                End If
+
+                If Abs(shp.Left - cel.Left) > 1 Or _
+                   Abs(shp.Top - cel.Top) > 1 Or _
+                   Abs(shp.Width - cel.Width) > 1 Or _
+                   Abs(shp.Height - cel.Height) > 1 Then
+
+                    With shp
+                        .LockAspectRatio = msoFalse
+                        .Left = cel.Left
+                        .Top = cel.Top
+                        .Width = cel.Width
+                        .Height = cel.Height
+                    End With
+                End If
+            End If
+        Next shp
+    End If
+
+    On Error GoTo 0
+End Sub`;
+  const ROLE_ORDER = ['고정', '광역', '임시'];
+  const COLS = {
+    seq: 2,
+    branch: 3,
+    center: 4,
+    date: 5,
+    carrier: 6,
+    dm: 7,
+    vehicle_no: 8,
+    vehicle_type: 9,
+    freezer_temp: 10,
+    refrigerated_temp: 11,
+    freezer_normal: 12,
+    refrigerated_normal: 13,
+    compliance: 14,
+    partition_wall: 15,
+    photo_partition: 16,
+    photo_temp_log: 17,
+    remark: 18
+  };
+  const FIELDS = Object.keys(COLS);
+  const state = {
+    file: null,
+    workbook: null,
+    worksheetName: '',
+    rows: [],
+    sourceRowCount: 0,
+    sourceLastRow: TABLE_START_ROW - 1,
+    roleHeaderRows: {}
+  };
+
+  let parserRecords = [];
+
+  const $ = id => document.getElementById(id);
+
+  $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
+  $('reload-default-btn').addEventListener('click', () => loadDefaultTemplate({ showToast: true }));
+  $('apply-day-btn').addEventListener('click', applyDayToAll);
+  $('renumber-btn').addEventListener('click', () => { renumberRows(); renderRows(); toast('순번을 재정렬했습니다.', 'success'); });
+  $('add-rows-btn').addEventListener('click', addRowsFromText);
+  $('download-btn').addEventListener('click', downloadWorkbook);
+  $('copy-vba-btn').addEventListener('click', copyVbaCode);
+  $('copy-mail-subject-btn').addEventListener('click', copyMailSubject);
+  $('copy-mail-body-btn').addEventListener('click', copyMailBody);
+  $('open-parser-btn').addEventListener('click', openParserModal);
+  $('parser-close-btn').addEventListener('click', closeParserModal);
+  $('parser-run-btn').addEventListener('click', runEmbeddedParser);
+  $('parser-clear-btn').addEventListener('click', clearEmbeddedParser);
+  $('parser-apply-btn').addEventListener('click', applyEmbeddedParserResults);
+
+  loadDefaultTemplate();
+
+  document.querySelectorAll('[data-drop]').forEach(card => {
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
+    card.addEventListener('dragleave', () => card.classList.remove('dragover'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      $('template-file').files = dt.files;
+      handleTemplateFile(file);
+    });
+  });
+
+  async function loadDefaultTemplate({ showToast = false } = {}) {
+    try {
+      $('template-info').innerHTML = `
+        <div class="font-medium text-zinc-200">${escapeHtml(DEFAULT_TEMPLATE_NAME)}</div>
+        <div>저장 위치에서 기본 템플릿을 불러오는 중...</div>
+      `;
+      const response = await fetch(`${DEFAULT_TEMPLATE_URL}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`기본 템플릿 파일을 찾을 수 없습니다. (${response.status})`);
+      await loadTemplateBuffer(await response.arrayBuffer(), {
+        sourceName: DEFAULT_TEMPLATE_NAME,
+        sourceDetail: DEFAULT_TEMPLATE_URL,
+        sourceKind: 'default'
+      });
+      if (showToast) toast('저장된 기본 템플릿을 다시 불러왔습니다.', 'success');
+    } catch (err) {
+      console.warn(err);
+      resetTemplateState();
+      $('template-info').innerHTML = `
+        <div class="font-medium text-amber-200">저장된 기본 템플릿을 불러오지 못했습니다.</div>
+        <div>${escapeHtml(err.message || err)}</div>
+        <div class="mt-1">기본 파일을 <code>${escapeHtml(DEFAULT_TEMPLATE_URL)}</code>에 올리거나, 위 입력으로 임시 업로드하세요.</div>
+      `;
+      if (showToast) toast(`기본 템플릿을 불러오지 못했습니다: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function handleTemplateFile(file) {
+    if (!file) return;
+    try {
+      await loadTemplateBuffer(await file.arrayBuffer(), {
+        sourceName: file.name,
+        sourceDetail: '업로드 파일로 현재 작업 템플릿을 임시 교체했습니다.',
+        sourceKind: 'upload',
+        file
+      });
+      toast('업로드한 템플릿으로 교체했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`템플릿을 읽지 못했습니다: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function loadTemplateBuffer(arrayBuffer, { sourceName, sourceDetail, sourceKind, file = null }) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) throw new Error('Sheet1을 찾을 수 없습니다.');
+
+    state.file = file;
+    state.workbook = workbook;
+    state.worksheetName = worksheet.name;
+    state.rows = extractRows(worksheet);
+    state.sourceRowCount = state.rows.length;
+    state.sourceLastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW - 1);
+    state.roleHeaderRows = collectRoleHeaderRows(worksheet);
+    sortRowsByRole();
+    renumberRows();
+    hydrateDefaultsFromRows();
+    renderRows();
+    updateButtons();
+    $('template-info').innerHTML = `
+      <div class="font-medium text-zinc-200">${escapeHtml(sourceName)}</div>
+      <div>구분: ${sourceKind === 'default' ? '저장된 기본 템플릿' : '임시 업로드 템플릿'}</div>
+      <div>Sheet1: ${escapeHtml(worksheet.name)} · 편집 대상 ${state.rows.length}행</div>
+      <div class="mt-1 text-zinc-500">${escapeHtml(sourceDetail)}</div>
+    `;
+  }
+
+  function resetTemplateState() {
+    state.file = null;
+    state.workbook = null;
+    state.worksheetName = '';
+    state.rows = [];
+    state.sourceRowCount = 0;
+    state.sourceLastRow = TABLE_START_ROW - 1;
+    state.roleHeaderRows = {};
+    renderRows();
+    updateButtons();
+  }
+
+  function extractRows(worksheet) {
+    const rows = [];
+    const lastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW);
+    for (let rowNumber = TABLE_START_ROW; rowNumber <= lastRow; rowNumber++) {
+      const row = worksheet.getRow(rowNumber);
+      const record = { _sourceRow: rowNumber, _styleSourceRole: normalizeRole(cellText(row.getCell(COLS.vehicle_type))) || '고정' };
+      FIELDS.forEach(field => { record[field] = cellText(row.getCell(COLS[field])); });
+      const hasAnyValue = FIELDS.some(field => record[field] !== '');
+      const role = normalizeRole(record.vehicle_type);
+      if (!hasAnyValue) continue;
+      if (role && !record.dm && !record.vehicle_no && !record.carrier) continue;
+      if (!role && !record.dm && !record.vehicle_no) continue;
+      record.vehicle_type = role || record.vehicle_type || '고정';
+      if (!record.compliance) record.compliance = '준수';
+      if (!record.partition_wall) record.partition_wall = 'X';
+      rows.push(record);
+    }
+    return rows;
+  }
+
+  function collectRoleHeaderRows(worksheet) {
+    const headers = {};
+    const lastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW);
+    for (let rowNumber = TABLE_START_ROW; rowNumber <= lastRow; rowNumber++) {
+      const row = worksheet.getRow(rowNumber);
+      const role = normalizeRole(cellText(row.getCell(COLS.vehicle_type)));
+      if (!role || headers[role]) continue;
+      const hasData = ['carrier', 'dm', 'vehicle_no'].some(field => cellText(row.getCell(COLS[field])) !== '');
+      if (!hasData) headers[role] = rowNumber;
+    }
+    return headers;
+  }
+
+  function hydrateDefaultsFromRows() {
+    const first = state.rows[0];
+    if (!first) return;
+    if (first.branch) $('default-branch').value = first.branch;
+    if (first.center) $('default-center').value = first.center;
+    const day = parseDay(first.date);
+    if (day) $('default-day').value = String(day);
+  }
+
+  function renderRows() {
+    const body = $('editor-body');
+    $('empty-state').classList.toggle('hidden', state.rows.length > 0);
+    body.innerHTML = state.rows.map((row, index) => rowHtml(row, index)).join('');
+    body.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', handleCellInput);
+      input.addEventListener('change', handleCellInput);
+    });
+    body.querySelectorAll('[data-delete]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = Number(btn.dataset.delete);
+        state.rows.splice(index, 1);
+        renumberRows();
+        renderRows();
+      });
+    });
+    $('row-count').textContent = state.rows.length ? `총 ${state.rows.length}행` : '';
+    updateButtons();
+  }
+
+  function rowHtml(row, index) {
+    const roleClass = row.vehicle_type === '고정' ? 'role-fixed' : row.vehicle_type === '광역' ? 'role-wide' : 'role-temp';
+    return `
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/40" data-index="${index}">
+        ${inputCell(index, 'seq', 'w-16')}
+        ${inputCell(index, 'branch')}
+        ${inputCell(index, 'center')}
+        ${inputCell(index, 'date', 'w-24')}
+        ${inputCell(index, 'carrier')}
+        ${inputCell(index, 'dm')}
+        ${inputCell(index, 'vehicle_no')}
+        <td class="px-1 py-1">
+          <div class="flex items-center gap-2">
+            <select class="editor-select min-w-[5.5rem]" data-index="${index}" data-field="vehicle_type">
+              ${ROLE_ORDER.map(role => `<option value="${role}" ${row.vehicle_type === role ? 'selected' : ''}>${role}</option>`).join('')}
+            </select>
+            <span class="role-pill ${roleClass}">${escapeHtml(row.vehicle_type || '-')}</span>
+          </div>
+        </td>
+        ${inputCell(index, 'freezer_temp')}
+        ${inputCell(index, 'refrigerated_temp')}
+        ${inputCell(index, 'freezer_normal')}
+        ${inputCell(index, 'refrigerated_normal')}
+        ${inputCell(index, 'compliance')}
+        ${selectCell(index, 'partition_wall', ['', 'O', 'X'])}
+        ${inputCell(index, 'photo_partition')}
+        ${inputCell(index, 'photo_temp_log')}
+        ${inputCell(index, 'remark')}
+        <td class="px-2 py-1 text-center"><button class="text-xs text-rose-300 hover:text-rose-200" data-delete="${index}">삭제</button></td>
+      </tr>
+    `;
+  }
+
+  function inputCell(index, field, extraClass = '') {
+    return `<td class="px-1 py-1"><input class="editor-input ${extraClass}" data-index="${index}" data-field="${field}" value="${escapeAttr(state.rows[index][field] ?? '')}"></td>`;
+  }
+
+  function selectCell(index, field, options) {
+    const value = state.rows[index][field] ?? '';
+    return `<td class="px-1 py-1"><select class="editor-select" data-index="${index}" data-field="${field}">
+      ${options.map(option => `<option value="${escapeAttr(option)}" ${String(value) === option ? 'selected' : ''}>${option || '공란'}</option>`).join('')}
+    </select></td>`;
+  }
+
+  function handleCellInput(event) {
+    const index = Number(event.target.dataset.index);
+    const field = event.target.dataset.field;
+    if (!state.rows[index] || !field) return;
+    state.rows[index][field] = event.target.value;
+    if (field === 'vehicle_type') {
+      state.rows[index][field] = normalizeRole(event.target.value) || event.target.value;
+      sortRowsByRole();
+      renumberRows();
+      renderRows();
+      return;
+    }
+    if (['freezer_temp', 'refrigerated_temp', 'partition_wall'].includes(field)) {
+      updateDerivedFields(state.rows[index]);
+      renderRows();
+    }
+  }
+
+  function openParserModal() {
+    $('parser-modal').classList.remove('hidden');
+    $('parser-modal').classList.add('flex');
+    setTimeout(() => $('parser-raw').focus(), 0);
+  }
+
+  function closeParserModal() {
+    $('parser-modal').classList.add('hidden');
+    $('parser-modal').classList.remove('flex');
+  }
+
+  function clearEmbeddedParser() {
+    $('parser-raw').value = '';
+    parserRecords = [];
+    renderEmbeddedParserResults();
+  }
+
+  function runEmbeddedParser() {
+    parserRecords = parseEmbeddedDispatch($('parser-raw').value);
+    renderEmbeddedParserResults();
+    if (!parserRecords.length) toast('파싱된 배차정보가 없습니다.', 'error');
+  }
+
+  function renderEmbeddedParserResults() {
+    const body = $('parser-preview-body');
+    $('parser-count').textContent = parserRecords.length ? `${parserRecords.length}건` : '';
+    $('parser-apply-btn').disabled = parserRecords.length === 0;
+    body.innerHTML = parserRecords.length
+      ? parserRecords.map(record => `
+        <tr class="border-b border-zinc-800">
+          <td class="px-2 py-1.5">${escapeHtml(record.name)}</td>
+          <td class="px-2 py-1.5 text-zinc-300">${escapeHtml(record.ton)}</td>
+          <td class="px-2 py-1.5">${escapeHtml(record.driver)}</td>
+          <td class="px-2 py-1.5 font-mono">${escapeHtml(record.vehicle)}</td>
+          <td class="px-2 py-1.5 font-mono text-zinc-300">${escapeHtml(record.phone)}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="5" class="px-3 py-8 text-center text-zinc-500">파싱 결과가 없습니다.</td></tr>';
+  }
+
+  function applyEmbeddedParserResults() {
+    if (!parserRecords.length) return;
+    $('add-text').value = parserRecords
+      .map(record => [record.name, record.ton, record.driver, record.vehicle, record.phone].join('\t'))
+      .join('\n');
+    closeParserModal();
+    toast(`배차정보 ${parserRecords.length}건을 입력칸에 가져왔습니다.`, 'success');
+  }
+
+  function parseEmbeddedDispatch(raw) {
+    const text = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const chunks = text.split(/[ \t]\/(?=[ \t\n])/);
+    const results = [];
+
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n').map(line => line.trim()).filter(Boolean);
+      let i = 0;
+      while (i < lines.length) {
+        if (!embeddedHasTonnage(lines[i])) { i++; continue; }
+        if (i + 2 >= lines.length) break;
+
+        const batchSpecs = embeddedTonCountSpecs(lines[i]);
+        if (batchSpecs.length > 0) {
+          const { name, tons } = embeddedBatchNameTon(lines[i], batchSpecs);
+          if (!name) { i++; continue; }
+          let offset = 1;
+          let parsedCount = 0;
+          for (const ton of tons) {
+            if (i + offset + 1 >= lines.length) break;
+            const { driver, vehicle } = embeddedDriverVehicle(lines[i + offset]);
+            const phone = embeddedNormalizePhone(lines[i + offset + 1]);
+            results.push({ name, ton, driver, vehicle, phone });
+            parsedCount++;
+            offset += 2;
+          }
+          i += parsedCount > 0 ? 1 + parsedCount * 2 : 1;
+          continue;
+        }
+
+        const { name, ton } = embeddedNameTon(lines[i]);
+        const { driver, vehicle } = embeddedDriverVehicle(lines[i + 1]);
+        const phone = embeddedNormalizePhone(lines[i + 2]);
+        if (name) results.push({ name, ton, driver, vehicle, phone });
+        i += 3;
+      }
+    }
+    return results;
+  }
+
+  function embeddedNormalizePhone(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('010')) return `${digits.slice(0,3)}-${digits.slice(3,7)}-${digits.slice(7)}`;
+    if (digits.length === 11) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    return String(raw || '').trim();
+  }
+
+  function embeddedHasTonnage(line) {
+    return /\d+(?:\.\d+)?(?:톤|축)/.test(line);
+  }
+
+  function embeddedNameTon(line) {
+    const noPrefix = String(line || '').replace(/^\d+\.\s*/, '');
+    const beforeAltSlash = noPrefix.split(/\s\/(?!\s*\d)/)[0];
+    const cleaned = beforeAltSlash.split(/\s\//)[0].replace(/\s*경유\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    const tonMatch = cleaned.match(/(\d+(?:\.\d+)?(?:톤|축))/);
+    const ton = tonMatch ? tonMatch[1] : '';
+    const name = (ton ? cleaned.slice(0, cleaned.indexOf(ton)).trim() : cleaned).replace(/\//g, '+').trim();
+    return { name, ton };
+  }
+
+  function embeddedTonCountSpecs(line) {
+    const specs = [];
+    const re = /(\d+(?:\.\d+)?(?:톤|축))\s*(\d+)\s*대/g;
+    let match;
+    while ((match = re.exec(line)) !== null) {
+      const count = Number(match[2]);
+      if (Number.isFinite(count) && count > 0) specs.push({ ton: match[1], count });
+    }
+    return specs;
+  }
+
+  function embeddedBatchNameTon(line, specs) {
+    const firstSpecIndex = line.search(/\d+(?:\.\d+)?(?:톤|축)\s*\d+\s*대/);
+    const namePart = firstSpecIndex >= 0 ? line.slice(0, firstSpecIndex).trim() : embeddedNameTon(line).name;
+    return {
+      name: String(namePart || '').replace(/\s+/g, ' ').trim().split(/\s+/)[0] || String(namePart || '').trim(),
+      tons: specs.flatMap(spec => Array.from({ length: spec.count }, () => spec.ton))
+    };
+  }
+
+  function embeddedDriverVehicle(line) {
+    const parts = String(line || '').trim().split(/\s+/);
+    return { driver: parts[0] || '', vehicle: parts[1] || '' };
+  }
+
+  function addRowsFromText() {
+    if (!state.workbook) {
+      toast('먼저 템플릿 Excel을 업로드하세요.', 'error');
+      return;
+    }
+    const role = normalizeRole($('add-role').value) || '임시';
+    const text = $('add-text').value.trim();
+    const parsed = parseDispatchParserRows(text);
+    if (!parsed.length) {
+      toast('추가할 배차정보 파서 값을 입력하세요.', 'error');
+      return;
+    }
+
+    const newRows = parsed.map(item => makeNewRow(role, item.dm, item.vehicle_no, '이안물류'));
+    insertRowsByRole(newRows, role);
+    sortRowsByRole();
+    renumberRows();
+    renderRows();
+    $('add-text').value = '';
+    toast(`${role} ${newRows.length}행을 추가했습니다.`, 'success');
+  }
+
+  function parseDispatchParserRows(text) {
+    return text
+      .split(/\n+/)
+      .map(line => parseDispatchParserLine(line))
+      .filter(Boolean);
+  }
+
+  function parseDispatchParserLine(line) {
+    const cleaned = line.trim();
+    if (!cleaned) return null;
+    if (/거래처명|기사명|차량번호|연락처/.test(cleaned)) return null;
+
+    const slashParts = cleaned.split('\\').map(v => v.trim()).filter(Boolean);
+    if (slashParts.length >= 4) {
+      return { dm: slashParts[2] || '', vehicle_no: slashParts[3] || '' };
+    }
+
+    const tabParts = cleaned.split(/\t+/).map(v => v.trim()).filter(Boolean);
+    if (tabParts.length >= 4) {
+      return { dm: tabParts[2] || '', vehicle_no: tabParts[3] || '' };
+    }
+    if (tabParts.length >= 2) {
+      return { dm: tabParts[0] || '', vehicle_no: tabParts[1] || '' };
+    }
+
+    const vehicleMatch = cleaned.match(/([가-힣]{2,}\s?\d{1,3}[가-힣]\d{4}|\d{2,3}[가-힣]\d{4})/);
+    if (!vehicleMatch) return null;
+    const beforeVehicle = cleaned.slice(0, vehicleMatch.index).trim();
+    const tokens = beforeVehicle.split(/\s+/).filter(Boolean);
+    return {
+      dm: tokens.at(-1) || '',
+      vehicle_no: vehicleMatch[1].replace(/\s+/g, '')
+    };
+  }
+
+  function makeNewRow(role, dm, vehicleNo, carrier) {
+    const day = normalizeDay($('default-day').value);
+    return {
+      _sourceRow: null,
+      _styleSourceRole: role,
+      seq: '',
+      branch: $('default-branch').value.trim(),
+      center: $('default-center').value.trim(),
+      date: day,
+      carrier,
+      dm,
+      vehicle_no: vehicleNo,
+      vehicle_type: role,
+      freezer_temp: '',
+      refrigerated_temp: '',
+      freezer_normal: '',
+      refrigerated_normal: '',
+      compliance: '준수',
+      partition_wall: $('default-partition').value || 'X',
+      photo_partition: '',
+      photo_temp_log: '',
+      remark: ''
+    };
+  }
+
+  function insertRowsByRole(newRows, role) {
+    const lastSame = findLastIndex(state.rows, row => normalizeRole(row.vehicle_type) === role);
+    if (lastSame >= 0) {
+      state.rows.splice(lastSame + 1, 0, ...newRows);
+      return;
+    }
+    if (role === '임시') {
+      const lastWide = findLastIndex(state.rows, row => normalizeRole(row.vehicle_type) === '광역');
+      const lastFixed = findLastIndex(state.rows, row => normalizeRole(row.vehicle_type) === '고정');
+      const insertAt = Math.max(lastWide, lastFixed) + 1;
+      state.rows.splice(insertAt, 0, ...newRows);
+      return;
+    }
+    if (role === '광역') {
+      const lastFixed = findLastIndex(state.rows, row => normalizeRole(row.vehicle_type) === '고정');
+      state.rows.splice(lastFixed + 1, 0, ...newRows);
+      return;
+    }
+    state.rows.unshift(...newRows);
+  }
+
+  function sortRowsByRole() {
+    state.rows = state.rows
+      .map((row, order) => ({ row, order }))
+      .sort((a, b) => roleRank(a.row.vehicle_type) - roleRank(b.row.vehicle_type) || a.order - b.order)
+      .map(item => item.row);
+  }
+
+  function renumberRows() {
+    state.rows.forEach((row, index) => { row.seq = String(index + 1); });
+  }
+
+  function applyDayToAll() {
+    const day = normalizeDay($('default-day').value);
+    if (!day) {
+      toast('점검일자 일을 입력하세요.', 'error');
+      return;
+    }
+    state.rows.forEach(row => { row.date = day; });
+    renderRows();
+    toast(`점검일자를 ${day}로 적용했습니다.`, 'success');
+  }
+
+  async function downloadWorkbook() {
+    if (!state.workbook || !state.rows.length) return;
+    try {
+      const buffer = await state.workbook.xlsx.writeBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const worksheet = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
+      writeRowsToWorksheet(worksheet);
+      normalizeWorkbookPrivacy(workbook);
+      const output = await workbook.xlsx.writeBuffer();
+      const cleanOutput = await disableRemovePersonalInfo(output);
+      saveBlob(new Blob([cleanOutput], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
+      toast('Excel 파일을 다운로드했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`다운로드 생성 실패: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function copyVbaCode() {
+    try {
+      await copyTextToClipboard(VB_SELECTION_CHANGE_CODE);
+      toast('VB 코드를 복사했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`VB 코드 복사 실패: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function copyMailSubject() {
+    try {
+      await copyTextToClipboard(buildMailSubject());
+      toast('메일 제목을 복사했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`메일 제목 복사 실패: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function copyMailBody() {
+    try {
+      await copyTextToClipboard(buildMailBody());
+      toast('메일 내용을 복사했습니다.', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(`메일 내용 복사 실패: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    if (!ok) throw new Error('브라우저가 복사를 허용하지 않았습니다.');
+  }
+
+  function writeRowsToWorksheet(worksheet) {
+    sortRowsByRole();
+    state.rows.forEach(updateDerivedFields);
+    renumberRows();
+
+    const usedRows = new Set();
+    const headerRows = new Set(Object.values(state.roleHeaderRows || {}).filter(Boolean));
+    let cursor = TABLE_START_ROW;
+
+    ROLE_ORDER.forEach(role => {
+      const headerRow = state.roleHeaderRows?.[role];
+      if (headerRow) cursor = Math.max(cursor, headerRow + 1);
+
+      state.rows
+        .filter(record => normalizeRole(record.vehicle_type) === role)
+        .forEach((record, roleOffset) => {
+          while (headerRows.has(cursor)) cursor += 1;
+          const rowNumber = cursor;
+          const styleRowNumber = findStyleRowNumber(role, roleOffset);
+          copyRowStyle(worksheet, styleRowNumber, rowNumber);
+          writeRecordToRow(worksheet.getRow(rowNumber), record);
+          usedRows.add(rowNumber);
+          cursor += 1;
+        });
+    });
+
+    // Clear only unused original data rows. Keep role separator/header rows intact so
+    // the last row of each 고정/광역/임시 section is not overwritten or cleared.
+    state.rows
+      .filter(record => !normalizeRole(record.vehicle_type))
+      .forEach((record, offset) => {
+        while (headerRows.has(cursor)) cursor += 1;
+        const rowNumber = cursor;
+        const styleRowNumber = findStyleRowNumber(record.vehicle_type, offset);
+        copyRowStyle(worksheet, styleRowNumber, rowNumber);
+        writeRecordToRow(worksheet.getRow(rowNumber), record);
+        usedRows.add(rowNumber);
+        cursor += 1;
+      });
+
+    const lastTemplateRow = Math.max(state.sourceLastRow || 0, TABLE_START_ROW - 1);
+    for (let rowNumber = TABLE_START_ROW; rowNumber <= lastTemplateRow; rowNumber++) {
+      if (headerRows.has(rowNumber) || usedRows.has(rowNumber)) continue;
+      const row = worksheet.getRow(rowNumber);
+      const role = normalizeRole(cellText(row.getCell(COLS.vehicle_type)));
+      const hasData = FIELDS.some(field => field !== 'vehicle_type' && cellText(row.getCell(COLS[field])) !== '');
+      if (role && !hasData) continue;
+      clearOutputRow(row);
+    }
+  }
+
+  function writeRecordToRow(row, record) {
+    FIELDS.forEach(field => {
+      setPlainCellValue(row.getCell(COLS[field]), normalizeCellValue(record[field]));
+    });
+    row.commit?.();
+  }
+
+  function clearOutputRow(row) {
+    FIELDS.forEach(field => setPlainCellValue(row.getCell(COLS[field]), null));
+    row.commit?.();
+  }
+
+  function setPlainCellValue(cell, value) {
+    cell.value = value;
+    if (cell.model) {
+      delete cell.model.formula;
+      delete cell.model.sharedFormula;
+      delete cell.model.result;
+      delete cell.model.si;
+      delete cell.model.ref;
+    }
+  }
+
+  function findStyleRowNumber(role, offset) {
+    const normalized = normalizeRole(role);
+    const match = state.rows.find(row => row._sourceRow && normalizeRole(row.vehicle_type) === normalized);
+    if (match?._sourceRow) return match._sourceRow;
+    return Math.min(TABLE_START_ROW + offset, TABLE_START_ROW + Math.max(state.sourceRowCount - 1, 0));
+  }
+
+  function copyRowStyle(worksheet, sourceRowNumber, targetRowNumber) {
+    if (!sourceRowNumber || sourceRowNumber === targetRowNumber) return;
+    const sourceRow = worksheet.getRow(sourceRowNumber);
+    const targetRow = worksheet.getRow(targetRowNumber);
+    targetRow.height = sourceRow.height;
+    for (let col = COLS.seq; col <= COLS.remark; col++) {
+      const sourceCell = sourceRow.getCell(col);
+      const targetCell = targetRow.getCell(col);
+      targetCell.style = JSON.parse(JSON.stringify(sourceCell.style || {}));
+      if (sourceCell.numFmt) targetCell.numFmt = sourceCell.numFmt;
+      if (sourceCell.alignment) targetCell.alignment = { ...sourceCell.alignment };
+      if (sourceCell.border) targetCell.border = JSON.parse(JSON.stringify(sourceCell.border));
+      if (sourceCell.fill) targetCell.fill = JSON.parse(JSON.stringify(sourceCell.fill));
+      if (sourceCell.font) targetCell.font = JSON.parse(JSON.stringify(sourceCell.font));
+    }
+  }
+
+  function normalizeWorkbookPrivacy(workbook) {
+    workbook.creator = workbook.creator || 'SAJOANSAN';
+    workbook.lastModifiedBy = workbook.lastModifiedBy || 'SAJOANSAN';
+    workbook.created = workbook.created || new Date();
+    workbook.modified = new Date();
+    if (workbook.model?.workbookProperties) {
+      workbook.model.workbookProperties.filterPrivacy = false;
+      workbook.model.workbookProperties.removePersonalInformation = false;
+    }
+  }
+
+  async function disableRemovePersonalInfo(buffer) {
+    if (!window.JSZip) return buffer;
+    const zip = await window.JSZip.loadAsync(buffer);
+    const workbookXml = zip.file('xl/workbook.xml');
+    if (!workbookXml) return buffer;
+    let xml = await workbookXml.async('string');
+    xml = xml
+      .replace(/\sfilterPrivacy="1"/g, ' filterPrivacy="0"')
+      .replace(/\sfilterPrivacy="true"/g, ' filterPrivacy="0"')
+      .replace(/\sremovePersonalInformation="1"/g, ' removePersonalInformation="0"')
+      .replace(/\sremovePersonalInformation="true"/g, ' removePersonalInformation="0"');
+    zip.file('xl/workbook.xml', xml);
+    return zip.generateAsync({ type: 'arraybuffer' });
+  }
+
+  function updateButtons() {
+    const ready = !!state.workbook;
+    $('add-rows-btn').disabled = !ready;
+    $('download-btn').disabled = !ready || !state.rows.length;
+    $('apply-day-btn').disabled = !ready || !state.rows.length;
+    $('renumber-btn').disabled = !ready || !state.rows.length;
+  }
+
+  function cellText(cell) {
+    const value = cell?.value;
+    if (value == null) return '';
+    if (typeof value === 'object') {
+      if (value.text) return String(value.text).trim();
+      if (value.richText) return value.richText.map(part => part.text || '').join('').trim();
+      if (value.result != null) return String(value.result).trim();
+      if (value instanceof Date) return `${value.getDate()}일`;
+      if (value.hyperlink && value.text) return String(value.text).trim();
+    }
+    return String(value).trim();
+  }
+
+  function normalizeRole(value) {
+    const text = String(value || '').trim();
+    if (text.includes('고정')) return '고정';
+    if (text.includes('광역')) return '광역';
+    if (text.includes('임시')) return '임시';
+    return '';
+  }
+
+  function roleRank(value) {
+    const role = normalizeRole(value);
+    const index = ROLE_ORDER.indexOf(role);
+    return index === -1 ? 99 : index;
+  }
+
+  function findLastIndex(array, predicate) {
+    for (let i = array.length - 1; i >= 0; i--) {
+      if (predicate(array[i], i)) return i;
+    }
+    return -1;
+  }
+
+  function parseDay(value) {
+    const match = String(value || '').match(/(\d{1,2})/);
+    return match ? Number(match[1]) : '';
+  }
+
+  function normalizeDay(value) {
+    const day = parseDay(value);
+    if (!day) return '';
+    return `${day}일`;
+  }
+
+  function normalizeCellValue(value) {
+    const text = String(value ?? '').trim();
+    return text === '' ? null : text;
+  }
+
+  function updateDerivedFields(row) {
+    const freezer = parseTemperature(row.freezer_temp);
+    const refrigerated = parseTemperature(row.refrigerated_temp);
+    const hasFreezer = freezer !== null;
+    const hasRefrigerated = refrigerated !== null;
+    if (hasFreezer) row.freezer_normal = freezer <= -18 ? '정상' : '비정상';
+    if (hasRefrigerated) row.refrigerated_normal = refrigerated >= 0 && refrigerated <= 10 ? '정상' : '비정상';
+
+    const partition = String(row.partition_wall || '').trim().toUpperCase();
+    if (hasFreezer && hasRefrigerated && partition) {
+      const ok = row.freezer_normal === '정상' && row.refrigerated_normal === '정상' && partition === 'O';
+      row.compliance = ok ? '준수' : '미준수';
+    }
+  }
+
+  function parseTemperature(value) {
+    const text = String(value ?? '').replace('℃', '').trim();
+    if (!text) return null;
+    const number = Number(text);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function buildFilename() {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const day = parseDay($('default-day').value) || now.getDate();
+    const dd = String(day).padStart(2, '0');
+    const centerName = $('default-center').value.trim() || '안산사조센터';
+    return `${centerName} 일일 온도점검_${yy}${mm}${dd}.xlsx`;
+  }
+
+  function buildMailSubject() {
+    const { start, end } = mailDateRange();
+    return `이안물류 - 안산사조센터 일일 온도점검_${formatDateCompact(start)}~${formatDateCompact(end)}`;
+  }
+
+  function buildMailBody() {
+    const { start, end } = mailDateRange();
+    return `안녕하세요
+
+이안물류 장희성 입니다.
+
+
+
+${formatDateCompact(start)}(${weekdayKo(start)})~${formatDateCompact(end)}(${weekdayKo(end)}) 일일온도점검 송부 드립니다.${' '}
+
+첨부파일 확인 부탁드립니다.
+
+
+
+감사합니다.`;
+  }
+
+  function mailDateRange() {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 1);
+    return { start, end };
+  }
+
+  function formatDateCompact(date) {
+    const yyyy = String(date.getFullYear());
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}${mm}${dd}`;
+  }
+
+  function weekdayKo(date) {
+    return ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  }
+
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  let toastTimer = null;
+  function toast(message, type = 'info') {
+    const el = $('toast');
+    el.textContent = message;
+    el.className = 'fixed left-1/2 bottom-6 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none show';
+    const tone = type === 'error' ? 'bg-rose-950/95 border border-rose-700 text-rose-100' : type === 'success' ? 'bg-emerald-950/95 border border-emerald-700 text-emerald-100' : 'bg-zinc-800 border border-zinc-700 text-zinc-100';
+    el.className += ` ${tone}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value);
+  }
+  </script>
+</body>
+</html>

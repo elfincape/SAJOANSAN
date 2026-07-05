@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>쿠팡 입문확인 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    .drop-card { border:1px dashed #52525b; background:rgba(39,39,42,.55); transition:.15s ease; }
+    .drop-card:hover,.drop-card.dragover { border-color:#10b981; background:rgba(16,185,129,.08); transform:translateY(-1px); }
+    .image-paste-box { min-height: 190px; border: 2px dashed #52525b; border-radius: .85rem; background: rgba(24,24,27,.72); display:flex; align-items:center; justify-content:center; text-align:center; cursor:pointer; outline:none; transition:.15s ease; overflow:hidden; }
+    .image-paste-box:hover,.image-paste-box:focus,.image-paste-box.active { border-color:#38bdf8; background:rgba(14,165,233,.08); box-shadow:0 0 0 3px rgba(14,165,233,.12); }
+    .image-paste-box img { max-width:100%; max-height:260px; object-fit:contain; display:block; }
+    .step-badge { display:inline-flex; align-items:center; justify-content:center; width:1.5rem; height:1.5rem; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.3); font-size:.75rem; font-weight:700; }
+    .preview-table td,.preview-table th { white-space:nowrap; vertical-align:middle; }
+    .code-box { background:#09090b; border:1px solid #3f3f46; border-radius:.5rem; }
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100 transition">← 관리 허브</a>
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-md bg-sky-600/20 border border-sky-600/40 flex items-center justify-center">🧾</div>
+        <h1 class="text-base font-semibold">쿠팡 입문확인</h1>
+      </div>
+      <div class="flex-1"></div>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-6 space-y-5">
+    <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
+      <h2 class="text-sm font-semibold mb-2">작업 방식</h2>
+      <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
+        <li>저장된 엑셀 템플릿을 불러옵니다. 기본 위치는 <code>/templates/coupang-entry-template.xlsx</code>입니다.</li>
+        <li>쿠팡 시간표 이미지를 Claude Vision API로 분석해 센터·예약시간·물량·냉장·냉동을 JSON으로 추출합니다.</li>
+        <li>배차정보 텍스트는 기존 배차정보 파서 규칙에 맞춰 기사명·차량번호·연락처를 파싱합니다.</li>
+        <li>센터명 기준으로 시간표와 배차정보를 매칭하고, 확인 후 G6:G23 시간 행의 I/J, K/L... U/V 영역에 입력합니다.</li>
+      </ol>
+      <p class="mt-3 text-xs text-amber-300">AIAPIFlow 호출은 브라우저가 아니라 Supabase Edge Function을 통해서만 실행됩니다.</p>
+    </section>
+
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div class="drop-card rounded-lg p-3" data-drop="template">
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">1</span><div><div class="text-sm font-semibold">엑셀 템플릿</div><div class="text-xs text-zinc-500">G6:G23 시간 기준 입력</div></div></div>
+        <button id="reload-template-btn" class="btn btn-ghost text-xs mb-3" type="button">저장된 템플릿 다시 불러오기</button>
+        <label class="app-label">입문확인 날짜</label>
+        <input id="entry-date" type="date" class="app-input mb-3">
+        <div id="entry-date-label" class="mb-3 text-xs text-sky-300"></div>
+        <label class="app-label">필요 시 임시 템플릿 업로드</label>
+        <input id="template-file" type="file" accept=".xlsx,.xlsm" class="w-full text-sm">
+        <div id="template-info" class="mt-3 text-xs text-zinc-400">저장된 템플릿을 불러오는 중...</div>
+      </div>
+
+      <div class="drop-card rounded-lg p-3" data-drop="image">
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">2</span><div><div class="text-sm font-semibold">쿠팡 시간표 이미지</div><div class="text-xs text-zinc-500">이미지 등록 후 API호출</div></div></div>
+        <input id="image-file" type="file" accept="image/*" class="w-full text-sm mb-3">
+        <div id="image-paste-box" class="image-paste-box" tabindex="0" role="button" aria-label="쿠팡 시간표 이미지 붙여넣기 영역">
+          <div id="image-placeholder" class="px-4 text-xs text-zinc-400 leading-6">
+            이 점선 박스를 클릭한 뒤 <kbd class="px-1 rounded bg-zinc-700">Ctrl</kbd>+<kbd class="px-1 rounded bg-zinc-700">V</kbd>로 이미지를 붙여넣으세요.<br>
+            또는 위 파일 선택으로 이미지를 등록하세요.
+          </div>
+          <img id="image-preview" class="hidden" alt="쿠팡 시간표 미리보기">
+        </div>
+        <div id="image-info" class="mt-3 text-xs text-zinc-400">선택된 이미지 없음</div>
+        <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">API호출</button>
+      </div>
+      <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">배차정보 텍스트</div><div class="text-xs text-zinc-500">기존 파서 규칙으로 센터/기사/차량 추출</div></div></div>
+        <textarea id="dispatch-text" rows="8" class="app-input font-mono text-xs" placeholder="예)\n쿠팡 인천15/11 5톤\n홍길동 경기92바1234\n01012345678\n\n쿠팡 인천12B2B 5톤\n김기사 경기91자5678\n01098765432"></textarea>
+        <div class="mt-3 flex gap-2"><button id="parse-dispatch-btn" class="btn btn-ghost" type="button">배차정보 파싱</button><span id="dispatch-count" class="text-xs text-zinc-400 self-center"></span></div>
+      </div>
+      <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">4</span><div><div class="text-sm font-semibold">추출 JSON 직접 붙여넣기</div><div class="text-xs text-zinc-500">API 실패 시 수동 보정 가능</div></div></div>
+        <textarea id="schedule-json" rows="8" class="app-input font-mono text-xs" placeholder='[{"centerRaw":"인천12 B2B","centerBase":"인천12","isB2B":true,"reservationTime":"09:00","quantity":276,"cold":1,"frozen":2}]'></textarea>
+        <div class="mt-3 flex gap-2"><button id="load-json-btn" class="btn btn-ghost" type="button">JSON 반영</button><button id="match-btn" class="btn btn-primary" type="button">매칭 실행</button></div>
+      </div>
+    </section>
+
+    <section class="border border-zinc-700 rounded-lg overflow-hidden">
+      <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
+        <span class="step-badge">5</span><span class="text-sm font-semibold">매칭 확인</span><span id="match-count" class="text-xs text-zinc-400"></span>
+        <div class="flex-1"></div><button id="download-btn" class="btn btn-primary" disabled>엑셀 입력 후 다운로드</button>
+      </div>
+      <div class="overflow-auto max-h-[62vh]">
+        <table class="preview-table min-w-[1300px] w-full text-xs">
+          <thead class="bg-zinc-900/80 sticky top-0 z-10"><tr class="text-zinc-300 border-b border-zinc-700">
+            <th class="px-2 py-2">입력</th><th class="px-2 py-2 text-left">예약시간</th><th class="px-2 py-2 text-left">센터</th><th class="px-2 py-2 text-left">물량</th><th class="px-2 py-2 text-left">냉장</th><th class="px-2 py-2 text-left">냉동</th><th class="px-2 py-2 text-left">기사</th><th class="px-2 py-2 text-left">차량</th><th class="px-2 py-2 text-left">매칭</th><th class="px-2 py-2 text-left">경고</th>
+          </tr></thead>
+          <tbody id="match-body"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" class="p-8 text-center text-sm text-zinc-500">시간표 분석과 배차정보 파싱 후 매칭을 실행하세요.</div>
+    </section>
+  </main>
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 translate-y-2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { supabase } from '/js/supabase.js';
+    import { SUPABASE_ANON_KEY, SUPABASE_URL } from '/js/config.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+    const profile = await requireRole('editor');
+    if (!profile) { /* redirected */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
+    document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+    window.appSupabase = supabase;
+    window.appSupabaseUrl = SUPABASE_URL;
+    window.appSupabaseAnonKey = SUPABASE_ANON_KEY;
+  </script>
+
+  <script>
+  'use strict';
+  const TEMPLATE_URL = '/templates/sazocoupang.xlsx';
+  const TIME_ROW_START = 6;
+  const TIME_ROW_END = 23;
+  const TIME_COL = 7;
+  const FIRST_CENTER_COL = 9;
+  const LAST_CENTER_COL = 22;
+  const PROMPT = `이미지의 쿠팡 시간표 표를 읽어라.
+각 행에서 센터명, 예약시간, 물량, 냉장, 냉동 값을 추출해라.
+센터명이 있지만 예약시간이 비어 있는 행도 누락하지 말고 reservationTime을 null로 넣어라.
+센터명은 원문 그대로 centerRaw에 넣어라.
+B2B 여부를 판단해 isB2B에 넣어라.
+centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
+예약시간은 HH:mm 형식으로 통일해라.
+물량은 숫자만 number로 변환해라.
+설명하지 말고 JSON 배열만 반환해라.`;
+  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', imageBase64: '', imageMediaType: '', imageSize: null, selectedDate: '', scheduleRows: [], dispatchRows: [], matches: [], usedGroupFills: new Set() };
+  const GROUP_FILL_COLORS = ['FFE2F0CB','FFFFD6A5','FFCAFFBF','FF9BF6FF','FFA0C4FF','FFBDB2FF','FFFFADAD','FFFDFFB6','FFCDE7BE','FFD7E3FC','FFFFC8DD','FFE0BBE4'];
+  const $ = id => document.getElementById(id);
+
+  $('reload-template-btn').addEventListener('click', () => loadDefaultTemplate(true));
+  $('entry-date').addEventListener('change', e => setEntryDate(e.target.value));
+  $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
+  $('image-file').addEventListener('change', e => handleImageFile(e.target.files?.[0]));
+  $('image-paste-box').addEventListener('click', () => focusImagePasteBox());
+  $('image-paste-box').addEventListener('focus', () => $('image-paste-box').classList.add('active'));
+  $('image-paste-box').addEventListener('blur', () => $('image-paste-box').classList.remove('active'));
+  document.addEventListener('paste', handleImagePaste);
+  $('analyze-image-btn').addEventListener('click', analyzeImage);
+  $('parse-dispatch-btn').addEventListener('click', parseDispatchInput);
+  $('load-json-btn').addEventListener('click', loadScheduleJson);
+  $('match-btn').addEventListener('click', runMatching);
+  $('download-btn').addEventListener('click', downloadWorkbook);
+
+  document.querySelectorAll('[data-drop]').forEach(card => {
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
+    card.addEventListener('dragleave', () => card.classList.remove('dragover'));
+    card.addEventListener('drop', e => {
+      e.preventDefault(); card.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0]; if (!file) return;
+      if (card.dataset.drop === 'template') handleTemplateFile(file);
+      if (card.dataset.drop === 'image') handleImageFile(file);
+    });
+  });
+  setEntryDate(defaultEntryDate());
+  loadDefaultTemplate(false);
+
+  function defaultEntryDate() { return new Date().toISOString().slice(0, 10); }
+  function setEntryDate(value) {
+    state.selectedDate = value || defaultEntryDate();
+    $('entry-date').value = state.selectedDate;
+    $('entry-date-label').textContent = `엑셀 G3/시트명: ${formatEntryDateLabel(state.selectedDate)}`;
+  }
+  function formatEntryDateLabel(value) {
+    const d = parseDateInput(value);
+    if (!d) return '';
+    const days = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
+    return `${d.getMonth() + 1}월${d.getDate()}일(${days[d.getDay()]})`;
+  }
+  function parseDateInput(value) {
+    const s = String(value || '').trim();
+    if (/^\d{6}$/.test(s)) return new Date(2000 + Number(s.slice(0, 2)), Number(s.slice(2, 4)) - 1, Number(s.slice(4, 6)));
+    if (/^\d{8}$/.test(s)) return new Date(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8)));
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  function applyEntryDate(workbook, ws) {
+    const label = formatEntryDateLabel(state.selectedDate);
+    if (!label) return;
+    ws.getCell('G3').value = label;
+    const uniqueName = uniqueWorksheetName(workbook, label, ws);
+    if (uniqueName) ws.name = uniqueName;
+  }
+  function uniqueWorksheetName(workbook, baseName, currentWs) {
+    const safeBase = String(baseName || '').replace(/[\/?*:[\]]/g, '').slice(0, 31) || '입문확인';
+    let name = safeBase;
+    let index = 2;
+    while (workbook.worksheets.some(sheet => sheet !== currentWs && sheet.name === name)) {
+      const suffix = `_${index++}`;
+      name = `${safeBase.slice(0, 31 - suffix.length)}${suffix}`;
+    }
+    return name;
+  }
+
+  async function loadDefaultTemplate(showToast) {
+    try {
+      $('template-info').textContent = '저장된 템플릿을 불러오는 중...';
+      const res = await fetch(`${TEMPLATE_URL}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`템플릿을 찾을 수 없습니다. (${res.status})`);
+      await loadTemplateBuffer(await res.arrayBuffer(), '저장된 템플릿', TEMPLATE_URL);
+      if (showToast) toast('저장된 템플릿을 다시 불러왔습니다.', 'success');
+    } catch (err) {
+      $('template-info').innerHTML = `<span class="text-amber-300">저장된 템플릿을 불러오지 못했습니다.</span><br>${escapeHtml(err.message || err)}<br>필요 시 임시 템플릿을 업로드하세요.`;
+      if (showToast) toast(`템플릿 로드 실패: ${err.message || err}`, 'error');
+    }
+  }
+  async function handleTemplateFile(file) { if (!file) return; await loadTemplateBuffer(await file.arrayBuffer(), file.name, '임시 업로드 템플릿'); toast('템플릿을 불러왔습니다.', 'success'); }
+  async function loadTemplateBuffer(buffer, name, detail) {
+    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer);
+    const ws = workbook.worksheets[0]; if (!ws) throw new Error('Sheet1을 찾을 수 없습니다.');
+    state.workbook = workbook; state.templateBuffer = buffer.slice(0); state.worksheetName = ws.name;
+    $('template-info').innerHTML = `<div class="font-medium text-zinc-200">${escapeHtml(name)}</div><div>${escapeHtml(detail)} · Sheet1: ${escapeHtml(ws.name)}</div>`;
+    updateButtons();
+  }
+  function handleImageFile(file) {
+    state.imageFile = file || null;
+    state.imageBase64 = '';
+    state.imageMediaType = file?.type || 'image/png';
+    state.imageSize = null;
+    $('image-info').textContent = file ? `${file.name} (${(file.size/1024).toFixed(1)} KB)` : '선택된 이미지 없음';
+    renderImagePreview(file);
+  }
+
+  function focusImagePasteBox() { $('image-paste-box').focus(); }
+
+  function handleImagePaste(event) {
+    if (document.activeElement !== $('image-paste-box')) return;
+    const item = [...(event.clipboardData?.items || [])].find(entry => entry.type?.startsWith('image/'));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    handleImageFile(new File([file], `pasted-coupang-${Date.now()}.png`, { type: file.type || 'image/png' }));
+    toast('붙여넣은 이미지를 시간표 이미지로 등록했습니다.', 'success');
+  }
+
+  function renderImagePreview(file) {
+    const preview = $('image-preview');
+    const placeholder = $('image-placeholder');
+    if (state.imagePreviewUrl) URL.revokeObjectURL(state.imagePreviewUrl);
+    state.imagePreviewUrl = '';
+    if (!file) { preview.classList.add('hidden'); preview.removeAttribute('src'); placeholder.classList.remove('hidden'); return; }
+    state.imagePreviewUrl = URL.createObjectURL(file);
+    preview.onload = () => { state.imageSize = { width: preview.naturalWidth || 0, height: preview.naturalHeight || 0 }; };
+    preview.src = state.imagePreviewUrl;
+    preview.classList.remove('hidden');
+    placeholder.classList.add('hidden');
+  }
+
+  async function analyzeImage() {
+    if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
+    try {
+      const base64 = await getImageBase64();
+      const text = await callClaudeVision({
+        model: 'claude-haiku-4-5-20251001',
+        mediaType: state.imageFile.type || 'image/png',
+        base64
+      });
+      console.log('[coupang-entry] Claude 원본 응답 문자열:', text);
+      const jsonText = extractJsonArrayText(text);
+      console.log('[coupang-entry] JSON.parse 직전 문자열:', jsonText);
+      const rows = parseScheduleRowsFromText(jsonText);
+      console.log('[coupang-entry] 파싱된 JSON:', rows);
+      console.log('[coupang-entry] 추출된 배열 length:', rows.length);
+      $('schedule-json').value = JSON.stringify(rows, null, 2);
+      state.scheduleRows = rows.map(normalizeScheduleRow).filter(isActiveScheduleRow);
+      renderScheduleCount();
+      toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
+    } catch (err) {
+      console.error('[coupang-entry] 이미지 분석 예외:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      const msg = String(err.message || err);
+      if (msg.includes('Failed to fetch')) {
+        toast('이미지 분석 실패: 브라우저 직접 호출이 CORS/네트워크로 차단됐습니다. Supabase Edge Function coupang-vision 배포가 필요합니다.', 'error');
+      } else {
+        toast(`이미지 분석 실패: ${msg}`, 'error');
+      }
+    }
+  }
+  async function callClaudeVision({ model, mediaType, base64 }) {
+    return callCoupangVisionEdge({ model, mediaType, base64 });
+  }
+
+  async function callCoupangVisionEdge({ model, mediaType, base64 }) {
+    const supabaseUrl = String(window.appSupabaseUrl || '').replace(/\/$/, '');
+    const anonKey = window.appSupabaseAnonKey || '';
+    const edgeURL = `${supabaseUrl}/functions/v1/coupang-vision`;
+    console.log('[coupang-entry] Supabase Edge Function 요청 URL:', edgeURL);
+    const res = await fetch(edgeURL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        apikey: anonKey,
+        authorization: `Bearer ${anonKey}`
+      },
+      body: JSON.stringify({ model, mediaType, imageBase64: base64, prompt: PROMPT })
+    });
+    const responseText = await res.text();
+    console.log('[coupang-entry] Edge Function HTTP Status:', res.status, res.statusText);
+    console.log('[coupang-entry] Edge Function 원본 response body:', responseText);
+    let data = null;
+    try { data = responseText ? JSON.parse(responseText) : null; }
+    catch (err) {
+      console.error('[coupang-entry] Edge Function JSON.parse 실패:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      throw new Error(`Edge Function 응답 JSON 파싱 실패: ${err.message}`);
+    }
+    console.log('[coupang-entry] Edge Function 파싱된 응답:', data);
+    if (!res.ok || data?.error) {
+      const detail = data?.responseText || data?.rawBody || data?.error || responseText || `${res.status} ${res.statusText}`;
+      const err = new Error(`Edge Function 실패 (${res.status}): ${data?.error || res.statusText}`);
+      err.detail = detail;
+      err.edge = data;
+      throw err;
+    }
+    if (typeof data?.text === 'string' && data.text.trim()) {
+      console.log('[coupang-entry] Edge Function provider:', data.provider || '(unknown)');
+      return data.text;
+    }
+    throw new Error('Edge Function 응답에 text가 없습니다.');
+  }
+
+  function loadScheduleJson() {
+    try {
+      const raw = $('schedule-json').value;
+      console.log('[coupang-entry] JSON.parse 직전 문자열:', extractJsonArrayText(raw));
+      const rows = parseScheduleRowsFromText(raw);
+      console.log('[coupang-entry] 파싱된 JSON:', rows);
+      console.log('[coupang-entry] 추출된 배열 length:', rows.length);
+      state.scheduleRows = rows.map(normalizeScheduleRow).filter(isActiveScheduleRow);
+      renderScheduleCount();
+      toast(`시간표 JSON ${state.scheduleRows.length}행을 반영했습니다.`, 'success');
+    }
+    catch (err) {
+      console.error('[coupang-entry] JSON 추출/파싱 실패:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      toast(`JSON 파싱 실패: ${err.message || err}`, 'error');
+    }
+  }
+  function normalizeScheduleRow(row, index) {
+    const raw = normalizeCenterName(String(row.centerRaw || row.center || '').trim());
+    const base = normalizeCenterName(String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim());
+    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: roundToNearestHalfHour(normalizeTime(row.reservationTime)), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
+  }
+  function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
+
+  function parseDispatchInput() {
+    state.usedGroupFills = new Set();
+    state.dispatchRows = parseDispatchText($('dispatch-text').value);
+    $('dispatch-count').textContent = state.dispatchRows.length ? `${state.dispatchRows.length}건` : '파싱 결과 없음';
+    toast(`배차정보 ${state.dispatchRows.length}건을 파싱했습니다.`, state.dispatchRows.length ? 'success' : 'error');
+  }
+  function parseDispatchText(raw) {
+    const lines = String(raw || '').replace(/\r/g, '\n').split('\n').map(v => v.trim()).filter(Boolean);
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (!hasTonnage(lines[i])) continue;
+      if (i + 2 >= lines.length) break;
+      const batchSpecs = tonCountSpecs(lines[i]);
+      if (batchSpecs.length) {
+        const { centerText, tons } = batchNameTon(lines[i], batchSpecs); let offset = 1;
+        tons.forEach(ton => { if (i + offset + 1 >= lines.length) return; const dv = driverVehicle(lines[i + offset]); out.push(dispatchRecord(centerText, ton, dv.driver, dv.vehicle, normalizePhone(lines[i + offset + 1]))); offset += 2; });
+        i += offset - 1; continue;
+      }
+      const nt = nameTon(lines[i]); const dv = driverVehicle(lines[i + 1]); out.push(dispatchRecord(nt.centerText, nt.ton, dv.driver, dv.vehicle, normalizePhone(lines[i + 2]))); i += 2;
+    }
+    return out.flatMap(expandDispatchRecord);
+  }
+  function dispatchRecord(centerText, ton, driver, vehicle, phone) { return { centerText, ton, driver, vehicle, phone }; }
+  function expandDispatchRecord(record) {
+    const expanded = expandCenterExpression(record.centerText);
+    const groupId = expanded.length > 1 ? `dispatch-group-${Date.now()}-${Math.random().toString(16).slice(2)}` : '';
+    const groupFill = groupId ? pickDistinctGroupFill() : '';
+    return expanded.map(key => ({ ...record, groupId, groupFill, centerKey: key.key, centerBaseKey: key.baseKey, isB2B: key.isB2B, centerLabel: key.label }));
+  }
+  function pickDistinctGroupFill() {
+    const available = GROUP_FILL_COLORS.filter(color => !state.usedGroupFills.has(color));
+    const color = available.length ? available[Math.floor(Math.random() * available.length)] : randomPastelArgb();
+    state.usedGroupFills.add(color);
+    return color;
+  }
+  function randomPastelArgb() {
+    let color = '';
+    do {
+      const r = 185 + Math.floor(Math.random() * 55);
+      const g = 185 + Math.floor(Math.random() * 55);
+      const b = 185 + Math.floor(Math.random() * 55);
+      color = `FF${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`.toUpperCase();
+    } while (state.usedGroupFills.has(color));
+    return color;
+  }
+  function expandCenterExpression(text) {
+    const cleaned = normalizeCenterName(String(text || '').replace(/^쿠팡\s*/,'').replace(/\s+/g, ' ').trim());
+    const parts = cleaned.split(/[\/+,，、\s]+/).filter(Boolean); const result = []; let lastRegion = ''; let lastBaseLabel = '';
+    parts.forEach(part => {
+      if (/^(b2b|비투비)$/i.test(part) && lastBaseLabel) { result.push(centerKeyObj(`${lastBaseLabel}B2B`)); return; }
+      const m = part.match(/^([가-힣]+)?(\d+)(\s*b2b|b2b)?$/i);
+      if (!m) return;
+      if (m[1]) lastRegion = m[1];
+      const baseLabel = `${lastRegion}${m[2]}`;
+      lastBaseLabel = baseLabel;
+      result.push(centerKeyObj(`${baseLabel}${m[3] ? 'B2B' : ''}`));
+    });
+    return result.length ? result : [centerKeyObj(cleaned)];
+  }
+  function centerKeyObj(label) { const normalized = normalizeCenterName(label); const isB2B = /b2b/i.test(normalized); const base = normalized.replace(/\s*b2b/ig, ''); return { label: normalized, key: centerKey(normalized), baseKey: centerKey(base), isB2B }; }
+  function hasTonnage(line) { return /\d+(?:\.\d+)?(?:톤|축)/.test(line); }
+  function nameTon(line) { const cleaned = String(line || '').replace(/^\d+\.\s*/, '').replace(/\s*경유\s*/g, ' ').trim(); const m = cleaned.match(/\d+(?:\.\d+)?(?:톤|축)/); return { centerText: (m ? cleaned.slice(0, m.index) : cleaned).trim(), ton: m ? m[0] : '' }; }
+  function tonCountSpecs(line) { const specs = []; const re = /(\d+(?:\.\d+)?(?:톤|축))\s*(\d+)\s*대/g; let m; while ((m = re.exec(line))) specs.push({ ton: m[1], count: Number(m[2]) }); return specs; }
+  function batchNameTon(line, specs) { const idx = line.search(/\d+(?:\.\d+)?(?:톤|축)\s*\d+\s*대/); const centerText = (idx >= 0 ? line.slice(0, idx) : nameTon(line).centerText).trim(); return { centerText, tons: specs.flatMap(s => Array.from({ length: s.count }, () => s.ton)) }; }
+  function driverVehicle(line) { const parts = String(line || '').trim().split(/\s+/); return { driver: parts[0] || '', vehicle: parts[1] || '' }; }
+
+  function runMatching() {
+    if (!state.scheduleRows.length) return toast('시간표 JSON을 먼저 반영하세요.', 'error');
+    if (!state.dispatchRows.length) parseDispatchInput();
+    state.matches = state.scheduleRows.map(row => ({ schedule: row, match: matchScheduleToDispatch(row, state.dispatchRows), include: true }));
+    renderMatches(); updateButtons(); toast('매칭을 완료했습니다.', 'success');
+  }
+  function matchScheduleToDispatch(scheduleRow, dispatchRows) {
+    const rawKey = centerKey(scheduleRow.centerRaw); const baseKey = centerKey(scheduleRow.centerBase);
+    if (scheduleRow.isB2B) {
+      const exact = dispatchRows.find(d => d.centerKey === rawKey && d.isB2B); if (exact) return { matchedDispatch: exact, matchType: 'b2b_exact', confidence: 1, warning: '' };
+      const inherited = dispatchRows.find(d => d.centerBaseKey === baseKey && !d.isB2B); if (inherited) return { matchedDispatch: inherited, matchType: 'b2b_inherited_from_base', confidence: .82, warning: 'B2B 별도 배차가 없어 일반 센터 배차를 상속했습니다.' };
+      return { matchedDispatch: null, matchType: 'unmatched', confidence: 0, warning: 'B2B 매칭 실패' };
+    }
+    const exact = dispatchRows.find(d => d.centerKey === baseKey && !d.isB2B); if (exact) return { matchedDispatch: exact, matchType: 'exact', confidence: 1, warning: '' };
+    const grouped = dispatchRows.find(d => d.centerBaseKey === baseKey); if (grouped) return { matchedDispatch: grouped, matchType: 'group_expanded', confidence: .9, warning: '' };
+    return { matchedDispatch: null, matchType: 'unmatched', confidence: 0, warning: '매칭 실패' };
+  }
+  function renderMatches() {
+    const body = $('match-body'); $('empty-state').classList.toggle('hidden', state.matches.length > 0);
+    $('match-count').textContent = state.matches.length ? `${state.matches.length}건` : '';
+    body.innerHTML = state.matches.map((m, idx) => { const d = m.match.matchedDispatch; return `<tr class="border-b border-zinc-800 ${m.match.warning ? 'bg-amber-950/20' : ''}"><td class="px-2 py-1 text-center"><input type="checkbox" data-include="${idx}" ${d ? 'checked' : ''} ${d ? '' : 'disabled'}></td><td class="px-2 py-1 font-mono">${escapeHtml(m.schedule.reservationTime || '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.centerRaw)}</td><td class="px-2 py-1">${escapeHtml(m.schedule.quantity ?? '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.cold ?? '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.frozen ?? '')}</td><td class="px-2 py-1">${escapeHtml(d?.driver || '')}</td><td class="px-2 py-1 font-mono">${escapeHtml(d?.vehicle || '')}</td><td class="px-2 py-1">${escapeHtml(m.match.matchType)} (${Math.round(m.match.confidence*100)}%)</td><td class="px-2 py-1 text-amber-300">${escapeHtml(m.match.warning || '')}</td></tr>`; }).join('');
+    body.querySelectorAll('[data-include]').forEach(cb => cb.addEventListener('change', () => { state.matches[Number(cb.dataset.include)].include = cb.checked; }));
+  }
+
+  async function downloadWorkbook() {
+    if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
+    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
+    const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
+    applyEntryDate(workbook, ws);
+    await insertUploadedImage(workbook, ws);
+    const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
+    const out = await sanitizeWorkbookBuffer(await workbook.xlsx.writeBuffer());
+    saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
+  }
+  function writeMatchesToWorksheet(ws) {
+    const errors = [];
+    detachWritableCellStyles(ws);
+    state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
+      const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
+      const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
+      const row = ws.getRow(rowNumber);
+      const centerCell = row.getCell(col);
+      const driverCell = row.getCell(col + 1);
+      centerCell.value = compactCenterLabel(m.schedule.centerRaw);
+      driverCell.value = m.match.matchedDispatch.driver || '';
+      centerCell.numFmt = '@';
+      driverCell.numFmt = '@';
+      applyGroupFill(centerCell, driverCell, m.match.matchedDispatch);
+    });
+    return errors;
+  }
+  async function sanitizeWorkbookBuffer(buffer) {
+    if (!window.JSZip) return buffer;
+    const zip = await window.JSZip.loadAsync(buffer);
+    const workbookPath = 'xl/workbook.xml';
+    const workbookFile = zip.file(workbookPath);
+    if (workbookFile) {
+      const xml = await workbookFile.async('string');
+      zip.file(workbookPath, xml.replace(/\sfilterPrivacy="1"/g, '').replace(/\sfilterPrivacy="true"/g, ''));
+    }
+    const worksheetFiles = Object.keys(zip.files).filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+    await Promise.all(worksheetFiles.map(async name => {
+      const xml = await zip.file(name).async('string');
+      zip.file(name, xml
+        .replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, ''));
+    }));
+    return zip.generateAsync({ type: 'arraybuffer' });
+  }
+
+  async function insertUploadedImage(workbook, ws) {
+    if (!state.imageFile) return;
+    const base64 = await getImageBase64();
+    if (!base64) return;
+    const extension = imageExtension(state.imageFile);
+    const imageId = workbook.addImage({ base64: `data:${state.imageMediaType || state.imageFile.type || 'image/png'};base64,${base64}`, extension });
+    const width = columnsPixelWidth(ws, 1, 5);
+    const ratio = state.imageSize?.width && state.imageSize?.height ? state.imageSize.height / state.imageSize.width : 0.62;
+    const height = Math.max(80, Math.round(width * ratio));
+    const rowSpan = Math.max(4, height / 20);
+    ws.addImage(imageId, { tl: { col: 0, row: 1 }, br: { col: 5, row: 1 + rowSpan }, editAs: 'oneCell' });
+  }
+  async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
+  function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
+  function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
+  function detachWritableCellStyles(ws) {
+    for (let r = 5; r <= TIME_ROW_END; r++) {
+      const row = ws.getRow(r);
+      for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c++) {
+        const cell = row.getCell(c);
+        cell.style = cloneCellStyle(cell.style);
+      }
+    }
+  }
+  function cloneCellStyle(style) {
+    if (!style) return {};
+    try { return JSON.parse(JSON.stringify(style)); }
+    catch (_) { return { ...style }; }
+  }
+  function applyGroupFill(centerCell, driverCell, dispatch) {
+    if (!dispatch?.groupFill) return;
+    [centerCell, driverCell].forEach(cell => {
+      cell.style = cloneCellStyle(cell.style);
+      cell.style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
+    });
+  }
+  function findTimeRow(ws, timeText) {
+    const target = normalizeTime(timeText);
+    if (!target) return null;
+
+    // 1순위: 명세상 납품시간인 G열을 먼저 확인한다.
+    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
+      if (timeCandidates(ws.getRow(r).getCell(TIME_COL)).includes(target)) return r;
+    }
+
+    // 2순위: H열 확인시간이 납품시간으로 오인되는 문제를 막기 위해 G열 실패 시 고정 시간표 행으로만 추정한다.
+    const fallback = fallbackTimeRowByHalfHour(target);
+    if (fallback) {
+      console.warn('[coupang-entry] 시간 셀 직접 매칭 실패, 08:00 기준 30분 간격 fallback 사용:', { target, fallback });
+      return fallback;
+    }
+
+    console.warn('[coupang-entry] 시간 행을 찾지 못함:', { target, rows: debugTimeRows(ws) });
+    return null;
+  }
+  function debugTimeRows(ws) { return Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; return { row, cells: Array.from({ length: LAST_CENTER_COL - 1 }, (_, j) => { const col = j + 2; const cell = ws.getRow(row).getCell(col); return { col, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) }; }); }
+  function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
+  function fallbackTimeRowByHalfHour(timeText) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = h * 60 + m; const start = 8 * 60; const diff = total - start; if (diff < 0 || diff % 30 !== 0) return null; const row = TIME_ROW_START + diff / 30; return row >= TIME_ROW_START && row <= TIME_ROW_END ? row : null; }
+  function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
+  function compactCenterLabel(value) { return normalizeCenterName(value).replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
+
+  function roundToNearestHalfHour(timeText) {
+    const t = normalizeTime(timeText);
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    const roundedTotal = Math.round((h * 60 + m) / 30) * 30;
+    return `${String(Math.floor(roundedTotal / 60) % 24).padStart(2,'0')}:${String(roundedTotal % 60).padStart(2,'0')}`;
+  }
+  function normalizeTime(value) {
+    if (value == null || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) { const total = Math.round((value % 1) * 24 * 60); return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
+    if (value instanceof Date) return `${String(value.getHours()).padStart(2,'0')}:${String(value.getMinutes()).padStart(2,'0')}`;
+    const s = String(value).trim();
+    const numeric = Number(s);
+    if (Number.isFinite(numeric) && numeric >= 0 && numeric < 1) return normalizeTime(numeric);
+    const m = s.match(/(오전|오후)?\s*(\d{1,2})\s*[:시]?\s*(\d{2})?/);
+    if (!m) return null;
+    let hour = Number(m[2]);
+    if (m[1] === '오후' && hour < 12) hour += 12;
+    if (m[1] === '오전' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2,'0')}:${String(Number(m[3] || 0)).padStart(2,'0')}`;
+  }
+  function timeCandidates(cell) {
+    const values = [];
+    const raw = cell?.value;
+    if (raw && typeof raw === 'object' && !(raw instanceof Date)) {
+      if ('result' in raw) values.push(raw.result);
+      if ('text' in raw) values.push(raw.text);
+      if (Array.isArray(raw.richText)) values.push(raw.richText.map(p => p.text || '').join(''));
+      if ('formula' in raw) values.push(raw.formula);
+    } else {
+      values.push(raw);
+    }
+    values.push(cellText(cell));
+    const out = [];
+    values.forEach(value => {
+      const direct = normalizeTime(value);
+      if (direct) out.push(direct);
+      String(value ?? '').replace(/(오전|오후)?\s*\d{1,2}\s*[:시]\s*\d{0,2}/g, token => { const parsed = normalizeTime(token); if (parsed) out.push(parsed); return token; });
+    });
+    return [...new Set(out)];
+  }
+  function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') { if (typeof v.result === 'number') return normalizeTime(v.result) || ''; return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); } return String(v).trim(); }
+  function normalizeCenterName(value) { return String(value || '').replace(/군지암/g, '곤지암').trim(); }
+  function centerKey(value) { return normalizeCenterName(value).toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
+  function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
+  function numberOrNull(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? n : null; }
+  function extractClaudeText(json) {
+    console.log('[coupang-entry] Claude 응답 객체:', json);
+    if (typeof json === 'string') return json.trim();
+    if (Array.isArray(json?.content)) return json.content.map(c => c.text || '').join('\n').trim();
+    if (json?.choices?.[0]?.message?.content) return String(json.choices[0].message.content).trim();
+    if (json?.output_text) return String(json.output_text).trim();
+    return JSON.stringify(json);
+  }
+
+  function normalizeApiBaseURL(value) {
+    const raw = String(value || 'https://aiapiflow.com/v1').trim().replace(/\/$/, '');
+    return raw.endsWith('/v1') ? raw : `${raw}/v1`;
+  }
+  function parseScheduleRowsFromText(text) {
+    const jsonText = extractJsonArrayText(text);
+    let parsed;
+    try { parsed = JSON.parse(jsonText); }
+    catch (err) {
+      console.error('[coupang-entry] JSON.parse 실패 원문:', jsonText);
+      throw new Error(`JSON 추출 실패: ${err.message}`);
+    }
+    if (!Array.isArray(parsed)) throw new Error(`JSON 배열이 아닙니다. 실제 타입: ${parsed === null ? 'null' : typeof parsed}`);
+    return parsed;
+  }
+  function extractJsonArrayText(text) {
+    const s = String(text ?? '').trim();
+    console.log('[coupang-entry] JSON 추출 대상 원문:', s);
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const body = fence ? fence[1].trim() : s;
+    const a = body.indexOf('[');
+    const b = body.lastIndexOf(']');
+    if (a >= 0 && b >= a) return body.slice(a, b + 1);
+    throw new Error('응답에서 JSON 배열([ ... ])을 찾지 못했습니다.');
+  }
+  async function fileToBase64(file) { const buf = await file.arrayBuffer(); let binary = ''; new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); }); return btoa(binary); }
+  function renderScheduleCount() { $('match-count').textContent = state.scheduleRows.length ? `시간표 ${state.scheduleRows.length}행` : ''; }
+  function updateButtons() { $('download-btn').disabled = !state.workbook || !state.matches.some(m => m.include && m.match.matchedDispatch); }
+  function buildFilename() { const d = new Date(); return `쿠팡 입문확인_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.xlsx`; }
+  function saveBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+  let toastTimer = null; function toast(message, type = 'info') { const el = $('toast'); el.textContent = message; el.className = 'fixed left-1/2 bottom-6 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none show'; el.className += ` ${type === 'error' ? 'bg-rose-950/95 border border-rose-700 text-rose-100' : type === 'success' ? 'bg-emerald-950/95 border border-emerald-700 text-emerald-100' : 'bg-zinc-800 border border-zinc-700 text-zinc-100'}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
+  function escapeHtml(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
+  </script>
+</body>
+</html>
