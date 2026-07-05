@@ -379,8 +379,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function dispatchRecord(centerText, ton, driver, vehicle, phone) { return { centerText, ton, driver, vehicle, phone }; }
   function expandDispatchRecord(record) {
     const expanded = expandCenterExpression(record.centerText);
-    const groupId = expanded.length > 1 ? `dispatch-group-${Date.now()}-${Math.random().toString(16).slice(2)}` : '';
-    const groupFill = groupId ? pickDistinctGroupFill() : '';
+    const groupId = `dispatch-group-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const groupFill = pickDistinctGroupFill();
     return expanded.map(key => ({ ...record, groupId, groupFill, centerKey: key.key, centerBaseKey: key.baseKey, isB2B: key.isB2B, centerLabel: key.label }));
   }
   function pickDistinctGroupFill() {
