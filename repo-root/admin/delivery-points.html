@@ -267,6 +267,9 @@
     const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
     const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
 
+    const PHOTO_MEMO_MARKER = '<!--dp-photos:';
+    const PHOTO_MEMO_MARKER_END = '-->';
+
     // -------------------------------------------------------------------------
     // 부트
     // -------------------------------------------------------------------------
@@ -693,9 +696,6 @@
     // -------------------------------------------------------------------------
 
 
-
-    const PHOTO_MEMO_MARKER = '<!--dp-photos:';
-    const PHOTO_MEMO_MARKER_END = '-->';
 
     function splitMemoAndEmbeddedPhotos(memo) {
       const raw = String(memo || '');
