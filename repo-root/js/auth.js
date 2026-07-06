@@ -5,6 +5,7 @@
 
 import { supabase } from './supabase.js';
 import { toast, confirmDialog } from './ui.js';
+import { clearSelectedCenter } from './center.js';
 
 const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
 
@@ -59,6 +60,7 @@ export async function requireAuth() {
     await supabase.auth.signOut();
     _profileCache = null;
     _profilePromise = null;
+    clearSelectedCenter();
     redirectTo('/login.html?reason=inactive');
     return null;
   }
@@ -95,6 +97,7 @@ export async function signOut() {
   } finally {
     _profileCache = null;
     _profilePromise = null;
+    clearSelectedCenter();
     redirectTo('/login.html');
   }
 }

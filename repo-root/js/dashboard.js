@@ -6,8 +6,18 @@
 
 import { supabase }                              from './supabase.js';
 import { requireRole, getCurrentProfile, signOut } from './auth.js';
-import { bizMinToStandard }                      from './time.js';
+import { bizMinToStandard, displayToBizMin }     from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
+import {
+  centerPayload,
+  forceCenterSelectionFromUrl,
+  filterRowsByCenter,
+  getRequiredCenter,
+  mountHeaderCenterSwitcher,
+  requireSelectedCenter,
+  scopeByCenter,
+  withCenterParam
+} from './center.js';
 
 // -----------------------------------------------------------------------------
 // 컬럼 정의
@@ -31,6 +41,8 @@ const COLUMNS = [
   { key: 'delivery_method',        label: '납품방식',   sortKey: 'delivery_method',         render: r => renderOverridable(r.delivery_method,   r.override_delivery_method),   defaultWidth: 90 },
   { key: 'access_method',          label: '진입방식',   sortKey: 'access_method',           render: r => renderOverridable(r.access_method,     r.override_access_method),     defaultWidth: 90 },
   { key: 'delivery_location',      label: '납품장소',   sortKey: 'delivery_location',       render: r => renderOverridable(r.delivery_location, r.override_delivery_location), defaultWidth: 90 },
+  { key: 'security_key_location',  label: '열쇠보관장소', sortKey: 'security_key_location',  defaultWidth: 140 },
+  { key: 'security_password',      label: '비밀번호',   sortKey: 'security_password',      defaultWidth: 120 },
   { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',              render: renderAddress, defaultWidth: 240 },
   { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                   defaultWidth: 90  },
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
@@ -55,6 +67,8 @@ const state = {
     delivery_method:   new Set(),
     access_method:     new Set(),
     delivery_location: new Set(),
+    security_key_location: new Set(),
+    security_password:     new Set(),
     entry_cond:        new Set(),
     search: ''
   },
@@ -104,7 +118,12 @@ function visibleColumns() {
 
   document.getElementById('user-badge').textContent =
     `${profile.display_name || profile.email || ''} (${profile.role})`;
-  document.getElementById('admin-link').classList.remove('hidden');
+  const center = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+  mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+
+  const adminLink = document.getElementById('admin-link');
+  adminLink.href = withCenterParam('/admin/', center);
+  adminLink.classList.remove('hidden');
   document.getElementById('logout-btn').addEventListener('click', signOut);
   document.getElementById('me-btn').addEventListener('click', showMyInfo);
 
@@ -150,15 +169,16 @@ async function loadData() {
   ind?.classList.remove('hidden');
 
   try {
-    const { data, error } = await supabase.from('course_view').select('*');
-    if (error) throw error;
-
-    state.rows = data || [];
+    const center = getRequiredCenter();
+    const data = await loadCourseRowsForCenter(center);
+    state.rows = data;
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
     populateMultiSelect('car_number',   uniqVals('car_number'));
     populateMultiSelect('dp_region',    uniqVals('dp_region'));
+    populateMultiSelect('security_key_location', uniqVals('security_key_location'));
+    populateMultiSelect('security_password',     uniqVals('security_password'));
 
     const drivers = new Set();
     for (const r of state.rows) {
@@ -173,6 +193,84 @@ async function loadData() {
   } finally {
     ind?.classList.add('hidden');
   }
+}
+
+async function loadCourseRowsForCenter(center) {
+  // 1차: course_view 자체가 center_code를 제공하는 경우 서버에서 바로 센터 필터링
+  const scoped = await scopeByCenter(
+    supabase.from('course_view').select('*'),
+    center
+  );
+
+  if (!scoped.error) return scoped.data || [];
+
+  console.warn('[dashboard] course_view.center_code 조회 실패, 관계 테이블 기준으로 센터 범위를 보정합니다:', scoped.error);
+
+  // 2차: course_view에 센터 컬럼명이 다르거나 없는 경우 전체 조회 후 보정
+  const retry = await supabase.from('course_view').select('*');
+  if (retry.error) throw retry.error;
+
+  const rows = retry.data || [];
+  const markerFiltered = filterRowsByCenter(rows, center);
+  if (markerFiltered.length || rows.some(row => row?.center_code || row?.route_center_code || row?.center || row?.center_name || row?.center_slug)) {
+    return markerFiltered;
+  }
+
+  // 3차: course_view에 센터 컬럼이 아예 없으면 routes에서 선택 센터의 route_id를 구해 강제 분리
+  const routeIds = await loadRouteIdsForCenter(center);
+  if (!routeIds.size) return [];
+
+  return rows.filter(row => routeIds.has(row.route_id || row.route?.id));
+}
+
+async function loadRouteIdsForCenter(center) {
+  const attempts = [
+    { column: 'center_code', value: center.code },
+    { column: 'center', value: center.name },
+    { column: 'center_name', value: center.name },
+    { column: 'center_slug', value: center.slug }
+  ];
+
+  const centerIds = await loadPossibleCenterIds(center);
+  centerIds.forEach(id => attempts.push({ column: 'center_id', value: id }));
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('routes')
+      .select('id')
+      .eq(attempt.column, attempt.value);
+
+    if (!error) return new Set((data || []).map(row => row.id).filter(Boolean));
+    lastError = error;
+  }
+
+  console.error('[dashboard] routes에서 선택 센터의 코스 범위를 확인하지 못했습니다:', lastError);
+  throw lastError || new Error('센터별 코스 범위를 확인하지 못했습니다.');
+}
+
+async function loadPossibleCenterIds(center) {
+  const ids = new Set();
+  const attempts = [
+    { column: 'code', value: center.code },
+    { column: 'center_code', value: center.code },
+    { column: 'slug', value: center.slug },
+    { column: 'name', value: center.name }
+  ];
+
+  for (const attempt of attempts) {
+    const { data, error } = await supabase
+      .from('centers')
+      .select('id')
+      .eq(attempt.column, attempt.value)
+      .limit(1);
+
+    if (!error) (data || []).forEach(row => row?.id && ids.add(row.id));
+  }
+
+  // center_id를 코드값으로 직접 쓰는 설계도 지원한다. 화면에는 노출하지 않는다.
+  ids.add(center.code);
+  return [...ids];
 }
 
 function uniqVals(key) {
@@ -196,7 +294,9 @@ function populateMultiSelect(key, options) {
     route_name: '코스',
     car_number: '호차',
     driver_name: '기사',
-    dp_region: '지역'
+    dp_region: '지역',
+    security_key_location: '열쇠보관장소',
+    security_password: '비밀번호'
   };
 
   root.innerHTML = `
@@ -378,6 +478,8 @@ function applyFiltersAndSort() {
     if (f.delivery_method.size   && !f.delivery_method.has(r.delivery_method))     return false;
     if (f.access_method.size     && !f.access_method.has(r.access_method))         return false;
     if (f.delivery_location.size && !f.delivery_location.has(r.delivery_location)) return false;
+    if (f.security_key_location.size && !f.security_key_location.has(r.security_key_location)) return false;
+    if (f.security_password.size && !f.security_password.has(r.security_password)) return false;
 
     if (f.entry_cond.size) {
       for (const cond of f.entry_cond) {
@@ -386,7 +488,10 @@ function applyFiltersAndSort() {
     }
 
     if (q) {
-      const hay = [r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate]
+      const hay = [
+        r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate,
+        r.security_key_location, r.security_password
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -680,7 +785,7 @@ function renderGroups() {
             <th>순서</th><th>입차</th><th>하차시작</th><th>하차종료</th>
             <th>마감</th><th>코드</th><th>납품처</th>
             <th>지역</th><th>납품방식</th><th>진입방식</th><th>납품장소</th>
-            <th>주소</th><th>비고</th>
+            <th>열쇠보관장소</th><th>비밀번호</th><th>주소</th><th>비고</th>
           </tr></thead>
           <tbody>
             ${stops.map(s => `
@@ -696,6 +801,8 @@ function renderGroups() {
                 <td>${renderOverridable(s.delivery_method,   s.override_delivery_method)}</td>
                 <td>${renderOverridable(s.access_method,     s.override_access_method)}</td>
                 <td>${renderOverridable(s.delivery_location, s.override_delivery_location)}</td>
+                <td>${escapeHtml(s.security_key_location || '')}</td>
+                <td>${escapeHtml(s.security_password || '')}</td>
                 <td>${renderAddress(s)}</td>
                 <td>${escapeHtml(s.stop_memo || '')}</td>
               </tr>`).join('')}
@@ -790,6 +897,10 @@ function openDetailModal(r) {
   const telLink = r.dp_contact
     ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
     : '';
+  const routeEditHref = r.route_id
+    ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
+    : '';
+  const stopId = r.stop_id;
 
   const html = `
     <div class="p-5 max-h-[80vh] overflow-auto">
@@ -798,25 +909,38 @@ function openDetailModal(r) {
           <h2 class="text-base font-semibold">${escapeHtml(r.dp_name || '(납품처 미지정)')}</h2>
           <div class="text-xs text-zinc-400 mt-0.5">${escapeHtml(r.dp_code || '')} · ${escapeHtml(r.dp_region || '')}</div>
         </div>
-        <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        <div class="flex items-center gap-2">
+          ${routeEditHref ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>` : ''}
+          <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
+        </div>
       </div>
-      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <dt class="muted">코스</dt>          <dd>${escapeHtml(r.route_name || '')} <span class="text-zinc-500">${escapeHtml(r.car_number || '')}</span></dd>
-        <dt class="muted">운수사</dt>        <dd>${escapeHtml(r.company_name || '')}</dd>
-        <dt class="muted">주기사 / 차량</dt> <dd>${escapeHtml(r.primary_driver_name || '')} / ${escapeHtml(r.primary_vehicle_plate || '')} ${r.primary_vehicle_tonnage ? '· ' + r.primary_vehicle_tonnage + 't' : ''}</dd>
-        <dt class="muted">보조</dt>          <dd>${escapeHtml(r.secondary_driver_name || '-')} / ${escapeHtml(r.secondary_vehicle_plate || '-')}</dd>
-        <dt class="muted">순서</dt>          <dd>${r.stop_order ?? ''}</dd>
-        <dt class="muted">입차</dt>          <dd class="biz-time">${bizMinToStandard(r.arrival_business_min)}</dd>
-        <dt class="muted">하차 시작 / 종료</dt><dd class="biz-time">${bizMinToStandard(r.unloading_start_business_min)} ~ ${bizMinToStandard(r.unloading_end_business_min)}</dd>
-        <dt class="muted">마감</dt>          <dd class="biz-time">${bizMinToStandard(r.effective_deadline_business_min)}</dd>
-        <dt class="muted">납품방식</dt>      <dd>${renderOverridable(r.delivery_method,   r.override_delivery_method)}</dd>
-        <dt class="muted">진입방식</dt>      <dd>${renderOverridable(r.access_method,     r.override_access_method)}</dd>
-        <dt class="muted">납품장소</dt>      <dd>${renderOverridable(r.delivery_location, r.override_delivery_location)}</dd>
-        <dt class="muted">진입조건</dt>      <dd>${renderEntryCond(r)}</dd>
-        <dt class="muted">주소</dt>          <dd>${escapeHtml(r.dp_address || '')}</dd>
-        <dt class="muted">연락처</dt>        <dd>${telLink || '-'}</dd>
-        <dt class="muted">비고</dt>          <dd class="whitespace-pre-line">${escapeHtml(r.stop_memo || '')}</dd>
-      </dl>
+      <div class="mt-1">
+        <h3 class="text-sm font-semibold mb-2">팝업 전체 수정</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+          <label class="space-y-1"><span class="muted">코스명</span><input id="edit-route-name" class="app-input" value="${escapeAttr(r.route_name || '')}"></label>
+          <label class="space-y-1"><span class="muted">호차</span><input id="edit-car-number" class="app-input" value="${escapeAttr(r.car_number || '')}"></label>
+          <label class="space-y-1"><span class="muted">운수사</span><select id="edit-company" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">주기사</span><select id="edit-driver1" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">보조기사</span><select id="edit-driver2" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">순서</span><input id="edit-stop-order" type="number" min="1" class="app-input" value="${escapeAttr(r.stop_order ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">입차</span><input id="edit-arrival" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.arrival_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">하차시작</span><input id="edit-unload-start" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_start_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">하차종료</span><input id="edit-unload-end" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_end_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">마감</span><input id="edit-deadline" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.effective_deadline_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">납품방식</span><input id="edit-dmethod" class="app-input" value="${escapeAttr(r.override_delivery_method ?? r.delivery_method ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">진입방식</span><input id="edit-amethod" class="app-input" value="${escapeAttr(r.override_access_method ?? r.access_method ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">납품장소</span><input id="edit-dloc" class="app-input" value="${escapeAttr(r.override_delivery_location ?? r.delivery_location ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">열쇠보관장소</span><input id="edit-key" class="app-input" value="${escapeAttr(r.security_key_location || '')}"></label>
+          <label class="space-y-1"><span class="muted">비밀번호</span><input id="edit-pass" class="app-input" value="${escapeAttr(r.security_password || '')}"></label>
+          <label class="space-y-1 md:col-span-2"><span class="muted">주소</span><input id="edit-address" class="app-input" value="${escapeAttr(r.dp_address || '')}"></label>
+          <label class="space-y-1"><span class="muted">연락처</span><input id="edit-contact" class="app-input" value="${escapeAttr(r.dp_contact || '')}"></label>
+          <label class="space-y-1"><span class="muted">연락 담당자</span><input id="edit-contact-name" class="app-input" value="${escapeAttr(r.dp_contact_name || '')}"></label>
+          <label class="space-y-1 md:col-span-2"><span class="muted">비고</span><textarea id="edit-memo" rows="3" class="app-textarea">${escapeHtml(r.stop_memo || '')}</textarea></label>
+        </div>
+        <div class="mt-3 flex justify-end">
+          <button id="quick-save" class="btn btn-primary text-xs">팝업에서 전체 저장</button>
+        </div>
+      </div>
     </div>`;
 
   const wrap = document.createElement('div');
@@ -824,6 +948,106 @@ function openDetailModal(r) {
 
   openModal(wrap, { width: 'xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
+
+  if (stopId) {
+    hydrateRouteEditDropdowns(wrap, r).catch(() => {});
+    wrap.querySelector('#quick-save')?.addEventListener('click', async () => {
+      const toNullable = (v) => {
+        const s = (v || '').trim();
+        return s ? s : null;
+      };
+      const arrivalMin = displayToBizMin((wrap.querySelector('#edit-arrival')?.value || '').trim());
+      const unloadStartMin = displayToBizMin((wrap.querySelector('#edit-unload-start')?.value || '').trim());
+      const unloadEndMin = displayToBizMin((wrap.querySelector('#edit-unload-end')?.value || '').trim());
+      const deadlineMin = displayToBizMin((wrap.querySelector('#edit-deadline')?.value || '').trim());
+      const stopPayload = centerPayload({
+        stop_order: Number(wrap.querySelector('#edit-stop-order')?.value || 1),
+        arrival_text: toNullable(wrap.querySelector('#edit-arrival')?.value),
+        arrival_business_min: arrivalMin,
+        unloading_start_text: toNullable(wrap.querySelector('#edit-unload-start')?.value),
+        unloading_start_business_min: unloadStartMin,
+        unloading_end_text: toNullable(wrap.querySelector('#edit-unload-end')?.value),
+        unloading_end_business_min: unloadEndMin,
+        deadline_text: toNullable(wrap.querySelector('#edit-deadline')?.value),
+        deadline_business_min: deadlineMin,
+        override_delivery_method: toNullable(wrap.querySelector('#edit-dmethod')?.value),
+        override_access_method: toNullable(wrap.querySelector('#edit-amethod')?.value),
+        override_delivery_location: toNullable(wrap.querySelector('#edit-dloc')?.value),
+        memo: toNullable(wrap.querySelector('#edit-memo')?.value)
+      });
+      const routePayload = centerPayload({
+        name: toNullable(wrap.querySelector('#edit-route-name')?.value),
+        car_number: toNullable(wrap.querySelector('#edit-car-number')?.value),
+        company_id: toNullable(wrap.querySelector('#edit-company')?.value),
+        primary_driver_id: toNullable(wrap.querySelector('#edit-driver1')?.value),
+        secondary_driver_id: toNullable(wrap.querySelector('#edit-driver2')?.value)
+      });
+      const dpPayload = centerPayload({
+        address: toNullable(wrap.querySelector('#edit-address')?.value),
+        contact: toNullable(wrap.querySelector('#edit-contact')?.value),
+        contact_name: toNullable(wrap.querySelector('#edit-contact-name')?.value),
+        security_key_location: toNullable(wrap.querySelector('#edit-key')?.value),
+        security_password: toNullable(wrap.querySelector('#edit-pass')?.value)
+      });
+
+      const { error: stopErr } = await scopeByCenter(
+        supabase.from('route_stops').update(stopPayload).eq('id', stopId)
+      );
+      if (stopErr) {
+        toast(`저장 실패(코스순번): ${stopErr.message}`, 'error');
+        return;
+      }
+      if (r.route_id) {
+        const { error: routeErr } = await scopeByCenter(
+          supabase.from('routes').update(routePayload).eq('id', r.route_id)
+        );
+        if (routeErr) {
+          toast(`저장 실패(코스정보): ${routeErr.message}`, 'error');
+          return;
+        }
+      }
+      if (r.delivery_point_id) {
+        const { error: dpErr } = await scopeByCenter(
+          supabase.from('delivery_points').update(dpPayload).eq('id', r.delivery_point_id)
+        );
+        if (dpErr) {
+          toast(`저장 실패(납품처): ${dpErr.message}`, 'error');
+          return;
+        }
+      }
+      toast('코스 정보가 수정되었습니다.', 'success');
+      await loadData();
+      applyFiltersAndSort();
+      render();
+      closeModal();
+    });
+  }
+}
+
+async function hydrateRouteEditDropdowns(wrap, row) {
+  const [coRes, drRes] = await Promise.all([
+    scopeByCenter(supabase.from('companies').select('id, name').order('name')),
+    scopeByCenter(supabase.from('drivers').select('id, name, company_id').order('name'))
+  ]);
+  if (coRes.error || drRes.error) return;
+  const companies = coRes.data || [];
+  const drivers = drRes.data || [];
+  const companySel = wrap.querySelector('#edit-company');
+  const drv1 = wrap.querySelector('#edit-driver1');
+  const drv2 = wrap.querySelector('#edit-driver2');
+  if (!companySel || !drv1 || !drv2) return;
+  companySel.innerHTML = `<option value="">(선택 안 함)</option>` + companies.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name || '')}</option>`).join('');
+  const renderDrivers = (companyId) => {
+    const filtered = companyId ? drivers.filter(d => String(d.company_id || '') === String(companyId)) : drivers;
+    const opts = `<option value="">(선택 안 함)</option>` + filtered.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name || '')}</option>`).join('');
+    drv1.innerHTML = opts;
+    drv2.innerHTML = opts;
+  };
+  companySel.value = row.company_id || '';
+  renderDrivers(companySel.value);
+  drv1.value = row.primary_driver_id || '';
+  drv2.value = row.secondary_driver_id || '';
+  companySel.addEventListener('change', () => renderDrivers(companySel.value));
 }
 
 async function showMyInfo() {
@@ -944,6 +1168,7 @@ function openColumnConfig() {
 // -----------------------------------------------------------------------------
 function syncUrl() {
   const params = new URLSearchParams();
+  params.set('center', getRequiredCenter().slug);
 
   for (const k of Object.keys(state.filters)) {
     const v = state.filters[k];
@@ -960,7 +1185,7 @@ function syncUrl() {
   }
 
   const qs = params.toString();
-  history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  history.replaceState(null, '', `${location.pathname}?${qs}`);
 }
 
 function loadStateFromUrl() {

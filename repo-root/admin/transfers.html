@@ -190,6 +190,7 @@
 import { supabase } from '/js/supabase.js';
 import { requireRole, getCurrentProfile } from '/js/auth.js';
 import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, scopeByCenter, withCenterParam } from '/js/center.js';
 
 await requireRole('editor');
 
@@ -197,6 +198,9 @@ const profile = await getCurrentProfile();
 
 document.getElementById('user-badge').textContent =
   `${profile?.display_name || profile?.email || ''} (${profile?.role || ''})`;
+const selectedCenter = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+decorateCenterLinks(document);
 
 const ExcelJSLib = window.ExcelJS;
 
@@ -211,10 +215,14 @@ const state = {
   drivers: [],
   vehicles: [],
   rows: [],
-  formPhotos: [null, null, null, null]
+  formPhotos: [null, null, null, null],
+  photoTouched: [false, false, false, false],
+  editIndex: -1
 };
 
 setToday();
+$('f-center').value = selectedCenter.name;
+$('f-center').readOnly = true;
 await loadMasters();
 await loadSavedRows();
 
@@ -226,16 +234,16 @@ renderRows();
 // -----------------------------------------------------------------------------
 async function loadMasters() {
   const [co, ro, dr, ve] = await Promise.all([
-    supabase.from('companies').select('id, name').order('name'),
-    supabase.from('routes')
+    scopeByCenter(supabase.from('companies').select('id, name').order('name')),
+    scopeByCenter(supabase.from('routes')
       .select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id')
-      .order('car_number'),
-    supabase.from('drivers')
+      .order('car_number')),
+    scopeByCenter(supabase.from('drivers')
       .select('id, name, phone, contact, company_id')
-      .order('name'),
-    supabase.from('vehicles')
+      .order('name')),
+    scopeByCenter(supabase.from('vehicles')
       .select('id, plate_number, company_id')
-      .order('plate_number')
+      .order('plate_number'))
   ]);
 
   if (co.error || ro.error || dr.error || ve.error) {
@@ -261,6 +269,7 @@ async function loadSavedRows() {
     .select(`
       id,
       center,
+      center_code,
       delivery_date,
       company_id,
       route_id,
@@ -280,6 +289,7 @@ async function loadSavedRows() {
       created_at,
       updated_at
     `)
+    .eq('center_code', selectedCenter.code)
     .order('delivery_date', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(1000);
@@ -297,7 +307,8 @@ function dbRowToStateRow(x) {
     _uid: makeUid(),
     id: x.id,
 
-    center: x.center || '',
+    center: x.center || selectedCenter.name,
+    center_code: x.center_code || selectedCenter.code,
     delivery_date: x.delivery_date || '',
 
     company_id: x.company_id,
@@ -327,7 +338,8 @@ function dbRowToStateRow(x) {
 
 function stateRowToPayload(r) {
   return {
-    center: r.center,
+    center: r.center || selectedCenter.name,
+    center_code: selectedCenter.code,
     delivery_date: r.delivery_date,
 
     company_id: r.company_id,
@@ -451,11 +463,12 @@ async function addRow() {
 
   const photos = [...state.formPhotos];
 
-  state.rows.push({
+  const rowPayload = {
     _uid: makeUid(),
     id: null,
 
-    center: $('f-center').value.trim() || '안산사조센터',
+    center: selectedCenter.name,
+    center_code: selectedCenter.code,
     delivery_date: $('f-date').value,
 
     company_id: company.id,
@@ -473,11 +486,30 @@ async function addRow() {
     memo: $('f-memo').value.trim(),
 
     _dirty: true
-  });
+  };
+
+  if (state.editIndex >= 0 && state.rows[state.editIndex]) {
+    const prev = state.rows[state.editIndex];
+    const mergedPhotos = [0, 1, 2, 3].map(i =>
+      state.photoTouched[i] ? state.formPhotos[i] : (prev.photos?.[i] ?? null)
+    );
+    state.rows[state.editIndex] = {
+      ...rowPayload,
+      _uid: prev._uid,
+      id: prev.id, // DB 저장된 행이면 id 유지
+      photos: mergedPhotos
+    };
+    state.editIndex = -1;
+    $('btn-add').textContent = '행 추가';
+    toast('행을 수정했습니다. DB 저장을 눌러 반영하세요.', 'success');
+  } else {
+    state.rows.push(rowPayload);
+    toast('행을 추가했습니다. DB 저장을 눌러야 저장됩니다.', 'success');
+  }
 
   renderRows();
   clearPhotos();
-  toast('행을 추가했습니다. DB 저장을 눌러야 저장됩니다.', 'success');
+  $('f-memo').value = '';
 }
 
 function renderRows() {
@@ -511,10 +543,18 @@ function renderRows() {
       <td>${escapeHtml(r.memo || '')}</td>
       <td class="${savedClass} text-xs">${savedText}</td>
       <td class="text-right">
+        <button class="btn btn-ghost text-xs" data-edit="${i}">수정</button>
         <button class="btn btn-ghost text-xs text-rose-400" data-del="${i}">삭제</button>
       </td>
     `;
     tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.edit);
+      loadRowToForm(idx);
+    });
   });
 
   tbody.querySelectorAll('[data-del]').forEach(btn => {
@@ -523,6 +563,24 @@ function renderRows() {
       await deleteOneRow(idx);
     });
   });
+}
+
+function loadRowToForm(idx) {
+  const r = state.rows[idx];
+  if (!r) return;
+  state.editIndex = idx;
+  $('btn-add').textContent = '행 수정';
+  $('f-date').value = r.delivery_date || '';
+  $('f-company').value = r.company_id || '';
+  refreshDependentSelects();
+  $('f-route').value = r.route_id || '';
+  $('f-driver').value = r.driver_id || '';
+  $('f-vehicle').value = r.vehicle_id || '';
+  $('f-phone').value = r.driver_phone || '';
+  $('f-memo').value = r.memo || '';
+  state.formPhotos = [...(r.photos || [null, null, null, null])];
+  state.photoTouched = [false, false, false, false];
+  renderPhotoPreview();
 }
 
 async function deleteOneRow(idx) {
@@ -540,6 +598,7 @@ async function deleteOneRow(idx) {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .eq('id', row.id);
 
     if (error) {
@@ -583,6 +642,7 @@ async function deleteSelectedRows() {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .in('id', dbIds);
 
     if (error) {
@@ -618,6 +678,7 @@ async function clearAllRows() {
     const { error } = await supabase
       .from('transfer_deliveries')
       .delete()
+      .eq('center_code', selectedCenter.code)
       .in('id', dbIds);
 
     if (error) {
@@ -648,7 +709,7 @@ function clearForm() {
   $('f-company').value = '';
   refreshDependentSelects();
 
-  $('f-center').value = '안산사조센터';
+  $('f-center').value = selectedCenter.name;
   $('f-memo').value = '';
   $('f-phone').value = '';
 
@@ -772,8 +833,10 @@ function getImageFileFromPasteEvent(e) {
   return null;
 }
 
-function setFormPhoto(index, dataUrl) {
+function setFormPhoto(index, dataUrl, options = {}) {
+  const { touch = true } = options;
   state.formPhotos[index - 1] = dataUrl;
+  if (touch) state.photoTouched[index - 1] = true;
 
   const zone = document.querySelector(`.paste-zone[data-photo="${index}"]`);
   if (!zone) return;
@@ -805,11 +868,18 @@ function setFormPhoto(index, dataUrl) {
 
 function clearPhotos() {
   state.formPhotos = [null, null, null, null];
+  state.photoTouched = [false, false, false, false];
 
   for (let i = 1; i <= 4; i++) {
     const input = $(`f-photo${i}`);
     if (input) input.value = '';
-    setFormPhoto(i, null);
+    setFormPhoto(i, null, { touch: false });
+  }
+}
+
+function renderPhotoPreview() {
+  for (let i = 1; i <= 4; i++) {
+    setFormPhoto(i, state.formPhotos[i - 1], { touch: false });
   }
 }
 
@@ -846,10 +916,12 @@ async function saveDb() {
         const { data, error } = await supabase
           .from('transfer_deliveries')
           .update(payload)
+          .eq('center_code', selectedCenter.code)
           .eq('id', row.id)
           .select(`
             id,
             center,
+            center_code,
             delivery_date,
             company_id,
             route_id,
@@ -880,6 +952,7 @@ async function saveDb() {
           .select(`
             id,
             center,
+            center_code,
             delivery_date,
             company_id,
             route_id,

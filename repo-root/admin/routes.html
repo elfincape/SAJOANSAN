@@ -66,6 +66,16 @@
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, openModal, closeModal, confirmDialog } from '/js/ui.js';
+    import {
+      centerPayload,
+      decorateCenterLinks,
+      forceCenterSelectionFromUrl,
+      getRequiredCenter,
+      mountHeaderCenterSwitcher,
+      requireSelectedCenter,
+      scopeByCenter,
+      withCenterParam
+    } from '/js/center.js';
 
     // -------------------------------------------------------------------------
     // 권한
@@ -74,6 +84,9 @@
     if (!profile) { /* 리다이렉트 */ }
     document.getElementById('user-badge').textContent =
       `${profile.display_name || profile.email || ''} (${profile.role})`;
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
 
     // -------------------------------------------------------------------------
     // 상태
@@ -103,9 +116,9 @@
     async function loadMasters() {
       try {
         const [c, d, v] = await Promise.all([
-          supabase.from('companies').select('id, name').order('name'),
-          supabase.from('drivers').select('id, name, phone, company_id').order('name'),
-          supabase.from('vehicles').select('id, plate_number, tonnage, company_id').order('plate_number')
+          scopeByCenter(supabase.from('companies').select('id, name').order('name')),
+          scopeByCenter(supabase.from('drivers').select('id, name, phone, company_id').order('name')),
+          scopeByCenter(supabase.from('vehicles').select('id, plate_number, tonnage, company_id').order('plate_number'))
         ]);
         if (c.error || d.error || v.error) throw (c.error || d.error || v.error);
         state.companies = c.data || [];
@@ -124,16 +137,17 @@
     async function loadRoutes() {
       $('loading-indicator').classList.remove('hidden');
       try {
-        const { data, error } = await supabase
-          .from('routes')
-          .select('*');
+        const { data, error } = await scopeByCenter(
+          supabase.from('routes').select('*')
+        );
         if (error) throw error;
         state.routes = data || [];
 
         // 납품처 개수 (route_id 별)
-        const { data: counts, error: cErr } = await supabase
-          .from('route_stops')
-          .select('route_id');
+        const routeIds = state.routes.map(r => r.id);
+        const { data: counts, error: cErr } = routeIds.length
+          ? await supabase.from('route_stops').select('route_id').in('route_id', routeIds)
+          : { data: [], error: null };
         if (cErr) throw cErr;
         const map = new Map();
         for (const row of counts || []) {
@@ -223,7 +237,7 @@
           <td>${renderClosedDays(r.closed_days)}</td>
           <td>${r.active === false ? '<span class="text-rose-400 text-xs">비활성</span>' : '<span class="text-emerald-400 text-xs">활성</span>'}</td>
           <td class="text-right whitespace-nowrap">
-            <a class="btn btn-ghost text-xs" href="/admin/route-edit.html?id=${encodeURIComponent(r.id)}">납품처 ${stops}</a>
+            <a class="btn btn-ghost text-xs" href="${withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.id)}`)}">납품처 ${stops}</a>
             <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${r.id}">편집</button>
             <button class="btn btn-ghost text-xs text-rose-400" data-act="delete" data-id="${r.id}">삭제</button>
           </td>
@@ -382,7 +396,7 @@
         const closedDays = [...wrap.querySelectorAll('.cd-check:checked')]
           .map(cb => Number(cb.value))
           .sort((a, b) => a - b);
-        const payload = {
+        const payload = centerPayload({
           name,
           car_number: nullIfEmpty(wrap.querySelector('#r-car').value.trim()),
           company_id: nullIfEmpty(wrap.querySelector('#r-company').value),
@@ -392,7 +406,7 @@
           secondary_vehicle_id: nullIfEmpty(vehSel2.value),
           active:      wrap.querySelector('#r-active').checked,
           closed_days: closedDays
-        };
+        });
         if (isEdit) payload.id = route.id;
 
         try {
@@ -437,7 +451,7 @@
       if (!ok) return;
 
       try {
-        const { error } = await supabase.from('routes').delete().eq('id', id);
+        const { error } = await supabase.from('routes').delete().eq('center_code', getRequiredCenter().code).eq('id', id);
         if (error) {
           toast(`삭제 실패: ${error.message}`, 'error');
           return;
