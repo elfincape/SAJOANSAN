@@ -196,7 +196,7 @@
               <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
             </div>
             <div id="f-photo-dropzone" tabindex="0" class="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
-              <input id="f-photo-input" type="file" accept="image/*" multiple class="hidden">
+              <input id="f-photo-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" multiple class="hidden">
               <span class="font-semibold text-zinc-200">이미지 붙여넣기</span>
               <span class="mt-1 text-emerald-300">이 영역을 클릭한 뒤 Ctrl+V로 사진을 붙여넣으세요.</span>
               <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
@@ -520,7 +520,7 @@
       $('f-photo-dropzone').addEventListener('drop', async (e) => {
         e.preventDefault();
         $('f-photo-dropzone').classList.remove('border-emerald-500', 'text-emerald-200');
-        await addFormPhotos(Array.from(e.dataTransfer?.files || []).filter(file => file.type?.startsWith('image/')));
+        await addFormPhotos(Array.from(e.dataTransfer?.files || []).filter(isProbablyImageFile));
       });
 
       // 저장
@@ -711,10 +711,14 @@
         toast('사진은 납품처당 최대 6장까지 등록할 수 있습니다.', 'warn');
         return;
       }
-      const selected = files.slice(0, remaining);
+      const imageFiles = files.filter(isProbablyImageFile);
+      if (!imageFiles.length) {
+        renderPhotoMessage('이미지 파일을 찾지 못했습니다. JPG/PNG/WebP 파일을 선택하거나 복사해주세요.', 'warn');
+        return;
+      }
+      const selected = imageFiles.slice(0, remaining);
       if (files.length > remaining) toast(`최대 6장까지만 등록되어 ${remaining}장만 추가합니다.`, 'warn');
-      const grid = $('f-photo-grid');
-      if (grid) grid.innerHTML = '<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs text-emerald-300">사진을 불러와 압축하는 중입니다...</div>';
+      renderPhotoMessage('사진을 불러와 압축하는 중입니다...', 'info');
       try {
         for (const file of selected) {
           const photo = await compressDeliveryPointPhoto(file);
@@ -724,9 +728,22 @@
         renderFormPhotos();
         toast('사진이 추가되었습니다. 저장 버튼을 눌러 반영하세요.', 'success');
       } catch (err) {
-        renderFormPhotos();
+        renderPhotoMessage(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
         console.error('[delivery-points] 사진 처리 실패', err);
       }
+    }
+
+    function isProbablyImageFile(file) {
+      if (!file) return false;
+      if (file.type?.startsWith('image/')) return true;
+      return /\.(jpe?g|png|webp|gif)$/i.test(file.name || '');
+    }
+
+    function renderPhotoMessage(message, type = 'info') {
+      const grid = $('f-photo-grid');
+      if (!grid) return;
+      const color = type === 'error' ? 'text-red-300' : type === 'warn' ? 'text-amber-300' : 'text-emerald-300';
+      grid.innerHTML = `<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs ${color}">${escapeHtml(message)}</div>`;
     }
 
     function renderFormPhotos() {
@@ -757,8 +774,23 @@
     }
 
     async function compressDeliveryPointPhoto(file) {
-      if (!file || !file.type?.startsWith('image/')) throw new Error('이미지 파일만 업로드할 수 있습니다.');
-      const bitmap = await fileToImage(file);
+      if (!isProbablyImageFile(file)) throw new Error('이미지 파일만 업로드할 수 있습니다.');
+      let bitmap;
+      try {
+        bitmap = await fileToImage(file);
+      } catch (err) {
+        if (file.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) {
+          return {
+            id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            name: file.name || 'delivery-point-photo',
+            type: file.type || 'image/jpeg',
+            size: file.size,
+            dataUrl: await fileToDataUrl(file),
+            createdAt: new Date().toISOString()
+          };
+        }
+        throw err;
+      }
       const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / bitmap.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / bitmap.naturalHeight);
       const width = Math.max(1, Math.round(bitmap.naturalWidth * ratio));
       const height = Math.max(1, Math.round(bitmap.naturalHeight * ratio));
@@ -803,11 +835,14 @@
       });
     }
     function blobToDataUrl(blob) {
+      return fileToDataUrl(blob);
+    }
+    function fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('압축 이미지를 읽지 못했습니다.'));
-        reader.readAsDataURL(blob);
+        reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+        reader.readAsDataURL(file);
       });
     }
     function openPhotoPreview(photo) {
