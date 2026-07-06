@@ -190,6 +190,19 @@
             </div>
           </div>
 
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <label class="app-label mb-0">납품처 사진</label>
+              <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+            </div>
+            <label class="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200">
+              <input id="f-photo-input" type="file" accept="image/*" multiple class="hidden">
+              <span class="font-semibold text-zinc-200">사진 추가</span>
+              <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
+            </label>
+            <div id="f-photo-grid" class="grid grid-cols-3 gap-2"></div>
+          </div>
+
           <div>
             <label class="app-label">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
@@ -240,7 +253,8 @@
       filtered: [],
       selectedId: null,
       filters: { search: '', region: '', method: '' },
-      sort: 'code'
+      sort: 'code',
+      draftPhotos: []
     };
 
     // DOM 캐시
@@ -360,6 +374,8 @@
       $('f-mgr-office').value  = r?.contact_office|| '';
       $('f-mgr-mobile').value  = r?.contact_mobile || r?.contact || '';
       $('f-memo').value        = r?.memo || '';
+      state.draftPhotos = parseDeliveryPointPhotos(r?.photos);
+      renderFormPhotos();
 
       // 헤더
       const isEdit = !!r?.id;
@@ -403,7 +419,8 @@
         contact_mobile: emptyToNull($('f-mgr-mobile').value.trim()),
         // 호환: 단일 contact 컬럼이 있으면 휴대폰을 동기화
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
-        memo:           emptyToNull($('f-memo').value.trim())
+        memo:           emptyToNull($('f-memo').value.trim()),
+        photos:         state.draftPhotos
       };
     }
 
@@ -471,6 +488,11 @@
           return;
         }
         dl.value = norm;
+      });
+
+      $('f-photo-input').addEventListener('change', async (e) => {
+        await addFormPhotos(Array.from(e.target.files || []));
+        e.target.value = '';
       });
 
       // 저장
@@ -609,6 +631,129 @@
     // -------------------------------------------------------------------------
     // 헬퍼
     // -------------------------------------------------------------------------
+
+
+    const MAX_DELIVERY_POINT_PHOTOS = 6;
+    const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
+    const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
+    const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
+
+    function parseDeliveryPointPhotos(value) {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS);
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS) : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    }
+
+    async function addFormPhotos(files) {
+      if (!files.length) return;
+      const remaining = MAX_DELIVERY_POINT_PHOTOS - state.draftPhotos.length;
+      if (remaining <= 0) {
+        toast('사진은 납품처당 최대 6장까지 등록할 수 있습니다.', 'warn');
+        return;
+      }
+      const selected = files.slice(0, remaining);
+      if (files.length > remaining) toast(`최대 6장까지만 등록되어 ${remaining}장만 추가합니다.`, 'warn');
+      try {
+        for (const file of selected) {
+          const photo = await compressDeliveryPointPhoto(file);
+          state.draftPhotos.push(photo);
+        }
+        renderFormPhotos();
+        toast('사진이 추가되었습니다. 저장 버튼을 눌러 반영하세요.', 'success');
+      } catch (err) {
+        toast(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+      }
+    }
+
+    function renderFormPhotos() {
+      const grid = $('f-photo-grid');
+      const count = $('f-photo-count');
+      if (!grid || !count) return;
+      count.textContent = `${state.draftPhotos.length}/${MAX_DELIVERY_POINT_PHOTOS}`;
+      if (!state.draftPhotos.length) {
+        grid.innerHTML = '<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-500">등록된 사진이 없습니다.</div>';
+        return;
+      }
+      grid.innerHTML = state.draftPhotos.map((photo, idx) => `
+        <div class="relative overflow-hidden rounded border border-zinc-700 bg-zinc-900">
+          <button type="button" data-photo-view="${idx}" class="block h-24 w-full">
+            <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
+          </button>
+          <button type="button" data-photo-delete="${idx}" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
+        </div>`).join('');
+      grid.querySelectorAll('[data-photo-view]').forEach(btn => {
+        btn.addEventListener('click', () => openPhotoPreview(state.draftPhotos[Number(btn.dataset.photoView)]));
+      });
+      grid.querySelectorAll('[data-photo-delete]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.draftPhotos.splice(Number(btn.dataset.photoDelete), 1);
+          renderFormPhotos();
+        });
+      });
+    }
+
+    async function compressDeliveryPointPhoto(file) {
+      if (!file || !file.type?.startsWith('image/')) throw new Error('이미지 파일만 업로드할 수 있습니다.');
+      const bitmap = await fileToImage(file);
+      const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / bitmap.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / bitmap.naturalHeight);
+      const width = Math.max(1, Math.round(bitmap.naturalWidth * ratio));
+      const height = Math.max(1, Math.round(bitmap.naturalHeight * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      let blob = null;
+      for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54, 0.46]) {
+        blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+        if (blob.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) break;
+      }
+      if (!blob || blob.size > MAX_DELIVERY_POINT_PHOTO_BYTES) throw new Error('사진을 1MB 이하로 압축하지 못했습니다. 더 작은 이미지를 사용해주세요.');
+      return {
+        id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: file.name || 'delivery-point-photo.jpg',
+        type: 'image/jpeg',
+        size: blob.size,
+        dataUrl: await blobToDataUrl(blob),
+        createdAt: new Date().toISOString()
+      };
+    }
+
+    function fileToImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했습니다.')); };
+        img.src = url;
+      });
+    }
+    function canvasToBlob(canvas, type, quality) {
+      return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+    }
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('압축 이미지를 읽지 못했습니다.'));
+        reader.readAsDataURL(blob);
+      });
+    }
+    function openPhotoPreview(photo) {
+      if (!photo?.dataUrl) return;
+      const win = window.open('', '_blank', 'noopener,noreferrer');
+      if (win) win.document.write(`<img src="${photo.dataUrl}" style="max-width:100%;height:auto;display:block;margin:0 auto;">`);
+    }
 
     // 시간 입력 정규화: "9:5" → "09:05", 한 자리들 보정
     function normalizeTime(str) {
