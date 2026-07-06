@@ -195,10 +195,11 @@
               <label class="app-label mb-0">납품처 사진</label>
               <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
             </div>
-            <label class="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200">
+            <label id="f-photo-dropzone" tabindex="0" class="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
               <input id="f-photo-input" type="file" accept="image/*" multiple class="hidden">
               <span class="font-semibold text-zinc-200">사진 추가</span>
               <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
+              <span class="mt-1 text-emerald-300">이 영역 클릭 후 Ctrl+V로 이미지 붙여넣기 가능</span>
             </label>
             <div id="f-photo-grid" class="grid grid-cols-3 gap-2"></div>
           </div>
@@ -416,8 +417,7 @@
         rep_phone:      emptyToNull($('f-rep-phone').value.trim()),
         contact_name:   emptyToNull($('f-mgr-name').value.trim()),
         contact_office: emptyToNull($('f-mgr-office').value.trim()),
-        contact_mobile: emptyToNull($('f-mgr-mobile').value.trim()),
-        // 호환: 단일 contact 컬럼이 있으면 휴대폰을 동기화
+        // 호환: 실제 운영 스키마에는 contact_mobile 컬럼이 없을 수 있으므로 contact 컬럼만 동기화
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
         memo:           emptyToNull($('f-memo').value.trim()),
         photos:         state.draftPhotos
@@ -493,6 +493,12 @@
       $('f-photo-input').addEventListener('change', async (e) => {
         await addFormPhotos(Array.from(e.target.files || []));
         e.target.value = '';
+      });
+      $('f-photo-dropzone').addEventListener('paste', async (e) => {
+        const files = imageFilesFromClipboard(e.clipboardData);
+        if (!files.length) return;
+        e.preventDefault();
+        await addFormPhotos(files);
       });
 
       // 저장
@@ -755,20 +761,31 @@
       if (win) win.document.write(`<img src="${photo.dataUrl}" style="max-width:100%;height:auto;display:block;margin:0 auto;">`);
     }
 
+    function imageFilesFromClipboard(clipboardData) {
+      const items = Array.from(clipboardData?.items || []);
+      return items
+        .filter(item => item.kind === 'file' && item.type?.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+    }
+
     // 시간 입력 정규화: "9:5" → "09:05", 한 자리들 보정
     function normalizeTime(str) {
       if (!str) return '';
-      const s = str.trim();
-      const m = s.match(/^(\d{1,2})\s*[:.시]\s*(\d{1,2})\s*분?$/);
+      const s = String(str).trim();
+      const m = s.match(/^(\d{1,2})\s*[:.시]\s*(\d{1,2})(?:\s*분)?(?:\s*(AM|PM|오전|오후))?$/i);
       if (!m) return '';
-      const h = parseInt(m[1], 10);
+      let h = parseInt(m[1], 10);
       const mn = parseInt(m[2], 10);
+      const meridiem = (m[3] || '').toUpperCase();
       if (Number.isNaN(h) || Number.isNaN(mn)) return '';
       if (mn < 0 || mn > 59) return '';
-      // 표시는 24시 넘김 표기를 그대로 허용 (04~27)
-      if (h < 0 || h > 27) return '';
-      // 04 미만(00~03)은 다음날 의미. 표시 자체는 그대로 두지만
-      // 너무 이른 시간(04 미만이면서 +24 적용 후 28시 이상)은 차단됨
+      if (meridiem === 'PM' || meridiem === '오후') {
+        if (h >= 1 && h <= 11) h += 12;
+      } else if (meridiem === 'AM' || meridiem === '오전') {
+        if (h === 12) h = 0;
+      }
+      if (h < 0 || h > 23) return '';
       return `${String(h).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
     }
 
