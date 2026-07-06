@@ -379,8 +379,10 @@
       $('f-mgr-name').value    = r?.contact_name  || '';
       $('f-mgr-office').value  = r?.contact_office|| '';
       $('f-mgr-mobile').value  = r?.contact_mobile || r?.contact || '';
-      $('f-memo').value        = r?.memo || '';
+      const memoParts = splitMemoAndEmbeddedPhotos(r?.memo || '');
+      $('f-memo').value        = memoParts.memo;
       state.draftPhotos = parseDeliveryPointPhotos(r?.photos);
+      if (!state.draftPhotos.length) state.draftPhotos = memoParts.photos;
       renderFormPhotos();
 
       // 헤더
@@ -424,7 +426,7 @@
         contact_office: emptyToNull($('f-mgr-office').value.trim()),
         // 호환: 실제 운영 스키마에는 contact_mobile 컬럼이 없을 수 있으므로 contact 컬럼만 동기화
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
-        memo:           emptyToNull($('f-memo').value.trim()),
+        memo:           composeMemoWithEmbeddedPhotos($('f-memo').value.trim(), state.draftPhotos),
         photos:         state.draftPhotos
       };
     }
@@ -690,6 +692,35 @@
     // 헬퍼
     // -------------------------------------------------------------------------
 
+
+
+    const PHOTO_MEMO_MARKER = '<!--dp-photos:';
+    const PHOTO_MEMO_MARKER_END = '-->';
+
+    function splitMemoAndEmbeddedPhotos(memo) {
+      const raw = String(memo || '');
+      const start = raw.indexOf(PHOTO_MEMO_MARKER);
+      if (start < 0) return { memo: raw, photos: [] };
+      const end = raw.indexOf(PHOTO_MEMO_MARKER_END, start);
+      if (end < 0) return { memo: raw, photos: [] };
+      const encoded = raw.slice(start + PHOTO_MEMO_MARKER.length, end).trim();
+      const cleanMemo = (raw.slice(0, start) + raw.slice(end + PHOTO_MEMO_MARKER_END.length)).trim();
+      try {
+        const json = decodeURIComponent(escape(atob(encoded)));
+        return { memo: cleanMemo, photos: parseDeliveryPointPhotos(JSON.parse(json)) };
+      } catch {
+        return { memo: cleanMemo, photos: [] };
+      }
+    }
+
+    function composeMemoWithEmbeddedPhotos(memo, photos) {
+      const cleanMemo = String(memo || '').replace(/<!--dp-photos:[\s\S]*?-->/g, '').trim();
+      const safePhotos = parseDeliveryPointPhotos(photos);
+      if (!safePhotos.length) return emptyToNull(cleanMemo);
+      const json = JSON.stringify(safePhotos);
+      const encoded = btoa(unescape(encodeURIComponent(json)));
+      return `${cleanMemo ? `${cleanMemo}\n\n` : ''}${PHOTO_MEMO_MARKER}${encoded}${PHOTO_MEMO_MARKER_END}`;
+    }
 
     function parseDeliveryPointPhotos(value) {
       if (!value) return [];

@@ -894,7 +894,25 @@ const MAX_DELIVERY_POINT_PHOTOS = 6;
 const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
 const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
 const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
-let deliveryPointPhotosColumnAvailable = true;
+
+const PHOTO_MEMO_MARKER = '<!--dp-photos:';
+const PHOTO_MEMO_MARKER_END = '-->';
+
+function splitMemoAndEmbeddedPhotos(memo) {
+  const raw = String(memo || '');
+  const start = raw.indexOf(PHOTO_MEMO_MARKER);
+  if (start < 0) return { memo: raw, photos: [] };
+  const end = raw.indexOf(PHOTO_MEMO_MARKER_END, start);
+  if (end < 0) return { memo: raw, photos: [] };
+  const encoded = raw.slice(start + PHOTO_MEMO_MARKER.length, end).trim();
+  const cleanMemo = (raw.slice(0, start) + raw.slice(end + PHOTO_MEMO_MARKER_END.length)).trim();
+  try {
+    const json = decodeURIComponent(escape(atob(encoded)));
+    return { memo: cleanMemo, photos: parseDeliveryPointPhotos(JSON.parse(json)) };
+  } catch {
+    return { memo: cleanMemo, photos: [] };
+  }
+}
 
 function parseDeliveryPointPhotos(value) {
   if (!value) return [];
@@ -963,11 +981,6 @@ function blobToDataUrl(blob) {
 // -----------------------------------------------------------------------------
 // 모달
 // -----------------------------------------------------------------------------
-
-function isMissingPhotosColumnError(error) {
-  const message = String(error?.message || '');
-  return /delivery_points\.photos|photos.*does not exist|Could not find the 'photos' column/i.test(message);
-}
 
 function openDetailModal(r) {
   const tel = r.dp_contact ? formatPhone(r.dp_contact) : '';
@@ -1068,19 +1081,14 @@ function openDetailModal(r) {
     });
   };
 
-  if (r.delivery_point_id && deliveryPointPhotosColumnAvailable) {
-    scopeByCenter(supabase.from('delivery_points').select('photos').eq('id', r.delivery_point_id).single())
+  if (r.delivery_point_id) {
+    scopeByCenter(supabase.from('delivery_points').select('memo').eq('id', r.delivery_point_id).single())
       .then(({ data, error }) => {
         if (error) {
-          if (isMissingPhotosColumnError(error)) {
-            deliveryPointPhotosColumnAvailable = false;
-            console.warn('[dashboard] delivery_points.photos 컬럼이 없어 사진 조회를 건너뜁니다.', error);
-          } else {
-            toast(`사진 불러오기 실패: ${error.message}`, 'warn');
-          }
+          toast(`사진 불러오기 실패: ${error.message}`, 'warn');
           detailPhotos = [];
         } else {
-          detailPhotos = parseDeliveryPointPhotos(data?.photos);
+          detailPhotos = splitMemoAndEmbeddedPhotos(data?.memo || '').photos;
         }
         renderDetailPhotos();
       });
