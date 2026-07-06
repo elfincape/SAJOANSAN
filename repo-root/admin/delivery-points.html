@@ -262,6 +262,11 @@
     const $ = (id) => document.getElementById(id);
     const tbody = $('dp-tbody');
 
+    const MAX_DELIVERY_POINT_PHOTOS = 6;
+    const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
+    const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
+    const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
+
     // -------------------------------------------------------------------------
     // 부트
     // -------------------------------------------------------------------------
@@ -685,11 +690,6 @@
     // 헬퍼
     // -------------------------------------------------------------------------
 
-
-    const MAX_DELIVERY_POINT_PHOTOS = 6;
-    const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
-    const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
-    const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
 
     function parseDeliveryPointPhotos(value) {
       if (!value) return [];
