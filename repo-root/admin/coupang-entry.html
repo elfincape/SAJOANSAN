@@ -259,6 +259,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
   async function analyzeImage() {
     if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
+    const btn = $('analyze-image-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'API호출 중...';
     try {
       const base64 = await getImageBase64();
       const text = await callClaudeVision({
@@ -275,7 +279,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       $('schedule-json').value = JSON.stringify(rows, null, 2);
       state.scheduleRows = rows.map(normalizeScheduleRow).filter(isActiveScheduleRow);
       renderScheduleCount();
-      toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
+      toast(`API호출 완료: 시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
     } catch (err) {
       console.error('[coupang-entry] 이미지 분석 예외:', err);
       console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
@@ -285,6 +289,9 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       } else {
         toast(`이미지 분석 실패: ${msg}`, 'error');
       }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
     }
   }
   async function callClaudeVision({ model, mediaType, base64 }) {
