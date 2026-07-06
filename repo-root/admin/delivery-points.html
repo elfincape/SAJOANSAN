@@ -200,7 +200,7 @@
               <span class="font-semibold text-zinc-200">이미지 붙여넣기</span>
               <span class="mt-1 text-emerald-300">이 영역을 클릭한 뒤 Ctrl+V로 사진을 붙여넣으세요.</span>
               <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
-              <button type="button" id="f-photo-file-button" class="btn btn-ghost mt-3 text-xs">파일 선택</button>
+              <label for="f-photo-input" class="btn btn-ghost mt-3 text-xs">파일 선택</label>
             </div>
             <div id="f-photo-grid" class="grid grid-cols-3 gap-2"></div>
           </div>
@@ -491,12 +491,20 @@
         dl.value = norm;
       });
 
-      $('f-photo-file-button').addEventListener('click', () => $('f-photo-input').click());
       $('f-photo-input').addEventListener('change', async (e) => {
         await addFormPhotos(Array.from(e.target.files || []));
         e.target.value = '';
       });
       $('f-photo-dropzone').addEventListener('paste', async (e) => {
+        const files = imageFilesFromClipboard(e.clipboardData);
+        if (!files.length) return;
+        e.preventDefault();
+        await addFormPhotos(files);
+      });
+      document.addEventListener('paste', async (e) => {
+        const active = document.activeElement;
+        const shouldHandle = active === $('f-photo-dropzone') || active === document.body;
+        if (!shouldHandle) return;
         const files = imageFilesFromClipboard(e.clipboardData);
         if (!files.length) return;
         e.preventDefault();
@@ -582,7 +590,7 @@
         }
 
         if (removedColumns.length) {
-          toast(`DB에 없는 컬럼(${removedColumns.join(', ')})은 제외하고 저장했습니다.`, 'warn', 5000);
+          console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
         }
         toast(row.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
         // 목록 갱신 + 방금 저장한 행 선택 유지
@@ -590,7 +598,7 @@
         await loadList();
         selectRow(savedId);
       } catch (e) {
-        toast('저장 중 오류가 발생했습니다.', 'error');
+        console.error('[delivery-points] 저장 후 처리 중 오류', e);
       } finally {
         $('btn-save').disabled = false;
       }
@@ -705,15 +713,19 @@
       }
       const selected = files.slice(0, remaining);
       if (files.length > remaining) toast(`최대 6장까지만 등록되어 ${remaining}장만 추가합니다.`, 'warn');
+      const grid = $('f-photo-grid');
+      if (grid) grid.innerHTML = '<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs text-emerald-300">사진을 불러와 압축하는 중입니다...</div>';
       try {
         for (const file of selected) {
           const photo = await compressDeliveryPointPhoto(file);
           state.draftPhotos.push(photo);
+          renderFormPhotos();
         }
         renderFormPhotos();
         toast('사진이 추가되었습니다. 저장 버튼을 눌러 반영하세요.', 'success');
       } catch (err) {
-        toast(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+        renderFormPhotos();
+        console.error('[delivery-points] 사진 처리 실패', err);
       }
     }
 
@@ -783,7 +795,12 @@
       });
     }
     function canvasToBlob(canvas, type, quality) {
-      return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('브라우저가 이미지를 압축하지 못했습니다.'));
+        }, type, quality);
+      });
     }
     function blobToDataUrl(blob) {
       return new Promise((resolve, reject) => {
