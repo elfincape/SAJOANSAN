@@ -195,12 +195,13 @@
               <label class="app-label mb-0">납품처 사진</label>
               <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
             </div>
-            <label id="f-photo-dropzone" tabindex="0" class="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+            <div id="f-photo-dropzone" tabindex="0" class="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
               <input id="f-photo-input" type="file" accept="image/*" multiple class="hidden">
-              <span class="font-semibold text-zinc-200">사진 추가</span>
+              <span class="font-semibold text-zinc-200">이미지 붙여넣기</span>
+              <span class="mt-1 text-emerald-300">이 영역을 클릭한 뒤 Ctrl+V로 사진을 붙여넣으세요.</span>
               <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
-              <span class="mt-1 text-emerald-300">이 영역 클릭 후 Ctrl+V로 이미지 붙여넣기 가능</span>
-            </label>
+              <button type="button" id="f-photo-file-button" class="btn btn-ghost mt-3 text-xs">파일 선택</button>
+            </div>
             <div id="f-photo-grid" class="grid grid-cols-3 gap-2"></div>
           </div>
 
@@ -490,6 +491,7 @@
         dl.value = norm;
       });
 
+      $('f-photo-file-button').addEventListener('click', () => $('f-photo-input').click());
       $('f-photo-input').addEventListener('change', async (e) => {
         await addFormPhotos(Array.from(e.target.files || []));
         e.target.value = '';
@@ -499,6 +501,18 @@
         if (!files.length) return;
         e.preventDefault();
         await addFormPhotos(files);
+      });
+      $('f-photo-dropzone').addEventListener('dragover', (e) => {
+        e.preventDefault();
+        $('f-photo-dropzone').classList.add('border-emerald-500', 'text-emerald-200');
+      });
+      $('f-photo-dropzone').addEventListener('dragleave', () => {
+        $('f-photo-dropzone').classList.remove('border-emerald-500', 'text-emerald-200');
+      });
+      $('f-photo-dropzone').addEventListener('drop', async (e) => {
+        e.preventDefault();
+        $('f-photo-dropzone').classList.remove('border-emerald-500', 'text-emerald-200');
+        await addFormPhotos(Array.from(e.dataTransfer?.files || []).filter(file => file.type?.startsWith('image/')));
       });
 
       // 저장
@@ -555,11 +569,7 @@
         const payload = centerPayload({ ...row });
         if (!payload.id) delete payload.id;
 
-        const { data, error } = await supabase
-          .from('delivery_points')
-          .upsert(payload, { onConflict: 'id' })
-          .select()
-          .single();
+        const { data, error, removedColumns } = await upsertDeliveryPointPayload(payload);
 
         if (error) {
           // 코드 unique 위반 등
@@ -571,6 +581,9 @@
           return;
         }
 
+        if (removedColumns.length) {
+          toast(`DB에 없는 컬럼(${removedColumns.join(', ')})은 제외하고 저장했습니다.`, 'warn', 5000);
+        }
         toast(row.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
         // 목록 갱신 + 방금 저장한 행 선택 유지
         const savedId = data.id;
@@ -581,6 +594,31 @@
       } finally {
         $('btn-save').disabled = false;
       }
+    }
+
+
+    async function upsertDeliveryPointPayload(initialPayload) {
+      const payload = { ...initialPayload };
+      const removedColumns = [];
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const { data, error } = await supabase
+          .from('delivery_points')
+          .upsert(payload, { onConflict: 'id' })
+          .select()
+          .single();
+        if (!error) return { data, error: null, removedColumns };
+        const missingColumn = extractMissingSchemaColumn(error);
+        if (!missingColumn || !(missingColumn in payload)) return { data: null, error, removedColumns };
+        delete payload[missingColumn];
+        removedColumns.push(missingColumn);
+      }
+      return { data: null, error: { message: '스키마 컬럼 재시도 횟수를 초과했습니다.' }, removedColumns };
+    }
+
+    function extractMissingSchemaColumn(error) {
+      const message = error?.message || '';
+      const match = message.match(/Could not find the '([^']+)' column/);
+      return match?.[1] || '';
     }
 
     // -------------------------------------------------------------------------
