@@ -963,10 +963,13 @@ function blobToDataUrl(blob) {
 // 모달
 // -----------------------------------------------------------------------------
 function openDetailModal(r) {
+  const tel = r.dp_contact ? formatPhone(r.dp_contact) : '';
+  const telLink = r.dp_contact
+    ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
+    : '<span class="text-zinc-500">-</span>';
   const routeEditHref = r.route_id
     ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
     : '';
-  const stopId = r.stop_id;
   let detailPhotos = [];
 
   const html = `
@@ -981,49 +984,52 @@ function openDetailModal(r) {
           <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
         </div>
       </div>
-      <div class="mt-1">
-        <h3 class="text-sm font-semibold mb-2">팝업 전체 수정</h3>
-        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <label class="space-y-1"><span class="muted">코스명</span><input id="edit-route-name" class="app-input" value="${escapeAttr(r.route_name || '')}"></label>
-            <label class="space-y-1"><span class="muted">호차</span><input id="edit-car-number" class="app-input" value="${escapeAttr(r.car_number || '')}"></label>
-            <label class="space-y-1"><span class="muted">운수사</span><select id="edit-company" class="app-select"></select></label>
-            <label class="space-y-1"><span class="muted">주기사</span><select id="edit-driver1" class="app-select"></select></label>
-            <label class="space-y-1"><span class="muted">보조기사</span><select id="edit-driver2" class="app-select"></select></label>
-            <label class="space-y-1"><span class="muted">순서</span><input id="edit-stop-order" type="number" min="1" class="app-input" value="${escapeAttr(r.stop_order ?? '')}"></label>
-            <label class="space-y-1"><span class="muted">입차</span><input id="edit-arrival" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.arrival_business_min) || '')}"></label>
-            <label class="space-y-1"><span class="muted">하차시작</span><input id="edit-unload-start" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_start_business_min) || '')}"></label>
-            <label class="space-y-1"><span class="muted">하차종료</span><input id="edit-unload-end" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_end_business_min) || '')}"></label>
-            <label class="space-y-1"><span class="muted">마감</span><input id="edit-deadline" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.effective_deadline_business_min) || '')}"></label>
-            <label class="space-y-1"><span class="muted">납품방식</span><input id="edit-dmethod" class="app-input" value="${escapeAttr(r.override_delivery_method ?? r.delivery_method ?? '')}"></label>
-            <label class="space-y-1"><span class="muted">진입방식</span><input id="edit-amethod" class="app-input" value="${escapeAttr(r.override_access_method ?? r.access_method ?? '')}"></label>
-            <label class="space-y-1"><span class="muted">납품장소</span><input id="edit-dloc" class="app-input" value="${escapeAttr(r.override_delivery_location ?? r.delivery_location ?? '')}"></label>
-            <label class="space-y-1"><span class="muted">열쇠보관장소</span><input id="edit-key" class="app-input" value="${escapeAttr(r.security_key_location || '')}"></label>
-            <label class="space-y-1"><span class="muted">비밀번호</span><input id="edit-pass" class="app-input" value="${escapeAttr(r.security_password || '')}"></label>
-            <label class="space-y-1 md:col-span-2"><span class="muted">주소</span><input id="edit-address" class="app-input" value="${escapeAttr(r.dp_address || '')}"></label>
-            <label class="space-y-1"><span class="muted">연락처</span><input id="edit-contact" class="app-input" value="${escapeAttr(r.dp_contact || '')}"></label>
-            <label class="space-y-1"><span class="muted">연락 담당자</span><input id="edit-contact-name" class="app-input" value="${escapeAttr(r.dp_contact_name || '')}"></label>
+      <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">
+        <div class="space-y-4">
+          <section class="rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+            <h3 class="text-sm font-semibold mb-2">코스 정보</h3>
+            <dl class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div><dt class="muted">코스명</dt><dd>${escapeHtml(r.route_name || '-')}</dd></div>
+              <div><dt class="muted">호차</dt><dd>${escapeHtml(r.car_number || '-')}</dd></div>
+              <div><dt class="muted">운수사</dt><dd>${escapeHtml(r.company_name || '-')}</dd></div>
+              <div><dt class="muted">주기사</dt><dd>${escapeHtml(r.primary_driver_name || '-')}</dd></div>
+              <div><dt class="muted">보조기사</dt><dd>${escapeHtml(r.secondary_driver_name || '-')}</dd></div>
+              <div><dt class="muted">순서</dt><dd>${escapeHtml(r.stop_order ?? '-')}</dd></div>
+              <div><dt class="muted">입차</dt><dd>${escapeHtml(bizMinToStandard(r.arrival_business_min) || '-')}</dd></div>
+              <div><dt class="muted">하차시작</dt><dd>${escapeHtml(bizMinToStandard(r.unloading_start_business_min) || '-')}</dd></div>
+              <div><dt class="muted">하차종료</dt><dd>${escapeHtml(bizMinToStandard(r.unloading_end_business_min) || '-')}</dd></div>
+              <div><dt class="muted">마감</dt><dd>${escapeHtml(bizMinToStandard(r.effective_deadline_business_min) || '-')}</dd></div>
+            </dl>
+          </section>
+          <section class="rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+            <h3 class="text-sm font-semibold mb-2">납품처 정보</h3>
+            <dl class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div class="md:col-span-2"><dt class="muted">주소</dt><dd>${escapeHtml(r.dp_address || '-')}</dd></div>
+              <div><dt class="muted">연락처</dt><dd>${telLink}</dd></div>
+              <div><dt class="muted">연락 담당자</dt><dd>${escapeHtml(r.dp_contact_name || '-')}</dd></div>
+              <div><dt class="muted">납품방식</dt><dd>${escapeHtml(r.override_delivery_method ?? r.delivery_method ?? '-')}</dd></div>
+              <div><dt class="muted">진입방식</dt><dd>${escapeHtml(r.override_access_method ?? r.access_method ?? '-')}</dd></div>
+              <div><dt class="muted">납품장소</dt><dd>${escapeHtml(r.override_delivery_location ?? r.delivery_location ?? '-')}</dd></div>
+              <div><dt class="muted">열쇠보관장소</dt><dd>${escapeHtml(r.security_key_location || '-')}</dd></div>
+              <div><dt class="muted">비밀번호</dt><dd>${escapeHtml(r.security_password || '-')}</dd></div>
+            </dl>
+          </section>
+        </div>
+        <aside class="space-y-3 rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="font-semibold">납품처 사진</h4>
+            <span id="detail-photo-count" class="text-[11px] text-zinc-500">0/6</span>
           </div>
-          <aside class="space-y-3 rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
-            <div class="flex items-center justify-between gap-2">
-              <h4 class="font-semibold">납품처 사진</h4>
-              <span id="detail-photo-count" class="text-[11px] text-zinc-500">0/6</span>
-            </div>
-            <label class="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/60 px-3 py-3 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200">
-              <input id="detail-photo-input" type="file" accept="image/*" multiple class="hidden">
-              <span class="font-semibold text-zinc-200">사진 추가</span>
-              <span class="mt-1">HD/1MB 이하 자동 압축</span>
-            </label>
-            <div id="detail-photo-grid" class="grid grid-cols-3 gap-2"></div>
-            <div id="detail-photo-large-wrap" class="hidden rounded-lg border border-zinc-700 bg-black p-2">
-              <img id="detail-photo-large" alt="선택한 납품처 사진" class="max-h-[360px] w-full rounded object-contain">
-            </div>
-            <label class="space-y-1 block"><span class="muted">비고</span><textarea id="edit-memo" rows="4" class="app-textarea">${escapeHtml(r.stop_memo || '')}</textarea></label>
-          </aside>
-        </div>
-        <div class="mt-3 flex justify-end">
-          <button id="quick-save" class="btn btn-primary text-xs">팝업에서 전체 저장</button>
-        </div>
+          <p class="text-xs text-zinc-500">대시보드에서는 조회만 가능합니다. 사진 추가/삭제는 납품처 관리에서 진행하세요.</p>
+          <div id="detail-photo-grid" class="grid grid-cols-3 gap-2"></div>
+          <div id="detail-photo-large-wrap" class="hidden rounded-lg border border-zinc-700 bg-black p-2">
+            <img id="detail-photo-large" alt="선택한 납품처 사진" class="max-h-[360px] w-full rounded object-contain">
+          </div>
+          <div>
+            <div class="muted mb-1">비고</div>
+            <div class="min-h-20 rounded border border-zinc-700 bg-zinc-900/50 p-2 whitespace-pre-wrap">${escapeHtml(r.stop_memo || '-')}</div>
+          </div>
+        </aside>
       </div>
     </div>`;
 
@@ -1045,51 +1051,15 @@ function openDetailModal(r) {
       return;
     }
     grid.innerHTML = detailPhotos.map((photo, idx) => `
-      <div class="relative overflow-hidden rounded border border-zinc-700 bg-zinc-900">
-        <button type="button" data-detail-photo-view="${idx}" class="block h-20 w-full">
-          <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
-        </button>
-        <button type="button" data-detail-photo-delete="${idx}" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
-      </div>`).join('');
+      <button type="button" data-detail-photo-view="${idx}" class="h-20 overflow-hidden rounded border border-zinc-700 bg-zinc-900">
+        <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
+      </button>`).join('');
     largeWrap.classList.remove('hidden');
     if (!large.src || !detailPhotos.some(p => p.dataUrl === large.src)) large.src = detailPhotos[0].dataUrl;
     grid.querySelectorAll('[data-detail-photo-view]').forEach(btn => {
       btn.addEventListener('click', () => { large.src = detailPhotos[Number(btn.dataset.detailPhotoView)]?.dataUrl || ''; });
     });
-    grid.querySelectorAll('[data-detail-photo-delete]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        detailPhotos.splice(Number(btn.dataset.detailPhotoDelete), 1);
-        renderDetailPhotos();
-        await saveDetailPhotos();
-      });
-    });
   };
-
-  const saveDetailPhotos = async () => {
-    if (!r.delivery_point_id) return;
-    const { error } = await scopeByCenter(
-      supabase.from('delivery_points').update({ photos: detailPhotos }).eq('id', r.delivery_point_id)
-    );
-    if (error) toast(`사진 저장 실패: ${error.message}`, 'error');
-    else toast('사진이 저장되었습니다.', 'success');
-  };
-
-  wrap.querySelector('#detail-photo-input')?.addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    const remaining = MAX_DELIVERY_POINT_PHOTOS - detailPhotos.length;
-    if (remaining <= 0) {
-      toast('사진은 납품처당 최대 6장까지 등록할 수 있습니다.', 'warn');
-      return;
-    }
-    try {
-      for (const file of files.slice(0, remaining)) detailPhotos.push(await compressDeliveryPointPhoto(file));
-      renderDetailPhotos();
-      await saveDetailPhotos();
-    } catch (err) {
-      toast(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
-    }
-  });
 
   if (r.delivery_point_id) {
     scopeByCenter(supabase.from('delivery_points').select('photos').eq('id', r.delivery_point_id).single())
@@ -1101,107 +1071,6 @@ function openDetailModal(r) {
   } else {
     renderDetailPhotos();
   }
-
-  if (stopId) {
-    hydrateRouteEditDropdowns(wrap, r).catch(() => {});
-    wrap.querySelector('#quick-save')?.addEventListener('click', async () => {
-      const toNullable = (v) => {
-        const s = (v || '').trim();
-        return s ? s : null;
-      };
-      const arrivalMin = displayToBizMin((wrap.querySelector('#edit-arrival')?.value || '').trim());
-      const unloadStartMin = displayToBizMin((wrap.querySelector('#edit-unload-start')?.value || '').trim());
-      const unloadEndMin = displayToBizMin((wrap.querySelector('#edit-unload-end')?.value || '').trim());
-      const deadlineMin = displayToBizMin((wrap.querySelector('#edit-deadline')?.value || '').trim());
-      const stopPayload = centerPayload({
-        stop_order: Number(wrap.querySelector('#edit-stop-order')?.value || 1),
-        arrival_text: toNullable(wrap.querySelector('#edit-arrival')?.value),
-        arrival_business_min: arrivalMin,
-        unloading_start_text: toNullable(wrap.querySelector('#edit-unload-start')?.value),
-        unloading_start_business_min: unloadStartMin,
-        unloading_end_text: toNullable(wrap.querySelector('#edit-unload-end')?.value),
-        unloading_end_business_min: unloadEndMin,
-        deadline_text: toNullable(wrap.querySelector('#edit-deadline')?.value),
-        deadline_business_min: deadlineMin,
-        override_delivery_method: toNullable(wrap.querySelector('#edit-dmethod')?.value),
-        override_access_method: toNullable(wrap.querySelector('#edit-amethod')?.value),
-        override_delivery_location: toNullable(wrap.querySelector('#edit-dloc')?.value),
-        memo: toNullable(wrap.querySelector('#edit-memo')?.value)
-      });
-      const routePayload = centerPayload({
-        name: toNullable(wrap.querySelector('#edit-route-name')?.value),
-        car_number: toNullable(wrap.querySelector('#edit-car-number')?.value),
-        company_id: toNullable(wrap.querySelector('#edit-company')?.value),
-        primary_driver_id: toNullable(wrap.querySelector('#edit-driver1')?.value),
-        secondary_driver_id: toNullable(wrap.querySelector('#edit-driver2')?.value)
-      });
-      const dpPayload = centerPayload({
-        address: toNullable(wrap.querySelector('#edit-address')?.value),
-        contact: toNullable(wrap.querySelector('#edit-contact')?.value),
-        contact_name: toNullable(wrap.querySelector('#edit-contact-name')?.value),
-        security_key_location: toNullable(wrap.querySelector('#edit-key')?.value),
-        security_password: toNullable(wrap.querySelector('#edit-pass')?.value),
-        photos: detailPhotos
-      });
-
-      const { error: stopErr } = await scopeByCenter(
-        supabase.from('route_stops').update(stopPayload).eq('id', stopId)
-      );
-      if (stopErr) {
-        toast(`저장 실패(코스순번): ${stopErr.message}`, 'error');
-        return;
-      }
-      if (r.route_id) {
-        const { error: routeErr } = await scopeByCenter(
-          supabase.from('routes').update(routePayload).eq('id', r.route_id)
-        );
-        if (routeErr) {
-          toast(`저장 실패(코스정보): ${routeErr.message}`, 'error');
-          return;
-        }
-      }
-      if (r.delivery_point_id) {
-        const { error: dpErr } = await scopeByCenter(
-          supabase.from('delivery_points').update(dpPayload).eq('id', r.delivery_point_id)
-        );
-        if (dpErr) {
-          toast(`저장 실패(납품처): ${dpErr.message}`, 'error');
-          return;
-        }
-      }
-      toast('코스 정보가 수정되었습니다.', 'success');
-      await loadData();
-      applyFiltersAndSort();
-      render();
-      closeModal();
-    });
-  }
-}
-
-async function hydrateRouteEditDropdowns(wrap, row) {
-  const [coRes, drRes] = await Promise.all([
-    scopeByCenter(supabase.from('companies').select('id, name').order('name')),
-    scopeByCenter(supabase.from('drivers').select('id, name, company_id').order('name'))
-  ]);
-  if (coRes.error || drRes.error) return;
-  const companies = coRes.data || [];
-  const drivers = drRes.data || [];
-  const companySel = wrap.querySelector('#edit-company');
-  const drv1 = wrap.querySelector('#edit-driver1');
-  const drv2 = wrap.querySelector('#edit-driver2');
-  if (!companySel || !drv1 || !drv2) return;
-  companySel.innerHTML = `<option value="">(선택 안 함)</option>` + companies.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name || '')}</option>`).join('');
-  const renderDrivers = (companyId) => {
-    const filtered = companyId ? drivers.filter(d => String(d.company_id || '') === String(companyId)) : drivers;
-    const opts = `<option value="">(선택 안 함)</option>` + filtered.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name || '')}</option>`).join('');
-    drv1.innerHTML = opts;
-    drv2.innerHTML = opts;
-  };
-  companySel.value = row.company_id || '';
-  renderDrivers(companySel.value);
-  drv1.value = row.primary_driver_id || '';
-  drv2.value = row.secondary_driver_id || '';
-  companySel.addEventListener('change', () => renderDrivers(companySel.value));
 }
 
 async function showMyInfo() {
