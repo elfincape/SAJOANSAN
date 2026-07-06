@@ -423,10 +423,8 @@
         deadline_text:         deadlineText ? normalizeTime(deadlineText) : null,
         deadline_business_min: deadlineBiz,
 
-        rep_name:       emptyToNull($('f-rep-name').value.trim()),
-        rep_phone:      emptyToNull($('f-rep-phone').value.trim()),
-        contact_name:   emptyToNull($('f-mgr-name').value.trim()),
-        contact_office: emptyToNull($('f-mgr-office').value.trim()),
+        // 운영 DB 스키마에 없는 담당자/대표자 세부 컬럼은 payload에서 제외한다.
+        // 해당 값을 별도 컬럼으로 저장하려면 DB 마이그레이션 후 이 payload를 확장해야 한다.
         // 호환: 실제 운영 스키마에는 contact_mobile 컬럼이 없을 수 있으므로 contact 컬럼만 동기화
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
         memo:           composeMemoWithEmbeddedPhotos($('f-memo').value.trim(), state.draftPhotos),
