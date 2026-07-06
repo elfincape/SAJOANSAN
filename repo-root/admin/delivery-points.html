@@ -771,46 +771,50 @@
 
     async function compressDeliveryPointPhoto(file) {
       if (!isProbablyImageFile(file)) throw new Error('이미지 파일만 업로드할 수 있습니다.');
-      let bitmap;
-      try {
-        bitmap = await fileToImage(file);
-      } catch (err) {
-        if (file.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) {
-          return {
-            id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            name: file.name || 'delivery-point-photo',
-            type: file.type || 'image/jpeg',
-            size: file.size,
-            dataUrl: await fileToDataUrl(file),
-            createdAt: new Date().toISOString()
-          };
-        }
-        throw err;
-      }
-      const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / bitmap.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / bitmap.naturalHeight);
-      const width = Math.max(1, Math.round(bitmap.naturalWidth * ratio));
-      const height = Math.max(1, Math.round(bitmap.naturalHeight * ratio));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(bitmap, 0, 0, width, height);
-      let blob = null;
-      for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54, 0.46]) {
-        blob = await canvasToBlob(canvas, 'image/jpeg', quality);
-        if (blob.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) break;
-      }
-      if (!blob || blob.size > MAX_DELIVERY_POINT_PHOTO_BYTES) throw new Error('사진을 1MB 이하로 압축하지 못했습니다. 더 작은 이미지를 사용해주세요.');
-      return {
+
+      const rawDataUrl = await fileToDataUrl(file);
+      const rawPhoto = {
         id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name: file.name || 'delivery-point-photo.jpg',
-        type: 'image/jpeg',
-        size: blob.size,
-        dataUrl: await blobToDataUrl(blob),
+        name: file.name || 'delivery-point-photo',
+        type: file.type || 'image/jpeg',
+        size: file.size || rawDataUrl.length,
+        dataUrl: rawDataUrl,
         createdAt: new Date().toISOString()
       };
+
+      // 우선 업로드/미리보기 자체가 항상 되도록 FileReader 결과를 확보한다.
+      // 1MB 이하 이미지는 추가 디코딩/캔버스 과정 없이 바로 등록한다.
+      if ((file.size || 0) <= MAX_DELIVERY_POINT_PHOTO_BYTES) return rawPhoto;
+
+      // 큰 이미지만 캔버스 압축을 시도하고, 브라우저가 디코딩하지 못하면 원본으로라도 등록한다.
+      try {
+        const bitmap = await fileToImage(file);
+        const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / bitmap.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / bitmap.naturalHeight);
+        const width = Math.max(1, Math.round(bitmap.naturalWidth * ratio));
+        const height = Math.max(1, Math.round(bitmap.naturalHeight * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54, 0.46]) {
+          const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+          if (blob.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) {
+            return {
+              ...rawPhoto,
+              name: file.name || 'delivery-point-photo.jpg',
+              type: 'image/jpeg',
+              size: blob.size,
+              dataUrl: await blobToDataUrl(blob)
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[delivery-points] 이미지 압축 실패, 원본 data URL로 등록합니다.', err);
+      }
+      return rawPhoto;
     }
 
     function fileToImage(file) {
