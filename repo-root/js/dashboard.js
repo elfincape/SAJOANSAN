@@ -889,21 +889,88 @@ function updateResultCount() {
     : (shown === total ? `총 ${total}건` : `총 ${shown}건 (전체 ${total}건 중)`);
 }
 
+
+const MAX_DELIVERY_POINT_PHOTOS = 6;
+const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
+const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
+const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
+
+function parseDeliveryPointPhotos(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function compressDeliveryPointPhoto(file) {
+  if (!file || !file.type?.startsWith('image/')) throw new Error('이미지 파일만 업로드할 수 있습니다.');
+  const img = await fileToImage(file);
+  const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / img.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / img.naturalHeight);
+  const width = Math.max(1, Math.round(img.naturalWidth * ratio));
+  const height = Math.max(1, Math.round(img.naturalHeight * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  let blob = null;
+  for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54, 0.46]) {
+    blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+    if (blob.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) break;
+  }
+  if (!blob || blob.size > MAX_DELIVERY_POINT_PHOTO_BYTES) throw new Error('사진을 1MB 이하로 압축하지 못했습니다.');
+  return {
+    id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: file.name || 'delivery-point-photo.jpg',
+    type: 'image/jpeg',
+    size: blob.size,
+    dataUrl: await blobToDataUrl(blob),
+    createdAt: new Date().toISOString()
+  };
+}
+
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했습니다.')); };
+    img.src = url;
+  });
+}
+function canvasToBlob(canvas, type, quality) {
+  return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+}
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('압축 이미지를 읽지 못했습니다.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 // -----------------------------------------------------------------------------
 // 모달
 // -----------------------------------------------------------------------------
 function openDetailModal(r) {
-  const tel = r.dp_contact ? formatPhone(r.dp_contact) : '';
-  const telLink = r.dp_contact
-    ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
-    : '';
   const routeEditHref = r.route_id
     ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
     : '';
   const stopId = r.stop_id;
+  let detailPhotos = [];
 
   const html = `
-    <div class="p-5 max-h-[80vh] overflow-auto">
+    <div class="p-5 max-h-[85vh] overflow-auto">
       <div class="flex items-start justify-between mb-3">
         <div>
           <h2 class="text-base font-semibold">${escapeHtml(r.dp_name || '(납품처 미지정)')}</h2>
@@ -916,26 +983,43 @@ function openDetailModal(r) {
       </div>
       <div class="mt-1">
         <h3 class="text-sm font-semibold mb-2">팝업 전체 수정</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-          <label class="space-y-1"><span class="muted">코스명</span><input id="edit-route-name" class="app-input" value="${escapeAttr(r.route_name || '')}"></label>
-          <label class="space-y-1"><span class="muted">호차</span><input id="edit-car-number" class="app-input" value="${escapeAttr(r.car_number || '')}"></label>
-          <label class="space-y-1"><span class="muted">운수사</span><select id="edit-company" class="app-select"></select></label>
-          <label class="space-y-1"><span class="muted">주기사</span><select id="edit-driver1" class="app-select"></select></label>
-          <label class="space-y-1"><span class="muted">보조기사</span><select id="edit-driver2" class="app-select"></select></label>
-          <label class="space-y-1"><span class="muted">순서</span><input id="edit-stop-order" type="number" min="1" class="app-input" value="${escapeAttr(r.stop_order ?? '')}"></label>
-          <label class="space-y-1"><span class="muted">입차</span><input id="edit-arrival" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.arrival_business_min) || '')}"></label>
-          <label class="space-y-1"><span class="muted">하차시작</span><input id="edit-unload-start" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_start_business_min) || '')}"></label>
-          <label class="space-y-1"><span class="muted">하차종료</span><input id="edit-unload-end" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_end_business_min) || '')}"></label>
-          <label class="space-y-1"><span class="muted">마감</span><input id="edit-deadline" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.effective_deadline_business_min) || '')}"></label>
-          <label class="space-y-1"><span class="muted">납품방식</span><input id="edit-dmethod" class="app-input" value="${escapeAttr(r.override_delivery_method ?? r.delivery_method ?? '')}"></label>
-          <label class="space-y-1"><span class="muted">진입방식</span><input id="edit-amethod" class="app-input" value="${escapeAttr(r.override_access_method ?? r.access_method ?? '')}"></label>
-          <label class="space-y-1"><span class="muted">납품장소</span><input id="edit-dloc" class="app-input" value="${escapeAttr(r.override_delivery_location ?? r.delivery_location ?? '')}"></label>
-          <label class="space-y-1"><span class="muted">열쇠보관장소</span><input id="edit-key" class="app-input" value="${escapeAttr(r.security_key_location || '')}"></label>
-          <label class="space-y-1"><span class="muted">비밀번호</span><input id="edit-pass" class="app-input" value="${escapeAttr(r.security_password || '')}"></label>
-          <label class="space-y-1 md:col-span-2"><span class="muted">주소</span><input id="edit-address" class="app-input" value="${escapeAttr(r.dp_address || '')}"></label>
-          <label class="space-y-1"><span class="muted">연락처</span><input id="edit-contact" class="app-input" value="${escapeAttr(r.dp_contact || '')}"></label>
-          <label class="space-y-1"><span class="muted">연락 담당자</span><input id="edit-contact-name" class="app-input" value="${escapeAttr(r.dp_contact_name || '')}"></label>
-          <label class="space-y-1 md:col-span-2"><span class="muted">비고</span><textarea id="edit-memo" rows="3" class="app-textarea">${escapeHtml(r.stop_memo || '')}</textarea></label>
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <label class="space-y-1"><span class="muted">코스명</span><input id="edit-route-name" class="app-input" value="${escapeAttr(r.route_name || '')}"></label>
+            <label class="space-y-1"><span class="muted">호차</span><input id="edit-car-number" class="app-input" value="${escapeAttr(r.car_number || '')}"></label>
+            <label class="space-y-1"><span class="muted">운수사</span><select id="edit-company" class="app-select"></select></label>
+            <label class="space-y-1"><span class="muted">주기사</span><select id="edit-driver1" class="app-select"></select></label>
+            <label class="space-y-1"><span class="muted">보조기사</span><select id="edit-driver2" class="app-select"></select></label>
+            <label class="space-y-1"><span class="muted">순서</span><input id="edit-stop-order" type="number" min="1" class="app-input" value="${escapeAttr(r.stop_order ?? '')}"></label>
+            <label class="space-y-1"><span class="muted">입차</span><input id="edit-arrival" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.arrival_business_min) || '')}"></label>
+            <label class="space-y-1"><span class="muted">하차시작</span><input id="edit-unload-start" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_start_business_min) || '')}"></label>
+            <label class="space-y-1"><span class="muted">하차종료</span><input id="edit-unload-end" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_end_business_min) || '')}"></label>
+            <label class="space-y-1"><span class="muted">마감</span><input id="edit-deadline" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.effective_deadline_business_min) || '')}"></label>
+            <label class="space-y-1"><span class="muted">납품방식</span><input id="edit-dmethod" class="app-input" value="${escapeAttr(r.override_delivery_method ?? r.delivery_method ?? '')}"></label>
+            <label class="space-y-1"><span class="muted">진입방식</span><input id="edit-amethod" class="app-input" value="${escapeAttr(r.override_access_method ?? r.access_method ?? '')}"></label>
+            <label class="space-y-1"><span class="muted">납품장소</span><input id="edit-dloc" class="app-input" value="${escapeAttr(r.override_delivery_location ?? r.delivery_location ?? '')}"></label>
+            <label class="space-y-1"><span class="muted">열쇠보관장소</span><input id="edit-key" class="app-input" value="${escapeAttr(r.security_key_location || '')}"></label>
+            <label class="space-y-1"><span class="muted">비밀번호</span><input id="edit-pass" class="app-input" value="${escapeAttr(r.security_password || '')}"></label>
+            <label class="space-y-1 md:col-span-2"><span class="muted">주소</span><input id="edit-address" class="app-input" value="${escapeAttr(r.dp_address || '')}"></label>
+            <label class="space-y-1"><span class="muted">연락처</span><input id="edit-contact" class="app-input" value="${escapeAttr(r.dp_contact || '')}"></label>
+            <label class="space-y-1"><span class="muted">연락 담당자</span><input id="edit-contact-name" class="app-input" value="${escapeAttr(r.dp_contact_name || '')}"></label>
+          </div>
+          <aside class="space-y-3 rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-semibold">납품처 사진</h4>
+              <span id="detail-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+            </div>
+            <label class="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/60 px-3 py-3 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200">
+              <input id="detail-photo-input" type="file" accept="image/*" multiple class="hidden">
+              <span class="font-semibold text-zinc-200">사진 추가</span>
+              <span class="mt-1">HD/1MB 이하 자동 압축</span>
+            </label>
+            <div id="detail-photo-grid" class="grid grid-cols-3 gap-2"></div>
+            <div id="detail-photo-large-wrap" class="hidden rounded-lg border border-zinc-700 bg-black p-2">
+              <img id="detail-photo-large" alt="선택한 납품처 사진" class="max-h-[360px] w-full rounded object-contain">
+            </div>
+            <label class="space-y-1 block"><span class="muted">비고</span><textarea id="edit-memo" rows="4" class="app-textarea">${escapeHtml(r.stop_memo || '')}</textarea></label>
+          </aside>
         </div>
         <div class="mt-3 flex justify-end">
           <button id="quick-save" class="btn btn-primary text-xs">팝업에서 전체 저장</button>
@@ -946,8 +1030,77 @@ function openDetailModal(r) {
   const wrap = document.createElement('div');
   wrap.innerHTML = html;
 
-  openModal(wrap, { width: 'xl' });
+  openModal(wrap, { width: '5xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
+
+  const renderDetailPhotos = () => {
+    const grid = wrap.querySelector('#detail-photo-grid');
+    const count = wrap.querySelector('#detail-photo-count');
+    const largeWrap = wrap.querySelector('#detail-photo-large-wrap');
+    const large = wrap.querySelector('#detail-photo-large');
+    count.textContent = `${detailPhotos.length}/${MAX_DELIVERY_POINT_PHOTOS}`;
+    if (!detailPhotos.length) {
+      grid.innerHTML = '<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-500">등록된 사진이 없습니다.</div>';
+      largeWrap.classList.add('hidden');
+      return;
+    }
+    grid.innerHTML = detailPhotos.map((photo, idx) => `
+      <div class="relative overflow-hidden rounded border border-zinc-700 bg-zinc-900">
+        <button type="button" data-detail-photo-view="${idx}" class="block h-20 w-full">
+          <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
+        </button>
+        <button type="button" data-detail-photo-delete="${idx}" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
+      </div>`).join('');
+    largeWrap.classList.remove('hidden');
+    if (!large.src || !detailPhotos.some(p => p.dataUrl === large.src)) large.src = detailPhotos[0].dataUrl;
+    grid.querySelectorAll('[data-detail-photo-view]').forEach(btn => {
+      btn.addEventListener('click', () => { large.src = detailPhotos[Number(btn.dataset.detailPhotoView)]?.dataUrl || ''; });
+    });
+    grid.querySelectorAll('[data-detail-photo-delete]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        detailPhotos.splice(Number(btn.dataset.detailPhotoDelete), 1);
+        renderDetailPhotos();
+        await saveDetailPhotos();
+      });
+    });
+  };
+
+  const saveDetailPhotos = async () => {
+    if (!r.delivery_point_id) return;
+    const { error } = await scopeByCenter(
+      supabase.from('delivery_points').update({ photos: detailPhotos }).eq('id', r.delivery_point_id)
+    );
+    if (error) toast(`사진 저장 실패: ${error.message}`, 'error');
+    else toast('사진이 저장되었습니다.', 'success');
+  };
+
+  wrap.querySelector('#detail-photo-input')?.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    const remaining = MAX_DELIVERY_POINT_PHOTOS - detailPhotos.length;
+    if (remaining <= 0) {
+      toast('사진은 납품처당 최대 6장까지 등록할 수 있습니다.', 'warn');
+      return;
+    }
+    try {
+      for (const file of files.slice(0, remaining)) detailPhotos.push(await compressDeliveryPointPhoto(file));
+      renderDetailPhotos();
+      await saveDetailPhotos();
+    } catch (err) {
+      toast(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+    }
+  });
+
+  if (r.delivery_point_id) {
+    scopeByCenter(supabase.from('delivery_points').select('photos').eq('id', r.delivery_point_id).single())
+      .then(({ data, error }) => {
+        if (error) toast(`사진 불러오기 실패: ${error.message}`, 'warn');
+        detailPhotos = parseDeliveryPointPhotos(data?.photos);
+        renderDetailPhotos();
+      });
+  } else {
+    renderDetailPhotos();
+  }
 
   if (stopId) {
     hydrateRouteEditDropdowns(wrap, r).catch(() => {});
@@ -987,7 +1140,8 @@ function openDetailModal(r) {
         contact: toNullable(wrap.querySelector('#edit-contact')?.value),
         contact_name: toNullable(wrap.querySelector('#edit-contact-name')?.value),
         security_key_location: toNullable(wrap.querySelector('#edit-key')?.value),
-        security_password: toNullable(wrap.querySelector('#edit-pass')?.value)
+        security_password: toNullable(wrap.querySelector('#edit-pass')?.value),
+        photos: detailPhotos
       });
 
       const { error: stopErr } = await scopeByCenter(
