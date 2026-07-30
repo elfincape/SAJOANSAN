@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>1탑2실 작업 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <style>
+    .step-card { border:1px solid #3f3f46; background:rgba(39,39,42,.45); border-radius:.75rem; padding:1rem; }
+    .step-badge { display:inline-flex; width:1.6rem; height:1.6rem; align-items:center; justify-content:center; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.35); font-size:.75rem; font-weight:700; }
+    .camera-frame { position:relative; width:100%; aspect-ratio:4/3; overflow:hidden; border:2px solid #10b981; border-radius:.75rem; background:#09090b; }
+    .camera-frame video { width:100%; height:100%; object-fit:cover; }
+    .camera-frame::after { content:'영수증을 4:3 영역 안에 맞춰 주세요'; position:absolute; inset:.65rem; border:1px dashed rgba(255,255,255,.7); border-radius:.45rem; display:flex; align-items:flex-end; justify-content:center; padding:.5rem; color:#fff; font-size:.72rem; text-shadow:0 1px 3px #000; pointer-events:none; }
+    .thumb { position:relative; border:1px solid #3f3f46; border-radius:.5rem; overflow:hidden; background:#18181b; }
+    .thumb img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+    .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
+    .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen">
+  <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
+    <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <span class="text-xl">📷</span><h1 class="text-base font-semibold">1탑2실 작업</h1>
+      <div class="flex-1"></div><span id="user-badge" class="text-xs text-zinc-400"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+
+  <main class="max-w-[1500px] mx-auto px-4 py-5 space-y-4">
+    <section class="step-card">
+      <div class="flex items-center gap-2 mb-2"><span class="step-badge">1</span><h2 class="font-semibold">템플릿 엑셀 업로드</h2></div>
+      <p class="text-xs text-zinc-400 mb-3">업로드한 원본의 서식과 기존 삽입 사진을 유지합니다. 차량번호는 H열, 냉동/냉장은 J/K열, 온도기록지 사진은 Q열을 기준으로 처리합니다.</p>
+      <input id="template-file" type="file" accept=".xlsx,.xlsm" class="app-input text-sm">
+      <div id="template-info" class="text-xs text-zinc-400 mt-2">선택된 템플릿 없음</div>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-[minmax(360px,520px)_1fr] gap-4">
+      <div class="step-card">
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">2</span><h2 class="font-semibold">카메라 촬영</h2><span id="capture-count" class="text-xs text-zinc-400"></span></div>
+        <div class="camera-frame"><video id="camera-video" autoplay playsinline muted></video></div>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <button id="camera-start" class="btn btn-ghost" type="button">카메라 시작</button>
+          <button id="camera-capture" class="btn btn-primary" type="button" disabled>촬영</button>
+          <button id="camera-stop" class="btn btn-ghost" type="button" disabled>카메라 종료</button>
+          <label class="btn btn-ghost text-center cursor-pointer">사진 파일 추가<input id="capture-files" type="file" accept="image/*" multiple class="hidden"></label>
+        </div>
+        <p class="text-[11px] text-zinc-500 mt-2">촬영 이미지는 중앙 4:3 영역으로 크롭됩니다. 장수 제한 없이 계속 촬영할 수 있습니다.</p>
+      </div>
+      <div class="step-card">
+        <div class="flex items-center justify-between gap-2 mb-3"><div class="flex items-center gap-2"><span class="step-badge">3</span><h2 class="font-semibold">촬영 목록</h2></div><button id="capture-clear" class="btn btn-ghost text-xs" type="button">전체 삭제</button></div>
+        <div id="capture-grid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2"></div>
+        <div id="capture-empty" class="text-center text-sm text-zinc-500 py-12">촬영된 사진이 없습니다.</div>
+      </div>
+    </section>
+
+    <section class="step-card">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <span class="step-badge">4</span><h2 class="font-semibold">일괄 API 분석</h2>
+        <span id="analysis-progress" class="text-xs text-zinc-400"></span><div class="flex-1"></div>
+        <button id="analyze-all" class="btn btn-primary" type="button" disabled>전체 사진 API 분석</button>
+      </div>
+      <p class="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function, Base URL 및 Claude 모델을 사용합니다. 판독 불가 값은 비워 두며 결과 표에서 직접 보정할 수 있습니다.</p>
+      <div class="overflow-auto max-h-[52vh] border border-zinc-700 rounded-lg">
+        <table class="result-table min-w-[1000px] w-full text-xs">
+          <thead class="bg-zinc-900 sticky top-0"><tr><th class="p-2">사진</th><th class="p-2 text-left">차량번호</th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">시간</th><th class="p-2 text-left">A</th><th class="p-2 text-left">B</th><th class="p-2 text-left">판정</th><th class="p-2 text-left">상태</th></tr></thead>
+          <tbody id="analysis-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="step-card">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <span class="step-badge">5</span><h2 class="font-semibold">엑셀 매칭 및 결과</h2>
+        <span id="match-summary" class="text-xs text-zinc-400"></span><div class="flex-1"></div>
+        <button id="match-workbook" class="btn btn-ghost" type="button" disabled>차량번호 매칭 실행</button>
+        <button id="download-workbook" class="btn btn-primary" type="button" disabled>결과 Excel 다운로드</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div><h3 class="text-sm font-semibold mb-2">처리 결과</h3><div id="match-results" class="text-xs text-zinc-400 space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3"></div></div>
+        <div><h3 class="text-sm font-semibold mb-2">확인 필요 목록</h3><div id="issue-list" class="text-xs space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3"></div></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 translate-y-2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { supabase } from '/js/supabase.js';
+    import { SUPABASE_ANON_KEY, SUPABASE_URL } from '/js/config.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+    const profile = await requireRole('editor');
+    if (!profile) { /* redirected */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
+    document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+    window.appSupabase = supabase;
+    window.appSupabaseUrl = SUPABASE_URL;
+    window.appSupabaseAnonKey = SUPABASE_ANON_KEY;
+  </script>
+
+  <script>
+  'use strict';
+  const MODEL = 'claude-haiku-4-5-20251001';
+  const TABLE_START_ROW = 5;
+  const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, tempPhoto:17 };
+  const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
+차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
+날짜는 YYYY-MM-DD, 시간은 HH:mm 형식으로 통일한다.
+A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
+판독할 수 없는 값은 반드시 null로 반환한다.
+설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
+{"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
+  const state = { templateBuffer:null, templateName:'', captures:[], stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
+  const $ = id => document.getElementById(id);
+
+  $('template-file').addEventListener('change', e => loadTemplate(e.target.files?.[0]));
+  $('camera-start').addEventListener('click', startCamera);
+  $('camera-stop').addEventListener('click', stopCamera);
+  $('camera-capture').addEventListener('click', captureCamera);
+  $('capture-files').addEventListener('change', e => addImageFiles(e.target.files));
+  $('capture-clear').addEventListener('click', clearCaptures);
+  $('analyze-all').addEventListener('click', analyzeAll);
+  $('match-workbook').addEventListener('click', matchWorkbook);
+  $('download-workbook').addEventListener('click', downloadWorkbook);
+  window.addEventListener('beforeunload', stopCamera);
+  renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
+
+  async function loadTemplate(file) {
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const ws = workbook.worksheets[0];
+      if (!ws) throw new Error('첫 번째 시트를 찾을 수 없습니다.');
+      const vehicles = collectVehicleRows(ws);
+      if (!vehicles.length) throw new Error('H열에서 차량번호가 입력된 작업 행을 찾지 못했습니다.');
+      state.templateBuffer = buffer.slice(0);
+      state.templateName = file.name;
+      state.outputWorkbook = null;
+      $('template-info').innerHTML = `<span class="text-emerald-300 font-medium">${escapeHtml(file.name)}</span> · ${escapeHtml(ws.name)} · 차량 행 ${vehicles.length}개 · 기존 온도사진 ${findTemperatureImages(ws).size}개`;
+      toast('템플릿을 불러왔습니다. 기존 삽입 사진을 유지합니다.', 'success');
+      updateButtons();
+    } catch (err) {
+      console.error(err); state.templateBuffer = null;
+      $('template-info').textContent = `템플릿 로드 실패: ${err.message || err}`;
+      toast(`템플릿 로드 실패: ${err.message || err}`, 'error'); updateButtons();
+    }
+  }
+
+  async function startCamera() {
+    try {
+      stopCamera();
+      state.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1440 } }, audio:false });
+      $('camera-video').srcObject = state.stream;
+      await $('camera-video').play();
+      $('camera-capture').disabled = false; $('camera-stop').disabled = false; $('camera-start').disabled = true;
+    } catch (err) { toast(`카메라를 시작하지 못했습니다: ${err.message || err}`, 'error'); }
+  }
+
+  function stopCamera() {
+    state.stream?.getTracks?.().forEach(track => track.stop()); state.stream = null;
+    if ($('camera-video')) $('camera-video').srcObject = null;
+    if ($('camera-capture')) $('camera-capture').disabled = true;
+    if ($('camera-stop')) $('camera-stop').disabled = true;
+    if ($('camera-start')) $('camera-start').disabled = false;
+  }
+
+  async function captureCamera() {
+    const video = $('camera-video');
+    if (!video.videoWidth || !video.videoHeight) return toast('카메라 영상이 준비되지 않았습니다.', 'warn');
+    const dataUrl = cropSourceToFourThree(video, video.videoWidth, video.videoHeight);
+    addCapture(dataUrl, `camera-${String(state.captures.length + 1).padStart(3,'0')}.jpg`);
+  }
+
+  async function addImageFiles(fileList) {
+    for (const file of Array.from(fileList || [])) {
+      if (!file.type.startsWith('image/')) continue;
+      const img = await fileToImage(file);
+      addCapture(cropSourceToFourThree(img, img.naturalWidth, img.naturalHeight), file.name);
+    }
+    $('capture-files').value = '';
+  }
+
+  function cropSourceToFourThree(source, sourceWidth, sourceHeight) {
+    const ratio = 4 / 3;
+    let sx = 0, sy = 0, sw = sourceWidth, sh = sourceHeight;
+    if (sourceWidth / sourceHeight > ratio) { sw = sourceHeight * ratio; sx = (sourceWidth - sw) / 2; }
+    else { sh = sourceWidth / ratio; sy = (sourceHeight - sh) / 2; }
+    const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1200;
+    canvas.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', .88);
+  }
+
+  function addCapture(dataUrl, name) {
+    state.captures.push({ id:crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, name, dataUrl, status:'pending', result:null, error:'' });
+    state.outputWorkbook = null; renderCaptures(); renderAnalysis(); updateButtons();
+  }
+
+  function clearCaptures() {
+    if (!state.captures.length || !confirm('촬영 사진을 모두 삭제할까요?')) return;
+    state.captures = []; state.outputWorkbook = null; renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
+  }
+
+  function renderCaptures() {
+    $('capture-count').textContent = state.captures.length ? `${state.captures.length}장` : '';
+    $('capture-empty').classList.toggle('hidden', state.captures.length > 0);
+    $('capture-grid').innerHTML = state.captures.map((item,index) => `<div class="thumb"><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span><button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
+    $('capture-grid').querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => { state.captures = state.captures.filter(x => x.id !== btn.dataset.remove); state.outputWorkbook=null; renderCaptures(); renderAnalysis(); updateButtons(); }));
+  }
+
+  async function analyzeAll() {
+    if (!state.captures.length) return;
+    const btn = $('analyze-all'); btn.disabled = true; const original = btn.textContent;
+    state.outputWorkbook = null;
+    for (let i=0; i<state.captures.length; i++) {
+      const item = state.captures[i]; item.status='analyzing'; item.error=''; renderAnalysis();
+      btn.textContent = `분석 중 ${i+1}/${state.captures.length}`; $('analysis-progress').textContent = `${i+1}/${state.captures.length}`;
+      try { item.result = normalizeApiResult(await callVision(item.dataUrl)); item.status = 'done'; }
+      catch (err) { console.error(err); item.status='error'; item.error=String(err.message || err); item.result=null; }
+      renderAnalysis();
+    }
+    btn.textContent=original; $('analysis-progress').textContent='분석 완료'; updateButtons();
+    const failed=state.captures.filter(x=>x.status==='error').length;
+    state.issues=state.captures.filter(x=>x.status==='error').map(x=>({item:x.name,message:`API 판독 실패: ${x.error||'응답 오류'}`}));
+    renderOutcome();
+    toast(failed ? `분석 완료 · 성공 ${state.captures.length-failed}장 / 실패 ${failed}장` : `사진 ${state.captures.length}장 분석 완료`, failed?'warn':'success');
+  }
+
+  async function callVision(dataUrl) {
+    const edgeURL = `${String(window.appSupabaseUrl || '').replace(/\/$/,'')}/functions/v1/coupang-vision`;
+    const anonKey = window.appSupabaseAnonKey || '';
+    const [meta,base64] = dataUrl.split(','); const mediaType = meta.match(/^data:([^;]+)/)?.[1] || 'image/jpeg';
+    const res = await fetch(edgeURL,{ method:'POST', headers:{'content-type':'application/json',apikey:anonKey,authorization:`Bearer ${anonKey}`}, body:JSON.stringify({model:MODEL,mediaType,imageBase64:base64,prompt:PROMPT}) });
+    const raw=await res.text(); let payload;
+    try { payload=raw?JSON.parse(raw):null; } catch { throw new Error('API 응답 JSON을 읽지 못했습니다.'); }
+    if (!res.ok || payload?.error) throw new Error(payload?.error || `API HTTP ${res.status}`);
+    return JSON.parse(extractJsonObject(payload?.text || ''));
+  }
+
+  function extractJsonObject(text) {
+    const clean=String(text||'').replace(/```(?:json)?/gi,'').replace(/```/g,'').trim();
+    const start=clean.indexOf('{'), end=clean.lastIndexOf('}');
+    if (start<0 || end<start) throw new Error('API 응답에서 JSON 객체를 찾지 못했습니다.');
+    return clean.slice(start,end+1);
+  }
+
+  function normalizeApiResult(value) {
+    const records=Array.isArray(value?.records)?value.records:[];
+    return { vehicle_number:value?.vehicle_number==null?'':String(value.vehicle_number).trim(), date:normalizeDate(value?.date), records:records.map(r=>({time:normalizeTime(r?.time),a:toNullableNumber(r?.a),b:toNullableNumber(r?.b)})) };
+  }
+
+  function renderAnalysis() {
+    $('analysis-body').innerHTML = state.captures.length ? state.captures.map((item,index) => {
+      const selected=selectRecord(item.result?.records); const temps=chooseTemperatures(selected?.a,selected?.b);
+      return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
+    }).join('') : '<tr><td colspan="8" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
+    $('analysis-body').querySelectorAll('[data-capture]').forEach(row => row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('change', () => updateAnalysisEdit(row.dataset.capture,row))));
+  }
+
+  function updateAnalysisEdit(id,row) {
+    const item=state.captures.find(x=>x.id===id); if(!item)return;
+    const get=f=>row.querySelector(`[data-field="${f}"]`).value;
+    item.result ||= {vehicle_number:'',date:'',records:[]};
+    item.result.vehicle_number=get('vehicle').trim(); item.result.date=normalizeDate(get('date'));
+    item.result.records=[{time:normalizeTime(get('time')),a:toNullableNumber(get('a')),b:toNullableNumber(get('b'))}]; item.status='done'; state.outputWorkbook=null; renderAnalysis(); updateButtons();
+  }
+
+  async function matchWorkbook() {
+    if (!state.templateBuffer) return toast('템플릿을 먼저 업로드하세요.','warn');
+    const analyzed=state.captures.filter(x=>x.status==='done'&&x.result);
+    if (!analyzed.length) return toast('분석 완료된 사진이 없습니다.','warn');
+    const btn=$('match-workbook'); btn.disabled=true; btn.textContent='매칭 중...'; state.issues=[]; state.matchLog=[];
+    state.captures.filter(item=>item.status==='error').forEach(item=>addIssue(item.name,`API 판독 실패: ${item.error||'응답 오류'}`));
+    state.captures.filter(item=>item.status!=='done'&&item.status!=='error').forEach(item=>addIssue(item.name,'API 분석이 완료되지 않았습니다.'));
+    try {
+      const workbook=new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
+      const ws=workbook.worksheets[0]; const vehicleRows=collectVehicleRows(ws); const imageRows=findTemperatureImages(ws);
+      const groups=groupVehicleRows(vehicleRows); const occupied=new Set([...imageRows.keys()].concat(vehicleRows.filter(x=>hasPhotoMarker(ws.getCell(x.row,COL.tempPhoto))).map(x=>x.row)));
+      propagateExistingPhotos(workbook,ws,groups,imageRows,occupied);
+
+      for (const item of analyzed) {
+        const key=normalizeVehicle(item.result.vehicle_number); const group=groups.get(key)||[];
+        if (!key) { addIssue(item.name,'차량번호 판독 실패'); continue; }
+        if (!group.length) { addIssue(item.name,`차량번호 미일치: ${item.result.vehicle_number}`); continue; }
+        const distinct=new Set(group.map(x=>normalizeVehicleFull(x.vehicle)).filter(value=>value.replace(/\D/g,'').length>4));
+        if (distinct.size>1) { addIssue(item.name,`마지막 번호가 같은 차량이 여러 개입니다: ${[...distinct].join(', ')}`); continue; }
+        const target=group.find(x=>!occupied.has(x.row));
+        if (!target) { addIssue(item.name,`차량 ${item.result.vehicle_number}: 사진이 없는 행이 없습니다.`); continue; }
+        const record=selectRecord(item.result.records); const temps=chooseTemperatures(record?.a,record?.b);
+        addImageToCell(workbook,ws,item.dataUrl,COL.tempPhoto,target.row); markPhotoCell(ws,target.row); occupied.add(target.row);
+        writeTemperatureAndDate(ws,target.row,item.result.date,temps,false);
+        state.matchLog.push(`${item.name} → ${target.vehicle} / ${target.row}행`);
+        if (temps.freezer==null && temps.refrigerated==null) addIssue(item.name,'온도값 판독 실패 또는 기준에 맞는 온도 없음');
+      }
+
+      propagateCompletedRows(workbook,ws,groups,occupied);
+      state.outputWorkbook=workbook; state.outputName=buildOutputName(state.templateName); renderOutcome(); updateButtons();
+      toast(`매칭 완료 · ${state.matchLog.length}건 반영 / 확인 ${state.issues.length}건`,state.issues.length?'warn':'success');
+    } catch(err) { console.error(err); state.outputWorkbook=null; toast(`엑셀 매칭 실패: ${err.message||err}`,'error'); }
+    finally { btn.textContent='차량번호 매칭 실행'; updateButtons(); }
+  }
+
+  function collectVehicleRows(ws) {
+    const rows=[]; const last=Math.max(ws.actualRowCount||ws.rowCount||0,TABLE_START_ROW);
+    for(let row=TABLE_START_ROW;row<=last;row++){ const vehicle=cellText(ws.getCell(row,COL.vehicle)); const key=normalizeVehicle(vehicle); if(key)rows.push({row,vehicle,key}); }
+    return rows;
+  }
+
+  function groupVehicleRows(rows) { const map=new Map(); rows.forEach(x=>{if(!map.has(x.key))map.set(x.key,[]);map.get(x.key).push(x);}); return map; }
+
+  function findTemperatureImages(ws) {
+    const map=new Map();
+    for(const image of ws.getImages?.()||[]){ const col=(image.range?.tl?.nativeCol??image.range?.tl?.col??-1)+1; const row=(image.range?.tl?.nativeRow??image.range?.tl?.row??-1)+1; if(col===COL.tempPhoto&&row>=TABLE_START_ROW)map.set(row,image.imageId); }
+    return map;
+  }
+
+  function propagateExistingPhotos(workbook,ws,groups,imageRows,occupied) {
+    for(const group of groups.values()){
+      const source=group.find(x=>imageRows.has(x.row)); if(!source)continue;
+      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`기존 사진 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
+    }
+  }
+
+  function propagateCompletedRows(workbook,ws,groups,occupied) {
+    const imageRows=findTemperatureImages(ws);
+    for(const group of groups.values()){
+      const source=group.find(x=>occupied.has(x.row)&&imageRows.has(x.row)); if(!source)continue;
+      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`중복 차량 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
+    }
+  }
+
+  function copyExistingImage(workbook,ws,imageId,col,row) {
+    const image=workbook.getImage(imageId); if(!image){ addIssue(`${row}행`,'기존 사진 데이터를 복사하지 못했습니다.'); return false; }
+    const newId=workbook.addImage(image.buffer?{buffer:image.buffer,extension:image.extension||'jpeg'}:{base64:image.base64,extension:image.extension||'jpeg'});
+    placeImage(ws,newId,col,row); return true;
+  }
+
+  function addImageToCell(workbook,ws,dataUrl,col,row) { const extension=dataUrl.startsWith('data:image/png')?'png':'jpeg'; const imageId=workbook.addImage({base64:dataUrl.split(',')[1],extension}); placeImage(ws,imageId,col,row); }
+  function placeImage(ws,imageId,col,row) { ws.addImage(imageId,{tl:{col:col-1,row:row-1},br:{col,row},editAs:'oneCell'}); if(!ws.getRow(row).height||ws.getRow(row).height<80)ws.getRow(row).height=90; }
+  function markPhotoCell(ws,row) { if(!cellText(ws.getCell(row,COL.tempPhoto)))ws.getCell(row,COL.tempPhoto).value=' '; }
+  function hasPhotoMarker(cell) { return typeof cell?.value==='string' && /^\s+$/.test(cell.value); }
+  function copyTemperatureAndDate(ws,source,target) { for(const col of [COL.date,COL.freezer,COL.refrigerated])if(!cellText(ws.getCell(target,col)))ws.getCell(target,col).value=ws.getCell(source,col).value; }
+  function writeTemperatureAndDate(ws,row,date,temps,overwrite) { const values=[[COL.freezer,temps.freezer],[COL.refrigerated,temps.refrigerated]]; for(const [col,val] of values)if(val!=null&&(overwrite||!cellText(ws.getCell(row,col))))ws.getCell(row,col).value=val; if(date&&!cellText(ws.getCell(row,COL.date)))ws.getCell(row,COL.date).value=formatTemplateDate(date); }
+
+  function chooseTemperatures(a,b) {
+    const values=[{source:'A',value:toNullableNumber(a)},{source:'B',value:toNullableNumber(b)}].filter(x=>x.value!=null);
+    const freezer=values.find(x=>x.value<=-16)?.value??null;
+    const refrigeratedCandidates=values.filter(x=>x.value>-16&&x.value<=10).sort((x,y)=>{const xp=x.value>=.1&&x.value<=10?0:1,yp=y.value>=.1&&y.value<=10?0:1;return xp-yp||(x.source==='A'?-1:1);});
+    return {freezer,refrigerated:refrigeratedCandidates[0]?.value??null};
+  }
+
+  function selectRecord(records) { const valid=(records||[]).filter(Boolean); return [...valid].sort((a,b)=>String(a.time||'').localeCompare(String(b.time||''))).at(-1)||null; }
+  function normalizeVehicle(value) { const digits=String(value||'').replace(/\D/g,''); return digits.slice(-4); }
+  function normalizeVehicleFull(value) { return String(value||'').replace(/\s+/g,'').toUpperCase(); }
+  function normalizeDate(value) { const s=String(value||'').trim(); const m=s.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$/); return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''; }
+  function normalizeTime(value) { const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/); return m?`${m[1].padStart(2,'0')}:${m[2]}`:''; }
+  function formatTemplateDate(value) { const m=String(value||'').match(/^\d{4}-\d{2}-(\d{2})$/); return m?`${Number(m[1])}일`:value; }
+  function toNullableNumber(value) { if(value===null||value===undefined||String(value).trim()==='')return null; const n=Number(String(value).replace(/℃/g,'').trim()); return Number.isFinite(n)?n:null; }
+  function cellText(cellOrWs,row,col) { const cell=arguments.length===3?cellOrWs.getCell(row,col):cellOrWs; const v=cell?.value; if(v==null)return''; if(typeof v==='object'){if(v.text!=null)return String(v.text).trim();if(v.result!=null)return String(v.result).trim();if(v.richText)return v.richText.map(x=>x.text||'').join('').trim();}return String(v).trim(); }
+  function addIssue(item,message){state.issues.push({item,message});}
+
+  function renderOutcome() {
+    $('match-results').innerHTML=state.matchLog.length?state.matchLog.map(x=>`<div class="status-ok">✓ ${escapeHtml(x)}</div>`).join(''):'아직 매칭을 실행하지 않았습니다.';
+    $('issue-list').innerHTML=state.issues.length?state.issues.map(x=>`<div class="status-warn">⚠ ${escapeHtml(x.item)} · ${escapeHtml(x.message)}</div>`).join(''):'<span class="status-ok">확인 필요 항목 없음</span>';
+    $('match-summary').textContent=state.outputWorkbook?`반영 ${state.matchLog.length}건 · 확인 ${state.issues.length}건`:'';
+  }
+
+  async function downloadWorkbook() {
+    if(!state.outputWorkbook)return;
+    try { const buffer=await state.outputWorkbook.xlsx.writeBuffer(); saveBlob(new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),state.outputName); toast('결과 Excel을 다운로드했습니다.','success'); }
+    catch(err){console.error(err);toast(`다운로드 실패: ${err.message||err}`,'error');}
+  }
+
+  function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result); $('analyze-all').disabled=!state.captures.length||state.captures.some(x=>x.status==='analyzing'); $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; }
+  function statusClass(status){return status==='done'?'status-ok':status==='error'?'status-error':'status-warn';}
+  function statusLabel(item){const count=item.result?.records?.length||0;return item.status==='done'?`분석 완료 (${count}건${count>1?' · 최신시간 사용':''})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
+  function buildOutputName(name){return `${String(name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`;}
+  function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  function fileToImage(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지를 읽지 못했습니다.'));};img.src=url;});}
+  function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function escapeAttr(s){return escapeHtml(s);}
+  let toastTimer; function toast(message,type='info'){const el=$('toast');el.textContent=message;el.className=`fixed left-1/2 bottom-6 z-50 -translate-x-1/2 border rounded-lg px-4 py-2 text-sm shadow-xl ${type==='error'?'bg-rose-950 border-rose-700':type==='warn'?'bg-amber-950 border-amber-700':'bg-zinc-800 border-zinc-700'}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{el.classList.add('opacity-0');},3500);}
+  </script>
+</body>
+</html>

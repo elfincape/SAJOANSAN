@@ -29,7 +29,7 @@
     <h2 class="text-sm font-semibold text-zinc-200 mb-2">사용 안내</h2>
     <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
       <li>필터로 원하는 데이터를 좁힌 뒤(여러 항목 선택 시 교집합), 정렬·포함 컬럼을 조정합니다.</li>
-      <li>미리보기로 확인 후 "다운로드" 버튼을 누르세요. (CSV / XLSX)</li>
+      <li>미리보기로 확인 후 "다운로드" 버튼을 누르세요. 엑셀에서 사용할 때는 데이터 형식이 유지되는 XLSX를 권장합니다.</li>
       <li>모든 컬럼을 포함해 받으면 <code>/admin/import.html</code> 으로 그대로 다시 업로드할 수 있습니다.</li>
     </ol>
   </section>
@@ -45,8 +45,8 @@
         <label class="block">
           <span class="text-xs text-zinc-400">파일 형식</span>
           <select id="opt-format" class="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm">
-            <option value="csv">CSV (UTF-8)</option>
-            <option value="xlsx">XLSX (Excel)</option>
+            <option value="xlsx" selected>XLSX (Excel · 권장)</option>
+            <option value="csv">CSV (UTF-8 · 텍스트 전용)</option>
           </select>
         </label>
 
@@ -337,6 +337,19 @@ function normalizeDeliveryLocation(value) {
   }[v] || v;
 }
 
+// 납품처 사진 컬럼이 없는 이전 DB에서는 압축 사진을 비고에 숨겨 저장했다.
+// 내보내기에서는 내부 사진 데이터와 직접 삽입된 이미지 base64를 제거하고
+// 사용자가 입력한 비고만 남긴다.
+function sanitizeMemoForExport(value) {
+  let memo = String(value ?? '').replace(/<!--dp-photos:[\s\S]*?-->/gi, ' ');
+  memo = memo.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+/gi, ' ');
+  memo = memo
+    .split(/(\s+)/)
+    .filter(part => !(part.length >= 512 && /^[a-z0-9+/=]+$/i.test(part)))
+    .join('');
+  return memo.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // -----------------------------------------------------------------------------
 // 데이터 로드
 // -----------------------------------------------------------------------------
@@ -459,7 +472,7 @@ function rowToFlat(stop) {
     '주소':       dp.address || '',
     '열쇠보관장소': dp.security_key_location || '',
     '비밀번호':   dp.security_password || '',
-    '비고':       stop.memo || dp.memo || '',
+    '비고':       sanitizeMemoForExport(stop.memo || dp.memo || ''),
     _sort: {
       driver_name:  driver.name || '',
       company_name: company.name || '',
@@ -840,7 +853,10 @@ function download() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '코스표');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveBlob(new Blob([buf], { type: 'application/octet-stream' }), buildFilename('xlsx'));
+    saveBlob(
+      new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      buildFilename('xlsx')
+    );
     toast(`XLSX ${data.length}건 다운로드 완료`, 'success');
   }
 }
