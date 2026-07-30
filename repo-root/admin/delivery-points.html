@@ -154,6 +154,17 @@
             </fieldset>
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="app-label">열쇠보관장소</label>
+              <input id="f-security-key-location" class="app-input" placeholder="예: 경비실, 출입문 상단, 키박스">
+            </div>
+            <div>
+              <label class="app-label">비밀번호</label>
+              <input id="f-security-password" class="app-input" placeholder="보안키/키박스/출입문 비밀번호">
+            </div>
+          </div>
+
           <div class="divider"></div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -179,6 +190,20 @@
             </div>
           </div>
 
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <label class="app-label mb-0">납품처 사진</label>
+              <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+            </div>
+            <div id="f-photo-dropzone" tabindex="0" class="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              <input id="f-photo-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" multiple class="mt-3 block w-full max-w-xs text-xs text-zinc-300 file:mr-3 file:rounded file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-xs file:text-zinc-100 hover:file:bg-zinc-600" onchange="window.__handleDeliveryPointPhotoInput && window.__handleDeliveryPointPhotoInput(this);">
+              <span class="font-semibold text-zinc-200">이미지 붙여넣기</span>
+              <span class="mt-1 text-emerald-300">이 영역을 클릭한 뒤 Ctrl+V로 사진을 붙여넣으세요.</span>
+              <span class="mt-1">최대 6장 · HD(1280×720 이내) · 장당 1MB 이하 자동 압축</span>
+            </div>
+            <div id="f-photo-grid" class="grid grid-cols-3 gap-2"></div>
+          </div>
+
           <div>
             <label class="app-label">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
@@ -200,12 +225,14 @@
     import { requireRole, getCurrentProfile } from '/js/auth.js';
     import { bizMinToDisplay, displayToBizMin } from '/js/time.js';
     import { toast, confirmDialog, formatPhone } from '/js/ui.js';
+    import { centerPayload, decorateCenterLinks, forceCenterSelectionFromUrl, getRequiredCenter, mountHeaderCenterSwitcher, requireSelectedCenter, scopeByCenter, withCenterParam } from '/js/center.js';
 
     // -------------------------------------------------------------------------
     // 컬럼 / 스키마 매핑
     //   ※ 컨텍스트의 delivery_points 필드 + 추가 연락처 필드를 확장 매핑한다.
     //     스키마에 contact_name / contact_office / contact_mobile / rep_name /
-    //     rep_phone 컬럼이 없다면 마이그레이션이 필요할 수 있다 (하단 메모 참고).
+    //     rep_phone / security_key_location / security_password 컬럼이 없다면
+    //     마이그레이션이 필요할 수 있다 (하단 메모 참고).
     // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
@@ -213,6 +240,9 @@
     // -------------------------------------------------------------------------
     const profile = await requireRole('editor');
     if (!profile) { /* 리다이렉트 */ }
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
     document.getElementById('user-badge').textContent =
       `${profile.display_name || profile.email || ''} (${profile.role})`;
 
@@ -224,12 +254,18 @@
       filtered: [],
       selectedId: null,
       filters: { search: '', region: '', method: '' },
-      sort: 'code'
+      sort: 'code',
+      draftPhotos: []
     };
 
     // DOM 캐시
     const $ = (id) => document.getElementById(id);
     const tbody = $('dp-tbody');
+
+    const MAX_DELIVERY_POINT_PHOTOS = 6;
+    const MAX_DELIVERY_POINT_PHOTO_BYTES = 1024 * 1024;
+    const DELIVERY_POINT_PHOTO_MAX_WIDTH = 1280;
+    const DELIVERY_POINT_PHOTO_MAX_HEIGHT = 720;
 
     // -------------------------------------------------------------------------
     // 부트
@@ -244,9 +280,9 @@
     async function loadList() {
       $('loading-indicator').classList.remove('hidden');
       try {
-        const { data, error } = await supabase
-          .from('delivery_points')
-          .select('*');
+        const { data, error } = await scopeByCenter(
+          supabase.from('delivery_points').select('*')
+        );
         if (error) throw error;
         state.rows = data || [];
         // 지역 필터 옵션 채우기
@@ -273,7 +309,7 @@
         if (f.region && r.region !== f.region) return false;
         if (f.method && r.delivery_method !== f.method) return false;
         if (q) {
-          const hay = [r.code, r.name, r.address].filter(Boolean).join(' ').toLowerCase();
+          const hay = [r.code, r.name, r.address, r.security_key_location, r.security_password].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -335,12 +371,20 @@
       setRadio('amethod', r?.access_method   || '');
       setRadio('dloc',    r?.delivery_location || '');
 
+      $('f-security-key-location').value = r?.security_key_location || '';
+      $('f-security-password').value     = r?.security_password || '';
+
       $('f-rep-name').value    = r?.rep_name      || '';
       $('f-rep-phone').value   = r?.rep_phone     || '';
       $('f-mgr-name').value    = r?.contact_name  || '';
       $('f-mgr-office').value  = r?.contact_office|| '';
       $('f-mgr-mobile').value  = r?.contact_mobile || r?.contact || '';
-      $('f-memo').value        = r?.memo || '';
+      const legacyMemo = splitLegacyMemoAndPhotos(r?.memo || '');
+      $('f-memo').value        = legacyMemo.memo;
+      state.draftPhotos = parseDeliveryPointPhotos(r?.photos);
+      // 마이그레이션 전 저장된 사진은 한 번만 읽어 새 photos 컬럼으로 옮길 수 있게 한다.
+      if (!state.draftPhotos.length) state.draftPhotos = legacyMemo.photos;
+      renderFormPhotos();
 
       // 헤더
       const isEdit = !!r?.id;
@@ -371,18 +415,18 @@
         delivery_method:   getRadio('dmethod') || null,
         access_method:     getRadio('amethod') || null,
         delivery_location: getRadio('dloc')    || null,
+        security_key_location: emptyToNull($('f-security-key-location').value.trim()),
+        security_password:     emptyToNull($('f-security-password').value.trim()),
 
         deadline_text:         deadlineText ? normalizeTime(deadlineText) : null,
         deadline_business_min: deadlineBiz,
 
-        rep_name:       emptyToNull($('f-rep-name').value.trim()),
-        rep_phone:      emptyToNull($('f-rep-phone').value.trim()),
-        contact_name:   emptyToNull($('f-mgr-name').value.trim()),
-        contact_office: emptyToNull($('f-mgr-office').value.trim()),
-        contact_mobile: emptyToNull($('f-mgr-mobile').value.trim()),
-        // 호환: 단일 contact 컬럼이 있으면 휴대폰을 동기화
+        // 운영 DB 스키마에 없는 담당자/대표자 세부 컬럼은 payload에서 제외한다.
+        // 해당 값을 별도 컬럼으로 저장하려면 DB 마이그레이션 후 이 payload를 확장해야 한다.
+        // 호환: 실제 운영 스키마에는 contact_mobile 컬럼이 없을 수 있으므로 contact 컬럼만 동기화
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
-        memo:           emptyToNull($('f-memo').value.trim())
+        memo:           emptyToNull(stripLegacyPhotoPayload($('f-memo').value)),
+        photos:         state.draftPhotos
       };
     }
 
@@ -390,6 +434,12 @@
     // 이벤트 바인딩
     // -------------------------------------------------------------------------
     function bindEvents() {
+      window.__addDeliveryPointPhotos = addFormPhotos;
+      window.__handleDeliveryPointPhotoInput = handlePhotoInputElement;
+      $('f-photo-input').addEventListener('change', (e) => handlePhotoInputElement(e.currentTarget));
+      document.addEventListener('change', (e) => {
+        if (e.target?.id === 'f-photo-input') handlePhotoInputElement(e.target);
+      }, true);
       $('search-input').addEventListener('input', debounce(() => {
         state.filters.search = $('search-input').value.trim();
         applyAndRender();
@@ -452,6 +502,34 @@
         dl.value = norm;
       });
 
+      $('f-photo-dropzone').addEventListener('paste', async (e) => {
+        const files = imageFilesFromClipboard(e.clipboardData);
+        if (!files.length) return;
+        e.preventDefault();
+        await addFormPhotos(files);
+      });
+      document.addEventListener('paste', async (e) => {
+        const active = document.activeElement;
+        const shouldHandle = active === $('f-photo-dropzone') || active === document.body;
+        if (!shouldHandle) return;
+        const files = imageFilesFromClipboard(e.clipboardData);
+        if (!files.length) return;
+        e.preventDefault();
+        await addFormPhotos(files);
+      });
+      $('f-photo-dropzone').addEventListener('dragover', (e) => {
+        e.preventDefault();
+        $('f-photo-dropzone').classList.add('border-emerald-500', 'text-emerald-200');
+      });
+      $('f-photo-dropzone').addEventListener('dragleave', () => {
+        $('f-photo-dropzone').classList.remove('border-emerald-500', 'text-emerald-200');
+      });
+      $('f-photo-dropzone').addEventListener('drop', async (e) => {
+        e.preventDefault();
+        $('f-photo-dropzone').classList.remove('border-emerald-500', 'text-emerald-200');
+        await addFormPhotos(Array.from(e.dataTransfer?.files || []).filter(isProbablyImageFile));
+      });
+
       // 저장
       $('dp-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -503,14 +581,10 @@
       $('btn-save').disabled = true;
       try {
         // id 없으면 신규
-        const payload = { ...row };
+        const payload = centerPayload({ ...row });
         if (!payload.id) delete payload.id;
 
-        const { data, error } = await supabase
-          .from('delivery_points')
-          .upsert(payload, { onConflict: 'id' })
-          .select()
-          .single();
+        const { data, error, removedColumns } = await upsertDeliveryPointPayload(payload);
 
         if (error) {
           // 코드 unique 위반 등
@@ -522,16 +596,51 @@
           return;
         }
 
+        if (removedColumns.length) {
+          console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
+        }
         toast(row.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
         // 목록 갱신 + 방금 저장한 행 선택 유지
         const savedId = data.id;
         await loadList();
         selectRow(savedId);
       } catch (e) {
-        toast('저장 중 오류가 발생했습니다.', 'error');
+        console.error('[delivery-points] 저장 후 처리 중 오류', e);
       } finally {
         $('btn-save').disabled = false;
       }
+    }
+
+
+    async function upsertDeliveryPointPayload(initialPayload) {
+      const payload = { ...initialPayload };
+      const removedColumns = [];
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const { data, error } = await supabase
+          .from('delivery_points')
+          .upsert(payload, { onConflict: 'id' })
+          .select()
+          .single();
+        if (!error) return { data, error: null, removedColumns };
+        const missingColumn = extractMissingSchemaColumn(error);
+        if (!missingColumn || !(missingColumn in payload)) return { data: null, error, removedColumns };
+        if (missingColumn === 'photos') {
+          return {
+            data: null,
+            error: { message: '사진 저장 컬럼이 없습니다. delivery-point-photos.sql을 먼저 실행해 주세요.' },
+            removedColumns
+          };
+        }
+        delete payload[missingColumn];
+        removedColumns.push(missingColumn);
+      }
+      return { data: null, error: { message: '스키마 컬럼 재시도 횟수를 초과했습니다.' }, removedColumns };
+    }
+
+    function extractMissingSchemaColumn(error) {
+      const message = error?.message || '';
+      const match = message.match(/Could not find the '([^']+)' column/);
+      return match?.[1] || '';
     }
 
     // -------------------------------------------------------------------------
@@ -567,6 +676,7 @@
         const { error } = await supabase
           .from('delivery_points')
           .delete()
+          .eq('center_code', getRequiredCenter().code)
           .eq('id', id);
         if (error) {
           if (error.code === '23503') {
@@ -588,20 +698,234 @@
     // 헬퍼
     // -------------------------------------------------------------------------
 
+
+
+    function splitLegacyMemoAndPhotos(memo) {
+      const raw = String(memo || '');
+      const marker = '<!--dp-photos:';
+      const markerEnd = '-->';
+      const start = raw.indexOf(marker);
+      if (start < 0) return { memo: raw, photos: [] };
+      const end = raw.indexOf(markerEnd, start);
+      if (end < 0) return { memo: raw, photos: [] };
+      const encoded = raw.slice(start + marker.length, end).trim();
+      const cleanMemo = (raw.slice(0, start) + raw.slice(end + markerEnd.length)).trim();
+      try {
+        const json = decodeURIComponent(escape(atob(encoded)));
+        return { memo: cleanMemo, photos: parseDeliveryPointPhotos(JSON.parse(json)) };
+      } catch {
+        return { memo: cleanMemo, photos: [] };
+      }
+    }
+
+    function stripLegacyPhotoPayload(memo) {
+      return String(memo || '').replace(/<!--dp-photos:[\s\S]*?-->/g, '').trim();
+    }
+
+    function parseDeliveryPointPhotos(value) {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS);
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed.filter(p => p && p.dataUrl).slice(0, MAX_DELIVERY_POINT_PHOTOS) : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    }
+
+
+    async function handlePhotoInputElement(input) {
+      if (!input || input.dataset.photoBusy === '1') return;
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      input.dataset.photoBusy = '1';
+      try {
+        await addFormPhotos(files);
+      } finally {
+        input.value = '';
+        delete input.dataset.photoBusy;
+      }
+    }
+
+    async function addFormPhotos(files) {
+      if (!files.length) return;
+      const remaining = MAX_DELIVERY_POINT_PHOTOS - state.draftPhotos.length;
+      if (remaining <= 0) {
+        toast('사진은 납품처당 최대 6장까지 등록할 수 있습니다.', 'warn');
+        return;
+      }
+      const imageFiles = files.filter(isProbablyImageFile);
+      if (!imageFiles.length) {
+        renderPhotoMessage('이미지 파일을 찾지 못했습니다. JPG/PNG/WebP 파일을 선택하거나 복사해주세요.', 'warn');
+        return;
+      }
+      const selected = imageFiles.slice(0, remaining);
+      if (files.length > remaining) toast(`최대 6장까지만 등록되어 ${remaining}장만 추가합니다.`, 'warn');
+      renderPhotoMessage('사진을 불러와 압축하는 중입니다...', 'info');
+      try {
+        for (const file of selected) {
+          const photo = await compressDeliveryPointPhoto(file);
+          state.draftPhotos.push(photo);
+          renderFormPhotos();
+        }
+        renderFormPhotos();
+        toast('사진이 추가되었습니다. 저장 버튼을 눌러 반영하세요.', 'success');
+      } catch (err) {
+        renderPhotoMessage(err?.message || '사진 처리 중 오류가 발생했습니다.', 'error');
+        console.error('[delivery-points] 사진 처리 실패', err);
+      }
+    }
+
+    function isProbablyImageFile(file) {
+      if (!file) return false;
+      if (file.type?.startsWith('image/')) return true;
+      return /\.(jpe?g|png|webp|gif)$/i.test(file.name || '');
+    }
+
+    function renderPhotoMessage(message, type = 'info') {
+      const grid = $('f-photo-grid');
+      if (!grid) return;
+      const color = type === 'error' ? 'text-red-300' : type === 'warn' ? 'text-amber-300' : 'text-emerald-300';
+      grid.innerHTML = `<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs ${color}">${escapeHtml(message)}</div>`;
+    }
+
+    function renderFormPhotos() {
+      const grid = $('f-photo-grid');
+      const count = $('f-photo-count');
+      if (!grid || !count) return;
+      count.textContent = `${state.draftPhotos.length}/${MAX_DELIVERY_POINT_PHOTOS}`;
+      if (!state.draftPhotos.length) {
+        grid.innerHTML = '<div class="col-span-3 rounded border border-zinc-700 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-500">등록된 사진이 없습니다.</div>';
+        return;
+      }
+      grid.innerHTML = state.draftPhotos.map((photo, idx) => `
+        <div class="relative overflow-hidden rounded border border-zinc-700 bg-zinc-900">
+          <button type="button" data-photo-view="${idx}" class="block h-24 w-full">
+            <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
+          </button>
+          <button type="button" data-photo-delete="${idx}" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
+        </div>`).join('');
+      grid.querySelectorAll('[data-photo-view]').forEach(btn => {
+        btn.addEventListener('click', () => openPhotoPreview(state.draftPhotos[Number(btn.dataset.photoView)]));
+      });
+      grid.querySelectorAll('[data-photo-delete]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.draftPhotos.splice(Number(btn.dataset.photoDelete), 1);
+          renderFormPhotos();
+        });
+      });
+    }
+
+    async function compressDeliveryPointPhoto(file) {
+      if (!isProbablyImageFile(file)) throw new Error('이미지 파일만 업로드할 수 있습니다.');
+
+      const rawDataUrl = await fileToDataUrl(file);
+      const rawPhoto = {
+        id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: file.name || 'delivery-point-photo',
+        type: file.type || 'image/jpeg',
+        size: file.size || rawDataUrl.length,
+        dataUrl: rawDataUrl,
+        createdAt: new Date().toISOString()
+      };
+
+      // 우선 업로드/미리보기 자체가 항상 되도록 FileReader 결과를 확보한다.
+      // 1MB 이하 이미지는 추가 디코딩/캔버스 과정 없이 바로 등록한다.
+      if ((file.size || 0) <= MAX_DELIVERY_POINT_PHOTO_BYTES) return rawPhoto;
+
+      // 큰 이미지만 캔버스 압축을 시도하고, 브라우저가 디코딩하지 못하면 원본으로라도 등록한다.
+      try {
+        const bitmap = await fileToImage(file);
+        const ratio = Math.min(1, DELIVERY_POINT_PHOTO_MAX_WIDTH / bitmap.naturalWidth, DELIVERY_POINT_PHOTO_MAX_HEIGHT / bitmap.naturalHeight);
+        const width = Math.max(1, Math.round(bitmap.naturalWidth * ratio));
+        const height = Math.max(1, Math.round(bitmap.naturalHeight * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54, 0.46]) {
+          const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+          if (blob.size <= MAX_DELIVERY_POINT_PHOTO_BYTES) {
+            return {
+              ...rawPhoto,
+              name: file.name || 'delivery-point-photo.jpg',
+              type: 'image/jpeg',
+              size: blob.size,
+              dataUrl: await blobToDataUrl(blob)
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[delivery-points] 이미지 압축 실패, 원본 data URL로 등록합니다.', err);
+      }
+      return rawPhoto;
+    }
+
+    function fileToImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했습니다.')); };
+        img.src = url;
+      });
+    }
+    function canvasToBlob(canvas, type, quality) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('브라우저가 이미지를 압축하지 못했습니다.'));
+        }, type, quality);
+      });
+    }
+    function blobToDataUrl(blob) {
+      return fileToDataUrl(blob);
+    }
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+        reader.readAsDataURL(file);
+      });
+    }
+    function openPhotoPreview(photo) {
+      if (!photo?.dataUrl) return;
+      const win = window.open('', '_blank', 'noopener,noreferrer');
+      if (win) win.document.write(`<img src="${photo.dataUrl}" style="max-width:100%;height:auto;display:block;margin:0 auto;">`);
+    }
+
+    function imageFilesFromClipboard(clipboardData) {
+      const items = Array.from(clipboardData?.items || []);
+      return items
+        .filter(item => item.kind === 'file' && item.type?.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+    }
+
     // 시간 입력 정규화: "9:5" → "09:05", 한 자리들 보정
     function normalizeTime(str) {
       if (!str) return '';
-      const s = str.trim();
-      const m = s.match(/^(\d{1,2})\s*[:.시]\s*(\d{1,2})\s*분?$/);
+      const s = String(str).trim();
+      const m = s.match(/^(\d{1,2})\s*[:.시]\s*(\d{1,2})(?:\s*분)?(?:\s*(AM|PM|오전|오후))?$/i);
       if (!m) return '';
-      const h = parseInt(m[1], 10);
+      let h = parseInt(m[1], 10);
       const mn = parseInt(m[2], 10);
+      const meridiem = (m[3] || '').toUpperCase();
       if (Number.isNaN(h) || Number.isNaN(mn)) return '';
       if (mn < 0 || mn > 59) return '';
-      // 표시는 24시 넘김 표기를 그대로 허용 (04~27)
-      if (h < 0 || h > 27) return '';
-      // 04 미만(00~03)은 다음날 의미. 표시 자체는 그대로 두지만
-      // 너무 이른 시간(04 미만이면서 +24 적용 후 28시 이상)은 차단됨
+      if (meridiem === 'PM' || meridiem === '오후') {
+        if (h >= 1 && h <= 11) h += 12;
+      } else if (meridiem === 'AM' || meridiem === '오전') {
+        if (h === 12) h = 0;
+      }
+      if (h < 0 || h > 23) return '';
       return `${String(h).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
     }
 

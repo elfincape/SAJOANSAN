@@ -58,6 +58,41 @@
 
     /* ── 파싱 경고 행 ──────────────────────────────── */
     .row-warn td { color: #f59e0b; }
+
+    /* ── 결과 행 드래그 정렬 ─────────────────────────── */
+    #result-body tr.result-row {
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    #result-body tr.result-row.dragging {
+      opacity: 0.62;
+      background: rgba(16, 185, 129, 0.12);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+    #result-body tr.result-row.drag-over {
+      outline: 1px solid rgba(16, 185, 129, 0.75);
+      outline-offset: -1px;
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .drag-handle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 0.45rem;
+      color: #94a3b8;
+      cursor: grab;
+      user-select: none;
+      transition: color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+    }
+    .drag-handle:hover {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+      transform: scale(0.96);
+    }
   </style>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
@@ -145,7 +180,7 @@
         </svg>
         <p class="text-xs text-zinc-400">
           열 제목(거래처명·톤수·기사명·차량번호·연락처·결과값)을 클릭하면
-          해당 열의 전체 값이 복사됩니다. 엑셀·스프레드시트에 바로 붙여넣기 가능합니다.
+          해당 열의 전체 값이 복사됩니다. 결과 행은 왼쪽 핸들을 끌어서 순서를 바꿀 수 있습니다.
         </p>
       </div>
     </section>
@@ -168,7 +203,11 @@
   <!-- ── 인증 (editor 이상만 접근) ──────────────────────── -->
   <script type="module">
     import { requireRole } from '/js/auth.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
     const profile = await requireRole('editor');
+    await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
+    decorateCenterLinks(document);
     if (!profile) { /* 리다이렉트 됨 */ }
     const badge = document.getElementById('user-badge');
     if (badge) badge.textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
@@ -223,6 +262,37 @@
     return { name, ton };
   }
 
+  function parseDispatchName(rawName, { batch = false } = {}) {
+    const cleaned = String(rawName || '').replace(/\s+/g, ' ').trim();
+    if (!batch) return cleaned;
+    // N대 묶음 배차에서 첫 토큰은 거래처명, 뒤 토큰은 지점/상차지로 오는 경우가 많음
+    // 예: "한마루 곤지암 11톤 2대" → 거래처명 "한마루"
+    return cleaned.split(/\s+/)[0] || cleaned;
+  }
+
+  function parseTonCountSpecs(line) {
+    const specs = [];
+    const re = /(\d+(?:\.\d+)?(?:톤|축))\s*(\d+)\s*대/g;
+    let match;
+    while ((match = re.exec(line)) !== null) {
+      const count = Number(match[2]);
+      if (Number.isFinite(count) && count > 0) {
+        specs.push({ ton: match[1], count });
+      }
+    }
+    return specs;
+  }
+
+  function expandTonCounts(specs) {
+    return specs.flatMap(spec => Array.from({ length: spec.count }, () => spec.ton));
+  }
+
+  function parseBatchNameTon(line, specs) {
+    const firstSpecIndex = line.search(/\d+(?:\.\d+)?(?:톤|축)\s*\d+\s*대/);
+    const namePart = firstSpecIndex >= 0 ? line.slice(0, firstSpecIndex).trim() : parseNameTon(line).name;
+    return { name: parseDispatchName(namePart, { batch: specs.length > 0 }), tons: expandTonCounts(specs) };
+  }
+
   function parseDriverVehicle(line) {
     const parts = line.trim().split(/\s+/);
     return { driver: parts[0] || '', vehicle: parts[1] || '' };
@@ -247,6 +317,25 @@
         if (!hasTonnage(lines[i])) { i++; continue; }
         // 남은 줄이 3줄 미만이면 중단
         if (i + 2 >= lines.length) break;
+
+        const batchSpecs = parseTonCountSpecs(lines[i]);
+        if (batchSpecs.length > 0) {
+          const { name, tons } = parseBatchNameTon(lines[i], batchSpecs);
+          if (!name) { i++; continue; }
+
+          let offset = 1;
+          let parsedCount = 0;
+          for (const ton of tons) {
+            if (i + offset + 1 >= lines.length) break;
+            const { driver, vehicle } = parseDriverVehicle(lines[i + offset]);
+            const phone = normalizePhone(lines[i + offset + 1]);
+            results.push({ name, ton, driver, vehicle, phone, _warn: !driver || !vehicle || !ton });
+            parsedCount++;
+            offset += 2;
+          }
+          i += parsedCount > 0 ? 1 + parsedCount * 2 : 1;
+          continue;
+        }
 
         const { name, ton }       = parseNameTon(lines[i]);
         const { driver, vehicle } = parseDriverVehicle(lines[i + 1]);
@@ -293,7 +382,7 @@
   }
 
   /* ─── 결과 렌더링 ────────────────────────────────── */
-  function renderResults(records) {
+  function renderResults(records, { preserveScroll = false } = {}) {
     const section = el('result-section');
     const body    = el('result-body');
     el('result-count').textContent = `${records.length}건`;
@@ -311,8 +400,11 @@
     body.innerHTML = records.map((r, i) => {
       const rv = `${r.name}\\${r.ton}\\${r.driver}\\${r.vehicle}\\${r.phone}`;
       return `
-        <tr class="${r._warn ? 'row-warn' : ''}">
-          <td class="text-center text-zinc-500 text-xs select-none">${i + 1}</td>
+        <tr class="result-row ${r._warn ? 'row-warn' : ''}" draggable="true" data-index="${i}">
+          <td class="text-center text-zinc-500 text-xs select-none">
+            <span class="drag-handle" title="끌어서 순서 변경" aria-label="순서 변경">⋮⋮</span>
+            <span class="row-number">${i + 1}</span>
+          </td>
           <td class="font-medium">${esc(r.name)}</td>
           <td class="text-center text-zinc-300">${esc(r.ton) || '<span class="text-zinc-600">-</span>'}</td>
           <td>${esc(r.driver) || '<span class="text-zinc-600">-</span>'}</td>
@@ -321,6 +413,8 @@
           <td class="result-cell text-emerald-400 font-mono text-xs" title="${esc(rv)}">${esc(rv)}</td>
         </tr>`;
     }).join('');
+
+    bindResultDragAndDrop(body);
 
     // ── 열 헤더 클릭 → 해당 열 전체 값 복사 ──────────
     document.querySelectorAll('th.col-copy').forEach(th => {
@@ -340,7 +434,7 @@
     });
 
     section.classList.remove('hidden');
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!preserveScroll) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     // 전체 결과값 복사 (쉼표 구분)
     el('copy-all-btn').onclick = () => {
@@ -358,6 +452,50 @@
       );
       copyToClipboard([header, ...rows].join('\n'), `전체 ${records.length}건 TSV 복사됨`);
     };
+  }
+
+
+  function bindResultDragAndDrop(body) {
+    let dragIndex = null;
+
+    body.querySelectorAll('tr.result-row').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        dragIndex = Number(row.dataset.index);
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(dragIndex));
+      });
+
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        row.classList.add('drag-over');
+        e.dataTransfer.dropEffect = 'move';
+      });
+
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const from = dragIndex ?? Number(e.dataTransfer.getData('text/plain'));
+        const to = Number(row.dataset.index);
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+        moveRecord(from, to);
+      });
+
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        body.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        dragIndex = null;
+      });
+    });
+  }
+
+  function moveRecord(from, to) {
+    const [item] = _records.splice(from, 1);
+    _records.splice(to, 0, item);
+    renderResults(_records, { preserveScroll: true });
+    showToast(`순서 변경: ${from + 1} → ${to + 1}`);
   }
 
   /* ─── 클립보드 ──────────────────────────────────── */
