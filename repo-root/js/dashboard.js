@@ -910,9 +910,7 @@ function openDetailModal(r) {
           <div class="text-xs text-zinc-400 mt-0.5">${escapeHtml(r.dp_code || '')} · ${escapeHtml(r.dp_region || '')}</div>
         </div>
         <div class="flex items-center gap-2">
-          ${routeEditHref
-            ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>`
-            : ''}
+          ${routeEditHref ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>` : ''}
           <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
         </div>
       </div>
@@ -968,7 +966,6 @@ function openDetailModal(r) {
         override_delivery_location: toNullable(wrap.querySelector('#quick-dloc')?.value),
         memo: toNullable(wrap.querySelector('#quick-memo')?.value)
       });
-
       const { error } = await scopeByCenter(
         supabase.from('route_stops').update(payload).eq('id', stopId)
       );
