@@ -169,27 +169,18 @@
           <div class="text-xs text-zinc-500">복붙 입력을 지원합니다. 기사명과 차량번호 조합은 한 행으로 유지됩니다.</div>
         </div>
       </div>
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div class="lg:col-span-2">
-          <label class="app-label">추가 구분</label>
-          <select id="add-role" class="app-select">
-            <option value="광역">광역</option>
-            <option value="임시">임시</option>
-            <option value="고정">고정</option>
-          </select>
-        </div>
-        <div class="lg:col-span-3">
-          <label class="app-label">운송사</label>
-          <input id="add-carrier" class="app-input" placeholder="비우면 공통 운송사 사용">
-        </div>
-        <div class="lg:col-span-7">
+      <div class="grid grid-cols-1 gap-3">
+        <div>
           <label class="app-label">복붙 입력</label>
-          <textarea id="add-text" rows="4" class="app-input font-mono text-xs" placeholder="예)\n홍길동 경기12가3456\n이찬모 경기92아5150\n윤현식 경기92바6221"></textarea>
+          <textarea id="add-text" rows="7" class="app-input font-mono text-xs" placeholder="예)
+수출	알앤지	경기87바4726	2.5톤	010-4588-2140
+광역	김해센터	경기91아7148	11톤	010-2296-9397
+임시차	롯데슈퍼신갈	경기86아6092	1톤	010-4028-6828"></textarea>
         </div>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
-        <button id="add-rows-btn" class="btn btn-primary" disabled>선택 구분에 행 추가</button>
-        <span class="text-xs text-zinc-500">차량번호 패턴을 찾아 앞쪽을 기사명으로 인식합니다. 탭/쉼표 입력도 가능합니다.</span>
+        <button id="add-rows-btn" class="btn btn-primary" disabled>자동 분류해서 행 추가</button>
+        <span class="text-xs text-zinc-500">첫 칸이 ‘광역’이면 광역, 그 외 수출/온라인/쿠팡/임시차 등은 모두 임시로 자동 분류합니다. 운송사는 이안물류로 입력됩니다.</span>
       </div>
     </section>
 
@@ -446,45 +437,56 @@
       toast('먼저 템플릿 Excel을 업로드하세요.', 'error');
       return;
     }
-    const role = normalizeRole($('add-role').value) || '임시';
     const text = $('add-text').value.trim();
-    const parsed = parseDriverVehicleText(text);
+    const parsed = parseAdditionalVehicleRows(text);
     if (!parsed.length) {
-      toast('추가할 기사/차량 정보를 입력하세요.', 'error');
+      toast('추가할 차량 정보를 입력하세요.', 'error');
       return;
     }
 
-    const carrier = $('add-carrier').value.trim() || $('default-carrier').value.trim();
-    const newRows = parsed.map(item => makeNewRow(role, item.dm, item.vehicle_no, carrier));
-    insertRowsByRole(newRows, role);
+    const newRows = parsed.map(item => makeNewRow(item.role, item.dm, item.vehicle_no, '이안물류'));
+    ROLE_ORDER.forEach(role => {
+      const rows = newRows.filter(row => row.vehicle_type === role);
+      if (rows.length) insertRowsByRole(rows, role);
+    });
     sortRowsByRole();
     renumberRows();
     renderRows();
     $('add-text').value = '';
-    toast(`${role} ${newRows.length}행을 추가했습니다.`, 'success');
+    const counts = ROLE_ORDER.map(role => `${role} ${newRows.filter(row => row.vehicle_type === role).length}건`).join(', ');
+    toast(`추가 완료: ${counts}`, 'success');
   }
 
-  function parseDriverVehicleText(text) {
-    const result = [];
-    text.split(/\n+/).forEach(line => {
-      const cleaned = line.trim();
-      if (!cleaned) return;
-      const parts = cleaned.split(/\t|,/).map(v => v.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        result.push({ dm: parts[0], vehicle_no: parts[1] });
-        return;
-      }
-      const match = cleaned.match(/^(.*?)([가-힣]{2,}\d{1,3}[가-힣]\d{4}|\d{2,3}[가-힣]\d{4}|[가-힣]{2,}\s?\d{2,3}[가-힣]\d{4})\s*$/);
-      if (match) {
-        result.push({ dm: match[1].trim(), vehicle_no: match[2].replace(/\s+/g, '') });
-        return;
-      }
-      const tokens = cleaned.split(/\s+/);
-      if (tokens.length >= 2) {
-        result.push({ dm: tokens.slice(0, -1).join(' '), vehicle_no: tokens.at(-1) });
-      }
-    });
-    return result.filter(item => item.dm || item.vehicle_no);
+  function parseAdditionalVehicleRows(text) {
+    return text
+      .split(/\n+/)
+      .map(line => parseAdditionalVehicleLine(line))
+      .filter(Boolean);
+  }
+
+  function parseAdditionalVehicleLine(line) {
+    const cleaned = line.trim();
+    if (!cleaned) return null;
+    const parts = (cleaned.includes('\t') ? cleaned.split(/\t+/) : cleaned.split(/,/)).map(v => v.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const category = parts[0];
+      return {
+        role: category === '광역' ? '광역' : '임시',
+        dm: parts[1] || '',
+        vehicle_no: parts[2] || ''
+      };
+    }
+
+    const vehicleMatch = cleaned.match(/([가-힣]{2,}\s?\d{1,3}[가-힣]\d{4}|\d{2,3}[가-힣]\d{4})/);
+    if (!vehicleMatch) return null;
+    const beforeVehicle = cleaned.slice(0, vehicleMatch.index).trim();
+    const tokens = beforeVehicle.split(/\s+/).filter(Boolean);
+    const category = tokens.shift() || '';
+    return {
+      role: category === '광역' ? '광역' : '임시',
+      dm: tokens.join(' '),
+      vehicle_no: vehicleMatch[1].replace(/\s+/g, '')
+    };
   }
 
   function makeNewRow(role, dm, vehicleNo, carrier) {
@@ -578,23 +580,41 @@
     renumberRows();
     const requiredCount = state.rows.length;
     const existingCount = Math.max(state.sourceRowCount, 0);
-    if (requiredCount > existingCount) {
-      worksheet.spliceRows(TABLE_START_ROW + existingCount, 0, ...Array.from({ length: requiredCount - existingCount }, () => []));
-    } else if (requiredCount < existingCount) {
-      worksheet.spliceRows(TABLE_START_ROW + requiredCount, existingCount - requiredCount);
-    }
 
-    state.rows.forEach((record, offset) => {
+    for (let offset = 0; offset < requiredCount; offset++) {
+      const record = state.rows[offset];
       const rowNumber = TABLE_START_ROW + offset;
-      const row = worksheet.getRow(rowNumber);
       const styleRowNumber = findStyleRowNumber(record.vehicle_type, offset);
       copyRowStyle(worksheet, styleRowNumber, rowNumber);
-      FIELDS.forEach(field => {
-        const cell = row.getCell(COLS[field]);
-        cell.value = normalizeCellValue(record[field]);
-      });
-      row.commit?.();
+      writeRecordToRow(worksheet.getRow(rowNumber), record);
+    }
+
+    for (let offset = requiredCount; offset < existingCount; offset++) {
+      clearOutputRow(worksheet.getRow(TABLE_START_ROW + offset));
+    }
+  }
+
+  function writeRecordToRow(row, record) {
+    FIELDS.forEach(field => {
+      setPlainCellValue(row.getCell(COLS[field]), normalizeCellValue(record[field]));
     });
+    row.commit?.();
+  }
+
+  function clearOutputRow(row) {
+    FIELDS.forEach(field => setPlainCellValue(row.getCell(COLS[field]), null));
+    row.commit?.();
+  }
+
+  function setPlainCellValue(cell, value) {
+    cell.value = value;
+    if (cell.model) {
+      delete cell.model.formula;
+      delete cell.model.sharedFormula;
+      delete cell.model.result;
+      delete cell.model.si;
+      delete cell.model.ref;
+    }
   }
 
   function findStyleRowNumber(role, offset) {
