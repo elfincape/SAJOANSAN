@@ -6,7 +6,7 @@
 
 import { supabase }                              from './supabase.js';
 import { requireRole, getCurrentProfile, signOut } from './auth.js';
-import { bizMinToStandard }                      from './time.js';
+import { bizMinToStandard, displayToBizMin }     from './time.js';
 import { toast, openModal, closeModal, formatPhone } from './ui.js';
 import {
   centerPayload,
@@ -914,38 +914,33 @@ function openDetailModal(r) {
           <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
         </div>
       </div>
-      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <dt class="muted">코스</dt>          <dd>${escapeHtml(r.route_name || '')} <span class="text-zinc-500">${escapeHtml(r.car_number || '')}</span></dd>
-        <dt class="muted">운수사</dt>        <dd>${escapeHtml(r.company_name || '')}</dd>
-        <dt class="muted">주기사 / 차량</dt> <dd>${escapeHtml(r.primary_driver_name || '')} / ${escapeHtml(r.primary_vehicle_plate || '')} ${r.primary_vehicle_tonnage ? '· ' + r.primary_vehicle_tonnage + 't' : ''}</dd>
-        <dt class="muted">보조</dt>          <dd>${escapeHtml(r.secondary_driver_name || '-')} / ${escapeHtml(r.secondary_vehicle_plate || '-')}</dd>
-        <dt class="muted">순서</dt>          <dd>${r.stop_order ?? ''}</dd>
-        <dt class="muted">입차</dt>          <dd class="biz-time">${bizMinToStandard(r.arrival_business_min)}</dd>
-        <dt class="muted">하차 시작 / 종료</dt><dd class="biz-time">${bizMinToStandard(r.unloading_start_business_min)} ~ ${bizMinToStandard(r.unloading_end_business_min)}</dd>
-        <dt class="muted">마감</dt>          <dd class="biz-time">${bizMinToStandard(r.effective_deadline_business_min)}</dd>
-        <dt class="muted">납품방식</dt>      <dd>${renderOverridable(r.delivery_method,   r.override_delivery_method)}</dd>
-        <dt class="muted">진입방식</dt>      <dd>${renderOverridable(r.access_method,     r.override_access_method)}</dd>
-        <dt class="muted">납품장소</dt>      <dd>${renderOverridable(r.delivery_location, r.override_delivery_location)}</dd>
-        <dt class="muted">열쇠보관장소</dt>  <dd>${escapeHtml(r.security_key_location || '-')}</dd>
-        <dt class="muted">비밀번호</dt>      <dd>${escapeHtml(r.security_password || '-')}</dd>
-        <dt class="muted">진입조건</dt>      <dd>${renderEntryCond(r)}</dd>
-        <dt class="muted">주소</dt>          <dd>${escapeHtml(r.dp_address || '')}</dd>
-        <dt class="muted">연락처</dt>        <dd>${telLink || '-'}</dd>
-        <dt class="muted">비고</dt>          <dd class="whitespace-pre-line">${escapeHtml(r.stop_memo || '')}</dd>
-      </dl>
-      ${stopId ? `
-      <div class="mt-4 pt-4 border-t border-zinc-700">
-        <h3 class="text-sm font-semibold mb-2">팝업에서 바로 수정</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-          <input id="quick-dmethod" class="app-input" placeholder="납품방식" value="${escapeAttr(r.override_delivery_method ?? '')}">
-          <input id="quick-amethod" class="app-input" placeholder="진입방식" value="${escapeAttr(r.override_access_method ?? '')}">
-          <input id="quick-dloc" class="app-input" placeholder="납품장소" value="${escapeAttr(r.override_delivery_location ?? '')}">
+      <div class="mt-1">
+        <h3 class="text-sm font-semibold mb-2">팝업 전체 수정</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+          <label class="space-y-1"><span class="muted">코스명</span><input id="edit-route-name" class="app-input" value="${escapeAttr(r.route_name || '')}"></label>
+          <label class="space-y-1"><span class="muted">호차</span><input id="edit-car-number" class="app-input" value="${escapeAttr(r.car_number || '')}"></label>
+          <label class="space-y-1"><span class="muted">운수사</span><select id="edit-company" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">주기사</span><select id="edit-driver1" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">보조기사</span><select id="edit-driver2" class="app-select"></select></label>
+          <label class="space-y-1"><span class="muted">순서</span><input id="edit-stop-order" type="number" min="1" class="app-input" value="${escapeAttr(r.stop_order ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">입차</span><input id="edit-arrival" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.arrival_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">하차시작</span><input id="edit-unload-start" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_start_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">하차종료</span><input id="edit-unload-end" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.unloading_end_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">마감</span><input id="edit-deadline" class="app-input biz-time" value="${escapeAttr(bizMinToStandard(r.effective_deadline_business_min) || '')}"></label>
+          <label class="space-y-1"><span class="muted">납품방식</span><input id="edit-dmethod" class="app-input" value="${escapeAttr(r.override_delivery_method ?? r.delivery_method ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">진입방식</span><input id="edit-amethod" class="app-input" value="${escapeAttr(r.override_access_method ?? r.access_method ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">납품장소</span><input id="edit-dloc" class="app-input" value="${escapeAttr(r.override_delivery_location ?? r.delivery_location ?? '')}"></label>
+          <label class="space-y-1"><span class="muted">열쇠보관장소</span><input id="edit-key" class="app-input" value="${escapeAttr(r.security_key_location || '')}"></label>
+          <label class="space-y-1"><span class="muted">비밀번호</span><input id="edit-pass" class="app-input" value="${escapeAttr(r.security_password || '')}"></label>
+          <label class="space-y-1 md:col-span-2"><span class="muted">주소</span><input id="edit-address" class="app-input" value="${escapeAttr(r.dp_address || '')}"></label>
+          <label class="space-y-1"><span class="muted">연락처</span><input id="edit-contact" class="app-input" value="${escapeAttr(r.dp_contact || '')}"></label>
+          <label class="space-y-1"><span class="muted">연락 담당자</span><input id="edit-contact-name" class="app-input" value="${escapeAttr(r.dp_contact_name || '')}"></label>
+          <label class="space-y-1 md:col-span-2"><span class="muted">비고</span><textarea id="edit-memo" rows="3" class="app-textarea">${escapeHtml(r.stop_memo || '')}</textarea></label>
         </div>
-        <textarea id="quick-memo" rows="3" class="app-textarea" placeholder="비고">${escapeHtml(r.stop_memo || '')}</textarea>
-        <div class="mt-2 flex justify-end">
-          <button id="quick-save" class="btn btn-primary text-xs">이 내용으로 저장</button>
+        <div class="mt-3 flex justify-end">
+          <button id="quick-save" class="btn btn-primary text-xs">팝업에서 전체 저장</button>
         </div>
-      </div>` : ''}
+      </div>
     </div>`;
 
   const wrap = document.createElement('div');
@@ -955,23 +950,70 @@ function openDetailModal(r) {
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
 
   if (stopId) {
+    hydrateRouteEditDropdowns(wrap, r).catch(() => {});
     wrap.querySelector('#quick-save')?.addEventListener('click', async () => {
       const toNullable = (v) => {
         const s = (v || '').trim();
         return s ? s : null;
       };
-      const payload = centerPayload({
-        override_delivery_method: toNullable(wrap.querySelector('#quick-dmethod')?.value),
-        override_access_method: toNullable(wrap.querySelector('#quick-amethod')?.value),
-        override_delivery_location: toNullable(wrap.querySelector('#quick-dloc')?.value),
-        memo: toNullable(wrap.querySelector('#quick-memo')?.value)
+      const arrivalMin = displayToBizMin((wrap.querySelector('#edit-arrival')?.value || '').trim());
+      const unloadStartMin = displayToBizMin((wrap.querySelector('#edit-unload-start')?.value || '').trim());
+      const unloadEndMin = displayToBizMin((wrap.querySelector('#edit-unload-end')?.value || '').trim());
+      const deadlineMin = displayToBizMin((wrap.querySelector('#edit-deadline')?.value || '').trim());
+      const stopPayload = centerPayload({
+        stop_order: Number(wrap.querySelector('#edit-stop-order')?.value || 1),
+        arrival_text: toNullable(wrap.querySelector('#edit-arrival')?.value),
+        arrival_business_min: arrivalMin,
+        unloading_start_text: toNullable(wrap.querySelector('#edit-unload-start')?.value),
+        unloading_start_business_min: unloadStartMin,
+        unloading_end_text: toNullable(wrap.querySelector('#edit-unload-end')?.value),
+        unloading_end_business_min: unloadEndMin,
+        deadline_text: toNullable(wrap.querySelector('#edit-deadline')?.value),
+        deadline_business_min: deadlineMin,
+        override_delivery_method: toNullable(wrap.querySelector('#edit-dmethod')?.value),
+        override_access_method: toNullable(wrap.querySelector('#edit-amethod')?.value),
+        override_delivery_location: toNullable(wrap.querySelector('#edit-dloc')?.value),
+        memo: toNullable(wrap.querySelector('#edit-memo')?.value)
       });
-      const { error } = await scopeByCenter(
-        supabase.from('route_stops').update(payload).eq('id', stopId)
+      const routePayload = centerPayload({
+        name: toNullable(wrap.querySelector('#edit-route-name')?.value),
+        car_number: toNullable(wrap.querySelector('#edit-car-number')?.value),
+        company_id: toNullable(wrap.querySelector('#edit-company')?.value),
+        primary_driver_id: toNullable(wrap.querySelector('#edit-driver1')?.value),
+        secondary_driver_id: toNullable(wrap.querySelector('#edit-driver2')?.value)
+      });
+      const dpPayload = centerPayload({
+        address: toNullable(wrap.querySelector('#edit-address')?.value),
+        contact: toNullable(wrap.querySelector('#edit-contact')?.value),
+        contact_name: toNullable(wrap.querySelector('#edit-contact-name')?.value),
+        security_key_location: toNullable(wrap.querySelector('#edit-key')?.value),
+        security_password: toNullable(wrap.querySelector('#edit-pass')?.value)
+      });
+
+      const { error: stopErr } = await scopeByCenter(
+        supabase.from('route_stops').update(stopPayload).eq('id', stopId)
       );
-      if (error) {
-        toast(`저장 실패: ${error.message}`, 'error');
+      if (stopErr) {
+        toast(`저장 실패(코스순번): ${stopErr.message}`, 'error');
         return;
+      }
+      if (r.route_id) {
+        const { error: routeErr } = await scopeByCenter(
+          supabase.from('routes').update(routePayload).eq('id', r.route_id)
+        );
+        if (routeErr) {
+          toast(`저장 실패(코스정보): ${routeErr.message}`, 'error');
+          return;
+        }
+      }
+      if (r.delivery_point_id) {
+        const { error: dpErr } = await scopeByCenter(
+          supabase.from('delivery_points').update(dpPayload).eq('id', r.delivery_point_id)
+        );
+        if (dpErr) {
+          toast(`저장 실패(납품처): ${dpErr.message}`, 'error');
+          return;
+        }
       }
       toast('코스 정보가 수정되었습니다.', 'success');
       await loadData();
@@ -980,6 +1022,32 @@ function openDetailModal(r) {
       closeModal();
     });
   }
+}
+
+async function hydrateRouteEditDropdowns(wrap, row) {
+  const [coRes, drRes] = await Promise.all([
+    scopeByCenter(supabase.from('companies').select('id, name').order('name')),
+    scopeByCenter(supabase.from('drivers').select('id, name, company_id').order('name'))
+  ]);
+  if (coRes.error || drRes.error) return;
+  const companies = coRes.data || [];
+  const drivers = drRes.data || [];
+  const companySel = wrap.querySelector('#edit-company');
+  const drv1 = wrap.querySelector('#edit-driver1');
+  const drv2 = wrap.querySelector('#edit-driver2');
+  if (!companySel || !drv1 || !drv2) return;
+  companySel.innerHTML = `<option value="">(선택 안 함)</option>` + companies.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name || '')}</option>`).join('');
+  const renderDrivers = (companyId) => {
+    const filtered = companyId ? drivers.filter(d => String(d.company_id || '') === String(companyId)) : drivers;
+    const opts = `<option value="">(선택 안 함)</option>` + filtered.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name || '')}</option>`).join('');
+    drv1.innerHTML = opts;
+    drv2.innerHTML = opts;
+  };
+  companySel.value = row.company_id || '';
+  renderDrivers(companySel.value);
+  drv1.value = row.primary_driver_id || '';
+  drv2.value = row.secondary_driver_id || '';
+  companySel.addEventListener('change', () => renderDrivers(companySel.value));
 }
 
 async function showMyInfo() {
