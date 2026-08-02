@@ -164,7 +164,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
       state.templateBuffer = buffer.slice(0);
       state.templateName = file.name;
       state.outputWorkbook = null;
-      $('template-info').innerHTML = `<span class="text-emerald-300 font-medium">${escapeHtml(file.name)}</span> · ${escapeHtml(ws.name)} · 차량 행 ${vehicles.length}개 · 기존 온도사진 ${findTemperatureImages(ws).size}개`;
+      $('template-info').innerHTML = `<span class="text-emerald-300 font-medium">${escapeHtml(file.name)}</span> · ${escapeHtml(ws.name)} · 차량 행 ${vehicles.length}개 · Q열 사진표시 ${findPhotoMarkerRows(ws,vehicles).size}개`;
       toast('템플릿을 불러왔습니다. 기존 삽입 사진을 유지합니다.', 'success');
       updateButtons();
     } catch (err) {
@@ -376,15 +376,14 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     try {
       const workbook=new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
       const ws=workbook.worksheets[0]; const vehicleRows=collectVehicleRows(ws); const imageRows=findTemperatureImages(ws);
-      const groups=groupVehicleRows(vehicleRows); const occupied=new Set([...imageRows.keys()].concat(vehicleRows.filter(x=>hasPhotoMarker(ws.getCell(x.row,COL.tempPhoto))).map(x=>x.row)));
+      // 사진 사용 여부는 삽입 이미지 목록이 아니라 Q열의 공백 표시만 기준으로 판단한다.
+      const groups=groupVehicleRows(vehicleRows); const occupied=findPhotoMarkerRows(ws,vehicleRows);
       propagateExistingPhotos(workbook,ws,groups,imageRows,occupied);
 
       for (const item of analyzed) {
         const key=normalizeVehicle(item.result.vehicle_number); const group=groups.get(key)||[];
         if (!key) { addIssue(item.name,'차량번호 판독 실패'); continue; }
         if (!group.length) { addIssue(item.name,`차량번호 미일치: ${item.result.vehicle_number}`); continue; }
-        const distinct=new Set(group.map(x=>normalizeVehicleFull(x.vehicle)).filter(value=>value.replace(/\D/g,'').length>4));
-        if (distinct.size>1) { addIssue(item.name,`마지막 번호가 같은 차량이 여러 개입니다: ${[...distinct].join(', ')}`); continue; }
         const target=group.find(x=>!occupied.has(x.row));
         if (!target) { addIssue(item.name,`차량 ${item.result.vehicle_number}: 사진이 없는 행이 없습니다.`); continue; }
         const record=selectRecord(item.result.records); const temps=chooseTemperatures(record?.a,record?.b);
@@ -409,6 +408,8 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   function groupVehicleRows(rows) { const map=new Map(); rows.forEach(x=>{if(!map.has(x.key))map.set(x.key,[]);map.get(x.key).push(x);}); return map; }
 
+  function findPhotoMarkerRows(ws,vehicleRows) { return new Set(vehicleRows.filter(item=>hasPhotoMarker(ws.getCell(item.row,COL.tempPhoto))).map(item=>item.row)); }
+
   function findTemperatureImages(ws) {
     const map=new Map();
     for(const image of ws.getImages?.()||[]){ const col=(image.range?.tl?.nativeCol??image.range?.tl?.col??-1)+1; const row=(image.range?.tl?.nativeRow??image.range?.tl?.row??-1)+1; if(col===COL.tempPhoto&&row>=TABLE_START_ROW)map.set(row,image.imageId); }
@@ -417,7 +418,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   function propagateExistingPhotos(workbook,ws,groups,imageRows,occupied) {
     for(const group of groups.values()){
-      const source=group.find(x=>imageRows.has(x.row)); if(!source)continue;
+      const source=group.find(x=>occupied.has(x.row)&&imageRows.has(x.row)); if(!source)continue;
       for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`기존 사진 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
     }
   }
@@ -452,7 +453,6 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   function selectRecord(records) { const valid=(records||[]).filter(Boolean); return [...valid].sort((a,b)=>String(a.time||'').localeCompare(String(b.time||''))).at(-1)||null; }
   function normalizeVehicle(value) { const digits=String(value||'').replace(/\D/g,''); return digits.slice(-4); }
-  function normalizeVehicleFull(value) { return String(value||'').replace(/\s+/g,'').toUpperCase(); }
   function normalizeDate(value) { const s=String(value||'').trim(); const m=s.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$/); return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''; }
   function normalizeTime(value) { const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/); return m?`${m[1].padStart(2,'0')}:${m[2]}`:''; }
   function formatTemplateDate(value) { const m=String(value||'').match(/^\d{4}-\d{2}-(\d{2})$/); return m?`${Number(m[1])}일`:value; }
