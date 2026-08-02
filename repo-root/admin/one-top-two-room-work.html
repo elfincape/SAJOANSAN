@@ -18,6 +18,7 @@
     .thumb img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
     .paste-tile { aspect-ratio:4/3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; border:2px dashed #52525b; border-radius:.5rem; background:#18181b; color:#a1a1aa; cursor:text; text-align:center; padding:.75rem; }
     .paste-tile:hover,.paste-tile:focus { border-color:#10b981; background:rgba(6,78,59,.18); color:#d4d4d8; outline:none; }
+    .capture-check { position:absolute; top:.45rem; left:.45rem; z-index:2; width:1.15rem; height:1.15rem; accent-color:#10b981; }
     .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
     .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
   </style>
@@ -53,7 +54,10 @@
         <p class="text-[11px] text-zinc-500 mt-2">촬영 이미지는 중앙 4:3 영역으로 크롭됩니다. 장수 제한 없이 계속 촬영할 수 있습니다.</p>
       </div>
       <div class="step-card">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><div class="flex items-center gap-2"><span class="step-badge">3</span><h2 class="font-semibold">촬영 목록</h2></div><button id="capture-clear" class="btn btn-ghost text-xs" type="button">기기에서 전체 삭제</button></div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2"><span class="step-badge">3</span><h2 class="font-semibold">촬영 목록</h2></div>
+          <div class="flex flex-wrap items-center gap-2"><label class="text-xs text-zinc-300"><input id="capture-select-all" type="checkbox" class="mr-1 accent-emerald-500">전체 선택</label><button id="capture-delete-selected" class="btn btn-ghost text-xs text-rose-300" type="button" disabled>선택 삭제</button><button id="capture-clear" class="btn btn-ghost text-xs text-rose-300" type="button">전체 삭제</button></div>
+        </div>
         <div class="mb-3 rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-3">
           <div class="flex flex-wrap items-center gap-2">
             <button id="cloud-save" class="btn btn-primary text-xs" type="button" disabled>DB 임시저장</button>
@@ -122,6 +126,8 @@
   'use strict';
   const MODEL = 'claude-haiku-4-5-20251001';
   const CAPTURE_TABLE = 'one_top_two_room_captures';
+  const API_INTERVAL_MS = 12000;
+  const API_RATE_RETRY_DELAYS = [20000, 40000, 60000];
   const TABLE_START_ROW = 5;
   const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, tempPhoto:17 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
@@ -131,7 +137,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 판독할 수 없는 값은 반드시 null로 반환한다.
 설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
 {"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
-  const state = { templateBuffer:null, templateName:'', captures:[], stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
+  const state = { templateBuffer:null, templateName:'', captures:[], selectedCaptureIds:new Set(), stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
   const $ = id => document.getElementById(id);
 
   $('template-file').addEventListener('change', e => loadTemplate(e.target.files?.[0]));
@@ -141,6 +147,8 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   $('capture-files').addEventListener('change', e => addImageFiles(e.target.files));
   document.addEventListener('paste', handleImagePaste);
   $('capture-clear').addEventListener('click', clearCaptures);
+  $('capture-select-all').addEventListener('change',toggleSelectAllCaptures);
+  $('capture-delete-selected').addEventListener('click',deleteSelectedCaptures);
   $('cloud-save').addEventListener('click', saveCapturesToCloud);
   $('cloud-load').addEventListener('click', loadCapturesFromCloud);
   $('cloud-delete').addEventListener('click', deleteAllCloudCaptures);
@@ -233,18 +241,49 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     state.outputWorkbook = null; renderCaptures(); renderAnalysis(); updateButtons();
   }
 
-  function clearCaptures() {
-    if (!state.captures.length || !confirm('촬영 사진을 모두 삭제할까요?')) return;
-    state.captures = []; state.outputWorkbook = null; renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
+  async function clearCaptures() {
+    if (!state.captures.length || !confirm('촬영 목록의 사진을 기기와 DB에서 모두 삭제할까요?')) return;
+    await deleteCaptureItems([...state.captures]);
   }
 
   function renderCaptures() {
     $('capture-count').textContent = state.captures.length ? `${state.captures.length}장` : '';
     $('capture-empty').classList.toggle('hidden', state.captures.length > 0);
     const pasteTile='<div id="capture-paste" class="paste-tile" tabindex="0" role="button" aria-label="클립보드 사진 붙여넣기"><span class="text-2xl">📋</span><strong class="text-sm text-zinc-200">사진 붙여넣기</strong><span class="text-[11px]">여기를 누른 뒤<br>Ctrl+V</span></div>';
-    $('capture-grid').innerHTML = pasteTile+state.captures.map((item,index) => `<div class="thumb"><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span>${item.dbId?`<span class="${item.cloudDirty?'text-amber-300':'text-emerald-300'}">${item.cloudDirty?'변경됨':'DB저장'}</span>`:''}<button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
+    $('capture-grid').innerHTML = pasteTile+state.captures.map((item,index) => `<div class="thumb"><input data-select="${item.id}" class="capture-check" type="checkbox" aria-label="${index+1}번 사진 선택" ${state.selectedCaptureIds.has(item.id)?'checked':''}><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span>${item.dbId?`<span class="${item.cloudDirty?'text-amber-300':'text-emerald-300'}">${item.cloudDirty?'변경됨':'DB저장'}</span>`:''}<button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
     $('capture-paste').addEventListener('click',event=>event.currentTarget.focus());
+    $('capture-grid').querySelectorAll('[data-select]').forEach(input=>input.addEventListener('change',()=>{if(input.checked)state.selectedCaptureIds.add(input.dataset.select);else state.selectedCaptureIds.delete(input.dataset.select);updateSelectionControls();}));
     $('capture-grid').querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => removeCapture(btn.dataset.remove)));
+    updateSelectionControls();
+  }
+
+  function updateSelectionControls() {
+    const selected=state.captures.filter(item=>state.selectedCaptureIds.has(item.id)).length;
+    $('capture-delete-selected').disabled=!selected;
+    $('capture-delete-selected').textContent=selected?`선택 삭제 (${selected})`:'선택 삭제';
+    $('capture-select-all').checked=state.captures.length>0&&selected===state.captures.length;
+    $('capture-select-all').indeterminate=selected>0&&selected<state.captures.length;
+  }
+
+  function toggleSelectAllCaptures(event) {
+    state.selectedCaptureIds.clear();
+    if(event.target.checked)state.captures.forEach(item=>state.selectedCaptureIds.add(item.id));
+    renderCaptures();
+  }
+
+  async function deleteSelectedCaptures() {
+    const items=state.captures.filter(item=>state.selectedCaptureIds.has(item.id));
+    if(!items.length||!confirm(`선택한 사진 ${items.length}장을 기기와 DB에서 삭제할까요?`))return;
+    await deleteCaptureItems(items);
+  }
+
+  async function deleteCaptureItems(items) {
+    try {
+      const dbIds=items.map(item=>item.dbId).filter(Boolean);
+      if(dbIds.length){const {supabase,centerCode,userId}=cloudContext();const {error}=await supabase.from(CAPTURE_TABLE).delete().in('id',dbIds).eq('center_code',centerCode).eq('user_id',userId);if(error)throw error;}
+      const ids=new Set(items.map(item=>item.id)); state.captures=state.captures.filter(item=>!ids.has(item.id)); ids.forEach(id=>state.selectedCaptureIds.delete(id));
+      state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();updateButtons();await refreshCloudStatus();toast(`사진 ${items.length}장을 삭제했습니다.`,'success');
+    } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
 
   function cloudContext() {
@@ -285,6 +324,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
       if(error)throw error;
       const unsaved=state.captures.filter(item=>!item.dbId);
       state.captures=[...(data||[]).map(row=>({id:row.id,dbId:row.id,savedAt:row.updated_at,cloudDirty:false,name:row.filename,dataUrl:row.image_data,status:row.analysis?.status||'pending',result:row.analysis?.result||null,error:row.analysis?.error||''})),...unsaved];
+      state.selectedCaptureIds.clear();
       state.outputWorkbook=null; renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
       toast(`DB에서 사진 ${(data||[]).length}장을 불러왔습니다.`,'success');
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
@@ -295,7 +335,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     if(item.dbId&&!confirm('이 사진을 기기와 DB 임시저장에서 모두 삭제할까요?'))return;
     try {
       if(item.dbId){const {supabase,centerCode,userId}=cloudContext();const {error}=await supabase.from(CAPTURE_TABLE).delete().eq('id',item.dbId).eq('center_code',centerCode).eq('user_id',userId);if(error)throw error;}
-      state.captures=state.captures.filter(x=>x.id!==id);state.outputWorkbook=null;renderCaptures();renderAnalysis();updateButtons();await refreshCloudStatus();
+      state.captures=state.captures.filter(x=>x.id!==id);state.selectedCaptureIds.delete(id);state.outputWorkbook=null;renderCaptures();renderAnalysis();updateButtons();await refreshCloudStatus();
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
 
@@ -303,7 +343,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     if(!confirm('현재 센터에 임시저장한 사진을 DB에서 모두 삭제할까요? 삭제 후 복구할 수 없습니다.'))return;
     try {
       const {supabase,centerCode,userId}=cloudContext(); const {error}=await supabase.from(CAPTURE_TABLE).delete().eq('center_code',centerCode).eq('user_id',userId); if(error)throw error;
-      state.captures=state.captures.filter(item=>!item.dbId);state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();await refreshCloudStatus();toast('DB 임시 사진을 모두 삭제했습니다.','success');
+      state.captures=state.captures.filter(item=>!item.dbId);state.selectedCaptureIds.clear();state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();await refreshCloudStatus();toast('DB 임시 사진을 모두 삭제했습니다.','success');
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
 
@@ -315,8 +355,9 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     state.outputWorkbook = null;
     for (let i=0; i<state.captures.length; i++) {
       const item = state.captures[i]; item.status='analyzing'; item.error=''; renderAnalysis();
+      if(i>0)await waitForApiSlot(API_INTERVAL_MS,i+1,state.captures.length);
       btn.textContent = `분석 중 ${i+1}/${state.captures.length}`; $('analysis-progress').textContent = `${i+1}/${state.captures.length}`;
-      try { item.result = normalizeApiResult(await callVision(item.dataUrl)); item.status = 'done'; item.cloudDirty=true; }
+      try { item.result = normalizeApiResult(await callVisionWithRateLimitRetry(item.dataUrl,i+1,state.captures.length)); item.status = 'done'; item.cloudDirty=true; }
       catch (err) { console.error(err); item.status='error'; item.error=String(err.message || err); item.result=null; item.cloudDirty=true; }
       renderAnalysis();
     }
@@ -327,6 +368,16 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     toast(failed ? `분석 완료 · 성공 ${state.captures.length-failed}장 / 실패 ${failed}장` : `사진 ${state.captures.length}장 분석 완료`, failed?'warn':'success');
   }
 
+  async function callVisionWithRateLimitRetry(dataUrl,index,total) {
+    for(let attempt=0;;attempt++){
+      try{return await callVision(dataUrl);}
+      catch(err){if(!isRateLimitError(err)||attempt>=API_RATE_RETRY_DELAYS.length)throw err;await waitForApiSlot(API_RATE_RETRY_DELAYS[attempt],index,total,'API 요청 제한 · 자동 재시도');}
+    }
+  }
+
+  function isRateLimitError(err){return err?.status===429||/requests-per-minute|rate.?limit|too many requests/i.test(String(err?.message||err));}
+  async function waitForApiSlot(ms,index,total,label='API 요청 간격 대기') { for(let left=Math.ceil(ms/1000);left>0;left--){$('analysis-progress').textContent=`${index}/${total} · ${label} ${left}초`;await new Promise(resolve=>setTimeout(resolve,1000));} }
+
   async function callVision(dataUrl) {
     const edgeURL = `${String(window.appSupabaseUrl || '').replace(/\/$/,'')}/functions/v1/coupang-vision`;
     const anonKey = window.appSupabaseAnonKey || '';
@@ -334,7 +385,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     const res = await fetch(edgeURL,{ method:'POST', headers:{'content-type':'application/json',apikey:anonKey,authorization:`Bearer ${anonKey}`}, body:JSON.stringify({model:MODEL,mediaType,imageBase64:base64,prompt:PROMPT}) });
     const raw=await res.text(); let payload;
     try { payload=raw?JSON.parse(raw):null; } catch { throw new Error('API 응답 JSON을 읽지 못했습니다.'); }
-    if (!res.ok || payload?.error) throw new Error(payload?.error || `API HTTP ${res.status}`);
+    if (!res.ok || payload?.error) { const err=new Error(payload?.error || `API HTTP ${res.status}`); err.status=Number(payload?.status)||res.status; throw err; }
     return JSON.parse(extractJsonObject(payload?.text || ''));
   }
 
