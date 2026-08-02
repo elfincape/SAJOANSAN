@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     .step-card { border:1px solid #3f3f46; background:rgba(39,39,42,.45); border-radius:.75rem; padding:1rem; }
     .step-badge { display:inline-flex; width:1.6rem; height:1.6rem; align-items:center; justify-content:center; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.35); font-size:.75rem; font-weight:700; }
@@ -527,8 +528,20 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   async function downloadWorkbook() {
     if(!state.outputWorkbook)return;
-    try { const buffer=await state.outputWorkbook.xlsx.writeBuffer(); saveBlob(new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),state.outputName); toast('결과 Excel을 다운로드했습니다.','success'); }
+    try { normalizeWorkbookPrivacy(state.outputWorkbook); const buffer=await state.outputWorkbook.xlsx.writeBuffer(); const cleanBuffer=await disableRemovePersonalInfo(buffer); saveBlob(new Blob([cleanBuffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),state.outputName); toast('결과 Excel을 다운로드했습니다.','success'); }
     catch(err){console.error(err);toast(`다운로드 실패: ${err.message||err}`,'error');}
+  }
+
+  function normalizeWorkbookPrivacy(workbook) {
+    workbook.creator=workbook.creator||'SAJOANSAN';workbook.lastModifiedBy='SAJOANSAN';workbook.modified=new Date();
+    if(workbook.model?.workbookProperties){workbook.model.workbookProperties.filterPrivacy=false;workbook.model.workbookProperties.removePersonalInformation=false;}
+  }
+
+  async function disableRemovePersonalInfo(buffer) {
+    if(!window.JSZip)return buffer;
+    const zip=await window.JSZip.loadAsync(buffer),workbookXml=zip.file('xl/workbook.xml');if(!workbookXml)return buffer;
+    const xml=(await workbookXml.async('string')).replace(/\sfilterPrivacy="(?:1|true)"/gi,' filterPrivacy="0"').replace(/\sremovePersonalInformation="(?:1|true)"/gi,' removePersonalInformation="0"');
+    zip.file('xl/workbook.xml',xml);return zip.generateAsync({type:'arraybuffer'});
   }
 
   function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result); $('analyze-all').disabled=!state.captures.length||state.captures.some(x=>x.status==='analyzing'); $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; $('cloud-save').disabled=!state.captures.length||!window.appUserId; }
