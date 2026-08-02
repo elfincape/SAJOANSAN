@@ -16,6 +16,8 @@
     .camera-frame::after { content:'영수증을 4:3 영역 안에 맞춰 주세요'; position:absolute; inset:.65rem; border:1px dashed rgba(255,255,255,.7); border-radius:.45rem; display:flex; align-items:flex-end; justify-content:center; padding:.5rem; color:#fff; font-size:.72rem; text-shadow:0 1px 3px #000; pointer-events:none; }
     .thumb { position:relative; border:1px solid #3f3f46; border-radius:.5rem; overflow:hidden; background:#18181b; }
     .thumb img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+    .paste-tile { aspect-ratio:4/3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; border:2px dashed #52525b; border-radius:.5rem; background:#18181b; color:#a1a1aa; cursor:text; text-align:center; padding:.75rem; }
+    .paste-tile:hover,.paste-tile:focus { border-color:#10b981; background:rgba(6,78,59,.18); color:#d4d4d8; outline:none; }
     .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
     .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
   </style>
@@ -137,6 +139,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   $('camera-stop').addEventListener('click', stopCamera);
   $('camera-capture').addEventListener('click', captureCamera);
   $('capture-files').addEventListener('change', e => addImageFiles(e.target.files));
+  document.addEventListener('paste', handleImagePaste);
   $('capture-clear').addEventListener('click', clearCaptures);
   $('cloud-save').addEventListener('click', saveCapturesToCloud);
   $('cloud-load').addEventListener('click', loadCapturesFromCloud);
@@ -205,6 +208,16 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     $('capture-files').value = '';
   }
 
+  async function handleImagePaste(event) {
+    const files=Array.from(event.clipboardData?.items||[]).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+    if(!files.length)return;
+    const target=event.target;
+    if(target?.matches?.('input, textarea, [contenteditable="true"]')&&!target.closest('#capture-paste'))return;
+    event.preventDefault();
+    try { await addImageFiles(files); toast(`붙여넣은 사진 ${files.length}장을 추가했습니다.`,'success'); }
+    catch(err) { console.error(err); toast(`붙여넣기 실패: ${err.message||err}`,'error'); }
+  }
+
   function cropSourceToFourThree(source, sourceWidth, sourceHeight) {
     const ratio = 4 / 3;
     let sx = 0, sy = 0, sw = sourceWidth, sh = sourceHeight;
@@ -228,7 +241,9 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   function renderCaptures() {
     $('capture-count').textContent = state.captures.length ? `${state.captures.length}장` : '';
     $('capture-empty').classList.toggle('hidden', state.captures.length > 0);
-    $('capture-grid').innerHTML = state.captures.map((item,index) => `<div class="thumb"><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span>${item.dbId?`<span class="${item.cloudDirty?'text-amber-300':'text-emerald-300'}">${item.cloudDirty?'변경됨':'DB저장'}</span>`:''}<button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
+    const pasteTile='<div id="capture-paste" class="paste-tile" tabindex="0" role="button" aria-label="클립보드 사진 붙여넣기"><span class="text-2xl">📋</span><strong class="text-sm text-zinc-200">사진 붙여넣기</strong><span class="text-[11px]">여기를 누른 뒤<br>Ctrl+V</span></div>';
+    $('capture-grid').innerHTML = pasteTile+state.captures.map((item,index) => `<div class="thumb"><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span>${item.dbId?`<span class="${item.cloudDirty?'text-amber-300':'text-emerald-300'}">${item.cloudDirty?'변경됨':'DB저장'}</span>`:''}<button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
+    $('capture-paste').addEventListener('click',event=>event.currentTarget.focus());
     $('capture-grid').querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => removeCapture(btn.dataset.remove)));
   }
 
