@@ -51,7 +51,7 @@
           <button id="camera-stop" class="btn btn-ghost" type="button" disabled>카메라 종료</button>
           <label class="btn btn-ghost text-center cursor-pointer">사진 파일 추가<input id="capture-files" type="file" accept="image/*" multiple class="hidden"></label>
         </div>
-        <p class="text-[11px] text-zinc-500 mt-2">촬영 이미지는 중앙 4:3 영역으로 크롭됩니다. 장수 제한 없이 계속 촬영할 수 있습니다.</p>
+        <p class="text-[11px] text-zinc-500 mt-2">카메라로 직접 촬영할 때만 화면의 중앙 4:3 영역을 저장합니다. 파일 선택·붙여넣기 사진은 이미 잘라 둔 원본을 그대로 사용하며 다시 자르지 않습니다.</p>
       </div>
       <div class="step-card">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -210,10 +210,18 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   async function addImageFiles(fileList) {
     for (const file of Array.from(fileList || [])) {
       if (!file.type.startsWith('image/')) continue;
-      const img = await fileToImage(file);
-      addCapture(cropSourceToFourThree(img, img.naturalWidth, img.naturalHeight), file.name);
+      addCapture(await readImageWithoutCrop(file), file.name);
     }
     $('capture-files').value = '';
+  }
+
+  async function readImageWithoutCrop(file) {
+    const dataUrl=await fileToDataUrl(file);
+    if(/^data:image\/(?:png|jpe?g);/i.test(dataUrl))return dataUrl;
+    const img=await fileToImage(file),canvas=document.createElement('canvas');
+    canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
+    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+    return canvas.toDataURL('image/jpeg',.92);
   }
 
   async function handleImagePaste(event) {
@@ -529,6 +537,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   function buildOutputName(name){return `${String(name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`;}
   function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function fileToImage(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지를 읽지 못했습니다.'));};img.src=url;});}
+  function fileToDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(new Error('이미지 파일을 읽지 못했습니다.'));reader.readAsDataURL(file);});}
   function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function escapeAttr(s){return escapeHtml(s);}
   function newUuid(){if(globalThis.crypto?.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16);});}
