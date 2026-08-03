@@ -69,6 +69,11 @@
           <img id="image-preview" class="hidden" alt="쿠팡 시간표 미리보기">
         </div>
         <div id="image-info" class="mt-3 text-xs text-zinc-400">선택된 이미지 없음</div>
+        <label class="app-label mt-3" for="coupang-vision-model">API 모델</label>
+        <select id="coupang-vision-model" class="app-input">
+          <option value="claude-haiku-4-5-20251001" selected>기존 모델 · Claude Haiku 4.5</option>
+          <option value="claude-opus-5">Claude Opus 5</option>
+        </select>
         <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">API호출</button>
       </div>
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
@@ -266,7 +271,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     try {
       const base64 = await getImageBase64();
       const text = await callClaudeVision({
-        model: 'claude-haiku-4-5-20251001',
+        model: $('coupang-vision-model').value || 'claude-haiku-4-5-20251001',
         mediaType: state.imageFile.type || 'image/png',
         base64
       });

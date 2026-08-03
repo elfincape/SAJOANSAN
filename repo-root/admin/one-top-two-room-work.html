@@ -79,6 +79,7 @@
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <span class="step-badge">4</span><h2 class="font-semibold">일괄 API 분석</h2>
         <span id="analysis-progress" class="text-xs text-zinc-400"></span><div class="flex-1"></div>
+        <label class="text-xs text-zinc-300 flex items-center gap-2">API 모델<select id="temperature-vision-model" class="app-input min-w-60"><option value="claude-haiku-4-5-20251001" selected>기존 모델 · Claude Haiku 4.5</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
         <button id="analyze-all" class="btn btn-primary" type="button" disabled>전체 사진 API 분석</button>
       </div>
       <p class="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function, Base URL 및 Claude 모델을 사용합니다. 판독 불가 값은 비워 두며 결과 표에서 직접 보정할 수 있습니다.</p>
@@ -127,7 +128,7 @@
 
   <script>
   'use strict';
-  const MODEL = 'claude-haiku-4-5-20251001';
+  const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
   const CAPTURE_TABLE = 'one_top_two_room_captures';
   const API_INTERVAL_MS = 12000;
   const API_RATE_RETRY_DELAYS = [20000, 40000, 60000];
@@ -402,7 +403,8 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     const edgeURL = `${String(window.appSupabaseUrl || '').replace(/\/$/,'')}/functions/v1/coupang-vision`;
     const anonKey = window.appSupabaseAnonKey || '';
     const [meta,base64] = dataUrl.split(','); const mediaType = meta.match(/^data:([^;]+)/)?.[1] || 'image/jpeg';
-    const res = await fetch(edgeURL,{ method:'POST', headers:{'content-type':'application/json',apikey:anonKey,authorization:`Bearer ${anonKey}`}, body:JSON.stringify({model:MODEL,mediaType,imageBase64:base64,prompt:PROMPT}) });
+    const model=$('temperature-vision-model').value||DEFAULT_MODEL;
+    const res = await fetch(edgeURL,{ method:'POST', headers:{'content-type':'application/json',apikey:anonKey,authorization:`Bearer ${anonKey}`}, body:JSON.stringify({model,mediaType,imageBase64:base64,prompt:PROMPT}) });
     const raw=await res.text(); let payload;
     try { payload=raw?JSON.parse(raw):null; } catch { throw new Error('API 응답 JSON을 읽지 못했습니다.'); }
     if (!res.ok || payload?.error) { const err=new Error(payload?.error || `API HTTP ${res.status}`); err.status=Number(payload?.status)||res.status; throw err; }
