@@ -61,7 +61,7 @@
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
         <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">Claude API</div><div class="text-xs text-zinc-500">JSON만 반환하도록 요청</div></div></div>
         <label class="app-label">Base URL</label>
-        <input id="api-base-url" class="app-input mb-2" value="https://aiapiflow.com/v1">
+        <input id="api-base-url" class="app-input mb-2" value="https://aiapiflow.com">
         <label class="app-label">API Key</label>
         <input id="api-key" class="app-input mb-2" type="text" value="sk-d518e242674b4b1ac63b3594bde3643cad68c8d76e95f64914b35a6020e8212f">
         <label class="app-label">Model</label>
@@ -190,16 +190,24 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const apiKey = $('api-key').value.trim(); if (!apiKey) return toast('Claude API Key를 입력하세요.', 'error');
     try {
       const base64 = await fileToBase64(state.imageFile);
-      const res = await fetch(`${$('api-base-url').value.replace(/\/$/, '')}/messages`, {
+      const res = await fetch(`${$('api-base-url').value.replace(/\/$/, '')}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'authorization': `Bearer ${apiKey}`,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'authorization': `Bearer ${apiKey}`
         },
-        body: JSON.stringify({ model: $('api-model').value.trim(), max_tokens: 4000, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: state.imageFile.type || 'image/png', data: base64 } }, { type: 'text', text: PROMPT }] }] })
+        body: JSON.stringify({
+          model: $('api-model').value.trim(),
+          temperature: 0,
+          max_tokens: 4000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: PROMPT },
+              { type: 'image_url', image_url: { url: `data:${state.imageFile.type || 'image/png'};base64,${base64}` } }
+            ]
+          }]
+        })
       });
       const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || JSON.stringify(json));
       const text = extractClaudeText(json);
