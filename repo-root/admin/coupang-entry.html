@@ -103,6 +103,7 @@
 
   <script type="module">
     import { requireRole } from '/js/auth.js';
+    import { supabase } from '/js/supabase.js';
     import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
     const profile = await requireRole('editor');
     if (!profile) { /* redirected */ }
@@ -110,6 +111,7 @@
     mountHeaderCenterSwitcher(next => location.replace(withCenterParam(location.pathname + location.search, next)));
     decorateCenterLinks(document);
     document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
+    window.appSupabase = supabase;
   </script>
 
   <script>
@@ -199,9 +201,20 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       });
       $('schedule-json').value = extractJsonArrayText(text);
       loadScheduleJson(); toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
-    } catch (err) { console.error(err); toast(`이미지 분석 실패: ${err.message || err}`, 'error'); }
+    } catch (err) {
+      console.error(err);
+      const msg = String(err.message || err);
+      if (msg.includes('Failed to fetch')) {
+        toast('이미지 분석 실패: 브라우저 직접 호출이 CORS/네트워크로 차단됐습니다. Supabase Edge Function coupang-vision 배포가 필요합니다.', 'error');
+      } else {
+        toast(`이미지 분석 실패: ${msg}`, 'error');
+      }
+    }
   }
   async function callClaudeVision({ baseURL, apiKey, model, mediaType, base64 }) {
+    const edgeText = await callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 });
+    if (edgeText) return edgeText;
+
     const normalizedBase = String(baseURL || '').replace(/\/$/, '');
     const anthropicURL = `${normalizedBase}/messages`;
     const anthropicBody = {
@@ -241,6 +254,21 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
         ]
       }]
     }));
+  }
+
+  async function callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 }) {
+    try {
+      if (!window.appSupabase?.functions?.invoke) return null;
+      const { data, error } = await window.appSupabase.functions.invoke('coupang-vision', {
+        body: { baseURL, apiKey, model, mediaType, imageBase64: base64, prompt: PROMPT }
+      });
+      if (error) throw error;
+      if (data?.text) return data.text;
+      return null;
+    } catch (err) {
+      console.warn('[coupang-entry] Supabase Edge Function 호출 실패, 브라우저 직접 호출 fallback 시도:', err);
+      return null;
+    }
   }
 
   async function postJson(url, extraHeaders, body) {
