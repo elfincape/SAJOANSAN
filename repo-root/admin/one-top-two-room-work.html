@@ -84,12 +84,13 @@
         <span class="step-badge">4</span><h2 class="font-semibold">일괄 API 분석</h2>
         <span id="analysis-progress" class="text-xs text-zinc-400"></span><div class="flex-1"></div>
         <label class="text-xs text-zinc-300 flex items-center gap-2">API 모델<select id="temperature-vision-model" class="app-input min-w-60"><option value="claude-haiku-4-5-20251001" selected>기존 모델 · Claude Haiku 4.5</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
+        <button id="analyze-selected" class="btn btn-ghost" type="button" disabled>선택 항목 재분석</button>
         <button id="analyze-all" class="btn btn-primary" type="button" disabled>전체 사진 API 분석</button>
       </div>
       <p class="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function을 사용합니다. 분석 후 차량번호 옆의 +칸을 클릭하고 Ctrl+V로 사진 한 장을 붙여넣으면 온도영수증 왼쪽 P열의 같은 행에 삽입됩니다.</p>
       <div class="overflow-auto max-h-[52vh] border border-zinc-700 rounded-lg">
         <table class="result-table min-w-[1000px] w-full text-xs">
-          <thead class="bg-zinc-900 sticky top-0"><tr><th class="p-2">사진</th><th class="p-2 text-left">차량번호</th><th class="p-2">P열 사진</th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">시간</th><th class="p-2 text-left">A</th><th class="p-2 text-left">B</th><th class="p-2 text-left">판정</th><th class="p-2 text-left">상태</th></tr></thead>
+          <thead class="bg-zinc-900 sticky top-0"><tr><th class="p-2"><input id="analysis-select-all" type="checkbox" class="accent-emerald-500" aria-label="분석 결과 전체 선택"></th><th class="p-2">사진</th><th class="p-2 text-left">차량번호</th><th class="p-2">P열 사진</th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">시간</th><th class="p-2 text-left">A</th><th class="p-2 text-left">B</th><th class="p-2 text-left">판정</th><th class="p-2 text-left">상태</th></tr></thead>
           <tbody id="analysis-body"></tbody>
         </table>
       </div>
@@ -145,7 +146,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 판독할 수 없는 값은 반드시 null로 반환한다.
 설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
 {"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
-  const state = { templateBuffer:null, templateName:'', captures:[], selectedCaptureIds:new Set(), stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
+  const state = { templateBuffer:null, templateName:'', captures:[], selectedCaptureIds:new Set(), selectedAnalysisIds:new Set(), stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
   const $ = id => document.getElementById(id);
 
   $('template-file').addEventListener('change', e => loadTemplate(e.target.files?.[0]));
@@ -162,6 +163,8 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   $('cloud-load').addEventListener('click', loadCapturesFromCloud);
   $('cloud-delete').addEventListener('click', deleteAllCloudCaptures);
   $('analyze-all').addEventListener('click', analyzeAll);
+  $('analyze-selected').addEventListener('click', analyzeSelected);
+  $('analysis-select-all').addEventListener('change',toggleSelectAllAnalysis);
   $('match-workbook').addEventListener('click', matchWorkbook);
   $('download-workbook').addEventListener('click', downloadWorkbook);
   window.addEventListener('beforeunload', stopCamera);
@@ -307,7 +310,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     try {
       const dbIds=items.map(item=>item.dbId).filter(Boolean);
       if(dbIds.length){const {supabase,centerCode,userId}=cloudContext();const {error}=await supabase.from(CAPTURE_TABLE).delete().in('id',dbIds).eq('center_code',centerCode).eq('user_id',userId);if(error)throw error;}
-      const ids=new Set(items.map(item=>item.id)); state.captures=state.captures.filter(item=>!ids.has(item.id)); ids.forEach(id=>state.selectedCaptureIds.delete(id));
+      const ids=new Set(items.map(item=>item.id)); state.captures=state.captures.filter(item=>!ids.has(item.id)); ids.forEach(id=>{state.selectedCaptureIds.delete(id);state.selectedAnalysisIds.delete(id);});
       state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();updateButtons();await refreshCloudStatus();toast(`사진 ${items.length}장을 삭제했습니다.`,'success');
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
@@ -350,7 +353,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
       if(error)throw error;
       const unsaved=state.captures.filter(item=>!item.dbId);
       state.captures=[...(data||[]).map(row=>({id:row.id,dbId:row.id,savedAt:row.updated_at,cloudDirty:false,name:row.filename,dataUrl:row.image_data,supplementalDataUrl:row.analysis?.supplementalDataUrl||null,status:row.analysis?.status||'pending',result:row.analysis?.result||null,error:row.analysis?.error||''})),...unsaved];
-      state.selectedCaptureIds.clear();
+      state.selectedCaptureIds.clear();state.selectedAnalysisIds.clear();
       state.outputWorkbook=null; renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
       toast(`DB에서 사진 ${(data||[]).length}장을 불러왔습니다.`,'success');
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
@@ -361,7 +364,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     if(item.dbId&&!confirm('이 사진을 기기와 DB 임시저장에서 모두 삭제할까요?'))return;
     try {
       if(item.dbId){const {supabase,centerCode,userId}=cloudContext();const {error}=await supabase.from(CAPTURE_TABLE).delete().eq('id',item.dbId).eq('center_code',centerCode).eq('user_id',userId);if(error)throw error;}
-      state.captures=state.captures.filter(x=>x.id!==id);state.selectedCaptureIds.delete(id);state.outputWorkbook=null;renderCaptures();renderAnalysis();updateButtons();await refreshCloudStatus();
+      state.captures=state.captures.filter(x=>x.id!==id);state.selectedCaptureIds.delete(id);state.selectedAnalysisIds.delete(id);state.outputWorkbook=null;renderCaptures();renderAnalysis();updateButtons();await refreshCloudStatus();
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
 
@@ -369,7 +372,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     if(!confirm('현재 센터에 임시저장한 사진을 DB에서 모두 삭제할까요? 삭제 후 복구할 수 없습니다.'))return;
     try {
       const {supabase,centerCode,userId}=cloudContext(); const {error}=await supabase.from(CAPTURE_TABLE).delete().eq('center_code',centerCode).eq('user_id',userId); if(error)throw error;
-      state.captures=state.captures.filter(item=>!item.dbId);state.selectedCaptureIds.clear();state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();await refreshCloudStatus();toast('DB 임시 사진을 모두 삭제했습니다.','success');
+      state.captures=state.captures.filter(item=>!item.dbId);state.selectedCaptureIds.clear();state.selectedAnalysisIds.clear();state.outputWorkbook=null;renderCaptures();renderAnalysis();renderOutcome();await refreshCloudStatus();toast('DB 임시 사진을 모두 삭제했습니다.','success');
     } catch(err){console.error(err);toast(cloudErrorMessage(err),'error');}
   }
 
@@ -377,21 +380,31 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   async function analyzeAll() {
     if (!state.captures.length) return;
-    const btn = $('analyze-all'); btn.disabled = true; const original = btn.textContent;
+    await analyzeCaptures([...state.captures],$('analyze-all'));
+  }
+
+  async function analyzeSelected() {
+    const items=state.captures.filter(item=>state.selectedAnalysisIds.has(item.id));
+    if(!items.length)return toast('재분석할 결과를 선택하세요.','warn');
+    await analyzeCaptures(items,$('analyze-selected'));
+  }
+
+  async function analyzeCaptures(items,btn) {
+    btn.disabled = true; const original = btn.textContent;
     state.outputWorkbook = null;
-    for (let i=0; i<state.captures.length; i++) {
-      const item = state.captures[i]; item.status='analyzing'; item.error=''; renderAnalysis();
-      if(i>0)await waitForApiSlot(API_INTERVAL_MS,i+1,state.captures.length);
-      btn.textContent = `분석 중 ${i+1}/${state.captures.length}`; $('analysis-progress').textContent = `${i+1}/${state.captures.length}`;
-      try { item.result = normalizeApiResult(await callVisionWithRateLimitRetry(item.dataUrl,i+1,state.captures.length)); item.status = 'done'; item.cloudDirty=true; }
+    for (let i=0; i<items.length; i++) {
+      const item = items[i]; item.status='analyzing'; item.error=''; renderAnalysis(); updateButtons();
+      if(i>0)await waitForApiSlot(API_INTERVAL_MS,i+1,items.length);
+      btn.textContent = `분석 중 ${i+1}/${items.length}`; $('analysis-progress').textContent = `${i+1}/${items.length}`;
+      try { item.result = normalizeApiResult(await callVisionWithRateLimitRetry(item.dataUrl,i+1,items.length)); item.status = 'done'; item.cloudDirty=true; }
       catch (err) { console.error(err); item.status='error'; item.error=String(err.message || err); item.result=null; item.cloudDirty=true; }
       renderAnalysis();
     }
     btn.textContent=original; $('analysis-progress').textContent='분석 완료'; updateButtons();
-    const failed=state.captures.filter(x=>x.status==='error').length;
+    const failed=items.filter(x=>x.status==='error').length;
     state.issues=state.captures.filter(x=>x.status==='error').map(x=>({item:x.name,message:`API 판독 실패: ${x.error||'응답 오류'}`}));
     renderOutcome();
-    toast(failed ? `분석 완료 · 성공 ${state.captures.length-failed}장 / 실패 ${failed}장` : `사진 ${state.captures.length}장 분석 완료`, failed?'warn':'success');
+    toast(failed ? `분석 완료 · 성공 ${items.length-failed}장 / 실패 ${failed}장` : `선택한 사진 ${items.length}장 분석 완료`, failed?'warn':'success');
   }
 
   async function callVisionWithRateLimitRetry(dataUrl,index,total) {
@@ -432,12 +445,22 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     $('analysis-body').innerHTML = state.captures.length ? state.captures.map((item,index) => {
       const selected=selectRecord(item.result?.records); const temps=chooseTemperatures(selected?.a,selected?.b);
       const supplement=item.supplementalDataUrl?`<img src="${item.supplementalDataUrl}" alt="P열 추가 사진"><button type="button" class="supplement-clear" data-clear-supplement="${item.id}" aria-label="추가 사진 삭제">×</button>`:'+';
-      return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><div class="supplement-paste" data-supplement-paste="${item.id}" tabindex="0" title="클릭 후 Ctrl+V로 사진 한 장 붙여넣기">${supplement}</div></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
-    }).join('') : '<tr><td colspan="9" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
+      return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2"><input type="checkbox" data-analysis-select="${item.id}" class="accent-emerald-500" aria-label="${index+1}번 분석 결과 선택" ${state.selectedAnalysisIds.has(item.id)?'checked':''}></td><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><div class="supplement-paste" data-supplement-paste="${item.id}" tabindex="0" title="클릭 후 Ctrl+V로 사진 한 장 붙여넣기">${supplement}</div></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
+    }).join('') : '<tr><td colspan="10" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
     $('analysis-body').querySelectorAll('[data-capture]').forEach(row => row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('change', () => updateAnalysisEdit(row.dataset.capture,row))));
+    $('analysis-body').querySelectorAll('[data-analysis-select]').forEach(input=>input.addEventListener('change',()=>{if(input.checked)state.selectedAnalysisIds.add(input.dataset.analysisSelect);else state.selectedAnalysisIds.delete(input.dataset.analysisSelect);updateAnalysisSelectionControls();updateButtons();}));
     $('analysis-body').querySelectorAll('[data-supplement-paste]').forEach(box=>{box.addEventListener('click',()=>box.focus());box.addEventListener('paste',event=>handleSupplementPaste(event,box.dataset.supplementPaste));});
     $('analysis-body').querySelectorAll('[data-clear-supplement]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();clearSupplementPhoto(button.dataset.clearSupplement);}));
+    updateAnalysisSelectionControls();
   }
+
+  function updateAnalysisSelectionControls() {
+    const selected=state.captures.filter(item=>state.selectedAnalysisIds.has(item.id)).length,total=state.captures.length;
+    $('analysis-select-all').checked=total>0&&selected===total;$('analysis-select-all').indeterminate=selected>0&&selected<total;
+    $('analyze-selected').textContent=selected?`선택 항목 재분석 (${selected})`:'선택 항목 재분석';
+  }
+
+  function toggleSelectAllAnalysis(event) { state.selectedAnalysisIds.clear();if(event.target.checked)state.captures.forEach(item=>state.selectedAnalysisIds.add(item.id));renderAnalysis();updateButtons(); }
 
   async function handleSupplementPaste(event,id) {
     const file=Array.from(event.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile();
@@ -581,7 +604,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     zip.file('xl/workbook.xml',xml);return zip.generateAsync({type:'arraybuffer'});
   }
 
-  function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result); $('analyze-all').disabled=!state.captures.length||state.captures.some(x=>x.status==='analyzing'); $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; $('cloud-save').disabled=!state.captures.length||!window.appUserId; }
+  function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result),analyzing=state.captures.some(x=>x.status==='analyzing'),selected=state.captures.some(x=>state.selectedAnalysisIds.has(x.id)); $('analyze-all').disabled=!state.captures.length||analyzing; $('analyze-selected').disabled=!selected||analyzing; $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; $('cloud-save').disabled=!state.captures.length||!window.appUserId; }
   function statusClass(status){return status==='done'?'status-ok':status==='error'?'status-error':'status-warn';}
   function statusLabel(item){const count=item.result?.records?.length||0;return item.status==='done'?`분석 완료 (${count}건${count>1?' · 최신시간 사용':''})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
   function buildOutputName(name){return `${String(name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`;}
