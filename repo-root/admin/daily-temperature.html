@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     .drop-card {
       border: 1px dashed #52525b;
@@ -379,7 +380,9 @@ End Sub`;
     workbook: null,
     worksheetName: '',
     rows: [],
-    sourceRowCount: 0
+    sourceRowCount: 0,
+    sourceLastRow: TABLE_START_ROW - 1,
+    roleHeaderRows: {}
   };
 
   let parserRecords = [];
@@ -469,6 +472,8 @@ End Sub`;
     state.worksheetName = worksheet.name;
     state.rows = extractRows(worksheet);
     state.sourceRowCount = state.rows.length;
+    state.sourceLastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW - 1);
+    state.roleHeaderRows = collectRoleHeaderRows(worksheet);
     sortRowsByRole();
     renumberRows();
     hydrateDefaultsFromRows();
@@ -488,6 +493,8 @@ End Sub`;
     state.worksheetName = '';
     state.rows = [];
     state.sourceRowCount = 0;
+    state.sourceLastRow = TABLE_START_ROW - 1;
+    state.roleHeaderRows = {};
     renderRows();
     updateButtons();
   }
@@ -510,6 +517,19 @@ End Sub`;
       rows.push(record);
     }
     return rows;
+  }
+
+  function collectRoleHeaderRows(worksheet) {
+    const headers = {};
+    const lastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW);
+    for (let rowNumber = TABLE_START_ROW; rowNumber <= lastRow; rowNumber++) {
+      const row = worksheet.getRow(rowNumber);
+      const role = normalizeRole(cellText(row.getCell(COLS.vehicle_type)));
+      if (!role || headers[role]) continue;
+      const hasData = ['carrier', 'dm', 'vehicle_no'].some(field => cellText(row.getCell(COLS[field])) !== '');
+      if (!hasData) headers[role] = rowNumber;
+    }
+    return headers;
   }
 
   function hydrateDefaultsFromRows() {
@@ -872,8 +892,10 @@ End Sub`;
       await workbook.xlsx.load(buffer);
       const worksheet = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
       writeRowsToWorksheet(worksheet);
+      normalizeWorkbookPrivacy(workbook);
       const output = await workbook.xlsx.writeBuffer();
-      saveBlob(new Blob([output], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
+      const cleanOutput = await disableRemovePersonalInfo(output);
+      saveBlob(new Blob([cleanOutput], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
       toast('Excel 파일을 다운로드했습니다.', 'success');
     } catch (err) {
       console.error(err);
@@ -913,19 +935,50 @@ End Sub`;
     sortRowsByRole();
     state.rows.forEach(updateDerivedFields);
     renumberRows();
-    const requiredCount = state.rows.length;
-    const existingCount = Math.max(state.sourceRowCount, 0);
 
-    for (let offset = 0; offset < requiredCount; offset++) {
-      const record = state.rows[offset];
-      const rowNumber = TABLE_START_ROW + offset;
-      const styleRowNumber = findStyleRowNumber(record.vehicle_type, offset);
-      copyRowStyle(worksheet, styleRowNumber, rowNumber);
-      writeRecordToRow(worksheet.getRow(rowNumber), record);
-    }
+    const usedRows = new Set();
+    const headerRows = new Set(Object.values(state.roleHeaderRows || {}).filter(Boolean));
+    let cursor = TABLE_START_ROW;
 
-    for (let offset = requiredCount; offset < existingCount; offset++) {
-      clearOutputRow(worksheet.getRow(TABLE_START_ROW + offset));
+    ROLE_ORDER.forEach(role => {
+      const headerRow = state.roleHeaderRows?.[role];
+      if (headerRow) cursor = Math.max(cursor, headerRow + 1);
+
+      state.rows
+        .filter(record => normalizeRole(record.vehicle_type) === role)
+        .forEach((record, roleOffset) => {
+          while (headerRows.has(cursor)) cursor += 1;
+          const rowNumber = cursor;
+          const styleRowNumber = findStyleRowNumber(role, roleOffset);
+          copyRowStyle(worksheet, styleRowNumber, rowNumber);
+          writeRecordToRow(worksheet.getRow(rowNumber), record);
+          usedRows.add(rowNumber);
+          cursor += 1;
+        });
+    });
+
+    // Clear only unused original data rows. Keep role separator/header rows intact so
+    // the last row of each 고정/광역/임시 section is not overwritten or cleared.
+    state.rows
+      .filter(record => !normalizeRole(record.vehicle_type))
+      .forEach((record, offset) => {
+        while (headerRows.has(cursor)) cursor += 1;
+        const rowNumber = cursor;
+        const styleRowNumber = findStyleRowNumber(record.vehicle_type, offset);
+        copyRowStyle(worksheet, styleRowNumber, rowNumber);
+        writeRecordToRow(worksheet.getRow(rowNumber), record);
+        usedRows.add(rowNumber);
+        cursor += 1;
+      });
+
+    const lastTemplateRow = Math.max(state.sourceLastRow || 0, TABLE_START_ROW - 1);
+    for (let rowNumber = TABLE_START_ROW; rowNumber <= lastTemplateRow; rowNumber++) {
+      if (headerRows.has(rowNumber) || usedRows.has(rowNumber)) continue;
+      const row = worksheet.getRow(rowNumber);
+      const role = normalizeRole(cellText(row.getCell(COLS.vehicle_type)));
+      const hasData = FIELDS.some(field => field !== 'vehicle_type' && cellText(row.getCell(COLS[field])) !== '');
+      if (role && !hasData) continue;
+      clearOutputRow(row);
     }
   }
 
@@ -974,6 +1027,32 @@ End Sub`;
       if (sourceCell.fill) targetCell.fill = JSON.parse(JSON.stringify(sourceCell.fill));
       if (sourceCell.font) targetCell.font = JSON.parse(JSON.stringify(sourceCell.font));
     }
+  }
+
+  function normalizeWorkbookPrivacy(workbook) {
+    workbook.creator = workbook.creator || 'SAJOANSAN';
+    workbook.lastModifiedBy = workbook.lastModifiedBy || 'SAJOANSAN';
+    workbook.created = workbook.created || new Date();
+    workbook.modified = new Date();
+    if (workbook.model?.workbookProperties) {
+      workbook.model.workbookProperties.filterPrivacy = false;
+      workbook.model.workbookProperties.removePersonalInformation = false;
+    }
+  }
+
+  async function disableRemovePersonalInfo(buffer) {
+    if (!window.JSZip) return buffer;
+    const zip = await window.JSZip.loadAsync(buffer);
+    const workbookXml = zip.file('xl/workbook.xml');
+    if (!workbookXml) return buffer;
+    let xml = await workbookXml.async('string');
+    xml = xml
+      .replace(/\sfilterPrivacy="1"/g, ' filterPrivacy="0"')
+      .replace(/\sfilterPrivacy="true"/g, ' filterPrivacy="0"')
+      .replace(/\sremovePersonalInformation="1"/g, ' removePersonalInformation="0"')
+      .replace(/\sremovePersonalInformation="true"/g, ' removePersonalInformation="0"');
+    zip.file('xl/workbook.xml', xml);
+    return zip.generateAsync({ type: 'arraybuffer' });
   }
 
   function updateButtons() {
