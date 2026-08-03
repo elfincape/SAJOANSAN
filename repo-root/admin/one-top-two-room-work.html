@@ -27,6 +27,10 @@
     .supplement-clear { position:absolute; top:0; right:0; width:1rem; height:1rem; border-radius:0 0 0 .25rem; background:rgba(0,0,0,.75); color:#fff; font-size:.65rem; line-height:1; }
     .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
     .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
+    .analysis-hover-preview { position:fixed; inset:33.333%; z-index:80; display:flex; align-items:center; justify-content:center; padding:.5rem; border:1px solid #52525b; border-radius:.75rem; background:rgba(9,9,11,.94); box-shadow:0 24px 70px rgba(0,0,0,.65); opacity:0; visibility:hidden; transform:scale(.96); transition:opacity .14s ease,transform .14s ease,visibility .14s; pointer-events:none; }
+    .analysis-hover-preview.is-visible { opacity:1; visibility:visible; transform:scale(1); }
+    .analysis-hover-preview img { display:block; width:100%; height:100%; object-fit:contain; border-radius:.45rem; }
+    @media (max-width:768px) { .analysis-hover-preview { inset:20%; } }
   </style>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen">
@@ -110,6 +114,8 @@
     </section>
   </main>
 
+  <div id="analysis-hover-preview" class="analysis-hover-preview" aria-hidden="true"><img id="analysis-hover-preview-image" alt="분석 사진 미리보기"></div>
+
   <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 translate-y-2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
 
   <script type="module">
@@ -153,6 +159,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
 {"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
   const state = { templateBuffer:null, templateName:'', captures:[], selectedCaptureIds:new Set(), selectedAnalysisIds:new Set(), stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
+  let analysisHoverTimer=null;
   const $ = id => document.getElementById(id);
 
   $('template-file').addEventListener('change', e => loadTemplate(e.target.files?.[0]));
@@ -501,16 +508,40 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   }
 
   function renderAnalysis() {
+    hideAnalysisHoverPreview();
     $('analysis-body').innerHTML = state.captures.length ? state.captures.map((item,index) => {
       const selected=selectRecord(item.result?.records); const temps=chooseTemperatures(selected?.a,selected?.b);
       const supplement=item.supplementalDataUrl?`<img src="${item.supplementalDataUrl}" alt="P열 추가 사진"><button type="button" class="supplement-clear" data-clear-supplement="${item.id}" aria-label="추가 사진 삭제">×</button>`:'+';
       return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2"><input type="checkbox" data-analysis-select="${item.id}" class="accent-emerald-500" aria-label="${index+1}번 분석 결과 선택" ${state.selectedAnalysisIds.has(item.id)?'checked':''}></td><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><div class="supplement-paste" data-supplement-paste="${item.id}" tabindex="0" title="클릭 후 Ctrl+V로 사진 한 장 붙여넣기">${supplement}</div></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
     }).join('') : '<tr><td colspan="10" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
-    $('analysis-body').querySelectorAll('[data-capture]').forEach(row => row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('change', () => updateAnalysisEdit(row.dataset.capture,row))));
+    $('analysis-body').querySelectorAll('[data-capture]').forEach(row => {
+      row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('change', () => updateAnalysisEdit(row.dataset.capture,row)));
+      row.addEventListener('mouseenter',()=>scheduleAnalysisHoverPreview(row.dataset.capture));
+      row.addEventListener('mouseleave',hideAnalysisHoverPreview);
+    });
     $('analysis-body').querySelectorAll('[data-analysis-select]').forEach(input=>input.addEventListener('change',()=>{if(input.checked)state.selectedAnalysisIds.add(input.dataset.analysisSelect);else state.selectedAnalysisIds.delete(input.dataset.analysisSelect);updateAnalysisSelectionControls();updateButtons();}));
     $('analysis-body').querySelectorAll('[data-supplement-paste]').forEach(box=>{box.addEventListener('click',()=>box.focus());box.addEventListener('paste',event=>handleSupplementPaste(event,box.dataset.supplementPaste));});
     $('analysis-body').querySelectorAll('[data-clear-supplement]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();clearSupplementPhoto(button.dataset.clearSupplement);}));
     updateAnalysisSelectionControls();
+  }
+
+  function scheduleAnalysisHoverPreview(id) {
+    hideAnalysisHoverPreview();
+    const item=state.captures.find(value=>value.id===id);
+    if(!item?.dataUrl)return;
+    analysisHoverTimer=setTimeout(()=>{
+      $('analysis-hover-preview-image').src=item.dataUrl;
+      $('analysis-hover-preview').classList.add('is-visible');
+      $('analysis-hover-preview').setAttribute('aria-hidden','false');
+    },2000);
+  }
+
+  function hideAnalysisHoverPreview() {
+    if(analysisHoverTimer){clearTimeout(analysisHoverTimer);analysisHoverTimer=null;}
+    const preview=$('analysis-hover-preview');
+    if(!preview)return;
+    preview.classList.remove('is-visible');preview.setAttribute('aria-hidden','true');
+    $('analysis-hover-preview-image').removeAttribute('src');
   }
 
   function updateAnalysisSelectionControls() {
