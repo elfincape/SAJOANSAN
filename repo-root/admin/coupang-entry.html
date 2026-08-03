@@ -59,13 +59,13 @@
       </div>
 
       <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
-        <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">Claude API</div><div class="text-xs text-zinc-500">JSON만 반환하도록 요청</div></div></div>
-        <label class="app-label">Base URL</label>
-        <input id="api-base-url" class="app-input mb-2" value="https://aiapiflow.com/v1">
-        <label class="app-label">API Key</label>
-        <input id="api-key" class="app-input mb-2" type="text" value="sk-d518e242674b4b1ac63b3594bde3643cad68c8d76e95f64914b35a6020e8212f">
-        <label class="app-label">Model</label>
-        <input id="api-model" class="app-input" value="claude-haiku-4-5" readonly>
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">Claude Vision 분석</div><div class="text-xs text-zinc-500">Supabase Edge Function 전용 호출</div></div></div>
+        <div class="rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 text-xs text-zinc-300 leading-5">
+          브라우저에서 AIAPIFlow를 직접 호출하지 않습니다.<br>
+          Edge Function: <code class="text-sky-300">/functions/v1/coupang-vision</code><br>
+          AIAPIFlow URL: <code class="text-sky-300">https://aiapiflow.com/v1/messages</code><br>
+          Model: <code class="text-sky-300">claude-haiku-4-5</code>
+        </div>
         <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">시간표 이미지 분석</button>
       </div>
     </section>
@@ -104,6 +104,7 @@
   <script type="module">
     import { requireRole } from '/js/auth.js';
     import { supabase } from '/js/supabase.js';
+    import { SUPABASE_ANON_KEY, SUPABASE_URL } from '/js/config.js';
     import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
     const profile = await requireRole('editor');
     if (!profile) { /* redirected */ }
@@ -112,6 +113,8 @@
     decorateCenterLinks(document);
     document.getElementById('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
     window.appSupabase = supabase;
+    window.appSupabaseUrl = SUPABASE_URL;
+    window.appSupabaseAnonKey = SUPABASE_ANON_KEY;
   </script>
 
   <script>
@@ -189,13 +192,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
   async function analyzeImage() {
     if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
-    const apiKey = $('api-key').value.trim(); if (!apiKey) return toast('Claude API Key를 입력하세요.', 'error');
     try {
       const base64 = await fileToBase64(state.imageFile);
       const text = await callClaudeVision({
-        baseURL: $('api-base-url').value.trim(),
-        apiKey,
-        model: $('api-model').value.trim(),
+        model: 'claude-haiku-4-5',
         mediaType: state.imageFile.type || 'image/png',
         base64
       });
@@ -220,93 +220,47 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       }
     }
   }
-  async function callClaudeVision({ baseURL, apiKey, model, mediaType, base64 }) {
-    const edgeText = await callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 });
-    if (edgeText) return edgeText;
-
-    const normalizedBase = normalizeApiBaseURL(baseURL);
-    const anthropicURL = `${normalizedBase}/messages`;
-    console.log('[coupang-entry] Claude API 요청 URL:', anthropicURL);
-    const anthropicBody = {
-      model,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          { type: 'text', text: PROMPT }
-        ]
-      }]
-    };
-
-    try {
-      return extractClaudeText(await postJson(anthropicURL, {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      }, anthropicBody));
-    } catch (err) {
-      console.warn('[coupang-entry] Anthropic messages 호출 실패, chat/completions fallback 시도:', err);
-    }
-
-    const rootURL = normalizedBase.replace(/\/v1$/, '');
-    const chatURL = `${rootURL}/v1/chat/completions`;
-    console.log('[coupang-entry] Claude API 요청 URL:', chatURL);
-    return extractClaudeText(await postJson(chatURL, {
-      'authorization': `Bearer ${apiKey}`
-    }, {
-      model,
-      temperature: 0,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: PROMPT },
-          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } }
-        ]
-      }]
-    }));
+  async function callClaudeVision({ model, mediaType, base64 }) {
+    return callCoupangVisionEdge({ model, mediaType, base64 });
   }
 
-  async function callCoupangVisionEdge({ baseURL, apiKey, model, mediaType, base64 }) {
-    try {
-      if (!window.appSupabase?.functions?.invoke) {
-        console.warn('[coupang-entry] Supabase client functions.invoke 없음');
-        return null;
-      }
-      console.log('[coupang-entry] Supabase Edge Function 요청:', 'coupang-vision');
-      const { data, error } = await window.appSupabase.functions.invoke('coupang-vision', {
-        body: { baseURL: normalizeApiBaseURL(baseURL), apiKey, model, mediaType, imageBase64: base64, prompt: PROMPT }
-      });
-      console.log('[coupang-entry] Edge Function 원본 응답:', data);
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (typeof data?.text === 'string' && data.text.trim()) {
-        console.log('[coupang-entry] Edge Function provider:', data.provider || '(unknown)');
-        return data.text;
-      }
-      console.warn('[coupang-entry] Edge Function이 text를 반환하지 않음:', data);
-      return null;
-    } catch (err) {
-      console.warn('[coupang-entry] Supabase Edge Function 호출 실패, 브라우저 직접 호출 fallback 시도:', err);
-      return null;
-    }
-  }
-
-  async function postJson(url, extraHeaders, body) {
-    console.log('[coupang-entry] 요청 URL:', url);
-    const res = await fetch(url, {
+  async function callCoupangVisionEdge({ model, mediaType, base64 }) {
+    const supabaseUrl = String(window.appSupabaseUrl || '').replace(/\/$/, '');
+    const anonKey = window.appSupabaseAnonKey || '';
+    const edgeURL = `${supabaseUrl}/functions/v1/coupang-vision`;
+    console.log('[coupang-entry] Supabase Edge Function 요청 URL:', edgeURL);
+    const res = await fetch(edgeURL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...extraHeaders },
-      body: JSON.stringify(body)
+      headers: {
+        'content-type': 'application/json',
+        apikey: anonKey,
+        authorization: `Bearer ${anonKey}`
+      },
+      body: JSON.stringify({ model, mediaType, imageBase64: base64, prompt: PROMPT })
     });
     const responseText = await res.text();
-    console.log('[coupang-entry] HTTP Status:', res.status, res.statusText);
-    console.log('[coupang-entry] Claude 원본 response body:', responseText);
-    let json = null;
-    try { json = responseText ? JSON.parse(responseText) : null; }
-    catch (err) { console.error('[coupang-entry] API response JSON.parse 실패:', err, responseText); }
-    if (!res.ok) throw new Error(json?.error?.message || json?.message || responseText || `${res.status} ${res.statusText}`);
-    return json ?? responseText;
+    console.log('[coupang-entry] Edge Function HTTP Status:', res.status, res.statusText);
+    console.log('[coupang-entry] Edge Function 원본 response body:', responseText);
+    let data = null;
+    try { data = responseText ? JSON.parse(responseText) : null; }
+    catch (err) {
+      console.error('[coupang-entry] Edge Function JSON.parse 실패:', err);
+      console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      throw new Error(`Edge Function 응답 JSON 파싱 실패: ${err.message}`);
+    }
+    console.log('[coupang-entry] Edge Function 파싱된 응답:', data);
+    if (!res.ok || data?.error) {
+      const detail = data?.responseText || data?.rawBody || data?.error || responseText || `${res.status} ${res.statusText}`;
+      const err = new Error(`Edge Function 실패 (${res.status}): ${data?.error || res.statusText}`);
+      err.detail = detail;
+      err.edge = data;
+      throw err;
+    }
+    if (typeof data?.text === 'string' && data.text.trim()) {
+      console.log('[coupang-entry] Edge Function provider:', data.provider || '(unknown)');
+      return data.text;
+    }
+    throw new Error('Edge Function 응답에 text가 없습니다.');
   }
 
   function loadScheduleJson() {
