@@ -21,6 +21,10 @@
     .paste-tile { aspect-ratio:4/3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; border:2px dashed #52525b; border-radius:.5rem; background:#18181b; color:#a1a1aa; cursor:text; text-align:center; padding:.75rem; }
     .paste-tile:hover,.paste-tile:focus { border-color:#10b981; background:rgba(6,78,59,.18); color:#d4d4d8; outline:none; }
     .capture-check { position:absolute; top:.45rem; left:.45rem; z-index:2; width:1.15rem; height:1.15rem; accent-color:#10b981; }
+    .supplement-paste { position:relative; width:3rem; height:3rem; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px dashed #71717a; border-radius:.4rem; background:#18181b; color:#a1a1aa; font-size:1.25rem; cursor:copy; }
+    .supplement-paste:focus,.supplement-paste:hover { border-color:#10b981; outline:none; }
+    .supplement-paste img { width:100%; height:100%; object-fit:cover; }
+    .supplement-clear { position:absolute; top:0; right:0; width:1rem; height:1rem; border-radius:0 0 0 .25rem; background:rgba(0,0,0,.75); color:#fff; font-size:.65rem; line-height:1; }
     .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
     .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
   </style>
@@ -82,10 +86,10 @@
         <label class="text-xs text-zinc-300 flex items-center gap-2">API 모델<select id="temperature-vision-model" class="app-input min-w-60"><option value="claude-haiku-4-5-20251001" selected>기존 모델 · Claude Haiku 4.5</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
         <button id="analyze-all" class="btn btn-primary" type="button" disabled>전체 사진 API 분석</button>
       </div>
-      <p class="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function, Base URL 및 Claude 모델을 사용합니다. 판독 불가 값은 비워 두며 결과 표에서 직접 보정할 수 있습니다.</p>
+      <p class="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function을 사용합니다. 분석 후 차량번호 옆의 +칸을 클릭하고 Ctrl+V로 사진 한 장을 붙여넣으면 온도영수증 왼쪽 P열의 같은 행에 삽입됩니다.</p>
       <div class="overflow-auto max-h-[52vh] border border-zinc-700 rounded-lg">
         <table class="result-table min-w-[1000px] w-full text-xs">
-          <thead class="bg-zinc-900 sticky top-0"><tr><th class="p-2">사진</th><th class="p-2 text-left">차량번호</th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">시간</th><th class="p-2 text-left">A</th><th class="p-2 text-left">B</th><th class="p-2 text-left">판정</th><th class="p-2 text-left">상태</th></tr></thead>
+          <thead class="bg-zinc-900 sticky top-0"><tr><th class="p-2">사진</th><th class="p-2 text-left">차량번호</th><th class="p-2">P열 사진</th><th class="p-2 text-left">날짜</th><th class="p-2 text-left">시간</th><th class="p-2 text-left">A</th><th class="p-2 text-left">B</th><th class="p-2 text-left">판정</th><th class="p-2 text-left">상태</th></tr></thead>
           <tbody id="analysis-body"></tbody>
         </table>
       </div>
@@ -133,7 +137,7 @@
   const API_INTERVAL_MS = 12000;
   const API_RATE_RETRY_DELAYS = [20000, 40000, 60000];
   const TABLE_START_ROW = 5;
-  const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, tempPhoto:17 };
+  const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, supplementalPhoto:16, tempPhoto:17 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
 날짜는 YYYY-MM-DD, 시간은 HH:mm 형식으로 통일한다.
@@ -230,6 +234,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   }
 
   async function handleImagePaste(event) {
+    if(event.defaultPrevented||event.target?.closest?.('[data-supplement-paste]'))return;
     const files=Array.from(event.clipboardData?.items||[]).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
     if(!files.length)return;
     const target=event.target;
@@ -258,7 +263,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   }
 
   function addCapture(dataUrl, name) {
-    state.captures.push({ id:newUuid(), dbId:null, savedAt:null, cloudDirty:true, name, dataUrl, status:'pending', result:null, error:'' });
+    state.captures.push({ id:newUuid(), dbId:null, savedAt:null, cloudDirty:true, name, dataUrl, supplementalDataUrl:null, status:'pending', result:null, error:'' });
     state.outputWorkbook = null; renderCaptures(); renderAnalysis(); updateButtons();
   }
 
@@ -329,7 +334,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
       const {supabase,centerCode,userId}=cloudContext();
       for(let i=0;i<state.captures.length;i++){
         const item=state.captures[i]; btn.textContent=`DB 저장 ${i+1}/${state.captures.length}`;
-        const payload={id:item.dbId||item.id,center_code:centerCode,user_id:userId,filename:item.name||'receipt.jpg',image_data:item.dataUrl,analysis:{status:item.status,result:item.result,error:item.error||''},updated_at:new Date().toISOString()};
+        const payload={id:item.dbId||item.id,center_code:centerCode,user_id:userId,filename:item.name||'receipt.jpg',image_data:item.dataUrl,analysis:{status:item.status,result:item.result,error:item.error||'',supplementalDataUrl:item.supplementalDataUrl||null},updated_at:new Date().toISOString()};
         const {data,error}=await supabase.from(CAPTURE_TABLE).upsert(payload,{onConflict:'id'}).select('id,updated_at').single();
         if(error)throw error; item.dbId=data.id; item.savedAt=data.updated_at; item.cloudDirty=false;
       }
@@ -344,7 +349,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
       const {data,error}=await supabase.from(CAPTURE_TABLE).select('id,filename,image_data,analysis,updated_at').eq('center_code',centerCode).eq('user_id',userId).order('created_at',{ascending:true});
       if(error)throw error;
       const unsaved=state.captures.filter(item=>!item.dbId);
-      state.captures=[...(data||[]).map(row=>({id:row.id,dbId:row.id,savedAt:row.updated_at,cloudDirty:false,name:row.filename,dataUrl:row.image_data,status:row.analysis?.status||'pending',result:row.analysis?.result||null,error:row.analysis?.error||''})),...unsaved];
+      state.captures=[...(data||[]).map(row=>({id:row.id,dbId:row.id,savedAt:row.updated_at,cloudDirty:false,name:row.filename,dataUrl:row.image_data,supplementalDataUrl:row.analysis?.supplementalDataUrl||null,status:row.analysis?.status||'pending',result:row.analysis?.result||null,error:row.analysis?.error||''})),...unsaved];
       state.selectedCaptureIds.clear();
       state.outputWorkbook=null; renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
       toast(`DB에서 사진 ${(data||[]).length}장을 불러왔습니다.`,'success');
@@ -426,10 +431,23 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   function renderAnalysis() {
     $('analysis-body').innerHTML = state.captures.length ? state.captures.map((item,index) => {
       const selected=selectRecord(item.result?.records); const temps=chooseTemperatures(selected?.a,selected?.b);
-      return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
-    }).join('') : '<tr><td colspan="8" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
+      const supplement=item.supplementalDataUrl?`<img src="${item.supplementalDataUrl}" alt="P열 추가 사진"><button type="button" class="supplement-clear" data-clear-supplement="${item.id}" aria-label="추가 사진 삭제">×</button>`:'+';
+      return `<tr class="border-b border-zinc-800" data-capture="${item.id}"><td class="p-2">${index+1}</td><td class="p-2"><input data-field="vehicle" class="app-input min-w-28" value="${escapeAttr(item.result?.vehicle_number||'')}"></td><td class="p-2"><div class="supplement-paste" data-supplement-paste="${item.id}" tabindex="0" title="클릭 후 Ctrl+V로 사진 한 장 붙여넣기">${supplement}</div></td><td class="p-2"><input data-field="date" class="app-input min-w-32" value="${escapeAttr(item.result?.date||'')}"></td><td class="p-2"><input data-field="time" class="app-input min-w-20" value="${escapeAttr(selected?.time||'')}"></td><td class="p-2"><input data-field="a" type="number" step="0.1" class="app-input w-20" value="${selected?.a??''}"></td><td class="p-2"><input data-field="b" type="number" step="0.1" class="app-input w-20" value="${selected?.b??''}"></td><td class="p-2">냉동 ${temps.freezer??'-'} / 냉장 ${temps.refrigerated??'-'}</td><td class="p-2 ${statusClass(item.status)}">${escapeHtml(statusLabel(item))}</td></tr>`;
+    }).join('') : '<tr><td colspan="9" class="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>';
     $('analysis-body').querySelectorAll('[data-capture]').forEach(row => row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('change', () => updateAnalysisEdit(row.dataset.capture,row))));
+    $('analysis-body').querySelectorAll('[data-supplement-paste]').forEach(box=>{box.addEventListener('click',()=>box.focus());box.addEventListener('paste',event=>handleSupplementPaste(event,box.dataset.supplementPaste));});
+    $('analysis-body').querySelectorAll('[data-clear-supplement]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();clearSupplementPhoto(button.dataset.clearSupplement);}));
   }
+
+  async function handleSupplementPaste(event,id) {
+    const file=Array.from(event.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile();
+    if(!file)return toast('클립보드에서 사진을 찾지 못했습니다.','warn');
+    event.preventDefault();event.stopPropagation();
+    try { const item=state.captures.find(value=>value.id===id);if(!item)return;item.supplementalDataUrl=await readImageWithoutCrop(file);item.cloudDirty=true;state.outputWorkbook=null;renderAnalysis();renderCaptures();updateButtons();toast('P열 추가 사진을 등록했습니다.','success'); }
+    catch(err){console.error(err);toast(`추가 사진 등록 실패: ${err.message||err}`,'error');}
+  }
+
+  function clearSupplementPhoto(id) { const item=state.captures.find(value=>value.id===id);if(!item)return;item.supplementalDataUrl=null;item.cloudDirty=true;state.outputWorkbook=null;renderAnalysis();renderCaptures();updateButtons(); }
 
   function updateAnalysisEdit(id,row) {
     const item=state.captures.find(x=>x.id===id); if(!item)return;
@@ -461,6 +479,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
         if (!target) { addIssue(item.name,`차량 ${item.result.vehicle_number}: 사진이 없는 행이 없습니다.`); continue; }
         const record=selectRecord(item.result.records); const temps=chooseTemperatures(record?.a,record?.b);
         addImageToCell(workbook,ws,item.dataUrl,COL.tempPhoto,target.row); markPhotoCell(ws,target.row); occupied.add(target.row);
+        if(item.supplementalDataUrl)addImageToCell(workbook,ws,item.supplementalDataUrl,COL.supplementalPhoto,target.row);
         writeTemperatureAndDate(ws,target.row,item.result.date,temps,false);
         state.matchLog.push(`${item.name} → ${target.vehicle} / ${target.row}행`);
         if (temps.freezer==null && temps.refrigerated==null) addIssue(item.name,'온도값 판독 실패 또는 기준에 맞는 온도 없음');
@@ -484,23 +503,28 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   function findPhotoMarkerRows(ws,vehicleRows) { return new Set(vehicleRows.filter(item=>hasPhotoMarker(ws.getCell(item.row,COL.tempPhoto))).map(item=>item.row)); }
 
   function findTemperatureImages(ws) {
+    return findImagesInColumn(ws,COL.tempPhoto);
+  }
+
+  function findImagesInColumn(ws,column) {
     const map=new Map();
-    for(const image of ws.getImages?.()||[]){ const col=(image.range?.tl?.nativeCol??image.range?.tl?.col??-1)+1; const row=(image.range?.tl?.nativeRow??image.range?.tl?.row??-1)+1; if(col===COL.tempPhoto&&row>=TABLE_START_ROW)map.set(row,image.imageId); }
+    for(const image of ws.getImages?.()||[]){ const col=(image.range?.tl?.nativeCol??image.range?.tl?.col??-1)+1; const row=(image.range?.tl?.nativeRow??image.range?.tl?.row??-1)+1; if(col===column&&row>=TABLE_START_ROW)map.set(row,image.imageId); }
     return map;
   }
 
   function propagateExistingPhotos(workbook,ws,groups,imageRows,occupied) {
+    const supplementalRows=findImagesInColumn(ws,COL.supplementalPhoto);
     for(const group of groups.values()){
       const source=group.find(x=>occupied.has(x.row)&&imageRows.has(x.row)); if(!source)continue;
-      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`기존 사진 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
+      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; if(supplementalRows.has(source.row))copyExistingImage(workbook,ws,supplementalRows.get(source.row),COL.supplementalPhoto,target.row); markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`기존 사진 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
     }
   }
 
   function propagateCompletedRows(workbook,ws,groups,occupied) {
-    const imageRows=findTemperatureImages(ws);
+    const imageRows=findTemperatureImages(ws),supplementalRows=findImagesInColumn(ws,COL.supplementalPhoto);
     for(const group of groups.values()){
       const source=group.find(x=>occupied.has(x.row)&&imageRows.has(x.row)); if(!source)continue;
-      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`중복 차량 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
+      for(const target of group){ if(occupied.has(target.row))continue; if(!copyExistingImage(workbook,ws,imageRows.get(source.row),COL.tempPhoto,target.row))continue; if(supplementalRows.has(source.row))copyExistingImage(workbook,ws,supplementalRows.get(source.row),COL.supplementalPhoto,target.row); markPhotoCell(ws,target.row); copyTemperatureAndDate(ws,source.row,target.row); occupied.add(target.row); state.matchLog.push(`중복 차량 복사: ${source.vehicle} ${source.row}행 → ${target.row}행`); }
     }
   }
 
