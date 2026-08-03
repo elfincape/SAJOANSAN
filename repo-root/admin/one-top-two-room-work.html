@@ -12,9 +12,9 @@
   <style>
     .step-card { border:1px solid #3f3f46; background:rgba(39,39,42,.45); border-radius:.75rem; padding:1rem; }
     .step-badge { display:inline-flex; width:1.6rem; height:1.6rem; align-items:center; justify-content:center; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.35); font-size:.75rem; font-weight:700; }
-    .camera-frame { position:relative; width:100%; aspect-ratio:4/3; overflow:hidden; border:2px solid #10b981; border-radius:.75rem; background:#09090b; }
+    .camera-frame { --capture-inset:18.75%; position:relative; width:100%; aspect-ratio:4/3; overflow:hidden; border:2px solid #10b981; border-radius:.75rem; background:#09090b; }
     .camera-frame video { width:100%; height:100%; object-fit:cover; }
-    .camera-frame::after { content:'영수증을 4:3 영역 안에 맞춰 주세요'; position:absolute; inset:.65rem; border:1px dashed rgba(255,255,255,.7); border-radius:.45rem; display:flex; align-items:flex-end; justify-content:center; padding:.5rem; color:#fff; font-size:.72rem; text-shadow:0 1px 3px #000; pointer-events:none; }
+    .camera-frame::after { content:'점선 안에 영수증을 맞춰 주세요'; position:absolute; inset:var(--capture-inset); border:2px dashed rgba(255,255,255,.8); border-radius:.45rem; display:flex; align-items:flex-end; justify-content:center; padding:.35rem; color:#fff; font-size:.68rem; text-shadow:0 1px 3px #000; pointer-events:none; }
     .thumb { position:relative; border:1px solid #3f3f46; border-radius:.5rem; overflow:hidden; background:#18181b; }
     .thumb img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
     .paste-tile { aspect-ratio:4/3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; border:2px dashed #52525b; border-radius:.5rem; background:#18181b; color:#a1a1aa; cursor:text; text-align:center; padding:.75rem; }
@@ -45,14 +45,15 @@
     <section class="grid grid-cols-1 xl:grid-cols-[minmax(360px,520px)_1fr] gap-4">
       <div class="step-card">
         <div class="flex items-center gap-2 mb-3"><span class="step-badge">2</span><h2 class="font-semibold">카메라 촬영</h2><span id="capture-count" class="text-xs text-zinc-400"></span></div>
-        <div class="camera-frame"><video id="camera-video" autoplay playsinline muted></video></div>
+        <div id="camera-frame" class="camera-frame"><video id="camera-video" autoplay playsinline muted></video></div>
         <div class="grid grid-cols-2 gap-2 mt-3">
           <button id="camera-start" class="btn btn-ghost" type="button">카메라 시작</button>
           <button id="camera-capture" class="btn btn-primary" type="button" disabled>촬영</button>
           <button id="camera-stop" class="btn btn-ghost" type="button" disabled>카메라 종료</button>
           <label class="btn btn-ghost text-center cursor-pointer">사진 파일 추가<input id="capture-files" type="file" accept="image/*" multiple class="hidden"></label>
+          <label class="col-span-2 text-xs text-zinc-300 flex items-center gap-2">촬영 거리 보정<select id="camera-crop-zoom" class="app-input flex-1"><option value="1">기본 거리 (1.0배)</option><option value="1.3">조금 멀리 (1.3배)</option><option value="1.6" selected>멀리 촬영 (1.6배)</option><option value="2">더 멀리 (2.0배)</option></select></label>
         </div>
-        <p class="text-[11px] text-zinc-500 mt-2">카메라로 직접 촬영할 때만 화면의 중앙 4:3 영역을 저장합니다. 파일 선택·붙여넣기 사진은 이미 잘라 둔 원본을 그대로 사용하며 다시 자르지 않습니다.</p>
+        <p class="text-[11px] text-zinc-500 mt-2">기본값은 1.6배 원거리 보정입니다. 카메라를 영수증에서 멀리 두고 점선 안에 맞추면 점선 영역만 4:3 사진으로 저장합니다. 파일 선택·붙여넣기 사진은 다시 자르지 않습니다.</p>
       </div>
       <div class="step-card">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -145,6 +146,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   $('camera-start').addEventListener('click', startCamera);
   $('camera-stop').addEventListener('click', stopCamera);
   $('camera-capture').addEventListener('click', captureCamera);
+  $('camera-crop-zoom').addEventListener('change',updateCameraGuide);
   $('capture-files').addEventListener('change', e => addImageFiles(e.target.files));
   document.addEventListener('paste', handleImagePaste);
   $('capture-clear').addEventListener('click', clearCaptures);
@@ -158,7 +160,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   $('download-workbook').addEventListener('click', downloadWorkbook);
   window.addEventListener('beforeunload', stopCamera);
   window.addEventListener('one-top-cloud-ready', refreshCloudStatus);
-  renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
+  updateCameraGuide(); renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
 
   async function loadTemplate(file) {
     if (!file) return;
@@ -204,7 +206,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   async function captureCamera() {
     const video = $('camera-video');
     if (!video.videoWidth || !video.videoHeight) return toast('카메라 영상이 준비되지 않았습니다.', 'warn');
-    const dataUrl = cropSourceToFourThree(video, video.videoWidth, video.videoHeight);
+    const dataUrl = cropSourceToFourThree(video, video.videoWidth, video.videoHeight, Number($('camera-crop-zoom').value)||1.6);
     addCapture(dataUrl, `camera-${String(state.captures.length + 1).padStart(3,'0')}.jpg`);
   }
 
@@ -235,11 +237,19 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     catch(err) { console.error(err); toast(`붙여넣기 실패: ${err.message||err}`,'error'); }
   }
 
-  function cropSourceToFourThree(source, sourceWidth, sourceHeight) {
+  function updateCameraGuide() {
+    const zoom=Math.max(1,Number($('camera-crop-zoom').value)||1.6),inset=(1-1/zoom)*50;
+    $('camera-frame').style.setProperty('--capture-inset',`${inset}%`);
+  }
+
+  function cropSourceToFourThree(source, sourceWidth, sourceHeight, zoom=1) {
     const ratio = 4 / 3;
     let sx = 0, sy = 0, sw = sourceWidth, sh = sourceHeight;
     if (sourceWidth / sourceHeight > ratio) { sw = sourceHeight * ratio; sx = (sourceWidth - sw) / 2; }
     else { sh = sourceWidth / ratio; sy = (sourceHeight - sh) / 2; }
+    zoom=Math.max(1,Math.min(2,Number(zoom)||1));
+    const croppedWidth=sw/zoom,croppedHeight=sh/zoom;
+    sx+=(sw-croppedWidth)/2;sy+=(sh-croppedHeight)/2;sw=croppedWidth;sh=croppedHeight;
     const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1200;
     canvas.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL('image/jpeg', .88);
