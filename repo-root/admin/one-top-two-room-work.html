@@ -150,6 +150,7 @@
   const EXCEL_IMAGE_MAX_HEIGHT = 720;
   const EXCEL_IMAGE_MAX_BYTES = 200 * 1024;
   const TABLE_START_ROW = 5;
+  const TEMPLATE_SCAN_BUFFER_ROWS = 20;
   const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, supplementalPhoto:16, tempPhoto:17 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
@@ -618,7 +619,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
   }
 
   function collectVehicleRows(ws) {
-    const rows=[]; const last=Math.max(ws.actualRowCount||ws.rowCount||0,TABLE_START_ROW);
+    const rows=[]; const last=Math.max(ws.actualRowCount||ws.rowCount||0,TABLE_START_ROW)+TEMPLATE_SCAN_BUFFER_ROWS;
     for(let row=TABLE_START_ROW;row<=last;row++){ const vehicle=cellText(ws.getCell(row,COL.vehicle)); const key=normalizeVehicle(vehicle); if(key)rows.push({row,vehicle,key}); }
     return rows;
   }
