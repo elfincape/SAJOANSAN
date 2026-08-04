@@ -7,6 +7,7 @@ const tools = readFileSync(new URL('../supabase/functions/operations-assistant/t
 assert.match(edge, /authorization:`Bearer \$\{token\}`/);
 assert.match(edge, /user_center_access/);
 assert.match(edge, /center_code=eq\.\$\{c\}/);
+assert.match(edge, /if\(access&&!access\.length\)return fail\('FORBIDDEN'/);
 assert.doesNotMatch(edge, /SERVICE_ROLE/i);
 assert.doesNotMatch(edge, /\.from\([^)]*\)\.(?:insert|update|upsert|delete)|\/rpc\//i);
 assert.doesNotMatch(edge, /security_password/);
