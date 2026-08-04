@@ -152,8 +152,16 @@ create unique index if not exists delivery_points_center_code_uidx
 create unique index if not exists routes_center_company_car_name_uidx
   on public.routes(center_code, company_id, car_number, name);
 
-create unique index if not exists vehicles_center_plate_uidx
-  on public.vehicles(center_code, plate_number);
+-- Remove the legacy global company+plate rule before adding the center-aware rule.
+alter table public.vehicles drop constraint if exists vehicles_company_plate_unique;
+drop index if exists public.vehicles_company_plate_unique;
+drop index if exists public.vehicles_center_plate_uidx;
+create unique index if not exists vehicles_center_company_plate_uidx
+  on public.vehicles (
+    center_code,
+    coalesce(company_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    plate_number
+  );
 
 create unique index if not exists drivers_center_company_name_uidx
   on public.drivers(center_code, company_id, name);

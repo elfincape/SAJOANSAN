@@ -443,6 +443,9 @@
     line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     el.appendChild(line); el.scrollTop = el.scrollHeight;
   };
+  const eqNullable = (query, column, value) => value == null
+    ? query.is(column, null)
+    : query.eq(column, value);
 
   document.getElementById('btn-execute').addEventListener('click', async () => {
     if (!state.normalized) { toast('먼저 CSV를 업로드하세요', 'error'); return; }
@@ -482,18 +485,28 @@
       if (!dryRun) {
         for (const d of n.drivers) {
           const compId = companyMap.get(d.company_name) || null;
-          const { data: ex } = await supabase
+          let driverQuery = supabase
             .from('drivers')
-            .select('id')
+            .select('id, center_code')
             .eq('center_code', selectedCenter.code)
             .eq('name', d.name)
-            .eq('company_id', compId)
-            .maybeSingle();
+            .limit(1);
+          driverQuery = eqNullable(driverQuery, 'company_id', compId);
+          let { data: driverRows, error: driverSelectError } = await driverQuery;
+          if (driverSelectError) throw new Error(`drivers select: ${driverSelectError.message}`);
+          let ex = driverRows?.[0] || null;
+          // 과거 전역 unique(company_id,name) 시절에 center_code가 잘못 들어간 행을 복구한다.
+          if (!ex) {
+            let legacyQuery = supabase.from('drivers').select('id, center_code').eq('name', d.name).limit(1);
+            legacyQuery = eqNullable(legacyQuery, 'company_id', compId);
+            const { data: legacyRows, error: legacyError } = await legacyQuery;
+            if (legacyError) throw new Error(`drivers legacy select: ${legacyError.message}`);
+            ex = legacyRows?.[0] || null;
+          }
           let driverId;
           if (ex) {
             const { error } = await supabase.from('drivers')
               .update(centerPayload({ phone: d.phone, contact: d.contact }, selectedCenter))
-              .eq('center_code', selectedCenter.code)
               .eq('id', ex.id);
             if (error) throw new Error(`drivers update: ${error.message}`);
             driverId = ex.id;
@@ -514,16 +527,28 @@
       if (!dryRun) {
         for (const v of n.vehicles) {
           const compId = companyMap.get(v.company_name) || null;
-          const { data: ex } = await supabase
-            .from('vehicles').select('id')
+          let vehicleQuery = supabase
+            .from('vehicles').select('id, center_code')
             .eq('center_code', selectedCenter.code)
             .eq('plate_number', v.plate_number)
-            .maybeSingle();
+            .limit(1);
+          vehicleQuery = eqNullable(vehicleQuery, 'company_id', compId);
+          let { data: vehicleRows, error: vehicleSelectError } = await vehicleQuery;
+          if (vehicleSelectError) throw new Error(`vehicles select: ${vehicleSelectError.message}`);
+          let ex = vehicleRows?.[0] || null;
+          // vehicles_company_plate_unique에 걸리는 기존 행이 다른/NULL 센터면 선택 센터로 복구한다.
+          if (!ex) {
+            let legacyQuery = supabase.from('vehicles').select('id, center_code')
+              .eq('plate_number', v.plate_number).limit(1);
+            legacyQuery = eqNullable(legacyQuery, 'company_id', compId);
+            const { data: legacyRows, error: legacyError } = await legacyQuery;
+            if (legacyError) throw new Error(`vehicles legacy select: ${legacyError.message}`);
+            ex = legacyRows?.[0] || null;
+          }
           let vehicleId;
           if (ex) {
             const { error } = await supabase.from('vehicles')
               .update(centerPayload({ tonnage: v.tonnage, company_id: compId }, selectedCenter))
-              .eq('center_code', selectedCenter.code)
               .eq('id', ex.id);
             if (error) throw new Error(`vehicles update: ${error.message}`);
             vehicleId = ex.id;

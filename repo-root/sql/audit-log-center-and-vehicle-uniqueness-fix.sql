@@ -34,6 +34,9 @@ alter table if exists public.audit_log
 --   unique(center_code, coalesce(company_id,'00000000-0000-0000-0000-000000000000'::uuid), plate_number)
 -- -----------------------------------------------------------------------------
 drop index if exists public.vehicles_center_plate_uidx;
+alter table if exists public.vehicles
+  drop constraint if exists vehicles_company_plate_unique;
+drop index if exists public.vehicles_company_plate_unique;
 
 create unique index if not exists vehicles_center_company_plate_uidx
   on public.vehicles (
