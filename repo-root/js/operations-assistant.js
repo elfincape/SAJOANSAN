@@ -8,14 +8,13 @@ if(root)mount();
 function mount(){
   const center=getRequiredCenter();let controller=null,lastFocus=null;
   root.replaceChildren();
-  const launch=el('button','ops-assistant-launcher','💬');launch.type='button';launch.title='운영 질의도우미';launch.setAttribute('aria-label','운영 질의도우미 열기');launch.setAttribute('aria-expanded','false');
+  const launch=el('button','ops-assistant-launcher','💬');launch.type='button';launch.title='도우미';launch.setAttribute('aria-label','도우미 열기');launch.setAttribute('aria-expanded','false');
   const badge=el('span','ops-assistant-badge');badge.hidden=true;launch.append(badge);
   const panel=el('section','ops-assistant-panel');panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','false');panel.setAttribute('aria-labelledby','ops-assistant-title');
-  const head=el('div','ops-assistant-head');const title=el('strong','', '운영 질의도우미');title.id='ops-assistant-title';const cb=el('span','ops-assistant-center',center.name);const spacer=el('span');spacer.style.flex='1';const fresh=button('새 대화'),close=button('닫기');head.append(title,cb,spacer,fresh,close);
+  const head=el('div','ops-assistant-head');const title=el('strong','', '도우미');title.id='ops-assistant-title';const cb=el('span','ops-assistant-center',center.name);const spacer=el('span');spacer.style.flex='1';const fresh=button('새 대화'),close=button('닫기');head.append(title,cb,spacer,fresh,close);
   const warning=el('div','ops-assistant-warning','읽기 전용 · AI 답변은 원본 데이터 확인 필요');
   const messages=el('div','ops-assistant-messages');messages.setAttribute('aria-live','polite');
-  const chips=el('div','ops-assistant-chips');['5톤 차량이 진입할 수 없는 납품처','23시 이전 마감 납품처가 포함된 코스','전화번호가 누락된 기사','코스별 납품처 수'].forEach(q=>{const b=button(q,'ops-assistant-chip');b.onclick=()=>{input.value=q;input.focus()};chips.append(b)});
-  const form=el('form','ops-assistant-form');const input=el('textarea');input.placeholder='현재 센터 운영 데이터를 질문하세요';input.maxLength=1000;input.setAttribute('aria-label','운영 데이터 질문');const row=el('div','ops-assistant-form-row');const status=el('span','ops-assistant-status');const stop=button('중지');stop.hidden=true;const send=button('전송');send.type='submit';send.classList.add('btn','btn-primary');row.append(status,stop,send);form.append(input,row);panel.append(head,warning,messages,chips,form);root.append(launch,panel);
+  const form=el('form','ops-assistant-form');const input=el('textarea');input.placeholder='현재 센터 데이터를 질문하세요';input.maxLength=1000;input.setAttribute('aria-label','데이터 질문');const row=el('div','ops-assistant-form-row');const status=el('span','ops-assistant-status');const stop=button('중지');stop.hidden=true;const send=button('전송');send.type='submit';send.classList.add('btn','btn-primary');row.append(status,stop,send);form.append(input,row);panel.append(head,warning,messages,form);root.append(launch,panel);
   function open(){lastFocus=document.activeElement;panel.hidden=false;launch.setAttribute('aria-expanded','true');badge.hidden=true;requestAnimationFrame(()=>input.focus())}
   function shut(){if(controller)controller.abort();panel.hidden=true;launch.setAttribute('aria-expanded','false');lastFocus?.focus?.()}
   launch.onclick=()=>panel.hidden?open():shut();close.onclick=shut;fresh.onclick=()=>{messages.replaceChildren();input.value='';status.textContent='';input.focus()};

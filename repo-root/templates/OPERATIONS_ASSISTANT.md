@@ -1,10 +1,12 @@
-# 운영 질의도우미
+# 도우미
 
 ## 설계/위협 모델
 
 브라우저는 로그인 JWT, 현재 센터 slug, 질문만 `operations-assistant` Edge Function에 보냅니다. 함수는 JWT로 사용자를 확인하고 활성 `viewer` 이상 프로필 및 `user_center_access`를 검증합니다. 데이터 조회는 사용자 JWT/RLS 컨텍스트와 서버가 강제한 `center_code`를 사용합니다. Service role은 사용하지 않습니다.
 
-LLM은 고정된 다섯 intent와 제한된 JSON 인자만 고릅니다. SQL·테이블명·PostgREST 식을 만들거나 실행하지 못합니다. 실제 쿼리는 서버의 고정 query builder만 수행하며 쓰기 메서드/RPC/SQL 실행 경로가 없습니다. `security_password`와 열쇠 위치는 select/모델 payload/응답에서 제외하지만, 조회가 허용된 기사 연락처 등 일반 운영 정보는 마스킹하지 않습니다. 표 rows는 모델이 아닌 서버 조회 결과로 결정됩니다.
+LLM은 단일 `search_operations` 도구에서 `OPERATIONS_QUERY_SCHEMA`가 허용한 field/operator/select/sort만 선택합니다. SQL·테이블명·PostgREST 식을 만들거나 실행하지 못하며, 실제 조회는 서버의 고정 query builder만 수행합니다. 대시보드에 표시되는 연락처·열쇠보관장소·비밀번호를 포함한 운영 필드는 사용자 JWT/RLS와 선택 센터 범위 안에서만 조회되며 마스킹하지 않습니다. 표 rows는 모델이 아닌 서버 조회 결과로 결정됩니다.
+
+모든 필터 조건은 AND로 적용합니다. 시간 문자열은 00:00 기준 분으로 검증·변환하고, 대면/검수/무인·보안키/열쇠/없음·창고/탑차/야적 같은 체크 필드는 실제 `course_view` 값과 비교합니다. 질문에서 요구한 열과 조건 확인에 필요한 열만 응답하며 동일한 표시 행은 중복 제거합니다.
 
 현재 앱에는 센터별 사용자 권한 모델이 없었으므로 `operations-assistant.sql`은 현행 동작과 같이 기존 활성 사용자에게 001/002를 초기 배정합니다. 마이그레이션 전에는 활성 사용자에게 기존 앱과 동일하게 두 센터를 허용하되, 모든 운영 조회에 사용자 JWT/RLS와 서버의 `center_code`를 계속 강제합니다. 이후 센터 제한이 필요하면 이 매핑만 관리하십시오.
 

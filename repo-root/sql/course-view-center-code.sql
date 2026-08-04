@@ -24,7 +24,7 @@ select column_name, data_type
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'course_view'
-  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password')
+  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password', 'dp_contact_name')
 order by column_name;
 
 create or replace view public.course_view as
@@ -108,7 +108,8 @@ select
   r.center_code as route_center_code,
   cen.name as center_name,
   dp.security_key_location as security_key_location,
-  dp.security_password as security_password
+  dp.security_password as security_password,
+  dp.contact_name as dp_contact_name
 from public.route_stops rs
 join public.routes r
   on r.id = rs.route_id
