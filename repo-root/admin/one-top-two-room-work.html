@@ -156,6 +156,8 @@
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
 날짜는 YYYY-MM-DD, 시간은 HH:mm 형식으로 통일한다.
 A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
+온도 기록은 영수증에 보이는 위에서 아래 순서를 그대로 유지해 records 배열에 넣는다. 시간값을 기준으로 재정렬하지 마라.
+Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증에서 가장 맨 윗줄이다. 같은 시간이 여러 줄이어도 맨 윗줄을 우선한다.
 판독할 수 없는 값은 반드시 null로 반환한다.
 설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
 {"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
@@ -656,7 +658,9 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
     return {freezer,refrigerated:refrigeratedCandidates[0]?.value??null};
   }
 
-  function selectRecord(records) { const valid=(records||[]).filter(Boolean); return [...valid].sort((a,b)=>String(a.time||'').localeCompare(String(b.time||''))).at(-1)||null; }
+  // 영수증의 최신 기록은 시간 정렬 결과가 아니라 물리적으로 가장 맨 윗줄이다.
+  // 같은 시간이 반복돼도 API가 반환한 원래 순서의 첫 번째 행을 사용한다.
+  function selectRecord(records) { return (records||[]).find(Boolean)||null; }
   function normalizeVehicle(value) { const digits=String(value||'').replace(/\D/g,''); return digits.slice(-4); }
   function normalizeDate(value) { const s=String(value||'').trim(); const m=s.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$/); return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''; }
   function normalizeTime(value) { const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/); return m?`${m[1].padStart(2,'0')}:${m[2]}`:''; }
@@ -691,7 +695,7 @@ A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 
   function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result),analyzing=state.captures.some(x=>x.status==='analyzing'),selected=state.captures.some(x=>state.selectedAnalysisIds.has(x.id)); $('analyze-all').disabled=!state.captures.length||analyzing; $('analyze-selected').disabled=!selected||analyzing; $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; $('cloud-save').disabled=!state.captures.length||!window.appUserId; }
   function statusClass(status){return status==='done'?'status-ok':status==='error'?'status-error':'status-warn';}
-  function statusLabel(item){const count=item.result?.records?.length||0;return item.status==='done'?`분석 완료 (${count}건${count>1?' · 최신시간 사용':''})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
+  function statusLabel(item){const count=item.result?.records?.length||0;return item.status==='done'?`분석 완료 (${count}건${count>1?' · 맨 윗줄 사용':''})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
   function buildOutputName(name){return `${String(name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`;}
   function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function fileToImage(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지를 읽지 못했습니다.'));};img.src=url;});}
