@@ -4,7 +4,7 @@
 
 브라우저는 로그인 JWT, 현재 센터 slug, 질문만 `operations-assistant` Edge Function에 보냅니다. 함수는 JWT로 사용자를 확인하고 활성 `viewer` 이상 프로필 및 `user_center_access`를 검증합니다. 데이터 조회는 사용자 JWT/RLS 컨텍스트와 서버가 강제한 `center_code`를 사용합니다. Service role은 사용하지 않습니다.
 
-LLM은 고정된 다섯 intent와 제한된 JSON 인자만 고릅니다. SQL·테이블명·PostgREST 식을 만들거나 실행하지 못합니다. 실제 쿼리는 서버의 고정 query builder만 수행하며 쓰기 메서드/RPC/SQL 실행 경로가 없습니다. `security_password`와 열쇠 위치는 select/모델 payload/응답에서 제외하고 전화번호는 마스킹합니다. 표 rows는 모델이 아닌 서버 조회 결과로 결정됩니다.
+LLM은 고정된 다섯 intent와 제한된 JSON 인자만 고릅니다. SQL·테이블명·PostgREST 식을 만들거나 실행하지 못합니다. 실제 쿼리는 서버의 고정 query builder만 수행하며 쓰기 메서드/RPC/SQL 실행 경로가 없습니다. `security_password`와 열쇠 위치는 select/모델 payload/응답에서 제외하지만, 조회가 허용된 기사 연락처 등 일반 운영 정보는 마스킹하지 않습니다. 표 rows는 모델이 아닌 서버 조회 결과로 결정됩니다.
 
 현재 앱에는 센터별 사용자 권한 모델이 없었으므로 `operations-assistant.sql`은 현행 동작과 같이 기존 활성 사용자에게 001/002를 초기 배정합니다. 마이그레이션 전에는 활성 사용자에게 기존 앱과 동일하게 두 센터를 허용하되, 모든 운영 조회에 사용자 JWT/RLS와 서버의 `center_code`를 계속 강제합니다. 이후 센터 제한이 필요하면 이 매핑만 관리하십시오.
 
