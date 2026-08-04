@@ -6,12 +6,13 @@ on:
       - main
     paths:
       - 'supabase/functions/coupang-vision/**'
+      - 'supabase/functions/operations-assistant/**'
       - '.github/workflows/deploy-supabase-functions.yml'
   workflow_dispatch:
 
 jobs:
-  deploy-coupang-vision:
-    name: Deploy coupang-vision
+  deploy-edge-functions:
+    name: Deploy Edge Functions
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -36,3 +37,6 @@ jobs:
 
       - name: Deploy coupang-vision function
         run: supabase functions deploy coupang-vision --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy operations-assistant function
+        run: supabase functions deploy operations-assistant --project-ref "$SUPABASE_PROJECT_REF"
