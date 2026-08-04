@@ -11,6 +11,9 @@
   <style>
     .drop-card { border:1px dashed #52525b; background:rgba(39,39,42,.55); transition:.15s ease; }
     .drop-card:hover,.drop-card.dragover { border-color:#10b981; background:rgba(16,185,129,.08); transform:translateY(-1px); }
+    .image-paste-box { min-height: 190px; border: 2px dashed #52525b; border-radius: .85rem; background: rgba(24,24,27,.72); display:flex; align-items:center; justify-content:center; text-align:center; cursor:pointer; outline:none; transition:.15s ease; overflow:hidden; }
+    .image-paste-box:hover,.image-paste-box:focus,.image-paste-box.active { border-color:#38bdf8; background:rgba(14,165,233,.08); box-shadow:0 0 0 3px rgba(14,165,233,.12); }
+    .image-paste-box img { max-width:100%; max-height:260px; object-fit:contain; display:block; }
     .step-badge { display:inline-flex; align-items:center; justify-content:center; width:1.5rem; height:1.5rem; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.3); font-size:.75rem; font-weight:700; }
     .preview-table td,.preview-table th { white-space:nowrap; vertical-align:middle; }
     .code-box { background:#09090b; border:1px solid #3f3f46; border-radius:.5rem; }
@@ -39,10 +42,10 @@
         <li>배차정보 텍스트는 기존 배차정보 파서 규칙에 맞춰 기사명·차량번호·연락처를 파싱합니다.</li>
         <li>센터명 기준으로 시간표와 배차정보를 매칭하고, 확인 후 G6:G23 시간 행의 I/J, K/L... 영역에 입력합니다.</li>
       </ol>
-      <p class="mt-3 text-xs text-amber-300">API 키는 보안상 코드에 저장하지 않고 이 화면에서만 입력합니다. 공용 PC에서는 작업 후 브라우저를 닫아주세요.</p>
+      <p class="mt-3 text-xs text-amber-300">AIAPIFlow 호출은 브라우저가 아니라 Supabase Edge Function을 통해서만 실행됩니다.</p>
     </section>
 
-    <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <div class="drop-card rounded-lg p-4" data-drop="template">
         <div class="flex items-center gap-2 mb-3"><span class="step-badge">1</span><div><div class="text-sm font-semibold">엑셀 템플릿</div><div class="text-xs text-zinc-500">G6:G23 시간 기준 입력</div></div></div>
         <button id="reload-template-btn" class="btn btn-ghost text-xs mb-3" type="button">저장된 템플릿 다시 불러오기</button>
@@ -52,21 +55,17 @@
       </div>
 
       <div class="drop-card rounded-lg p-4" data-drop="image">
-        <div class="flex items-center gap-2 mb-3"><span class="step-badge">2</span><div><div class="text-sm font-semibold">쿠팡 시간표 이미지</div><div class="text-xs text-zinc-500">Claude Vision JSON 추출</div></div></div>
-        <input id="image-file" type="file" accept="image/*" class="w-full text-sm">
-        <div class="mt-2 text-xs text-zinc-500">이미지 파일 선택 또는 이 화면에서 <kbd class="px-1 rounded bg-zinc-700">Ctrl</kbd>+<kbd class="px-1 rounded bg-zinc-700">V</kbd>로 붙여넣기 가능</div>
-        <div id="image-info" class="mt-3 text-xs text-zinc-400">선택된 이미지 없음</div>
-      </div>
-
-      <div class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
-        <div class="flex items-center gap-2 mb-3"><span class="step-badge">3</span><div><div class="text-sm font-semibold">Claude Vision 분석</div><div class="text-xs text-zinc-500">Supabase Edge Function 전용 호출</div></div></div>
-        <div class="rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 text-xs text-zinc-300 leading-5">
-          브라우저에서 AIAPIFlow를 직접 호출하지 않습니다.<br>
-          Edge Function: <code class="text-sky-300">/functions/v1/coupang-vision</code><br>
-          AIAPIFlow URL: <code class="text-sky-300">https://aiapiflow.com/v1/messages</code><br>
-          Model: <code class="text-sky-300">claude-haiku-4-5-20251001</code>
+        <div class="flex items-center gap-2 mb-3"><span class="step-badge">2</span><div><div class="text-sm font-semibold">쿠팡 시간표 이미지</div><div class="text-xs text-zinc-500">이미지 등록 후 API호출</div></div></div>
+        <input id="image-file" type="file" accept="image/*" class="w-full text-sm mb-3">
+        <div id="image-paste-box" class="image-paste-box" tabindex="0" role="button" aria-label="쿠팡 시간표 이미지 붙여넣기 영역">
+          <div id="image-placeholder" class="px-4 text-xs text-zinc-400 leading-6">
+            이 점선 박스를 클릭한 뒤 <kbd class="px-1 rounded bg-zinc-700">Ctrl</kbd>+<kbd class="px-1 rounded bg-zinc-700">V</kbd>로 이미지를 붙여넣으세요.<br>
+            또는 위 파일 선택으로 이미지를 등록하세요.
+          </div>
+          <img id="image-preview" class="hidden" alt="쿠팡 시간표 미리보기">
         </div>
-        <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">시간표 이미지 분석</button>
+        <div id="image-info" class="mt-3 text-xs text-zinc-400">선택된 이미지 없음</div>
+        <button id="analyze-image-btn" class="btn btn-primary mt-3 w-full" type="button">API호출</button>
       </div>
     </section>
 
@@ -134,12 +133,15 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 예약시간은 HH:mm 형식으로 통일해라.
 물량은 숫자만 number로 변환해라.
 설명하지 말고 JSON 배열만 반환해라.`;
-  const state = { workbook: null, worksheetName: '', imageFile: null, scheduleRows: [], dispatchRows: [], matches: [] };
+  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', scheduleRows: [], dispatchRows: [], matches: [] };
   const $ = id => document.getElementById(id);
 
   $('reload-template-btn').addEventListener('click', () => loadDefaultTemplate(true));
   $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
   $('image-file').addEventListener('change', e => handleImageFile(e.target.files?.[0]));
+  $('image-paste-box').addEventListener('click', () => focusImagePasteBox());
+  $('image-paste-box').addEventListener('focus', () => $('image-paste-box').classList.add('active'));
+  $('image-paste-box').addEventListener('blur', () => $('image-paste-box').classList.remove('active'));
   document.addEventListener('paste', handleImagePaste);
   $('analyze-image-btn').addEventListener('click', analyzeImage);
   $('parse-dispatch-btn').addEventListener('click', parseDispatchInput);
@@ -175,19 +177,39 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   async function loadTemplateBuffer(buffer, name, detail) {
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer);
     const ws = workbook.worksheets[0]; if (!ws) throw new Error('Sheet1을 찾을 수 없습니다.');
-    state.workbook = workbook; state.worksheetName = ws.name;
+    state.workbook = workbook; state.templateBuffer = buffer.slice(0); state.worksheetName = ws.name;
     $('template-info').innerHTML = `<div class="font-medium text-zinc-200">${escapeHtml(name)}</div><div>${escapeHtml(detail)} · Sheet1: ${escapeHtml(ws.name)}</div>`;
     updateButtons();
   }
-  function handleImageFile(file) { state.imageFile = file || null; $('image-info').textContent = file ? `${file.name} (${(file.size/1024).toFixed(1)} KB)` : '선택된 이미지 없음'; }
+  function handleImageFile(file) {
+    state.imageFile = file || null;
+    $('image-info').textContent = file ? `${file.name} (${(file.size/1024).toFixed(1)} KB)` : '선택된 이미지 없음';
+    renderImagePreview(file);
+  }
+
+  function focusImagePasteBox() { $('image-paste-box').focus(); }
 
   function handleImagePaste(event) {
+    if (document.activeElement !== $('image-paste-box')) return;
     const item = [...(event.clipboardData?.items || [])].find(entry => entry.type?.startsWith('image/'));
     if (!item) return;
     const file = item.getAsFile();
     if (!file) return;
+    event.preventDefault();
     handleImageFile(new File([file], `pasted-coupang-${Date.now()}.png`, { type: file.type || 'image/png' }));
     toast('붙여넣은 이미지를 시간표 이미지로 등록했습니다.', 'success');
+  }
+
+  function renderImagePreview(file) {
+    const preview = $('image-preview');
+    const placeholder = $('image-placeholder');
+    if (state.imagePreviewUrl) URL.revokeObjectURL(state.imagePreviewUrl);
+    state.imagePreviewUrl = '';
+    if (!file) { preview.classList.add('hidden'); preview.removeAttribute('src'); placeholder.classList.remove('hidden'); return; }
+    state.imagePreviewUrl = URL.createObjectURL(file);
+    preview.src = state.imagePreviewUrl;
+    preview.classList.remove('hidden');
+    placeholder.classList.add('hidden');
   }
 
   async function analyzeImage() {
@@ -206,7 +228,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       console.log('[coupang-entry] 파싱된 JSON:', rows);
       console.log('[coupang-entry] 추출된 배열 length:', rows.length);
       $('schedule-json').value = JSON.stringify(rows, null, 2);
-      state.scheduleRows = rows.map(normalizeScheduleRow);
+      state.scheduleRows = rows.map(normalizeScheduleRow).filter(isActiveScheduleRow);
       renderScheduleCount();
       toast(`시간표 ${state.scheduleRows.length}행을 추출했습니다.`, 'success');
     } catch (err) {
@@ -270,7 +292,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       const rows = parseScheduleRowsFromText(raw);
       console.log('[coupang-entry] 파싱된 JSON:', rows);
       console.log('[coupang-entry] 추출된 배열 length:', rows.length);
-      state.scheduleRows = rows.map(normalizeScheduleRow);
+      state.scheduleRows = rows.map(normalizeScheduleRow).filter(isActiveScheduleRow);
       renderScheduleCount();
       toast(`시간표 JSON ${state.scheduleRows.length}행을 반영했습니다.`, 'success');
     }
@@ -285,6 +307,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const base = String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim();
     return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: normalizeTime(row.reservationTime), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold), frozen: numberOrNull(row.frozen) };
   }
+  function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
 
   function parseDispatchInput() {
     state.dispatchRows = parseDispatchText($('dispatch-text').value);
@@ -347,8 +370,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
 
   async function downloadWorkbook() {
-    if (!state.workbook) return toast('템플릿을 먼저 불러오세요.', 'error');
-    const buffer = await state.workbook.xlsx.writeBuffer(); const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer);
+    if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
+    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
     const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
     const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
     const out = await workbook.xlsx.writeBuffer(); saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
@@ -358,9 +381,13 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
       const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
       const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
-      ws.getRow(rowNumber).getCell(col).value = compactCenterLabel(m.schedule.centerRaw);
-      ws.getRow(rowNumber).getCell(col + 1).value = m.match.matchedDispatch.driver || '';
-      ws.getRow(rowNumber).commit?.();
+      const row = ws.getRow(rowNumber);
+      const centerCell = row.getCell(col);
+      const driverCell = row.getCell(col + 1);
+      centerCell.value = compactCenterLabel(m.schedule.centerRaw);
+      driverCell.value = m.match.matchedDispatch.driver || '';
+      centerCell.numFmt = '@';
+      driverCell.numFmt = '@';
     });
     return errors;
   }
@@ -368,7 +395,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
   function compactCenterLabel(value) { return String(value || '').replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
 
-  function normalizeTime(value) { if (value == null || value === '') return null; if (value instanceof Date) return `${String(value.getHours()).padStart(2,'0')}:${String(value.getMinutes()).padStart(2,'0')}`; const s = String(value).trim(); const m = s.match(/(\d{1,2})\s*[:시]?\s*(\d{2})?/); if (!m) return null; return `${String(Number(m[1])).padStart(2,'0')}:${String(Number(m[2] || 0)).padStart(2,'0')}`; }
+  function normalizeTime(value) { if (value == null || value === '') return null; if (typeof value === 'number' && Number.isFinite(value)) { const total = Math.round((value % 1) * 24 * 60); return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; } if (value instanceof Date) return `${String(value.getHours()).padStart(2,'0')}:${String(value.getMinutes()).padStart(2,'0')}`; const s = String(value).trim(); const m = s.match(/(\d{1,2})\s*[:시]?\s*(\d{2})?/); if (!m) return null; return `${String(Number(m[1])).padStart(2,'0')}:${String(Number(m[2] || 0)).padStart(2,'0')}`; }
   function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); return String(v).trim(); }
   function centerKey(value) { return String(value || '').toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
   function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
