@@ -151,7 +151,7 @@
   const EXCEL_IMAGE_MAX_BYTES = 200 * 1024;
   const TABLE_START_ROW = 5;
   const TEMPLATE_SCAN_BUFFER_ROWS = 20;
-  const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, supplementalPhoto:16, tempPhoto:17 };
+  const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, compliance:14, temperaturePair:15, supplementalPhoto:16, tempPhoto:17, shipmentType:18 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
 날짜는 YYYY-MM-DD, 시간은 HH:mm 형식으로 통일한다.
@@ -582,6 +582,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     state.captures.filter(item=>item.status!=='done'&&item.status!=='error').forEach(item=>addIssue(item.name,'API 분석이 완료되지 않았습니다.'));
     try {
       const workbook=new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
+      workbook.calcProperties.fullCalcOnLoad=true; workbook.calcProperties.forceFullCalc=true;
       const ws=workbook.worksheets[0]; const vehicleRows=collectVehicleRows(ws);
       markRowsWithExistingTemperatures(ws,vehicleRows);
       // 사진 사용 여부는 삽입 이미지 목록이 아니라 Q열의 공백 표시만 기준으로 판단한다.
@@ -610,6 +611,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
         for(const row of vehicleRows)if(isPhotoRowOccupied(ws,row.row))occupied.add(row.row);
         if(item.supplementalDataUrl)addImageToCell(workbook,ws,await prepareExcelImage(item.supplementalDataUrl),COL.supplementalPhoto,target.row);
         writeTemperatureAndDate(ws,target.row,item.result.date,temps,false);
+        writeResultFormulas(ws,target.row);
         state.matchLog.push(`${item.name} → ${target.vehicle} / ${target.row}행`);
         if (temps.freezer==null && temps.refrigerated==null) addIssue(item.name,'온도값 판독 실패 또는 기준에 맞는 온도 없음');
       }
@@ -650,6 +652,12 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     return String(dataUrl||'');
   }
   function writeTemperatureAndDate(ws,row,date,temps,overwrite) { const values=[[COL.freezer,temps.freezer],[COL.refrigerated,temps.refrigerated]]; for(const [col,val] of values)if(val!=null&&(overwrite||!cellText(ws.getCell(row,col))))ws.getCell(row,col).value=val; if(date&&!cellText(ws.getCell(row,COL.date)))ws.getCell(row,COL.date).value=formatTemplateDate(date); }
+  function buildResultFormulas(row) { return {
+    compliance:`IF(AND(OR(ISBLANK(J${row}),J${row}<=-18),OR(AND(K${row}>0,K${row}<10),ISBLANK(K${row}))),"준수","미준수")`,
+    temperaturePair:`IF(COUNTA(J${row}:K${row})=2,"O","X")`,
+    shipmentType:`IF(AND(J${row}<>"", K${row}=""), "냉동 출고", IF(AND(J${row}="", K${row}<>""), "냉장 출고", ""))`,
+  }; }
+  function writeResultFormulas(ws,row) { const formulas=buildResultFormulas(row); ws.getCell(row,COL.compliance).value={formula:formulas.compliance}; ws.getCell(row,COL.temperaturePair).value={formula:formulas.temperaturePair}; ws.getCell(row,COL.shipmentType).value={formula:formulas.shipmentType}; }
 
   function chooseTemperatures(a,b) {
     const values=[{source:'A',value:toNullableNumber(a)},{source:'B',value:toNullableNumber(b)}].filter(x=>x.value!=null);
