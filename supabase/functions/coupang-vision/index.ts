@@ -5,7 +5,7 @@ const CORS_HEADERS = {
 };
 
 const AIAPIFLOW_BASE_URL = 'https://aiapiflow.com/v1';
-const MODEL = 'claude-haiku-4-5';
+const MODEL = 'claude-haiku-4-5-20251001';
 
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return json({ ok: true });
@@ -48,7 +48,7 @@ Deno.serve(async req => {
     const result = await postJson(anthropicURL, {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
-    }, anthropicPayload);
+    }, anthropicPayload, model);
 
     const text = extractText(result.data, result.bodyText);
     console.log('[coupang-vision] Claude parsed text:', text);
@@ -58,6 +58,7 @@ Deno.serve(async req => {
       requestURL: result.url,
       status: result.status,
       responseText: result.bodyText,
+      aiapiflowResponseText: result.bodyText,
       raw: result.data
     });
   } catch (err) {
@@ -72,8 +73,9 @@ async function safeReadJson(req: Request) {
   catch (err) { throw new AppError('Invalid JSON request body', 400, { stack: errorStack(err) }); }
 }
 
-async function postJson(url: string, headers: Record<string, string>, body: unknown) {
+async function postJson(url: string, headers: Record<string, string>, body: unknown, model: string) {
   console.log('[coupang-vision] request URL:', url);
+  console.log('[coupang-vision] model:', model);
   let res: Response;
   try {
     res = await fetch(url, {
@@ -82,7 +84,8 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
       body: JSON.stringify(body)
     });
   } catch (err) {
-    throw new AppError(`AIAPIFlow fetch failed: ${errorMessage(err)}`, 502, { requestURL: url, stack: errorStack(err) });
+    console.error('[coupang-vision] AIAPIFlow fetch failed', { requestURL: url, model, stack: errorStack(err) });
+    throw new AppError(`AIAPIFlow fetch failed: ${errorMessage(err)}`, 502, { requestURL: url, model, stack: errorStack(err) });
   }
 
   const bodyText = await res.text();
@@ -92,20 +95,26 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   let data: any = null;
   try { data = bodyText ? JSON.parse(bodyText) : null; }
   catch (err) {
+    console.error('[coupang-vision] Claude response JSON parse failed', { requestURL: url, model, status: res.status, responseText: bodyText, stack: errorStack(err) });
     throw new AppError(`Claude response JSON parse failed: ${errorMessage(err)}`, 502, {
       requestURL: url,
+      model,
       status: res.status,
       responseText: bodyText,
+      aiapiflowResponseText: bodyText,
       stack: errorStack(err)
     });
   }
 
   console.log('[coupang-vision] Claude parsed JSON:', data);
   if (!res.ok) {
+    console.error('[coupang-vision] AIAPIFlow request failed', { requestURL: url, model, status: res.status, responseText: bodyText, raw: data });
     throw new AppError(data?.error?.message || data?.message || `AIAPIFlow request failed: ${res.status} ${res.statusText}`, 502, {
       requestURL: url,
+      model,
       status: res.status,
       responseText: bodyText,
+      aiapiflowResponseText: bodyText,
       raw: data
     });
   }
