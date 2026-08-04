@@ -32,7 +32,7 @@
       <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/납품처 항목).</li>
       <li><strong>4단계</strong>에서 "DB에 저장" 버튼을 눌러 일괄 upsert를 실행합니다.</li>
     </ol>
-    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 센터+unique 키(회사명, 차량번호, 납품처 코드 등) 기준으로 upsert되므로 중복 생성되지 않습니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
+    <p class="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 선택 센터의 회사명·차량번호·납품처 코드 등을 먼저 조회한 뒤 갱신하므로 중복 생성을 방지합니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
   </section>
 
   <!-- 1단계: 파일 선택 -->
@@ -457,14 +457,23 @@
       log(`▶ 시작 (${dryRun ? 'DRY-RUN' : '실제 저장'}) / 대상 센터: ${selectedCenter.name}`);
 
       /* 1) 회사 */
-      log(`회사 ${n.companies.length}건 upsert…`);
+      log(`회사 ${n.companies.length}건 처리…`);
       const companyMap = new Map();
       if (!dryRun && n.companies.length) {
-        const { data, error } = await supabase
-          .from('companies').upsert(n.companies.map(row => centerPayload(row, selectedCenter)), { onConflict: 'center_code,name' })
-          .select('id, name');
-        if (error) throw new Error(`companies: ${error.message}`);
-        data.forEach(c => companyMap.set(c.name, c.id));
+        // 운영 DB에 (center_code, name) unique 제약이 아직 없어도 동작하도록
+        // ON CONFLICT 대신 센터별 기존 행 조회 후 없는 회사만 삽입한다.
+        const { data: existing, error: selectError } = await supabase
+          .from('companies').select('id, name').eq('center_code', selectedCenter.code);
+        if (selectError) throw new Error(`companies select: ${selectError.message}`);
+        (existing || []).forEach(c => { if (!companyMap.has(c.name)) companyMap.set(c.name, c.id); });
+        const missing = n.companies.filter(c => !companyMap.has(c.name));
+        if (missing.length) {
+          const { data: inserted, error: insertError } = await supabase
+            .from('companies').insert(missing.map(row => centerPayload(row, selectedCenter)))
+            .select('id, name');
+          if (insertError) throw new Error(`companies insert: ${insertError.message}`);
+          (inserted || []).forEach(c => companyMap.set(c.name, c.id));
+        }
       }
 
       /* 2) 기사 — unique 제약이 없을 수 있으므로 검색-후-삽입 방식 */
@@ -533,13 +542,30 @@
       log(`납품처 ${n.points.length}건 처리…`);
       const pointMap = new Map();
       if (!dryRun) {
+        // delivery_points의 복합 unique 제약 유무와 무관하게 기존 행을 먼저 찾는다.
+        const { data: existingPoints, error: pointSelectError } = await supabase
+          .from('delivery_points').select('id, code').eq('center_code', selectedCenter.code);
+        if (pointSelectError) throw new Error(`delivery_points select: ${pointSelectError.message}`);
+        (existingPoints || []).forEach(p => { if (!pointMap.has(p.code)) pointMap.set(p.code, p.id); });
         for (let i = 0; i < n.points.length; i += 100) {
           const batch = n.points.slice(i, i + 100).map(row => centerPayload(row, selectedCenter));
-          const { data, error } = await supabase
-            .from('delivery_points').upsert(batch, { onConflict: 'center_code,code' })
-            .select('id, code');
-          if (error) throw new Error(`delivery_points[${i}]: ${error.message}`);
-          data.forEach(p => pointMap.set(p.code, p.id));
+          const inserts = [];
+          for (const row of batch) {
+            const existingId = pointMap.get(row.code);
+            if (existingId) {
+              const { error } = await supabase.from('delivery_points').update(row)
+                .eq('center_code', selectedCenter.code).eq('id', existingId);
+              if (error) throw new Error(`delivery_points update(${row.code}): ${error.message}`);
+            } else {
+              inserts.push(row);
+            }
+          }
+          if (inserts.length) {
+            const { data: inserted, error } = await supabase.from('delivery_points')
+              .insert(inserts).select('id, code');
+            if (error) throw new Error(`delivery_points insert[${i}]: ${error.message}`);
+            (inserted || []).forEach(p => pointMap.set(p.code, p.id));
+          }
           log(`  납품처 ${Math.min(i+100, n.points.length)}/${n.points.length}`);
         }
       }

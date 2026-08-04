@@ -140,8 +140,9 @@ create index if not exists routes_center_code_idx          on public.routes(cent
 create index if not exists transfers_center_code_idx       on public.transfer_deliveries(center_code);
 create index if not exists audit_log_center_code_idx       on public.audit_log(center_code);
 
--- These unique indexes are needed by the current import upsert onConflict keys.
--- If a statement fails due to duplicates, inspect and de-duplicate that table first.
+-- These unique indexes are recommended as database-level duplicate guards.
+-- The current importer also works before these indexes are installed by using
+-- center-scoped select/update/insert operations instead of ON CONFLICT.
 create unique index if not exists companies_center_name_uidx
   on public.companies(center_code, name);
 
