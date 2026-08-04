@@ -35,8 +35,8 @@ jobs:
       - name: Set AIAPIFlow secret
         run: supabase secrets set AIAPIFLOW_API_KEY="$AIAPIFLOW_API_KEY" --project-ref "$SUPABASE_PROJECT_REF"
 
-      - name: Deploy coupang-vision function
-        run: supabase functions deploy coupang-vision --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-
       - name: Deploy operations-assistant function
         run: supabase functions deploy operations-assistant --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy coupang-vision function
+        run: supabase functions deploy coupang-vision --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
