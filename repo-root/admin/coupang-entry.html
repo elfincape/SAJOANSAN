@@ -40,7 +40,7 @@
         <li>저장된 엑셀 템플릿을 불러옵니다. 기본 위치는 <code>/templates/coupang-entry-template.xlsx</code>입니다.</li>
         <li>쿠팡 시간표 이미지를 Claude Vision API로 분석해 센터·예약시간·물량·냉장·냉동을 JSON으로 추출합니다.</li>
         <li>배차정보 텍스트는 기존 배차정보 파서 규칙에 맞춰 기사명·차량번호·연락처를 파싱합니다.</li>
-        <li>센터명 기준으로 시간표와 배차정보를 매칭하고, 확인 후 G6:G23 시간 행의 I/J, K/L... 영역에 입력합니다.</li>
+        <li>센터명 기준으로 시간표와 배차정보를 매칭하고, 확인 후 G6:G23 시간 행의 I/J, K/L... U/V 영역에 입력합니다.</li>
       </ol>
       <p class="mt-3 text-xs text-amber-300">AIAPIFlow 호출은 브라우저가 아니라 Supabase Edge Function을 통해서만 실행됩니다.</p>
     </section>
@@ -120,7 +120,7 @@
   const TIME_ROW_END = 23;
   const TIME_COL = 7;
   const FIRST_CENTER_COL = 9;
-  const LAST_CENTER_COL = 18;
+  const LAST_CENTER_COL = 22;
   const PROMPT = `이미지의 쿠팡 시간표 표를 읽어라.
 각 행에서 센터명, 예약시간, 물량, 냉장, 냉동 값을 추출해라.
 센터명이 있지만 예약시간이 비어 있는 행도 누락하지 말고 reservationTime을 null로 넣어라.
@@ -130,7 +130,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 예약시간은 HH:mm 형식으로 통일해라.
 물량은 숫자만 number로 변환해라.
 설명하지 말고 JSON 배열만 반환해라.`;
-  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', scheduleRows: [], dispatchRows: [], matches: [] };
+  const state = { workbook: null, templateBuffer: null, worksheetName: '', imageFile: null, imagePreviewUrl: '', imageBase64: '', imageMediaType: '', imageSize: null, scheduleRows: [], dispatchRows: [], matches: [], usedGroupFills: new Set() };
+  const GROUP_FILL_COLORS = ['FFE2F0CB','FFFFD6A5','FFCAFFBF','FF9BF6FF','FFA0C4FF','FFBDB2FF','FFFFADAD','FFFDFFB6','FFCDE7BE','FFD7E3FC','FFFFC8DD','FFE0BBE4'];
   const $ = id => document.getElementById(id);
 
   $('reload-template-btn').addEventListener('click', () => loadDefaultTemplate(true));
@@ -180,6 +181,9 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
   function handleImageFile(file) {
     state.imageFile = file || null;
+    state.imageBase64 = '';
+    state.imageMediaType = file?.type || 'image/png';
+    state.imageSize = null;
     $('image-info').textContent = file ? `${file.name} (${(file.size/1024).toFixed(1)} KB)` : '선택된 이미지 없음';
     renderImagePreview(file);
   }
@@ -204,6 +208,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     state.imagePreviewUrl = '';
     if (!file) { preview.classList.add('hidden'); preview.removeAttribute('src'); placeholder.classList.remove('hidden'); return; }
     state.imagePreviewUrl = URL.createObjectURL(file);
+    preview.onload = () => { state.imageSize = { width: preview.naturalWidth || 0, height: preview.naturalHeight || 0 }; };
     preview.src = state.imagePreviewUrl;
     preview.classList.remove('hidden');
     placeholder.classList.add('hidden');
@@ -212,7 +217,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   async function analyzeImage() {
     if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
     try {
-      const base64 = await fileToBase64(state.imageFile);
+      const base64 = await getImageBase64();
       const text = await callClaudeVision({
         model: 'claude-haiku-4-5-20251001',
         mediaType: state.imageFile.type || 'image/png',
@@ -300,13 +305,14 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     }
   }
   function normalizeScheduleRow(row, index) {
-    const raw = String(row.centerRaw || row.center || '').trim();
-    const base = String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim();
+    const raw = normalizeCenterName(String(row.centerRaw || row.center || '').trim());
+    const base = normalizeCenterName(String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim());
     return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: normalizeTime(row.reservationTime), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
   }
   function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
 
   function parseDispatchInput() {
+    state.usedGroupFills = new Set();
     state.dispatchRows = parseDispatchText($('dispatch-text').value);
     $('dispatch-count').textContent = state.dispatchRows.length ? `${state.dispatchRows.length}건` : '파싱 결과 없음';
     toast(`배차정보 ${state.dispatchRows.length}건을 파싱했습니다.`, state.dispatchRows.length ? 'success' : 'error');
@@ -328,14 +334,43 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     return out.flatMap(expandDispatchRecord);
   }
   function dispatchRecord(centerText, ton, driver, vehicle, phone) { return { centerText, ton, driver, vehicle, phone }; }
-  function expandDispatchRecord(record) { return expandCenterExpression(record.centerText).map(key => ({ ...record, centerKey: key.key, centerBaseKey: key.baseKey, isB2B: key.isB2B, centerLabel: key.label })); }
+  function expandDispatchRecord(record) {
+    const expanded = expandCenterExpression(record.centerText);
+    const groupId = expanded.length > 1 ? `dispatch-group-${Date.now()}-${Math.random().toString(16).slice(2)}` : '';
+    const groupFill = groupId ? pickDistinctGroupFill() : '';
+    return expanded.map(key => ({ ...record, groupId, groupFill, centerKey: key.key, centerBaseKey: key.baseKey, isB2B: key.isB2B, centerLabel: key.label }));
+  }
+  function pickDistinctGroupFill() {
+    const available = GROUP_FILL_COLORS.filter(color => !state.usedGroupFills.has(color));
+    const color = available.length ? available[Math.floor(Math.random() * available.length)] : randomPastelArgb();
+    state.usedGroupFills.add(color);
+    return color;
+  }
+  function randomPastelArgb() {
+    let color = '';
+    do {
+      const r = 185 + Math.floor(Math.random() * 55);
+      const g = 185 + Math.floor(Math.random() * 55);
+      const b = 185 + Math.floor(Math.random() * 55);
+      color = `FF${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`.toUpperCase();
+    } while (state.usedGroupFills.has(color));
+    return color;
+  }
   function expandCenterExpression(text) {
-    const cleaned = String(text || '').replace(/^쿠팡\s*/,'').replace(/\s+/g, ' ').trim();
-    const parts = cleaned.split(/[\/+,，、\s]+/).filter(Boolean); const result = []; let lastRegion = '';
-    parts.forEach(part => { const m = part.match(/^([가-힣]+)?(\d+)(\s*b2b|b2b)?$/i); if (!m) return; if (m[1]) lastRegion = m[1]; const label = `${lastRegion}${m[2]}${m[3] ? 'B2B' : ''}`; result.push(centerKeyObj(label)); });
+    const cleaned = normalizeCenterName(String(text || '').replace(/^쿠팡\s*/,'').replace(/\s+/g, ' ').trim());
+    const parts = cleaned.split(/[\/+,，、\s]+/).filter(Boolean); const result = []; let lastRegion = ''; let lastBaseLabel = '';
+    parts.forEach(part => {
+      if (/^(b2b|비투비)$/i.test(part) && lastBaseLabel) { result.push(centerKeyObj(`${lastBaseLabel}B2B`)); return; }
+      const m = part.match(/^([가-힣]+)?(\d+)(\s*b2b|b2b)?$/i);
+      if (!m) return;
+      if (m[1]) lastRegion = m[1];
+      const baseLabel = `${lastRegion}${m[2]}`;
+      lastBaseLabel = baseLabel;
+      result.push(centerKeyObj(`${baseLabel}${m[3] ? 'B2B' : ''}`));
+    });
     return result.length ? result : [centerKeyObj(cleaned)];
   }
-  function centerKeyObj(label) { const isB2B = /b2b/i.test(label); const base = label.replace(/\s*b2b/ig, ''); return { label, key: centerKey(label), baseKey: centerKey(base), isB2B }; }
+  function centerKeyObj(label) { const normalized = normalizeCenterName(label); const isB2B = /b2b/i.test(normalized); const base = normalized.replace(/\s*b2b/ig, ''); return { label: normalized, key: centerKey(normalized), baseKey: centerKey(base), isB2B }; }
   function hasTonnage(line) { return /\d+(?:\.\d+)?(?:톤|축)/.test(line); }
   function nameTon(line) { const cleaned = String(line || '').replace(/^\d+\.\s*/, '').replace(/\s*경유\s*/g, ' ').trim(); const m = cleaned.match(/\d+(?:\.\d+)?(?:톤|축)/); return { centerText: (m ? cleaned.slice(0, m.index) : cleaned).trim(), ton: m ? m[0] : '' }; }
   function tonCountSpecs(line) { const specs = []; const re = /(\d+(?:\.\d+)?(?:톤|축))\s*(\d+)\s*대/g; let m; while ((m = re.exec(line))) specs.push({ ton: m[1], count: Number(m[2]) }); return specs; }
@@ -370,11 +405,14 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
     const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
+    await insertUploadedImage(workbook, ws);
     const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
     const out = await workbook.xlsx.writeBuffer(); saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
   }
   function writeMatchesToWorksheet(ws) {
     const errors = [];
+    const reservedFills = collectWorksheetFillColors(ws);
+    const groupFillMap = new Map();
     state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
       const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
       const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
@@ -385,8 +423,47 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       driverCell.value = m.match.matchedDispatch.driver || '';
       centerCell.numFmt = '@';
       driverCell.numFmt = '@';
+      applyGroupFill(centerCell, driverCell, m.match.matchedDispatch, reservedFills, groupFillMap);
     });
     return errors;
+  }
+  async function insertUploadedImage(workbook, ws) {
+    if (!state.imageFile) return;
+    const base64 = await getImageBase64();
+    if (!base64) return;
+    const extension = imageExtension(state.imageFile);
+    const imageId = workbook.addImage({ base64: `data:${state.imageMediaType || state.imageFile.type || 'image/png'};base64,${base64}`, extension });
+    const width = columnsPixelWidth(ws, 1, 5);
+    const ratio = state.imageSize?.width && state.imageSize?.height ? state.imageSize.height / state.imageSize.width : 0.62;
+    const height = Math.max(80, Math.round(width * ratio));
+    ws.addImage(imageId, { tl: { col: 0, row: 1 }, ext: { width, height }, editAs: 'oneCell' });
+  }
+  async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
+  function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
+  function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
+  function applyGroupFill(centerCell, driverCell, dispatch, reservedFills, groupFillMap) {
+    if (!dispatch?.groupFill) return;
+    const key = dispatch.groupId || dispatch.groupFill;
+    if (!groupFillMap.has(key)) groupFillMap.set(key, reserveDistinctFill(dispatch.groupFill, reservedFills));
+    const fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: groupFillMap.get(key) } };
+    centerCell.fill = fill;
+    driverCell.fill = fill;
+  }
+  function collectWorksheetFillColors(ws) {
+    const colors = new Set();
+    ws.eachRow(row => row.eachCell(cell => {
+      const argb = cell.fill?.fgColor?.argb;
+      if (argb) colors.add(String(argb).toUpperCase());
+    }));
+    return colors;
+  }
+  function reserveDistinctFill(preferred, reservedFills) {
+    const preferredColor = String(preferred || '').toUpperCase();
+    if (preferredColor && !reservedFills.has(preferredColor)) { reservedFills.add(preferredColor); return preferredColor; }
+    let color = '';
+    do { color = randomPastelArgb(); } while (reservedFills.has(color));
+    reservedFills.add(color);
+    return color;
   }
   function findTimeRow(ws, timeText) {
     const target = normalizeTime(timeText);
@@ -426,7 +503,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
   function fallbackTimeRowByHalfHour(timeText) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = h * 60 + m; const start = 8 * 60; const diff = total - start; if (diff < 0 || diff % 30 !== 0) return null; const row = TIME_ROW_START + diff / 30; return row >= TIME_ROW_START && row <= TIME_ROW_END ? row : null; }
   function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
-  function compactCenterLabel(value) { return String(value || '').replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
+  function compactCenterLabel(value) { return normalizeCenterName(value).replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
 
   function normalizeTime(value) {
     if (value == null || value === '') return null;
@@ -463,7 +540,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     return [...new Set(out)];
   }
   function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') { if (typeof v.result === 'number') return normalizeTime(v.result) || ''; return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); } return String(v).trim(); }
-  function centerKey(value) { return String(value || '').toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
+  function normalizeCenterName(value) { return String(value || '').replace(/군지암/g, '곤지암').trim(); }
+  function centerKey(value) { return normalizeCenterName(value).toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
   function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
   function numberOrNull(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? n : null; }
   function extractClaudeText(json) {
