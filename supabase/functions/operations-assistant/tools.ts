@@ -27,12 +27,15 @@ export const OPERATIONS_QUERY_SCHEMA:Record<string,FieldDefinition>={
   '3.5톤이하':{label:'3.5톤이하',column:'allow_under_3_5ton',type:'boolean',filterOperators:boolOps,aliases:['3.5톤','3.5t','3.5톤 진입']},
   '5톤이상':{label:'5톤이상',column:'allow_over_5ton',type:'boolean',filterOperators:boolOps,aliases:['5톤','5t','5톤 진입']},
   '무인야적납':{label:'무인야적납',column:'allow_unmanned_yard',type:'boolean',filterOperators:boolOps,aliases:['야적납','무인야적','야적 진입']},
+  '납품방식':{label:'납품방식',column:'delivery_method',type:'text',filterOperators:textOps,aliases:['납품 방법','배송방식','납품방식 공란','납품방식 없음']},
   '대면':{label:'대면',column:'delivery_method',matchValue:'대면',type:'boolean',filterOperators:boolOps,aliases:['대면납품','대면 배송']},
   '검수':{label:'검수',column:'delivery_method',matchValue:'검수',type:'boolean',filterOperators:boolOps,aliases:['검수납품']},
   '무인':{label:'무인',column:'delivery_method',matchValue:'무인',type:'boolean',filterOperators:boolOps,aliases:['무인납품','비대면']},
+  '진입방식':{label:'진입방식',column:'access_method',type:'text',filterOperators:textOps,aliases:['진입 방법','출입방식','진입방식 공란','진입방식 없음']},
   '보안키':{label:'보안키',column:'access_method',matchValue:'보안키',type:'boolean',filterOperators:boolOps,aliases:['보안키 진입']},
   '열쇠':{label:'열쇠',column:'access_method',matchValue:'열쇠',type:'boolean',filterOperators:boolOps,aliases:['열쇠 진입']},
   '없음':{label:'없음',column:'access_method',matchValue:'없음',type:'boolean',filterOperators:boolOps,aliases:['진입수단 없음']},
+  '납품장소':{label:'납품장소',column:'delivery_location',type:'text',filterOperators:textOps,aliases:['하차장소','배송장소','납품장소 공란','납품장소 없음']},
   '창고':{label:'창고',column:'delivery_location',matchValue:'창고',type:'boolean',filterOperators:boolOps,aliases:['창고납품','창고 하차']},
   '탑차':{label:'탑차',column:'delivery_location',matchValue:'탑차',type:'boolean',filterOperators:boolOps,aliases:['탑차납품','탑차 하차']},
   '야적':{label:'야적',column:'delivery_location',matchValue:'야적',type:'boolean',filterOperators:boolOps,aliases:['야적납품','야적 가능']},
@@ -41,6 +44,7 @@ export const OPERATIONS_QUERY_SCHEMA:Record<string,FieldDefinition>={
   '열쇠보관장소':{label:'열쇠보관장소',column:'security_key_location',type:'text',filterOperators:textOps,aliases:['열쇠 위치','키 보관장소','보안키 위치']},
   '비밀번호':{label:'비밀번호',column:'security_password',type:'text',filterOperators:textOps,aliases:['출입 비밀번호','보안 비밀번호','패스워드']},
   '비고':{label:'비고',column:'stop_memo',type:'text',filterOperators:textOps,aliases:['메모','특이사항','주의사항']},
+  '코스등록':{label:'코스등록',column:'__route_registered',type:'boolean',filterOperators:boolOps,aliases:['코스 등록 여부','코스에 등록','등록된 납품처','미등록 납품처','코스에 등록되지 않은']},
 };
 
 export type Condition={field:string;operator:FilterOperator;value?:unknown};

@@ -29,17 +29,64 @@ const fieldNames=Object.keys(OPERATIONS_QUERY_SCHEMA),operators=['eq','contains'
 const TOOL={name:'search_operations',description:'현재 센터 코스표의 허용된 모든 운영 컬럼을 AND 조건으로 통합 조회한다.',input_schema:{type:'object',additionalProperties:false,required:['conditions','select','sort','limit'],properties:{conditions:{type:'array',maxItems:20,items:{type:'object',additionalProperties:false,required:['field','operator'],properties:{field:{type:'string',enum:fieldNames},operator:{type:'string',enum:operators},value:{}}}},select:{type:'array',minItems:1,maxItems:33,items:{type:'string',enum:fieldNames}},sort:{type:'array',maxItems:5,items:{type:'object',additionalProperties:false,required:['field','direction'],properties:{field:{type:'string',enum:fieldNames},direction:{type:'string',enum:['asc','desc']}}}},limit:{type:'integer',minimum:1,maximum:100}}}};
 async function classify(question:string,key:string):Promise<QueryPlan>{
   const schemaGuide=fieldNames.map(name=>{const f=OPERATIONS_QUERY_SCHEMA[name];return`${name}(${f.type}; 별칭:${f.aliases.join('/')})`}).join(', ');
-  const prompt=`자연어 질문을 search_operations 도구 인자로 정확히 변환하라. 질문에 포함된 모든 조건은 conditions에 넣고 반드시 AND로 적용한다. 이름 일부 검색은 contains, 명확한 완전일치는 eq를 사용한다. 시간은 HH:mm 문자열로 쓴다. 파생 체크 항목(5톤이상/무인/탑차 등)은 eq true/false를 쓴다. select에는 사용자가 요구한 열과 필터 확인에 꼭 필요한 열만 넣는다. 임의의 전체 목록으로 대체하지 마라. 조건 컬럼이나 값을 확정할 수 없으면 존재하지 않는 필드를 만들지 말고 도구 호출을 하지 마라.
-예: '거래처 중 22시 이전 납품되는 곳' → 납품마감 lt 22:00, select 납품처명/납품마감. '5톤 이상 들어갈 수 있는 거래처' → 5톤이상 eq true. '대-11호 코스에서 5톤 이상 가능하고 무인인 거래처' → 코스명 eq 대-11호 AND 5톤이상 eq true AND 무인 eq true. 'OO운수 소속 기사 중 탑차 기사' → 운수사 contains OO운수 AND 탑차 eq true. '야적 가능한 거래처 중 연락처와 주소' → 야적 eq true, select 납품처명/연락처/주소.
+  const prompt=`자연어 질문을 search_operations 도구 인자로 정확히 변환하라. 질문에 포함된 모든 조건은 conditions에 넣고 반드시 AND로 적용한다. 이름 일부 검색은 contains, 명확한 완전일치는 eq를 사용한다. 시간은 HH:mm 문자열로 쓴다. 파생 체크 항목(5톤이상/무인/탑차 등)은 eq true/false를 쓴다. '~가 없는', '공란', '비어있는', '누락된' 조건은 해당 원본 텍스트 필드에 is_empty를 사용한다. '코스에 등록되지 않은 납품처', '미등록 납품처'는 코스등록 eq false를 사용한다. select에는 사용자가 요구한 열과 필터 확인에 꼭 필요한 열만 넣는다. 임의의 전체 목록으로 대체하지 마라. 조건 컬럼이나 값을 확정할 수 없으면 존재하지 않는 필드를 만들지 말고 도구 호출을 하지 마라.
+예: '거래처 중 22시 이전 납품되는 곳' → 납품마감 lt 22:00, select 납품처명/납품마감. '5톤 이상 들어갈 수 있는 거래처' → 5톤이상 eq true. '대-11호 코스에서 5톤 이상 가능하고 무인인 거래처' → 코스명 eq 대-11호 AND 5톤이상 eq true AND 무인 eq true. 'OO운수 소속 기사 중 탑차 기사' → 운수사 contains OO운수 AND 탑차 eq true. '야적 가능한 거래처 중 연락처와 주소' → 야적 eq true, select 납품처명/연락처/주소. '납품방식이 공란인 거래처' → 납품방식 is_empty, select 코드/납품처명/납품방식/주소. '코스에 등록되지 않은 납품처' → 코스등록 eq false, select 코드/납품처명/주소/납품방식.
 허용 스키마: ${schemaGuide}
 질문: ${JSON.stringify(question)}`;
   const response=await fetch(AI_URL,{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:MODEL,max_tokens:1400,tools:[TOOL],tool_choice:{type:'tool',name:'search_operations'},messages:[{role:'user',content:prompt}]}),signal:AbortSignal.timeout(30000)});
   if(!response.ok)throw coded(response.status===429?'RATE_LIMITED':'MODEL_FAILED',response.status===429?429:502);const data=await response.json(),call=(data.content||[]).find((item:any)=>item.type==='tool_use'&&item.name==='search_operations');
-  try{const plan=validateQueryPlan(call?.input);if(/(중|이전|이후|이상|이하|가능|불가|소속|에서|인 곳|인 거래처)/.test(question)&&!plan.conditions.length)throw new Error('질문의 필터 컬럼 또는 값을 확인하지 못했습니다.');return plan}catch(error){const out=coded('UNSUPPORTED_QUESTION',400) as Error&{publicMessage?:string};out.publicMessage=error instanceof Error?error.message:'질문의 필터 조건을 확인할 수 없습니다.';throw out}
+  try{const plan=patchPlanForMissingConditions(question,validateQueryPlan(call?.input));if(/(중|이전|이후|이상|이하|가능|불가|소속|에서|인 곳|인 거래처|없는|공란|비어|누락|미등록|등록되지)/.test(question)&&!plan.conditions.length)throw new Error('질문의 필터 컬럼 또는 값을 확인하지 못했습니다.');return plan}catch(error){const out=coded('UNSUPPORTED_QUESTION',400) as Error&{publicMessage?:string};out.publicMessage=error instanceof Error?error.message:'질문의 필터 조건을 확인할 수 없습니다.';throw out}
+}
+
+function patchPlanForMissingConditions(question:string,plan:QueryPlan){
+  const normalized=question.replace(/\s+/g,'');
+  const has=(field:string,operator?:string)=>plan.conditions.some(c=>c.field===field&&(!operator||c.operator===operator));
+  const ensureSelect=(fields:string[])=>{plan.select=[...new Set([...plan.select,...fields])]};
+  const removeEmptyWordEq=(field:string)=>{
+    plan.conditions=plan.conditions.filter(c=>!(c.field===field&&c.operator==='eq'&&['','없음','없는','공란','빈값'].includes(String(c.value??'').trim())));
+  };
+  if(/납품방식|납품방법|배송방식/.test(question)&&/(공란|비어|비어있|없는|없음|누락)/.test(question)){
+    removeEmptyWordEq('납품방식');
+    if(!has('납품방식','is_empty'))plan.conditions.push({field:'납품방식',operator:'is_empty'});
+    ensureSelect(['코드','납품처명','납품방식','주소']);
+  }
+  if(/진입방식|출입방식/.test(question)&&/(공란|비어|비어있|없는|없음|누락)/.test(question)){
+    removeEmptyWordEq('진입방식');
+    if(!has('진입방식','is_empty'))plan.conditions.push({field:'진입방식',operator:'is_empty'});
+    ensureSelect(['코드','납품처명','진입방식','주소']);
+  }
+  if(/납품장소|하차장소|배송장소/.test(question)&&/(공란|비어|비어있|없는|없음|누락)/.test(question)){
+    removeEmptyWordEq('납품장소');
+    if(!has('납품장소','is_empty'))plan.conditions.push({field:'납품장소',operator:'is_empty'});
+    ensureSelect(['코드','납품처명','납품장소','주소']);
+  }
+  if(/(미등록납품처|미등록거래처|코스에등록되지않은|코스등록되지않은|등록안된납품처|등록안된거래처)/.test(normalized)&&!has('코스등록')){
+    plan.conditions.push({field:'코스등록',operator:'eq',value:false});ensureSelect(['코드','납품처명','주소','납품방식']);
+  }
+  return plan;
+}
+
+async function fetchUnregisteredDeliveryPoints(e:ReturnType<typeof envs>,token:string,center:string){
+  const [points,stops]=await Promise.all([
+    rest(e,token,'delivery_points',`select=id,code,name,region,address,contact,delivery_method,access_method,delivery_location,deadline_business_min,security_key_location,security_password,allow_under_1ton,allow_under_3_5ton,allow_over_5ton,allow_unmanned_yard&center_code=eq.${center}&limit=${MAX_SOURCE_ROWS}`),
+    rest(e,token,'route_stops',`select=delivery_point_id,routes!inner(center_code)&routes.center_code=eq.${center}&limit=${MAX_SOURCE_ROWS}`)
+  ]);
+  const registered=new Set(stops.map((row:any)=>row.delivery_point_id));
+  return points.filter((p:any)=>!registered.has(p.id)).map((p:any)=>({
+    route_name:'',car_number:'',company_name:'',primary_driver_name:'',secondary_driver_name:'',primary_vehicle_plate:'',primary_vehicle_tonnage:null,stop_order:null,
+    arrival_business_min:null,unloading_start_business_min:null,unloading_end_business_min:null,effective_deadline_business_min:p.deadline_business_min,
+    dp_code:p.code,dp_name:p.name,dp_region:p.region,dp_address:p.address,dp_contact:p.contact,
+    delivery_method:p.delivery_method,access_method:p.access_method,delivery_location:p.delivery_location,
+    security_key_location:p.security_key_location,security_password:p.security_password,
+    allow_under_1ton:p.allow_under_1ton,allow_under_3_5ton:p.allow_under_3_5ton,allow_over_5ton:p.allow_over_5ton,allow_unmanned_yard:p.allow_unmanned_yard,
+    stop_memo:'',__route_registered:false
+  }));
 }
 
 async function searchOperations(plan:QueryPlan,e:ReturnType<typeof envs>,token:string,center:string){
-  let source:any[];try{source=await rest(e,token,'course_view',`select=*&center_code=eq.${center}&limit=${MAX_SOURCE_ROWS}`)}catch{const routes=await rest(e,token,'routes',`select=id&center_code=eq.${center}&limit=1000`),ids=routes.map((r:any)=>r.id);source=ids.length?await rest(e,token,'course_view',`select=*&route_id=in.(${ids.map(enc).join(',')})&limit=${MAX_SOURCE_ROWS}`):[]}
+  let source:any[];
+  if(plan.conditions.some(condition=>condition.field==='코스등록'&&condition.operator==='eq'&&condition.value===false))source=await fetchUnregisteredDeliveryPoints(e,token,center);
+  else{try{source=(await rest(e,token,'course_view',`select=*&center_code=eq.${center}&limit=${MAX_SOURCE_ROWS}`)).map((row:any)=>({...row,__route_registered:true}))}catch{const routes=await rest(e,token,'routes',`select=id&center_code=eq.${center}&limit=1000`),ids=routes.map((r:any)=>r.id);source=ids.length?(await rest(e,token,'course_view',`select=*&route_id=in.(${ids.map(enc).join(',')})&limit=${MAX_SOURCE_ROWS}`)).map((row:any)=>({...row,__route_registered:true})):[]}}
   let rows=source.filter(row=>plan.conditions.every(condition=>matchesCondition(row,condition)));
   rows.sort((a,b)=>compareRows(a,b,plan));
   const columns=plan.select.map(field=>{const def=OPERATIONS_QUERY_SCHEMA[field];return{key:field,label:def.label,type:def.type==='number'?'number':'text'}});
