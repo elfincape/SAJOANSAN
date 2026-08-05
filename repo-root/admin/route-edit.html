@@ -525,44 +525,11 @@
       const uenTxt   = normalizeTime(wrap.querySelector('#s-uend').value.trim());
       const dlTxt    = normalizeTime(wrap.querySelector('#s-deadline').value.trim());
 
-      // 입차 필수 (다른 시간이 입력됐다면 입차도 있어야 함)
-      const anyOther = ustTxt || uenTxt || dlTxt;
-      if (!arrTxt && anyOther) {
-        toast('입차시간이 비어 있으면 다른 시간을 입력할 수 없습니다.', 'warn');
-        return;
-      }
-
       const arrMin = arrTxt ? displayToBizMin(arrTxt) : null;
       const ustMin = ustTxt ? displayToBizMin(ustTxt) : null;
       const uenMin = uenTxt ? displayToBizMin(uenTxt) : null;
       const dlMin  = dlTxt  ? displayToBizMin(dlTxt)  : null;
-
-      // 시간 일관성: 입차 < 하차시작 < 하차종료
-      if (arrMin != null && ustMin != null && !(arrMin < ustMin)) {
-        toast('입차 < 하차시작 이어야 합니다.', 'warn');
-        return;
-      }
-      if (ustMin != null && uenMin != null && !(ustMin < uenMin)) {
-        toast('하차시작 < 하차종료 이어야 합니다.', 'warn');
-        return;
-      }
-      if (arrMin != null && uenMin != null && !(arrMin < uenMin)) {
-        toast('입차 < 하차종료 이어야 합니다.', 'warn');
-        return;
-      }
-
-      // 마감 < 하차종료 → 경고만 (저장 가능)
-      const dp = state.pointById.get(dpId);
-      const effDeadline = dlMin != null ? dlMin : dp?.deadline_business_min;
-      const warnEl = wrap.querySelector('#form-warn');
-      if (effDeadline != null && uenMin != null && effDeadline < uenMin) {
-        warnEl.textContent = `⚠ 마감(${bizMinToDisplay(effDeadline)})이 하차종료(${bizMinToDisplay(uenMin)})보다 빠릅니다. 그대로 저장할까요?`;
-        warnEl.classList.remove('hidden');
-        const ok = await confirmDialog(warnEl.textContent, { okText: '저장', cancelText: '취소', danger: true });
-        if (!ok) return;
-      } else {
-        warnEl.classList.add('hidden');
-      }
+      wrap.querySelector('#form-warn').classList.add('hidden');
 
       // 같은 납품처 중복 추가 경고 (신규일 때만)
       if (!isEdit) {
@@ -577,11 +544,12 @@
       }
 
       const order = parseInt(wrap.querySelector('#s-order').value, 10);
+      const desiredOrder = Number.isFinite(order) && order > 0 ? order : state.stops.length + 1;
       const payload = {
         ...(isEdit ? { id: stop.id } : {}),
         route_id: routeId,
         delivery_point_id: dpId,
-        stop_order: Number.isFinite(order) && order > 0 ? order : 1,
+        stop_order: -999999,
 
         arrival_text:                arrTxt || null,
         arrival_business_min:        arrMin,
@@ -600,13 +568,16 @@
       };
 
       try {
-        const { error } = await supabase
+        const { data: savedStop, error } = await supabase
           .from('route_stops')
-          .upsert(payload, { onConflict: 'id' });
+          .upsert(payload, { onConflict: 'id' })
+          .select('*')
+          .single();
         if (error) {
           toast(`저장 실패: ${error.message}`, 'error');
           return;
         }
+        await reorderStopsAroundSavedStop(savedStop || payload, desiredOrder);
         toast(isEdit ? '수정되었습니다.' : '추가되었습니다.', 'success');
         closeModal();
         await loadAll();
@@ -614,6 +585,37 @@
       } catch {
         toast('저장 중 오류가 발생했습니다.', 'error');
       }
+    }
+
+    async function reorderStopsAroundSavedStop(savedStop, desiredOrder) {
+      if (!savedStop?.id) return;
+      const others = state.stops
+        .filter(s => s.id !== savedStop.id)
+        .sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
+      const insertIndex = Math.max(0, Math.min((desiredOrder || 1) - 1, others.length));
+      const reordered = [
+        ...others.slice(0, insertIndex),
+        { ...savedStop },
+        ...others.slice(insertIndex)
+      ].map((s, idx) => ({ ...s, stop_order: idx + 1 }));
+
+      const temporary = reordered.map((s, idx) => ({
+        id: s.id,
+        route_id: routeId,
+        delivery_point_id: s.delivery_point_id,
+        stop_order: -100000 - idx
+      }));
+      const finalPayload = reordered.map(s => ({
+        id: s.id,
+        route_id: routeId,
+        delivery_point_id: s.delivery_point_id,
+        stop_order: s.stop_order
+      }));
+
+      const { error: tempError } = await supabase.from('route_stops').upsert(temporary, { onConflict: 'id' });
+      if (tempError) throw tempError;
+      const { error: finalError } = await supabase.from('route_stops').upsert(finalPayload, { onConflict: 'id' });
+      if (finalError) throw finalError;
     }
 
     // =========================================================================
