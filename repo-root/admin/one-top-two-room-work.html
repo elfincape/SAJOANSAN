@@ -610,7 +610,6 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     state.captures.filter(item=>item.status!=='done'&&item.status!=='error').forEach(item=>addIssue(item.name,'API 분석이 완료되지 않았습니다.'));
     try {
       const workbook=new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
-      workbook.calcProperties.fullCalcOnLoad=true; workbook.calcProperties.forceFullCalc=true;
       const ws=workbook.worksheets[0]; const vehicleRows=collectVehicleRows(ws);
       markRowsWithExistingTemperatures(ws,vehicleRows);
       // 사진 사용 여부는 삽입 이미지 목록이 아니라 Q열의 공백 표시만 기준으로 판단한다.
@@ -639,7 +638,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
         for(const row of vehicleRows)if(isPhotoRowOccupied(ws,row.row))occupied.add(row.row);
         if(item.supplementalDataUrl)addImageToCell(workbook,ws,await prepareSupplementExcelImage(item.supplementalDataUrl),COL.supplementalPhoto,target.row);
         writeTemperatureAndDate(ws,target.row,item.result.date,temps,false);
-        writeResultFormulas(ws,target.row);
+        writeResultValues(ws,target.row);
         state.matchLog.push(`${item.name} → ${target.vehicle} / ${target.row}행`);
         if (temps.freezer==null && temps.refrigerated==null) addIssue(item.name,'온도값 판독 실패 또는 기준에 맞는 온도 없음');
       }
@@ -689,12 +688,17 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     return String(dataUrl||'');
   }
   function writeTemperatureAndDate(ws,row,date,temps,overwrite) { const values=[[COL.freezer,temps.freezer],[COL.refrigerated,temps.refrigerated]]; for(const [col,val] of values)if(val!=null&&(overwrite||!cellText(ws.getCell(row,col))))ws.getCell(row,col).value=val; if(date&&!cellText(ws.getCell(row,COL.date)))ws.getCell(row,COL.date).value=formatTemplateDate(date); }
-  function buildResultFormulas(row) { return {
-    compliance:`IF(AND(OR(ISBLANK(J${row}),J${row}<=-18),OR(AND(K${row}>0,K${row}<10),ISBLANK(K${row}))),"준수","미준수")`,
-    temperaturePair:`IF(COUNTA(J${row}:K${row})=2,"O","X")`,
-    shipmentType:`IF(AND(J${row}<>"", K${row}=""), "냉동 출고", IF(AND(J${row}="", K${row}<>""), "냉장 출고", ""))`,
-  }; }
-  function writeResultFormulas(ws,row) { const formulas=buildResultFormulas(row); ws.getCell(row,COL.compliance).value={formula:formulas.compliance}; ws.getCell(row,COL.temperaturePair).value={formula:formulas.temperaturePair}; ws.getCell(row,COL.shipmentType).value={formula:formulas.shipmentType}; }
+  function computeResultValues(freezerRaw,refrigeratedRaw) {
+    const freezerText=String(freezerRaw??'').trim(),refrigeratedText=String(refrigeratedRaw??'').trim();
+    const freezer=toNullableNumber(freezerText),refrigerated=toNullableNumber(refrigeratedText);
+    const freezerBlank=!freezerText,refrigeratedBlank=!refrigeratedText;
+    return {
+      compliance:(freezerBlank||(freezer!=null&&freezer<=-18))&&(refrigeratedBlank||(refrigerated!=null&&refrigerated>0&&refrigerated<10))?'준수':'미준수',
+      temperaturePair:(!freezerBlank&&!refrigeratedBlank)?'O':'X',
+      shipmentType:!freezerBlank&&refrigeratedBlank?'냉동 출고':freezerBlank&&!refrigeratedBlank?'냉장 출고':'',
+    };
+  }
+  function writeResultValues(ws,row) { const values=computeResultValues(cellText(ws.getCell(row,COL.freezer)),cellText(ws.getCell(row,COL.refrigerated))); ws.getCell(row,COL.compliance).value=values.compliance; ws.getCell(row,COL.temperaturePair).value=values.temperaturePair; ws.getCell(row,COL.shipmentType).value=values.shipmentType; }
 
   function chooseTemperatures(a,b) {
     const values=[{source:'A',value:toNullableNumber(a)},{source:'B',value:toNullableNumber(b)}].filter(x=>x.value!=null);
