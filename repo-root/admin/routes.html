@@ -7,6 +7,11 @@
   <title>코스 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .sort-head { display:inline-flex; align-items:center; gap:.25rem; color:inherit; font:inherit; }
+    .sort-head:hover, .sort-head.active { color:#34d399; }
+    .sort-mark { min-width:1em; color:#34d399; font-size:.75rem; }
+  </style>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
@@ -37,15 +42,15 @@
       <table class="app-table">
         <thead>
           <tr>
-            <th>운수사</th>
-            <th>호차</th>
-            <th>코스명</th>
-            <th>주기사</th>
-            <th>보조기사</th>
-            <th>주차량</th>
-            <th class="text-right">납품처</th>
-            <th>휴무일</th>
-            <th>상태</th>
+            <th><button type="button" class="sort-head" data-sort="company">운수사 <span class="sort-mark" data-sort-mark="company"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="carNumber">호차 <span class="sort-mark" data-sort-mark="carNumber"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="routeName">코스명 <span class="sort-mark" data-sort-mark="routeName"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="primaryDriver">주기사 <span class="sort-mark" data-sort-mark="primaryDriver"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="secondaryDriver">보조기사 <span class="sort-mark" data-sort-mark="secondaryDriver"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="primaryVehicle">주차량 <span class="sort-mark" data-sort-mark="primaryVehicle"></span></button></th>
+            <th class="text-right"><button type="button" class="sort-head ml-auto" data-sort="stopCount">납품처 <span class="sort-mark" data-sort-mark="stopCount"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="closedDays">휴무일 <span class="sort-mark" data-sort-mark="closedDays"></span></button></th>
+            <th><button type="button" class="sort-head" data-sort="active">상태 <span class="sort-mark" data-sort-mark="active"></span></button></th>
             <th class="text-right">작업</th>
           </tr>
         </thead>
@@ -98,7 +103,8 @@
       drivers: [],
       vehicles: [],
       filtered: [],
-      filters: { search: '', companyId: '' }
+      filters: { search: '', companyId: '' },
+      sort: { key: '', dir: 'asc' }
     };
 
     const $ = (id) => document.getElementById(id);
@@ -191,13 +197,8 @@
         return true;
       });
 
-      state.filtered.sort((a, b) => {
-        const ca = coById.get(a.company_id)?.name || '';
-        const cb = coById.get(b.company_id)?.name || '';
-        return ca.localeCompare(cb, 'ko') ||
-               String(a.car_number || '').localeCompare(String(b.car_number || ''), 'ko', { numeric: true }) ||
-               String(a.name || '').localeCompare(String(b.name || ''), 'ko');
-      });
+      sortFilteredRoutes({ coById, drvById, vehById });
+      updateSortHeaderState();
 
       renderTable();
       $('result-count').textContent =
@@ -237,7 +238,7 @@
           <td>${renderClosedDays(r.closed_days)}</td>
           <td>${r.active === false ? '<span class="text-rose-400 text-xs">비활성</span>' : '<span class="text-emerald-400 text-xs">활성</span>'}</td>
           <td class="text-right whitespace-nowrap">
-            <a class="btn btn-ghost text-xs" href="${withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.id)}`)}">납품처 ${stops}</a>
+            <button class="btn btn-ghost text-xs" data-act="stops" data-id="${r.id}">납품처 ${stops}</button>
             <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${r.id}">편집</button>
             <button class="btn btn-ghost text-xs text-rose-400" data-act="delete" data-id="${r.id}">삭제</button>
           </td>
@@ -250,6 +251,7 @@
         b.addEventListener('click', (e) => {
           e.stopPropagation();
           const id = b.dataset.id;
+          if (b.dataset.act === 'stops')  openRouteStopsPopup(id);
           if (b.dataset.act === 'edit')   openRouteForm(state.routes.find(x => x.id === id));
           if (b.dataset.act === 'delete') deleteRoute(id);
         });
@@ -269,6 +271,16 @@
         applyAndRender();
       });
       $('new-btn').addEventListener('click', () => openRouteForm(null));
+      document.querySelectorAll('[data-sort]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.sort;
+          state.sort = {
+            key,
+            dir: state.sort.key === key && state.sort.dir === 'asc' ? 'desc' : 'asc'
+          };
+          applyAndRender();
+        });
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -434,6 +446,39 @@
       }
     }
 
+
+    // -------------------------------------------------------------------------
+    // 납품처 편집 팝업
+    // -------------------------------------------------------------------------
+    function openRouteStopsPopup(routeId) {
+      const route = state.routes.find(x => x.id === routeId);
+      if (!route) return;
+      const src = withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(routeId)}`, getRequiredCenter());
+      const stops = state.stopCounts.get(routeId) || 0;
+      const wrap = document.createElement('div');
+      wrap.className = 'p-4';
+      wrap.innerHTML = `
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 class="text-base font-semibold">납품처 편집</h2>
+            <p class="text-xs text-zinc-400 mt-1">${escapeHtml(route.name || '')} · ${escapeHtml(route.car_number || '')} · 납품처 ${stops}개</p>
+          </div>
+          <button data-x class="btn btn-ghost text-xs">닫기</button>
+        </div>
+        <iframe
+          src="${escapeAttr(src)}"
+          title="${escapeAttr(route.name || '코스')} 납품처 편집"
+          class="w-full h-[78vh] rounded-lg border border-zinc-700 bg-zinc-950"
+        ></iframe>
+      `;
+      openModal(wrap, { width: '5xl', dismissable: false });
+      wrap.querySelector('[data-x]').addEventListener('click', async () => {
+        closeModal();
+        await loadRoutes();
+        applyAndRender();
+      });
+    }
+
     // -------------------------------------------------------------------------
     // 코스 삭제
     // -------------------------------------------------------------------------
@@ -467,6 +512,55 @@
     // -------------------------------------------------------------------------
     // 헬퍼
     // -------------------------------------------------------------------------
+
+    function sortFilteredRoutes({ coById, drvById, vehById }) {
+      const collator = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' });
+      const key = state.sort.key;
+      const dir = state.sort.dir === 'desc' ? -1 : 1;
+
+      const fallback = (a, b) => (
+        collator.compare(coById.get(a.company_id)?.name || '', coById.get(b.company_id)?.name || '') ||
+        collator.compare(String(a.car_number || ''), String(b.car_number || '')) ||
+        collator.compare(String(a.name || ''), String(b.name || ''))
+      );
+
+      if (!key) {
+        state.filtered.sort(fallback);
+        return;
+      }
+
+      state.filtered.sort((a, b) => {
+        const av = routeSortValue(a, key, { coById, drvById, vehById });
+        const bv = routeSortValue(b, key, { coById, drvById, vehById });
+        const primary = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : collator.compare(String(av ?? ''), String(bv ?? ''));
+        return (primary || fallback(a, b)) * dir;
+      });
+    }
+
+    function routeSortValue(route, key, { coById, drvById, vehById }) {
+      if (key === 'company') return coById.get(route.company_id)?.name || '';
+      if (key === 'carNumber') return route.car_number || '';
+      if (key === 'routeName') return route.name || '';
+      if (key === 'primaryDriver') return drvById.get(route.primary_driver_id)?.name || '';
+      if (key === 'secondaryDriver') return drvById.get(route.secondary_driver_id)?.name || '';
+      if (key === 'primaryVehicle') return vehById.get(route.primary_vehicle_id)?.plate_number || '';
+      if (key === 'stopCount') return state.stopCounts.get(route.id) || 0;
+      if (key === 'closedDays') return (route.closed_days || []).slice().sort((a, b) => a - b).join(',');
+      if (key === 'active') return route.active === false ? '비활성' : '활성';
+      return '';
+    }
+
+    function updateSortHeaderState() {
+      document.querySelectorAll('[data-sort]').forEach(btn => {
+        const active = btn.dataset.sort === state.sort.key;
+        btn.classList.toggle('active', active);
+        const mark = btn.querySelector('[data-sort-mark]');
+        if (mark) mark.textContent = active ? (state.sort.dir === 'asc' ? 'ㄱ↓' : 'ㅎ↓') : '';
+      });
+    }
+
     function renderClosedDays(days) {
       if (!days || days.length === 0) return '<span class="text-zinc-600 text-xs">-</span>';
       const labels = ['일','월','화','수','목','금','토'];
@@ -479,6 +573,7 @@
       return String(s ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
         .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
     }
+    function escapeAttr(s) { return escapeHtml(s); }
     function debounce(fn, wait) {
       let t = null;
       return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };

@@ -41,11 +41,7 @@
 
     <!-- 툴바 -->
     <div class="flex flex-wrap items-center gap-2 mb-2">
-      <button id="add-stop-btn"   class="btn btn-primary">+ 납품처 추가</button>
-      <button id="dup-last-btn"   class="btn btn-ghost text-xs" title="마지막 납품처를 복제 (시간 +30분)">마지막 복제</button>
-      <button id="shift-plus-btn"  class="btn btn-ghost text-xs">선택 +30분</button>
-      <button id="shift-minus-btn" class="btn btn-ghost text-xs">선택 -30분</button>
-      <button id="auto-sort-btn"  class="btn btn-ghost text-xs" title="입차시간 오름차순으로 순서 재배정">입차시간순 재정렬</button>
+      <button id="add-stop-btn" class="btn btn-primary">+ 납품처 추가</button>
       <div class="flex-1"></div>
       <span id="result-count" class="text-xs text-zinc-400"></span>
     </div>
@@ -55,7 +51,6 @@
       <table class="app-table" id="stops-table">
         <thead>
           <tr>
-            <th style="width:32px;"><input type="checkbox" id="select-all"></th>
             <th class="text-right" style="width:64px;">순서</th>
             <th>코드</th>
             <th>납품처</th>
@@ -240,7 +235,6 @@
         tr.className = 'stop-row';
         tr.dataset.id = s.id;
         tr.innerHTML = `
-          <td><input type="checkbox" class="row-check" data-id="${s.id}"></td>
           <td class="text-right">
             <span class="drag-handle inline-block mr-1" title="끌어서 순서 변경">⋮⋮</span>
             <span class="tnum">${s.stop_order ?? ''}</span>
@@ -273,8 +267,6 @@
           if (b.dataset.act === 'delete') deleteStop(id);
         });
       });
-
-      $('select-all').checked = false;
     }
 
     function renderSlack(min) {
@@ -645,133 +637,10 @@
     }
 
     // =========================================================================
-    // 9. 툴바 - 추가/복제/시프트/자동정렬
+    // 9. 툴바
     // =========================================================================
     function bindToolbar() {
       $('add-stop-btn').addEventListener('click', () => openStopForm(null));
-      $('dup-last-btn').addEventListener('click', duplicateLast);
-      $('shift-plus-btn').addEventListener('click',  () => shiftSelected(+30));
-      $('shift-minus-btn').addEventListener('click', () => shiftSelected(-30));
-      $('auto-sort-btn').addEventListener('click',   autoSortByArrival);
-      $('select-all').addEventListener('change', (e) => {
-        document.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
-      });
-    }
-
-    async function duplicateLast() {
-      if (state.stops.length === 0) {
-        toast('복제할 납품처가 없습니다.', 'warn');
-        return;
-      }
-      const last = state.stops[state.stops.length - 1];
-      const shift = (m) => (m == null ? null : (m + 30) % 1440);
-
-      const payload = {
-        route_id: routeId,
-        delivery_point_id: last.delivery_point_id,
-        stop_order: (last.stop_order || state.stops.length) + 1,
-        arrival_business_min:        shift(last.arrival_business_min),
-        unloading_start_business_min: shift(last.unloading_start_business_min),
-        unloading_end_business_min:  shift(last.unloading_end_business_min),
-        deadline_business_min:       last.deadline_business_min, // 마감은 그대로
-        arrival_text:                bizMinToDisplay(shift(last.arrival_business_min))         || null,
-        unloading_start_text:        bizMinToDisplay(shift(last.unloading_start_business_min)) || null,
-        unloading_end_text:          bizMinToDisplay(shift(last.unloading_end_business_min))   || null,
-        deadline_text:               bizMinToDisplay(last.deadline_business_min)               || null,
-        override_delivery_method:    last.override_delivery_method,
-        override_access_method:      last.override_access_method,
-        override_delivery_location:  last.override_delivery_location,
-        memo: last.memo
-      };
-
-      try {
-        const { error } = await supabase.from('route_stops').insert(payload);
-        if (error) throw error;
-        toast('마지막 납품처를 복제했습니다 (시간 +30분).', 'success');
-        await loadAll();
-        renderStops();
-      } catch (e) {
-        toast('복제에 실패했습니다.', 'error');
-      }
-    }
-
-    async function shiftSelected(deltaMin) {
-      const ids = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.dataset.id);
-      if (ids.length === 0) {
-        toast('대상 납품처를 선택해주세요.', 'warn');
-        return;
-      }
-      const ok = await confirmDialog(
-        `${ids.length}개 납품처의 시간을 ${deltaMin > 0 ? '+' : ''}${deltaMin}분 이동할까요?`,
-        { okText: '이동', cancelText: '취소' }
-      );
-      if (!ok) return;
-
-      const shift = (m) => {
-        if (m == null) return null;
-        const v = m + deltaMin;
-        if (v < 0 || v >= 1440) return null; // 영업일 범위 벗어나면 변경하지 않음
-        return v;
-      };
-
-      const updates = state.stops.filter(s => ids.includes(s.id)).map(s => {
-        const a = shift(s.arrival_business_min);
-        const us = shift(s.unloading_start_business_min);
-        const ue = shift(s.unloading_end_business_min);
-        const dl = shift(s.deadline_business_min);
-        return {
-          id: s.id,
-          route_id: routeId,
-          delivery_point_id: s.delivery_point_id,
-          arrival_business_min:         a  ?? s.arrival_business_min,
-          unloading_start_business_min: us ?? s.unloading_start_business_min,
-          unloading_end_business_min:   ue ?? s.unloading_end_business_min,
-          deadline_business_min:        dl ?? s.deadline_business_min,
-          arrival_text:                 a != null ? bizMinToDisplay(a) : s.arrival_text,
-          unloading_start_text:         us != null ? bizMinToDisplay(us): s.unloading_start_text,
-          unloading_end_text:           ue != null ? bizMinToDisplay(ue): s.unloading_end_text,
-          deadline_text:                dl != null ? bizMinToDisplay(dl): s.deadline_text
-        };
-      });
-
-      try {
-        const { error } = await supabase.from('route_stops').upsert(updates, { onConflict: 'id' });
-        if (error) throw error;
-        toast('시간을 이동했습니다.', 'success');
-        await loadAll();
-        renderStops();
-      } catch {
-        toast('시간 이동에 실패했습니다.', 'error');
-      }
-    }
-
-    async function autoSortByArrival() {
-      if (state.stops.length < 2) return;
-      const ok = await confirmDialog(
-        '입차시간 오름차순으로 모든 납품처의 순서를 재배정할까요?',
-        { okText: '재정렬', cancelText: '취소' }
-      );
-      if (!ok) return;
-
-      const sorted = [...state.stops].sort((a, b) => {
-        const av = a.arrival_business_min ?? Infinity;
-        const bv = b.arrival_business_min ?? Infinity;
-        return av - bv || (a.stop_order ?? 0) - (b.stop_order ?? 0);
-      });
-
-      const updates = sorted.map((s, i) => ({
-        id: s.id, route_id: routeId, delivery_point_id: s.delivery_point_id,
-        stop_order: i + 1
-      }));
-      try {
-        const { error } = await supabase.from('route_stops').upsert(updates, { onConflict: 'id' });
-        if (error) throw error;
-        toast('순서를 재정렬했습니다.', 'success');
-        await loadAll();
-        renderStops();
-      } catch {
-        toast('재정렬에 실패했습니다.', 'error');
-      }
     }
 
     // =========================================================================
