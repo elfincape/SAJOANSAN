@@ -31,5 +31,7 @@ assert.match(edge, /buildOperationsSnapshot/);
 assert.match(edge, /deliveryPoints:deliveryPointList/);
 assert.match(edge, /코스등록:routeIdsByPoint\.has\(p\.id\)/);
 assert.match(edge, /질문에 필요한 집계, 필터, 그룹화를 직접 판단/);
+assert.match(edge, /rawTables:\{companies,routes,route_stops:stops,delivery_points:points,drivers,vehicles\}/);
+assert.match(edge, /MAX_TABLE_ROWS=5000/);
 
 console.log('operations assistant missing-condition support: ok');
