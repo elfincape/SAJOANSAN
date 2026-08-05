@@ -27,9 +27,9 @@ assert.equal(matchesCondition({ __route_registered: false }, unregisteredPlan.co
 assert.equal(matchesCondition({ __route_registered: true }, unregisteredPlan.conditions[0]), false);
 
 const edge = fs.readFileSync('supabase/functions/operations-assistant/index.ts', 'utf8');
-assert.match(edge, /patchPlanForMissingConditions/);
-assert.match(edge, /fetchUnregisteredDeliveryPoints/);
-assert.match(edge, /코스등록'&&condition\.operator==='eq'&&condition\.value===false/);
-assert.match(edge, /납품방식이 공란인 거래처/);
+assert.match(edge, /buildOperationsSnapshot/);
+assert.match(edge, /deliveryPoints:deliveryPointList/);
+assert.match(edge, /코스등록:routeIdsByPoint\.has\(p\.id\)/);
+assert.match(edge, /질문에 필요한 집계, 필터, 그룹화를 직접 판단/);
 
 console.log('operations assistant missing-condition support: ok');
