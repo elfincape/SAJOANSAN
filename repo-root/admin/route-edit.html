@@ -334,8 +334,18 @@
         </div>
         <form id="stop-form" class="space-y-3" novalidate>
           <div>
-            <label class="app-label">납품처 *</label>
-            <input id="dp-search" class="app-input" placeholder="코드 또는 이름으로 검색" autocomplete="off">
+            <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px] gap-2 items-end">
+              <div>
+                <label class="app-label">납품처 *</label>
+                <input id="dp-search" class="app-input" placeholder="코드 또는 이름으로 검색" autocomplete="off">
+              </div>
+              <div>
+                <label class="app-label">미등록 납품처</label>
+                <select id="dp-unregistered" class="app-select">
+                  ${unregisteredPointOptions()}
+                </select>
+              </div>
+            </div>
             <div id="dp-results" class="mt-1 max-h-40 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 hidden"></div>
             <div id="dp-selected" class="mt-1 text-xs"></div>
             <input type="hidden" id="dp-id">
@@ -416,6 +426,7 @@
 
       // ----- 납품처 검색 (간단 자동완성) -----
       const search = wrap.querySelector('#dp-search');
+      const unregisteredSelect = wrap.querySelector('#dp-unregistered');
       const results = wrap.querySelector('#dp-results');
       const selected = wrap.querySelector('#dp-selected');
       const dpIdInput = wrap.querySelector('#dp-id');
@@ -425,12 +436,19 @@
           dpIdInput.value = p.id;
           selected.innerHTML = `선택: <strong>${escapeHtml(p.code || '')}</strong> · ${escapeHtml(p.name)} <span class="muted">${escapeHtml(p.region || '')}</span>`;
           search.value = `${p.code || ''} ${p.name}`.trim();
+          unregisteredSelect.value = [...unregisteredSelect.options].some(opt => opt.value === p.id) ? p.id : '';
         } else {
           dpIdInput.value = '';
           selected.innerHTML = '';
+          unregisteredSelect.value = '';
         }
         results.classList.add('hidden');
       }
+
+      unregisteredSelect.addEventListener('change', () => {
+        const p = state.pointById.get(unregisteredSelect.value);
+        if (p) setSelectedDp(p);
+      });
 
       search.addEventListener('input', () => {
         const q = search.value.trim().toLowerCase();
@@ -456,6 +474,16 @@
           });
         });
       });
+
+      function unregisteredPointOptions() {
+        const registeredIds = new Set(state.stops.map(s => s.delivery_point_id));
+        const options = state.points
+          .filter(p => !registeredIds.has(p.id))
+          .sort((a, b) => String(a.code || a.name || '').localeCompare(String(b.code || b.name || ''), 'ko-KR', { numeric: true }))
+          .map(p => `<option value="${p.id}">${escapeHtml(`${p.code || ''} ${p.name || ''}`.trim())}${p.region ? ' · ' + escapeHtml(p.region) : ''}</option>`);
+        return '<option value="">미등록 납품처 선택</option>' +
+          (options.length ? options.join('') : '<option value="" disabled>미등록 납품처 없음</option>');
+      }
 
       // ----- 시간 입력 정규화 -----
       ['s-arrival', 's-ustart', 's-uend', 's-deadline'].forEach(id => {
