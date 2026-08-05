@@ -154,7 +154,10 @@
   const SUPPLEMENT_EXCEL_IMAGE_TARGET_BYTES = 450 * 1024;
   const SUPPLEMENT_EXCEL_IMAGE_MIN_BYTES = 300 * 1024;
   const TABLE_START_ROW = 5;
-  const TEMPLATE_SCAN_BUFFER_ROWS = 20;
+  const TEMPLATE_SCAN_BUFFER_ROWS = 120;
+  const TEMPLATE_MIN_SCAN_ROWS = 1000;
+  const TEMPLATE_MAX_SCAN_ROWS = 3000;
+  const TEMPLATE_EMPTY_TAIL_ROWS = 120;
   const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, compliance:14, temperaturePair:15, supplementalPhoto:16, tempPhoto:17, shipmentType:18 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
@@ -648,8 +651,17 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   }
 
   function collectVehicleRows(ws) {
-    const rows=[]; const last=Math.max(ws.actualRowCount||ws.rowCount||0,TABLE_START_ROW)+TEMPLATE_SCAN_BUFFER_ROWS;
-    for(let row=TABLE_START_ROW;row<=last;row++){ const vehicle=cellText(ws.getCell(row,COL.vehicle)); const key=normalizeVehicle(vehicle); if(key)rows.push({row,vehicle,key}); }
+    const rows=[];
+    const dimensionBottom=Number(ws.dimensions?.bottom||0);
+    const modelRows=Array.isArray(ws._rows)?ws._rows.length:0;
+    const baseLast=Math.max(ws.actualRowCount||0,ws.rowCount||0,dimensionBottom,modelRows,TABLE_START_ROW);
+    let scanLast=Math.min(TEMPLATE_MAX_SCAN_ROWS,Math.max(baseLast+TEMPLATE_SCAN_BUFFER_ROWS,TEMPLATE_MIN_SCAN_ROWS));
+    let emptyAfterLastMatch=0;
+    for(let row=TABLE_START_ROW;row<=scanLast;row++){
+      const vehicle=cellText(ws.getCell(row,COL.vehicle)); const key=normalizeVehicle(vehicle);
+      if(key){rows.push({row,vehicle,key});emptyAfterLastMatch=0;scanLast=Math.min(TEMPLATE_MAX_SCAN_ROWS,Math.max(scanLast,row+TEMPLATE_SCAN_BUFFER_ROWS));}
+      else if(rows.length&&row>baseLast&&++emptyAfterLastMatch>=TEMPLATE_EMPTY_TAIL_ROWS)break;
+    }
     return rows;
   }
 
@@ -699,7 +711,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function normalizeTime(value) { const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/); return m?`${m[1].padStart(2,'0')}:${m[2]}`:''; }
   function formatTemplateDate(value) { const m=String(value||'').match(/^\d{4}-\d{2}-(\d{2})$/); return m?`${Number(m[1])}일`:value; }
   function toNullableNumber(value) { if(value===null||value===undefined||String(value).trim()==='')return null; const n=Number(String(value).replace(/℃/g,'').trim()); return Number.isFinite(n)?n:null; }
-  function cellText(cellOrWs,row,col) { const cell=arguments.length===3?cellOrWs.getCell(row,col):cellOrWs; const v=cell?.value; if(v==null)return''; if(typeof v==='object'){if(v.text!=null)return String(v.text).trim();if(v.result!=null)return String(v.result).trim();if(v.richText)return v.richText.map(x=>x.text||'').join('').trim();}return String(v).trim(); }
+  function cellText(cellOrWs,row,col) { const cell=arguments.length===3?cellOrWs.getCell(row,col):cellOrWs; const target=cell?.isMerged&&cell.master?cell.master:cell; const v=target?.value; if(v==null)return''; if(typeof v==='object'){if(v.text!=null)return String(v.text).trim();if(v.result!=null)return String(v.result).trim();if(v.richText)return v.richText.map(x=>x.text||'').join('').trim();}return String(v).trim(); }
   function addIssue(item,message){state.issues.push({item,message});}
 
   function renderOutcome() {
