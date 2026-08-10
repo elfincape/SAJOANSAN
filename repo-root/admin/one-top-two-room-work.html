@@ -148,12 +148,12 @@
   <script>
   'use strict';
   const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+  const OPUS_FALLBACK_MODEL = 'claude-opus-5';
   const CAPTURE_TABLE = 'one_top_two_room_captures';
   const API_INTERVAL_MS = 12000;
   const API_RATE_RETRY_DELAYS = [20000, 40000, 60000];
-  const VISION_MAX_WIDTH = 300;
-  const VISION_MAX_HEIGHT = 200;
-  const VISION_MAX_BYTES = 100 * 1024;
+  const VISION_MAX_WIDTH = 1600;
+  const VISION_MAX_BYTES = 1024 * 1024;
   const EXCEL_IMAGE_MAX_WIDTH = 960;
   const EXCEL_IMAGE_MAX_HEIGHT = 720;
   const EXCEL_IMAGE_MAX_BYTES = 200 * 1024;
@@ -449,7 +449,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
       const item = items[i]; item.status='analyzing'; item.error=''; renderAnalysis(); updateButtons();
       if(i>0)await waitForApiSlot(API_INTERVAL_MS,i+1,items.length);
       btn.textContent = `분석 중 ${i+1}/${items.length}`; $('analysis-progress').textContent = `${i+1}/${items.length}`;
-      try { item.result = normalizeApiResult(await callVisionWithRateLimitRetry(item.dataUrl,i+1,items.length)); item.status = 'done'; item.cloudDirty=true; }
+      try { const analyzed=await analyzeReceiptWithFallback(item.dataUrl,i+1,items.length); item.result=analyzed.result; item.analysisModel=analyzed.model; item.status = 'done'; item.cloudDirty=true; }
       catch (err) { console.error(err); item.status='error'; item.error=String(err.message || err); item.result=null; item.cloudDirty=true; }
       renderAnalysis();
     }
@@ -460,9 +460,34 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     toast(failed ? `분석 완료 · 성공 ${items.length-failed}장 / 실패 ${failed}장` : `선택한 사진 ${items.length}장 분석 완료`, failed?'warn':'success');
   }
 
-  async function callVisionWithRateLimitRetry(dataUrl,index,total) {
+  async function analyzeReceiptWithFallback(dataUrl,index,total) {
+    const requestedModel=$('temperature-vision-model').value||DEFAULT_MODEL;
+    try {
+      const result=normalizeApiResult(await callVisionWithRateLimitRetry(dataUrl,index,total,requestedModel));
+      const missing=findMissingReceiptFields(result);
+      if(!missing.length)return {result,model:requestedModel};
+      const error=new Error(`판독 누락: ${missing.join(', ')}`);error.code='VISION_INCOMPLETE';throw error;
+    } catch(err) {
+      if(requestedModel===OPUS_FALLBACK_MODEL||!isVisionInterpretationError(err))throw err;
+      console.warn('[one-top-two-room] Haiku 판독 불완전 · Opus 5 자동 재분석',err);
+    }
+    await waitForApiSlot(API_INTERVAL_MS,index,total,'Haiku 판독 미완료 · Opus 5 자동 재분석');
+    const result=normalizeApiResult(await callVisionWithRateLimitRetry(dataUrl,index,total,OPUS_FALLBACK_MODEL));
+    const missing=findMissingReceiptFields(result);
+    if(missing.length){const error=new Error(`Opus 5 재분석 후에도 판독 누락: ${missing.join(', ')}`);error.code='VISION_INCOMPLETE';throw error;}
+    return {result,model:OPUS_FALLBACK_MODEL};
+  }
+
+  function findMissingReceiptFields(result) {
+    const record=selectRecord(result?.records);
+    return [!String(result?.vehicle_number||'').trim()?'차량번호':'',!String(result?.date||'').trim()?'날짜':'',!String(record?.time||'').trim()?'시간':'',record?.a==null?'A 온도':'',record?.b==null?'B 온도':''].filter(Boolean);
+  }
+
+  function isVisionInterpretationError(err){return err?.code==='VISION_INCOMPLETE'||err?.code==='VISION_JSON_INVALID';}
+
+  async function callVisionWithRateLimitRetry(dataUrl,index,total,model=DEFAULT_MODEL) {
     for(let attempt=0;;attempt++){
-      try{return await callVision(dataUrl);}
+      try{return await callVision(dataUrl,model);}
       catch(err){if(!isRateLimitError(err)||attempt>=API_RATE_RETRY_DELAYS.length)throw err;await waitForApiSlot(API_RATE_RETRY_DELAYS[attempt],index,total,'API 요청 제한 · 자동 재시도');}
     }
   }
@@ -470,32 +495,38 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function isRateLimitError(err){return err?.status===429||/requests-per-minute|rate.?limit|too many requests/i.test(String(err?.message||err));}
   async function waitForApiSlot(ms,index,total,label='API 요청 간격 대기') { for(let left=Math.ceil(ms/1000);left>0;left--){$('analysis-progress').textContent=`${index}/${total} · ${label} ${left}초`;await new Promise(resolve=>setTimeout(resolve,1000));} }
 
-  async function callVision(dataUrl) {
+  async function callVision(dataUrl,model=DEFAULT_MODEL) {
     const edgeURL = `${String(window.appSupabaseUrl || '').replace(/\/$/,'')}/functions/v1/coupang-vision`;
     const anonKey = window.appSupabaseAnonKey || '';
     // Excel 삽입/DB 임시저장에는 원본을 유지하고 API 요청 사본만 축소한다.
     const visionDataUrl=await prepareVisionImage(dataUrl);
     const [meta,base64] = visionDataUrl.split(','); const mediaType = meta.match(/^data:([^;]+)/)?.[1] || 'image/jpeg';
-    const model=$('temperature-vision-model').value||DEFAULT_MODEL;
     const res = await fetch(edgeURL,{ method:'POST', headers:{'content-type':'application/json',apikey:anonKey,authorization:`Bearer ${anonKey}`}, body:JSON.stringify({model,mediaType,imageBase64:base64,prompt:PROMPT}) });
     const raw=await res.text(); let payload;
     try { payload=raw?JSON.parse(raw):null; } catch { throw new Error('API 응답 JSON을 읽지 못했습니다.'); }
     if (!res.ok || payload?.error) { const err=new Error(payload?.error || `API HTTP ${res.status}`); err.status=Number(payload?.status)||res.status; throw err; }
-    return JSON.parse(extractJsonObject(payload?.text || ''));
+    try { return JSON.parse(extractJsonObject(payload?.text || '')); }
+    catch(err) { err.code='VISION_JSON_INVALID'; throw err; }
   }
 
   async function prepareVisionImage(dataUrl) {
     const image=await loadVisionImage(dataUrl);
-    const scale=Math.min(1,VISION_MAX_WIDTH/image.naturalWidth,VISION_MAX_HEIGHT/image.naturalHeight);
-    const width=Math.max(1,Math.round(image.naturalWidth*scale));
-    const height=Math.max(1,Math.round(image.naturalHeight*scale));
-    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-    const context=canvas.getContext('2d',{alpha:false});
-    if(!context)throw new Error('API 전송용 이미지 캔버스를 만들지 못했습니다.');
-    context.fillStyle='#fff';context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);
-    let quality=.72,encoded=canvas.toDataURL('image/jpeg',quality);
-    while(dataUrlByteLength(encoded)>VISION_MAX_BYTES&&quality>.36){quality-=.08;encoded=canvas.toDataURL('image/jpeg',quality);}
-    console.info('[one-top-two-room] API 전송 이미지 축소',{width,height,bytes:dataUrlByteLength(encoded)});
+    const scale=Math.min(1,VISION_MAX_WIDTH/image.naturalWidth);
+    let width=Math.max(1,Math.round(image.naturalWidth*scale));
+    let height=Math.max(1,Math.round(image.naturalHeight*scale));
+    let quality=.92,encoded='';
+    for(let attempt=0;attempt<12;attempt++){
+      const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+      const context=canvas.getContext('2d',{alpha:false});
+      if(!context)throw new Error('API 전송용 이미지 캔버스를 만들지 못했습니다.');
+      context.fillStyle='#fff';context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);
+      encoded=canvas.toDataURL('image/jpeg',quality);
+      if(dataUrlByteLength(encoded)<=VISION_MAX_BYTES)break;
+      if(quality>.56)quality-=.08;
+      else {width=Math.max(1,Math.round(width*.88));height=Math.max(1,Math.round(height*.88));}
+    }
+    if(dataUrlByteLength(encoded)>VISION_MAX_BYTES)throw new Error('API 전송용 이미지를 1MB 이하로 압축하지 못했습니다.');
+    console.info('[one-top-two-room] API 전송 이미지 준비',{width,height,bytes:dataUrlByteLength(encoded),maxBytes:VISION_MAX_BYTES});
     return encoded;
   }
 
@@ -767,7 +798,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
 
   function updateButtons() { const analyzed=state.captures.some(x=>x.status==='done'&&x.result),analyzing=state.captures.some(x=>x.status==='analyzing'),selected=state.captures.some(x=>state.selectedAnalysisIds.has(x.id)); $('analyze-all').disabled=!state.captures.length||analyzing; $('analyze-selected').disabled=!selected||analyzing; $('match-workbook').disabled=!state.templateBuffer||!analyzed; $('download-workbook').disabled=!state.outputWorkbook; $('cloud-save').disabled=!state.captures.length||!window.appUserId; }
   function statusClass(status){return status==='done'?'status-ok':status==='error'?'status-error':'status-warn';}
-  function statusLabel(item){const count=item.result?.records?.length||0;return item.status==='done'?`분석 완료 (${count}건${count>1?' · 맨 윗줄 사용':''})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
+  function statusLabel(item){const count=item.result?.records?.length||0,modelNote=item.analysisModel===OPUS_FALLBACK_MODEL?' · Opus 5 자동 재분석':'';return item.status==='done'?`분석 완료 (${count}건${count>1?' · 맨 윗줄 사용':''}${modelNote})`:item.status==='error'?`실패: ${item.error}`:item.status==='analyzing'?'분석 중':'대기';}
   function buildOutputName(name){return `${String(name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`;}
   function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function fileToImage(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지를 읽지 못했습니다.'));};img.src=url;});}
