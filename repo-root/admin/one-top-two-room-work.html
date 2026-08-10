@@ -481,8 +481,9 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function findMissingReceiptFields(result) {
     const record=selectRecord(result?.records);
     // 온도기록지는 A/B 2채널 또는 A/B 중 하나만 있는 단일채널 형식을 모두 허용한다.
+    // 차량번호는 인식하지 못해도 나머지 판독값을 결과표에 먼저 기록하고 사용자가 직접 보정할 수 있게 한다.
     const temperatureMissing=record?.a==null&&record?.b==null;
-    return [!String(result?.vehicle_number||'').trim()?'차량번호':'',!String(result?.date||'').trim()?'날짜':'',!String(record?.time||'').trim()?'시간':'',temperatureMissing?'온도(A/B)':''].filter(Boolean);
+    return [!String(result?.date||'').trim()?'날짜':'',!String(record?.time||'').trim()?'시간':'',temperatureMissing?'온도(A/B)':''].filter(Boolean);
   }
 
   function isVisionInterpretationError(err){return err?.code==='VISION_INCOMPLETE'||err?.code==='VISION_JSON_INVALID';}

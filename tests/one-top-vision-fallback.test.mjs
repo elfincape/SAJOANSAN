@@ -11,6 +11,7 @@ assert.doesNotMatch(source,/VISION_MAX_HEIGHT = 200|VISION_MAX_BYTES = 100 \* 10
 assert.match(source,/findMissingReceiptFields\(result\)/,'all required receipt fields should be validated');
 assert.match(source,/const temperatureMissing=record\?\.a==null&&record\?\.b==null/,'single-channel receipts should pass when either A or B temperature exists');
 assert.doesNotMatch(source,/record\?\.a==null\?'A 온도'|record\?\.b==null\?'B 온도'/,'an absent second channel must not trigger Opus fallback');
+assert.doesNotMatch(source,/!String\(result\?\.vehicle_number\|\|''\)\.trim\(\)\?'차량번호'/,'an unreadable vehicle number must not discard otherwise usable receipt data');
 assert.match(source,/err\.code='VISION_JSON_INVALID'/,'invalid model JSON should trigger fallback');
 assert.match(source,/callVisionWithRateLimitRetry\(dataUrl,index,total,OPUS_FALLBACK_MODEL\)/,'incomplete Haiku results should be retried with Opus 5');
 assert.match(source,/const EXCEL_IMAGE_MAX_WIDTH = 960;[\s\S]*const EXCEL_IMAGE_MAX_BYTES = 200 \* 1024/,'Excel image compression settings must remain unchanged');
