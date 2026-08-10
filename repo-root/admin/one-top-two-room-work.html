@@ -480,7 +480,9 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
 
   function findMissingReceiptFields(result) {
     const record=selectRecord(result?.records);
-    return [!String(result?.vehicle_number||'').trim()?'차량번호':'',!String(result?.date||'').trim()?'날짜':'',!String(record?.time||'').trim()?'시간':'',record?.a==null?'A 온도':'',record?.b==null?'B 온도':''].filter(Boolean);
+    // 온도기록지는 A/B 2채널 또는 A/B 중 하나만 있는 단일채널 형식을 모두 허용한다.
+    const temperatureMissing=record?.a==null&&record?.b==null;
+    return [!String(result?.vehicle_number||'').trim()?'차량번호':'',!String(result?.date||'').trim()?'날짜':'',!String(record?.time||'').trim()?'시간':'',temperatureMissing?'온도(A/B)':''].filter(Boolean);
   }
 
   function isVisionInterpretationError(err){return err?.code==='VISION_INCOMPLETE'||err?.code==='VISION_JSON_INVALID';}
