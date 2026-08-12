@@ -28,7 +28,7 @@ const COLUMNS = [
   { key: 'route_name',             label: '코스',       sortKey: 'route_name',              defaultWidth: 160 },
   { key: 'primary_vehicle_tonnage',label: '톤수',       sortKey: 'primary_vehicle_tonnage', align: 'right', defaultWidth: 70 },
   { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate',   defaultWidth: 110 },
-  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 110 },
+  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 180 },
   { key: 'stop_order',             label: '순서',       sortKey: 'stop_order', align: 'right', defaultWidth: 60 },
   { key: 'arrival_business_min',            label: '입차',     sortKey: 'arrival_business_min',            render: r => bizMinToStandard(r.arrival_business_min),            cls: 'biz-time', defaultWidth: 70 },
   { key: 'unloading_start_business_min',    label: '하차시작', sortKey: 'unloading_start_business_min',    render: r => bizMinToStandard(r.unloading_start_business_min),    cls: 'biz-time', defaultWidth: 80 },
@@ -488,14 +488,10 @@ function applyFiltersAndSort() {
     }
 
     if (q) {
-      const hay = [
-        r.dp_name, r.dp_address, r.primary_vehicle_plate, r.secondary_vehicle_plate,
-        r.security_key_location, r.security_password
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      if (!hay.includes(q)) return false;
+      // 현재 행의 모든 scalar 컬럼을 검색한다. 전화번호는 하이픈 유무와 관계없이 일치시킨다.
+      const hay = Object.values(r).filter(value => ['string','number','boolean'].includes(typeof value)).join(' ').toLowerCase();
+      const digits = q.replace(/\D/g, '');
+      if (!hay.includes(q) && !(digits.length >= 3 && hay.replace(/\D/g, '').includes(digits))) return false;
     }
 
     return true;
@@ -775,7 +771,7 @@ function renderGroups() {
         <span class="font-semibold">${escapeHtml(head.route_name || '(코스명 없음)')}</span>
         <span class="text-zinc-400">${escapeHtml(head.car_number || '')}</span>
         <span class="text-zinc-400">${escapeHtml(head.company_name || '')}</span>
-        <span class="text-zinc-400">${escapeHtml(head.primary_driver_name || '')}${head.secondary_driver_name ? ' / ' + escapeHtml(head.secondary_driver_name) : ''}</span>
+        <span class="text-zinc-400">${renderDriver(head)}</span>
         <span class="text-zinc-500 text-xs">${escapeHtml(head.primary_vehicle_plate || '')}</span>
         <span class="ml-auto text-xs text-zinc-500">납품처 ${stops.length}개</span>
       </header>
@@ -826,11 +822,19 @@ function renderGroups() {
 // 셀 렌더러
 // -----------------------------------------------------------------------------
 function renderDriver(r) {
-  const main = escapeHtml(r.primary_driver_name || '');
+  const main = renderDriverIdentity(r.primary_driver_name, r.primary_driver_phone);
   if (r.secondary_driver_name) {
-    return `${main} <span class="text-[11px] text-zinc-500">/ ${escapeHtml(r.secondary_driver_name)}</span>`;
+    return `${main} <span class="text-[11px] text-zinc-500">/ ${renderDriverIdentity(r.secondary_driver_name, r.secondary_driver_phone)}</span>`;
   }
   return main;
+}
+
+function renderDriverIdentity(name, phone) {
+  const phoneText = phone ? formatPhone(phone) : '';
+  const phoneLink = phoneText
+    ? `<a href="tel:${escapeAttr(String(phone).replace(/\D/g,''))}" class="text-emerald-400 hover:underline" onclick="event.stopPropagation()">${escapeHtml(phoneText)}</a>`
+    : '';
+  return `${escapeHtml(name || '')}${phoneLink ? ` <span class="whitespace-nowrap">${phoneLink}</span>` : ''}`;
 }
 
 function renderEntryCond(r) {
@@ -971,6 +975,8 @@ function openDetailModal(r) {
   const routeEditHref = r.route_id
     ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
     : '';
+  const primaryDriver = renderDriverIdentity(r.primary_driver_name || '-', r.primary_driver_phone);
+  const secondaryDriver = renderDriverIdentity(r.secondary_driver_name || '-', r.secondary_driver_phone);
   let detailPhotos = [];
 
   const html = `
@@ -993,8 +999,8 @@ function openDetailModal(r) {
               <div><dt class="muted">코스명</dt><dd>${escapeHtml(r.route_name || '-')}</dd></div>
               <div><dt class="muted">호차</dt><dd>${escapeHtml(r.car_number || '-')}</dd></div>
               <div><dt class="muted">운수사</dt><dd>${escapeHtml(r.company_name || '-')}</dd></div>
-              <div><dt class="muted">주기사</dt><dd>${escapeHtml(r.primary_driver_name || '-')}</dd></div>
-              <div><dt class="muted">보조기사</dt><dd>${escapeHtml(r.secondary_driver_name || '-')}</dd></div>
+              <div><dt class="muted">주기사</dt><dd>${primaryDriver}</dd></div>
+              <div><dt class="muted">보조기사</dt><dd>${secondaryDriver}</dd></div>
               <div><dt class="muted">순서</dt><dd>${escapeHtml(r.stop_order ?? '-')}</dd></div>
               <div><dt class="muted">입차</dt><dd>${escapeHtml(bizMinToStandard(r.arrival_business_min) || '-')}</dd></div>
               <div><dt class="muted">하차시작</dt><dd>${escapeHtml(bizMinToStandard(r.unloading_start_business_min) || '-')}</dd></div>

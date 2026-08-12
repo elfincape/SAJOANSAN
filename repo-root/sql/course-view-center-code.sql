@@ -60,6 +60,7 @@ select
 
   sd.id as secondary_driver_id,
   sd.name as secondary_driver_name,
+  sd.phone as secondary_driver_phone,
 
   sv.id as secondary_vehicle_id,
   sv.plate_number as secondary_vehicle_plate,
