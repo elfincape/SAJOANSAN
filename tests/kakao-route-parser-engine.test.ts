@@ -20,4 +20,9 @@ const baseline=parseKakaoBaseline(sample);
 assert.deepEqual(baseline,[{date:'2026-07-16',weekday:'목요일',ansanGimhae1:10,ansanGimhae2:10,busanAnsan1:12,busanAnsan2:10}]);
 assert.deepEqual(mergeRouteRows([{...baseline[0],busanAnsan1:'',busanAnsan2:''}],baseline),baseline,'API omissions must not erase Busan-Ansan values');
 
+const outOfOrder=`--------------- 2026년 7월 19일 일요일 ---------------
+[두번째] [오전 9:00] 부산-안산 경기94자9000\n9p
+[첫번째] [오전 8:00] 부산-안산 경기94자8000\n8p`;
+assert.deepEqual(parseKakaoBaseline(outOfOrder),[{date:'2026-07-19',weekday:'일요일',ansanGimhae1:'',ansanGimhae2:'',busanAnsan1:8,busanAnsan2:9}],'truck slots must follow Kakao message time, not input line order');
+
 console.log('kakao route parser engine checks passed');
