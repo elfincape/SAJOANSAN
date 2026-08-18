@@ -7,6 +7,7 @@ on:
     paths:
       - 'supabase/functions/coupang-vision/**'
       - 'supabase/functions/operations-assistant/**'
+      - 'supabase/functions/kakao-route-parser/**'
       - '.github/workflows/deploy-supabase-functions.yml'
   workflow_dispatch:
 
@@ -40,3 +41,6 @@ jobs:
 
       - name: Deploy coupang-vision function
         run: supabase functions deploy coupang-vision --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy kakao-route-parser function
+        run: supabase functions deploy kakao-route-parser --project-ref "$SUPABASE_PROJECT_REF"

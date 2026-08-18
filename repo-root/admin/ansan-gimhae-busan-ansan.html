@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>안산김해부산안산 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen">
+  <header class="border-b border-zinc-800">
+    <div class="max-w-[1100px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <span class="text-xl">🔁</span><h1 class="text-base font-semibold">안산김해부산안산</h1>
+      <div class="flex-1"></div><span id="user-badge" class="text-xs text-zinc-400"></span>
+      <a href="/" class="btn btn-ghost">대시보드</a>
+    </div>
+  </header>
+  <main class="max-w-[1100px] mx-auto px-4 py-6 space-y-4">
+    <section class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4">
+      <label class="block text-sm font-semibold mb-2" for="chat-file">카카오톡 대화 텍스트</label>
+      <input id="chat-file" type="file" accept=".txt,text/plain" class="app-input w-full">
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button id="parse-btn" type="button" class="btn btn-primary" disabled>API 정리</button>
+        <button id="download-btn" type="button" class="btn btn-ghost" disabled>Excel 다운로드</button>
+        <span id="status" class="text-xs text-zinc-400"></span>
+      </div>
+    </section>
+    <section id="result-section" class="rounded-lg border border-zinc-700 overflow-hidden hidden">
+      <div class="overflow-auto max-h-[65vh]">
+        <table class="data-table w-full text-sm">
+          <thead><tr><th colspan="4">안산-김해</th><th class="bg-zinc-900 border-x border-zinc-700"></th><th colspan="4">부산-안산</th></tr><tr><th>일자</th><th>요일</th><th>1호차</th><th>2호차</th><th class="bg-zinc-900 border-x border-zinc-700"></th><th>일자</th><th>요일</th><th>1호차</th><th>2호차</th></tr></thead>
+          <tbody id="result-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="fixed left-1/2 bottom-6 z-50 opacity-0 -translate-x-1/2 border rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none"></div>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { supabase } from '/js/supabase.js';
+    import { SUPABASE_ANON_KEY, SUPABASE_URL } from '/js/config.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+
+    const profile=await requireRole('editor');
+    if(!profile)throw new Error('권한 없음');
+    const center=await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
+    mountHeaderCenterSwitcher(next=>location.replace(withCenterParam(location.pathname,next)));
+    decorateCenterLinks(document,center);
+    document.getElementById('user-badge').textContent=`${profile.display_name||profile.email||''} (${profile.role})`;
+
+    const fileInput=document.getElementById('chat-file'),parseButton=document.getElementById('parse-btn'),downloadButton=document.getElementById('download-btn'),status=document.getElementById('status');
+    let chatText='',resultRows=[];
+    fileInput.addEventListener('change',async()=>{const file=fileInput.files?.[0];chatText=file?await file.text():'';resultRows=[];parseButton.disabled=!chatText.trim();downloadButton.disabled=true;document.getElementById('result-section').classList.add('hidden');status.textContent=file?file.name:'';});
+    parseButton.addEventListener('click',parseChat);
+    downloadButton.addEventListener('click',downloadExcel);
+
+    async function parseChat(){
+      parseButton.disabled=true;downloadButton.disabled=true;status.textContent='API 정리 중...';
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(!session?.access_token)throw new Error('로그인이 필요합니다.');
+        const response=await fetch(`${SUPABASE_URL.replace(/\/$/,'')}/functions/v1/kakao-route-parser`,{method:'POST',headers:{'content-type':'application/json',apikey:SUPABASE_ANON_KEY,authorization:`Bearer ${session.access_token}`},body:JSON.stringify({text:chatText})});
+        const payload=await response.json().catch(()=>null);
+        if(!response.ok||payload?.error)throw new Error(payload?.error?.message||payload?.error||`API HTTP ${response.status}`);
+        resultRows=Array.isArray(payload?.rows)?payload.rows:[];renderRows();downloadButton.disabled=!resultRows.length;status.textContent=`${resultRows.length}일 정리 완료`;toast('정리 완료','success');
+      }catch(error){console.error(error);status.textContent='정리 실패';toast(error.message||String(error),'error');}
+      finally{parseButton.disabled=!chatText.trim();}
+    }
+
+    function renderRows(){
+      document.getElementById('result-body').innerHTML=resultRows.map(row=>`<tr><td>${esc(row.date||'')}</td><td>${esc(row.weekday||'')}</td><td>${cell(row.ansanGimhae1)}</td><td>${cell(row.ansanGimhae2)}</td><td class="bg-zinc-900 border-x border-zinc-700"></td><td>${esc(row.date||'')}</td><td>${esc(row.weekday||'')}</td><td>${cell(row.busanAnsan1)}</td><td>${cell(row.busanAnsan2)}</td></tr>`).join('');
+      document.getElementById('result-section').classList.toggle('hidden',!resultRows.length);
+    }
+
+    function downloadExcel(){
+      const aoa=[['안산-김해','','','', '', '부산-안산','','',''],['일자','요일','1호차','2호차','', '일자','요일','1호차','2호차'],...resultRows.map(row=>[row.date||'',row.weekday||'',excelCell(row.ansanGimhae1),excelCell(row.ansanGimhae2),'',row.date||'',row.weekday||'',excelCell(row.busanAnsan1),excelCell(row.busanAnsan2)])];
+      const sheet=XLSX.utils.aoa_to_sheet(aoa);sheet['!merges']=[XLSX.utils.decode_range('A1:D1'),XLSX.utils.decode_range('F1:I1')];sheet['!cols']=[{wch:13},{wch:10},{wch:10},{wch:10},{wch:3},{wch:13},{wch:10},{wch:10},{wch:10}];
+      const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'정리');XLSX.writeFile(book,`안산김해부산안산_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+    function excelCell(value){return value==null||value===''?'':Number(value);}
+    function cell(value){return value==null||value===''?'':`${esc(value)}p`;}
+    function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
+    let toastTimer;function toast(message,type){const el=document.getElementById('toast');el.textContent=message;el.className=`fixed left-1/2 bottom-6 z-50 -translate-x-1/2 border rounded-lg px-4 py-2 text-sm shadow-xl ${type==='error'?'bg-rose-950 border-rose-700':'bg-zinc-800 border-zinc-700'}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('opacity-0'),3000);}
+  </script>
+</body>
+</html>
