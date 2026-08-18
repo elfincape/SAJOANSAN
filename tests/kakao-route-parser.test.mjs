@@ -9,7 +9,11 @@ const workflow=fs.readFileSync(new URL('../.github/workflows/deploy-supabase-fun
 
 assert.match(hub,/ansan-gimhae-busan-ansan\.html[^\n]+title: '안산김해부산안산'/,'admin hub should expose the new tool');
 assert.match(page,/accept="\.txt,text\/plain"/,'tool should accept KakaoTalk text exports');
-assert.match(page,/Promise\.all\(\[requestDirection\('ansan-gimhae',headers\),requestDirection\('busan-ansan',headers\)\]\)/,'both directions must use separate API calls');
+assert.match(page,/id="ansan-gimhae-btn"[^>]*>안산-김해 API 정리</,'Ansan-Gimhae should have its own API button');
+assert.match(page,/id="busan-ansan-btn"[^>]*>부산-안산 API 정리</,'Busan-Ansan should have its own API button');
+assert.match(page,/ansanButton\.addEventListener\('click',\(\)=>parseDirection\('ansan-gimhae'/,'Ansan-Gimhae button should call only its direction');
+assert.match(page,/busanButton\.addEventListener\('click',\(\)=>parseDirection\('busan-ansan'/,'Busan-Ansan button should call only its direction');
+assert.doesNotMatch(page,/Promise\.all\(\[requestDirection/,'directions must not be automatically requested together');
 assert.match(page,/function combineDirections\(ansanGimhae,busanAnsan\)/,'separate API results should be combined in the browser');
 assert.match(page,/\['일자','요일','1호차','2호차','', '일자','요일','1호차','2호차'\]/,'Excel should leave one column between route tables');
 assert.match(edge,/\$\{routeName\}으로 시작하는 메시지만 사용하고 다른 방향은 완전히 무시/,'each API call should isolate one direction');

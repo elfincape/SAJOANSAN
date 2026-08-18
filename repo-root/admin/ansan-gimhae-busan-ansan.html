@@ -23,9 +23,11 @@
       <label class="block text-sm font-semibold mb-2" for="chat-file">카카오톡 대화 텍스트</label>
       <input id="chat-file" type="file" accept=".txt,text/plain" class="app-input w-full">
       <div class="mt-3 flex flex-wrap items-center gap-2">
-        <button id="parse-btn" type="button" class="btn btn-primary" disabled>API 정리</button>
+        <button id="ansan-gimhae-btn" type="button" class="btn btn-primary" disabled>안산-김해 API 정리</button>
+        <span id="ansan-gimhae-status" class="text-xs text-zinc-400"></span>
+        <button id="busan-ansan-btn" type="button" class="btn btn-primary" disabled>부산-안산 API 정리</button>
+        <span id="busan-ansan-status" class="text-xs text-zinc-400"></span>
         <button id="download-btn" type="button" class="btn btn-ghost" disabled>Excel 다운로드</button>
-        <span id="status" class="text-xs text-zinc-400"></span>
       </div>
     </section>
     <section id="result-section" class="rounded-lg border border-zinc-700 overflow-hidden hidden">
@@ -52,22 +54,24 @@
     decorateCenterLinks(document,center);
     document.getElementById('user-badge').textContent=`${profile.display_name||profile.email||''} (${profile.role})`;
 
-    const fileInput=document.getElementById('chat-file'),parseButton=document.getElementById('parse-btn'),downloadButton=document.getElementById('download-btn'),status=document.getElementById('status');
-    let chatText='',resultRows=[];
-    fileInput.addEventListener('change',async()=>{const file=fileInput.files?.[0];chatText=file?await file.text():'';resultRows=[];parseButton.disabled=!chatText.trim();downloadButton.disabled=true;document.getElementById('result-section').classList.add('hidden');status.textContent=file?file.name:'';});
-    parseButton.addEventListener('click',parseChat);
+    const fileInput=document.getElementById('chat-file'),ansanButton=document.getElementById('ansan-gimhae-btn'),busanButton=document.getElementById('busan-ansan-btn'),downloadButton=document.getElementById('download-btn'),ansanStatus=document.getElementById('ansan-gimhae-status'),busanStatus=document.getElementById('busan-ansan-status');
+    let chatText='',resultRows=[],ansanGimhaeRows=[],busanAnsanRows=[];
+    fileInput.addEventListener('change',async()=>{const file=fileInput.files?.[0];chatText=file?await file.text():'';resultRows=[];ansanGimhaeRows=[];busanAnsanRows=[];ansanButton.disabled=!chatText.trim();busanButton.disabled=!chatText.trim();downloadButton.disabled=true;ansanStatus.textContent='';busanStatus.textContent='';document.getElementById('result-section').classList.add('hidden');});
+    ansanButton.addEventListener('click',()=>parseDirection('ansan-gimhae',ansanButton,ansanStatus));
+    busanButton.addEventListener('click',()=>parseDirection('busan-ansan',busanButton,busanStatus));
     downloadButton.addEventListener('click',downloadExcel);
 
-    async function parseChat(){
-      parseButton.disabled=true;downloadButton.disabled=true;status.textContent='API 정리 중...';
+    async function parseDirection(direction,button,directionStatus){
+      button.disabled=true;directionStatus.textContent='API 정리 중...';
       try{
         const {data:{session}}=await supabase.auth.getSession();
         if(!session?.access_token)throw new Error('로그인이 필요합니다.');
         const headers={'content-type':'application/json',apikey:SUPABASE_ANON_KEY,authorization:`Bearer ${session.access_token}`};
-        const [ansanGimhae,busanAnsan]=await Promise.all([requestDirection('ansan-gimhae',headers),requestDirection('busan-ansan',headers)]);
-        resultRows=combineDirections(ansanGimhae,busanAnsan);renderRows();downloadButton.disabled=!resultRows.length;status.textContent=`${resultRows.length}일 정리 완료`;toast('정리 완료','success');
-      }catch(error){console.error(error);status.textContent='정리 실패';toast(error.message||String(error),'error');}
-      finally{parseButton.disabled=!chatText.trim();}
+        const rows=await requestDirection(direction,headers);
+        if(direction==='ansan-gimhae')ansanGimhaeRows=rows;else busanAnsanRows=rows;
+        resultRows=combineDirections(ansanGimhaeRows,busanAnsanRows);renderRows();downloadButton.disabled=!resultRows.length;directionStatus.textContent=`${rows.length}일 완료`;toast(`${direction==='ansan-gimhae'?'안산-김해':'부산-안산'} 정리 완료`,'success');
+      }catch(error){console.error(error);directionStatus.textContent='정리 실패';toast(error.message||String(error),'error');}
+      finally{button.disabled=!chatText.trim();}
     }
 
     async function requestDirection(direction,headers){const response=await fetch(`${SUPABASE_URL.replace(/\/$/,'')}/functions/v1/kakao-route-parser`,{method:'POST',headers,body:JSON.stringify({text:chatText,direction})});const payload=await response.json().catch(()=>null);if(!response.ok||payload?.error)throw new Error(payload?.error?.message||payload?.error||`API HTTP ${response.status}`);return Array.isArray(payload?.rows)?payload.rows:[];}
