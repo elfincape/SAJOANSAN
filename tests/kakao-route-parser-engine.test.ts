@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mergeRouteRows,parseKakaoBaseline} from '../supabase/functions/kakao-route-parser/parser.ts';
+import {mergeDirectionRows,mergeRouteRows,parseKakaoBaseline,selectDirectionRows} from '../supabase/functions/kakao-route-parser/parser.ts';
 
 const sample=`--------------- 2026년 7월 16일 목요일 ---------------
 [박준수] [오전 4:35] 안산-김해 경기91아6175 박준수 010-7930-3625
@@ -19,6 +19,10 @@ const sample=`--------------- 2026년 7월 16일 목요일 ---------------
 const baseline=parseKakaoBaseline(sample);
 assert.deepEqual(baseline,[{date:'2026-07-16',weekday:'목요일',ansanGimhae1:10,ansanGimhae2:10,busanAnsan1:12,busanAnsan2:10}]);
 assert.deepEqual(mergeRouteRows([{...baseline[0],busanAnsan1:'',busanAnsan2:''}],baseline),baseline,'API omissions must not erase Busan-Ansan values');
+const ansanOnly=selectDirectionRows(baseline,'ansan-gimhae'),busanOnly=selectDirectionRows(baseline,'busan-ansan');
+assert.deepEqual(ansanOnly,[{date:'2026-07-16',weekday:'목요일',truck1:10,truck2:10}]);
+assert.deepEqual(busanOnly,[{date:'2026-07-16',weekday:'목요일',truck1:12,truck2:10}]);
+assert.deepEqual(mergeDirectionRows([{...busanOnly[0],truck1:'',truck2:''}],busanOnly),busanOnly);
 
 const outOfOrder=`--------------- 2026년 7월 19일 일요일 ---------------
 [두번째] [오전 9:00] 부산-안산 경기94자9000\n9p

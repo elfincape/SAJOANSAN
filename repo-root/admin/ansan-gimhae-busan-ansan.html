@@ -63,13 +63,15 @@
       try{
         const {data:{session}}=await supabase.auth.getSession();
         if(!session?.access_token)throw new Error('로그인이 필요합니다.');
-        const response=await fetch(`${SUPABASE_URL.replace(/\/$/,'')}/functions/v1/kakao-route-parser`,{method:'POST',headers:{'content-type':'application/json',apikey:SUPABASE_ANON_KEY,authorization:`Bearer ${session.access_token}`},body:JSON.stringify({text:chatText})});
-        const payload=await response.json().catch(()=>null);
-        if(!response.ok||payload?.error)throw new Error(payload?.error?.message||payload?.error||`API HTTP ${response.status}`);
-        resultRows=Array.isArray(payload?.rows)?payload.rows:[];renderRows();downloadButton.disabled=!resultRows.length;status.textContent=`${resultRows.length}일 정리 완료`;toast('정리 완료','success');
+        const headers={'content-type':'application/json',apikey:SUPABASE_ANON_KEY,authorization:`Bearer ${session.access_token}`};
+        const [ansanGimhae,busanAnsan]=await Promise.all([requestDirection('ansan-gimhae',headers),requestDirection('busan-ansan',headers)]);
+        resultRows=combineDirections(ansanGimhae,busanAnsan);renderRows();downloadButton.disabled=!resultRows.length;status.textContent=`${resultRows.length}일 정리 완료`;toast('정리 완료','success');
       }catch(error){console.error(error);status.textContent='정리 실패';toast(error.message||String(error),'error');}
       finally{parseButton.disabled=!chatText.trim();}
     }
+
+    async function requestDirection(direction,headers){const response=await fetch(`${SUPABASE_URL.replace(/\/$/,'')}/functions/v1/kakao-route-parser`,{method:'POST',headers,body:JSON.stringify({text:chatText,direction})});const payload=await response.json().catch(()=>null);if(!response.ok||payload?.error)throw new Error(payload?.error?.message||payload?.error||`API HTTP ${response.status}`);return Array.isArray(payload?.rows)?payload.rows:[];}
+    function combineDirections(ansanGimhae,busanAnsan){const dates=new Map();for(const row of [...ansanGimhae,...busanAnsan]){if(!dates.has(row.date))dates.set(row.date,{date:row.date,weekday:row.weekday||'',ansanGimhae1:'',ansanGimhae2:'',busanAnsan1:'',busanAnsan2:''});const target=dates.get(row.date);if(!target.weekday)target.weekday=row.weekday||'';}for(const row of ansanGimhae){const target=dates.get(row.date);target.ansanGimhae1=row.truck1;target.ansanGimhae2=row.truck2;}for(const row of busanAnsan){const target=dates.get(row.date);target.busanAnsan1=row.truck1;target.busanAnsan2=row.truck2;}return [...dates.values()].sort((a,b)=>a.date.localeCompare(b.date));}
 
     function renderRows(){
       document.getElementById('result-body').innerHTML=resultRows.map(row=>`<tr><td>${esc(row.date||'')}</td><td>${esc(row.weekday||'')}</td><td>${cell(row.ansanGimhae1)}</td><td>${cell(row.ansanGimhae2)}</td><td class="bg-zinc-900 border-x border-zinc-700"></td><td>${esc(row.date||'')}</td><td>${esc(row.weekday||'')}</td><td>${cell(row.busanAnsan1)}</td><td>${cell(row.busanAnsan2)}</td></tr>`).join('');

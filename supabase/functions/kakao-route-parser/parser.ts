@@ -1,4 +1,6 @@
 export type RouteRow={date:string;weekday:string;ansanGimhae1:number|'';ansanGimhae2:number|'';busanAnsan1:number|'';busanAnsan2:number|''};
+export type Direction='ansan-gimhae'|'busan-ansan';
+export type DirectionRow={date:string;weekday:string;truck1:number|'';truck2:number|''};
 
 type Message={date:string;weekday:string;speaker:string;body:string;chatMinute:number;sequence:number};
 type Slot={identity:string;pallet:number|''};
@@ -39,6 +41,15 @@ export function parseKakaoBaseline(text:string):RouteRow[]{
 export function mergeRouteRows(aiRows:RouteRow[],baseline:RouteRow[]):RouteRow[]{
   const aiByDate=new Map(aiRows.map(row=>[row.date,row]));
   return baseline.map(base=>{const ai=aiByDate.get(base.date);return {date:base.date,weekday:ai?.weekday||base.weekday,ansanGimhae1:valueOrBaseline(ai?.ansanGimhae1,base.ansanGimhae1),ansanGimhae2:valueOrBaseline(ai?.ansanGimhae2,base.ansanGimhae2),busanAnsan1:valueOrBaseline(ai?.busanAnsan1,base.busanAnsan1),busanAnsan2:valueOrBaseline(ai?.busanAnsan2,base.busanAnsan2)};});
+}
+
+export function selectDirectionRows(rows:RouteRow[],direction:Direction):DirectionRow[]{
+  return rows.map(row=>direction==='ansan-gimhae'?{date:row.date,weekday:row.weekday,truck1:row.ansanGimhae1,truck2:row.ansanGimhae2}:{date:row.date,weekday:row.weekday,truck1:row.busanAnsan1,truck2:row.busanAnsan2});
+}
+
+export function mergeDirectionRows(aiRows:DirectionRow[],baseline:DirectionRow[]):DirectionRow[]{
+  const aiByDate=new Map(aiRows.map(row=>[row.date,row]));
+  return baseline.map(base=>{const ai=aiByDate.get(base.date);return {date:base.date,weekday:ai?.weekday||base.weekday,truck1:valueOrBaseline(ai?.truck1,base.truck1),truck2:valueOrBaseline(ai?.truck2,base.truck2)};});
 }
 
 function messageIdentity(message:Message){
