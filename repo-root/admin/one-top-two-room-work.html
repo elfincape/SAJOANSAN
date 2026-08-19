@@ -95,6 +95,7 @@
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <span class="step-badge">4</span><h2 class="font-semibold">일괄 API 분석</h2>
         <span id="analysis-progress" class="text-xs text-zinc-400"></span><div class="flex-1"></div>
+        <label class="text-xs text-zinc-300 flex items-center gap-2">기본 날짜<input id="analysis-default-date" type="date" class="app-input"></label>
         <label class="text-xs text-zinc-300 flex items-center gap-2">API 모델<select id="temperature-vision-model" class="app-input min-w-60"><option value="claude-haiku-4-5-20251001" selected>기존 모델 · Claude Haiku 4.5</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
         <button id="analyze-selected" class="btn btn-ghost" type="button" disabled>선택 항목 재분석</button>
         <button id="analyze-all" class="btn btn-primary" type="button" disabled>전체 사진 API 분석</button>
@@ -169,13 +170,14 @@
   const COL = { date:5, vehicle:8, freezer:10, refrigerated:11, compliance:14, temperaturePair:15, supplementalPhoto:16, tempPhoto:17, shipmentType:18 };
   const PROMPT = `이 이미지는 차량 온도기록 영수증이다. 보이는 값만 판독하고 추측하지 마라.
 차량번호는 번호판 전체가 보이면 전체를 쓰고, 마지막 네 자리만 보이면 네 자리만 쓴다.
+센터명이 보이면 center_name에 기록한다. 센터명 초성에 ㄱㅈㅇ이 들어가면 다른 후보를 고려하지 말고 반드시 곤지암으로 기록한다.
 날짜는 YYYY-MM-DD, 시간은 HH:mm 형식으로 통일한다.
 A와 B 온도는 부호와 소수점을 정확히 읽고 number로 반환한다.
 온도 기록은 영수증에 보이는 위에서 아래 순서를 그대로 유지해 records 배열에 넣는다. 시간값을 기준으로 재정렬하지 마라.
 Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증에서 가장 맨 윗줄이다. 같은 시간이 여러 줄이어도 맨 윗줄을 우선한다.
 판독할 수 없는 값은 반드시 null로 반환한다.
 설명이나 마크다운 없이 아래 구조의 JSON 객체 하나만 반환한다.
-{"vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
+{"center_name":"곤지암","vehicle_number":"3161","date":"2026-07-24","records":[{"time":"02:06","a":8.6,"b":9.1}]}`;
   const state = { templateBuffer:null, templateName:'', captures:[], selectedCaptureIds:new Set(), selectedAnalysisIds:new Set(), stream:null, outputWorkbook:null, outputName:'', issues:[], matchLog:[] };
   let analysisHoverTimer=null;
   const $ = id => document.getElementById(id);
@@ -200,6 +202,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   $('download-workbook').addEventListener('click', downloadWorkbook);
   window.addEventListener('beforeunload', stopCamera);
   window.addEventListener('one-top-cloud-ready', refreshCloudStatus);
+  $('analysis-default-date').value=defaultPacificDate();
   updateCameraGuide(); renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
 
   async function loadTemplate(file) {
@@ -584,7 +587,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
 
   function normalizeApiResult(value) {
     const records=Array.isArray(value?.records)?value.records:[];
-    return { vehicle_number:value?.vehicle_number==null?'':String(value.vehicle_number).trim(), date:normalizeDate(value?.date), records:records.map(r=>({time:normalizeTime(r?.time),a:toNullableNumber(r?.a),b:toNullableNumber(r?.b)})) };
+    return { center_name:normalizeCenterName(value?.center_name), vehicle_number:value?.vehicle_number==null?'':String(value.vehicle_number).trim(), date:normalizeDate(value?.date)||$('analysis-default-date').value, records:records.map(r=>({time:normalizeTime(r?.time),a:toNullableNumber(r?.a),b:toNullableNumber(r?.b)})) };
   }
 
   function renderAnalysis() {
@@ -762,6 +765,8 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function normalizeVehicle(value) { const digits=String(value||'').replace(/\D/g,''); return digits.slice(-4); }
   function normalizeDate(value) { const s=String(value||'').trim(); const m=s.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$/); return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''; }
   function normalizeTime(value) { const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/); return m?`${m[1].padStart(2,'0')}:${m[2]}`:''; }
+  function normalizeCenterName(value) { const text=String(value||'').trim();return text.replace(/\s+/g,'').includes('ㄱㅈㅇ')?'곤지암':text; }
+  function defaultPacificDate(now=new Date()) { const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(now).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));const date=new Date(Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day)+(Number(parts.hour)>=20?1:0)));return date.toISOString().slice(0,10); }
   function formatTemplateDate(value) { const m=String(value||'').match(/^\d{4}-\d{2}-(\d{2})$/); return m?`${Number(m[1])}일`:value; }
   function toNullableNumber(value) { if(value===null||value===undefined||String(value).trim()==='')return null; const n=Number(String(value).replace(/℃/g,'').trim()); return Number.isFinite(n)?n:null; }
   function cellText(cellOrWs,row,col) { const cell=arguments.length===3?cellOrWs.getCell(row,col):cellOrWs; const target=cell?.isMerged&&cell.master?cell.master:cell; const v=target?.value; if(v==null)return''; if(typeof v==='object'){if(v.text!=null)return String(v.text).trim();if(v.result!=null)return String(v.result).trim();if(v.richText)return v.richText.map(x=>x.text||'').join('').trim();}return String(v).trim(); }
