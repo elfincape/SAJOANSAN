@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>기울기 보정 · 코스표 관리 시스템</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html,body{height:100%;overflow:hidden}
+    .hidden{display:none!important}
+    .workspace{min-height:0}
+    .paste-target{width:min(58vw,18rem);aspect-ratio:1;border:2px dashed #52525b;background:#18181b;transition:.15s}
+    .paste-target:hover,.paste-target:focus{border-color:#22d3ee;background:rgba(8,145,178,.08);outline:none}
+    .paste-target .plus{font-size:4.5rem;font-weight:200;line-height:1;color:#a1a1aa}
+    .photo-stage{position:relative;min-height:0;overflow:hidden;background:#09090b}
+    .photo-stage img{display:block;max-width:90%;max-height:90%;object-fit:contain;transform-origin:center;transition:transform .04s linear;user-select:none;-webkit-user-drag:none}
+    .nav-button{width:3rem;height:3rem;border-radius:999px;background:rgba(24,24,27,.82);border:1px solid #52525b;font-size:1.7rem;line-height:1;backdrop-filter:blur(6px)}
+    .nav-button:disabled{opacity:.25}
+    input[type=range]{accent-color:#06b6d4}
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 h-full flex flex-col">
+  <header class="border-b border-zinc-800 shrink-0 bg-zinc-900">
+    <div class="max-w-[1400px] mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a>
+      <h1 class="text-base font-semibold">기울기 보정</h1>
+      <div class="flex-1"></div>
+      <span id="photo-count" class="text-xs text-zinc-400"></span>
+      <span id="user-badge" class="text-xs text-zinc-400 hidden sm:inline"></span>
+    </div>
+  </header>
+
+  <main class="workspace flex-1 flex flex-col">
+    <section id="empty-state" class="flex-1 flex items-center justify-center p-4">
+      <button id="paste-target" type="button" class="paste-target rounded-2xl flex items-center justify-center" aria-label="사진 추가">
+        <span class="plus">＋</span>
+      </button>
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
+    </section>
+
+    <section id="editor" class="photo-stage flex-1 hidden items-center justify-center">
+      <img id="photo" alt="">
+      <button id="previous" type="button" class="nav-button absolute left-3 sm:left-6 top-1/2 -translate-y-1/2" aria-label="이전 사진">‹</button>
+      <button id="next" type="button" class="nav-button absolute right-3 sm:right-6 top-1/2 -translate-y-1/2" aria-label="다음 사진">›</button>
+    </section>
+
+    <section id="controls" class="hidden shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+      <div class="max-w-3xl mx-auto flex items-center gap-3">
+        <button id="add-photo" type="button" class="btn btn-ghost shrink-0" aria-label="사진 추가">＋</button>
+        <input id="rotation" class="w-full" type="range" min="-15" max="15" step="0.1" value="0" aria-label="기울기">
+        <output id="rotation-value" class="w-14 text-right text-xs tabular-nums text-zinc-300">0.0°</output>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { requireRole } from '/js/auth.js';
+    import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+
+    const profile=await requireRole('editor');
+    if(!profile) throw new Error('Unauthorized');
+    await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
+    mountHeaderCenterSwitcher(next=>location.replace(withCenterParam(location.pathname,next)));
+    decorateCenterLinks(document);
+    document.getElementById('user-badge').textContent=`${profile.display_name||profile.email||''} (${profile.role})`;
+  </script>
+  <script>
+    'use strict';
+    const $=id=>document.getElementById(id);
+    const photos=[];
+    let currentIndex=0;
+
+    $('paste-target').addEventListener('click',()=>$('paste-target').focus());
+    $('add-photo').addEventListener('click',()=>$('file-input').click());
+    $('file-input').addEventListener('change',event=>addFiles(event.target.files));
+    $('previous').addEventListener('click',()=>move(-1));
+    $('next').addEventListener('click',()=>move(1));
+    $('rotation').addEventListener('input',event=>setRotation(Number(event.target.value)));
+    document.addEventListener('paste',event=>{
+      const files=[...event.clipboardData.items].filter(item=>item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+      if(files.length){event.preventDefault();addFiles(files)}
+    });
+    document.addEventListener('keydown',event=>{
+      if(event.key==='ArrowLeft'){event.preventDefault();move(-1)}
+      if(event.key==='ArrowRight'){event.preventDefault();move(1)}
+    });
+
+    function addFiles(fileList){
+      const files=[...fileList].filter(file=>file.type.startsWith('image/'));
+      if(!files.length)return;
+      files.forEach(file=>photos.push({url:URL.createObjectURL(file),rotation:0}));
+      currentIndex=photos.length-files.length;
+      $('file-input').value='';
+      render();
+    }
+    function move(direction){
+      if(photos.length<2)return;
+      currentIndex=(currentIndex+direction+photos.length)%photos.length;
+      render();
+    }
+    function setRotation(value){
+      if(!photos.length)return;
+      photos[currentIndex].rotation=value;
+      $('photo').style.transform=`rotate(${value}deg)`;
+      $('rotation-value').value=`${value.toFixed(1)}°`;
+    }
+    function render(){
+      const hasPhotos=photos.length>0;
+      $('empty-state').classList.toggle('hidden',hasPhotos);
+      $('editor').classList.toggle('hidden',!hasPhotos);
+      $('editor').classList.toggle('flex',hasPhotos);
+      $('controls').classList.toggle('hidden',!hasPhotos);
+      $('photo-count').textContent=hasPhotos?`${currentIndex+1} / ${photos.length}`:'';
+      if(!hasPhotos)return;
+      const item=photos[currentIndex];
+      $('photo').src=item.url;
+      $('rotation').value=String(item.rotation);
+      setRotation(item.rotation);
+      const multiple=photos.length>1;
+      $('previous').disabled=!multiple;
+      $('next').disabled=!multiple;
+    }
+  </script>
+</body>
+</html>
