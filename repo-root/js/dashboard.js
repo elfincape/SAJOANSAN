@@ -994,16 +994,13 @@ function blobToDataUrl(blob) {
 // -----------------------------------------------------------------------------
 
 function openDetailModal(r) {
-  const tel = r.dp_contact ? formatPhone(r.dp_contact) : '';
-  const telLink = r.dp_contact
-    ? `<a href="tel:${escapeAttr(String(r.dp_contact).replace(/\D/g,''))}" class="text-emerald-400 hover:underline">${escapeHtml(tel)}</a>`
-    : '<span class="text-zinc-500">-</span>';
   const routeEditHref = r.route_id
     ? withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(r.route_id)}`)
     : '';
   const primaryDriver = renderDriverIdentity(r.primary_driver_name || '-', r.primary_driver_phone);
   const secondaryDriver = renderDriverIdentity(r.secondary_driver_name || '-', r.secondary_driver_phone);
   let detailPhotos = [];
+  let detailsLoaded = false;
 
   const html = `
     <div class="p-5 max-h-[85vh] overflow-auto">
@@ -1013,7 +1010,8 @@ function openDetailModal(r) {
           <div class="text-xs text-zinc-400 mt-0.5">${escapeHtml(r.dp_code || '')} · ${escapeHtml(r.dp_region || '')}</div>
         </div>
         <div class="flex items-center gap-2">
-          ${routeEditHref ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-primary text-xs">코스 수정</a>` : ''}
+          ${routeEditHref ? `<a href="${escapeAttr(routeEditHref)}" class="btn btn-ghost text-xs">코스 수정</a>` : ''}
+          <button id="detail-save" class="btn btn-primary text-xs" disabled>납품처 저장</button>
           <button id="detail-close" class="btn btn-ghost text-xs">닫기</button>
         </div>
       </div>
@@ -1037,30 +1035,35 @@ function openDetailModal(r) {
           <section class="rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
             <h3 class="text-sm font-semibold mb-2">납품처 정보</h3>
             <dl class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div class="md:col-span-2"><dt class="muted">주소</dt><dd>${escapeHtml(r.dp_address || '-')}</dd></div>
-              <div><dt class="muted">연락처</dt><dd>${telLink}</dd></div>
+              <label><span class="muted">납품처명</span><input id="detail-name" class="app-input mt-1" value="${escapeAttr(r.dp_name || '')}"></label>
+              <label><span class="muted">코드</span><input id="detail-code" class="app-input mt-1" value="${escapeAttr(r.dp_code || '')}"></label>
+              <label><span class="muted">지역</span><input id="detail-region" class="app-input mt-1" value="${escapeAttr(r.dp_region || '')}"></label>
+              <label><span class="muted">연락처</span><input id="detail-contact" class="app-input mt-1" inputmode="tel" value="${escapeAttr(r.dp_contact || '')}"></label>
+              <label class="md:col-span-2"><span class="muted">주소</span><input id="detail-address" class="app-input mt-1" value="${escapeAttr(r.dp_address || '')}"></label>
               <div><dt class="muted">연락 담당자</dt><dd>${escapeHtml(r.dp_contact_name || '-')}</dd></div>
-              <div><dt class="muted">납품방식</dt><dd>${escapeHtml(r.override_delivery_method ?? r.delivery_method ?? '-')}</dd></div>
-              <div><dt class="muted">진입방식</dt><dd>${escapeHtml(r.override_access_method ?? r.access_method ?? '-')}</dd></div>
-              <div><dt class="muted">납품장소</dt><dd>${escapeHtml(r.override_delivery_location ?? r.delivery_location ?? '-')}</dd></div>
-              <div><dt class="muted">열쇠보관장소</dt><dd>${escapeHtml(r.security_key_location || '-')}</dd></div>
-              <div><dt class="muted">비밀번호</dt><dd>${escapeHtml(r.security_password || '-')}</dd></div>
+              <label><span class="muted">납품방식</span><input id="detail-delivery-method" class="app-input mt-1" value="${escapeAttr(r.base_delivery_method ?? r.delivery_method ?? '')}"></label>
+              <label><span class="muted">진입방식</span><input id="detail-access-method" class="app-input mt-1" value="${escapeAttr(r.base_access_method ?? r.access_method ?? '')}"></label>
+              <label><span class="muted">납품장소</span><input id="detail-delivery-location" class="app-input mt-1" value="${escapeAttr(r.base_delivery_location ?? r.delivery_location ?? '')}"></label>
+              <label><span class="muted">열쇠보관장소</span><input id="detail-security-key" class="app-input mt-1" value="${escapeAttr(r.security_key_location || '')}"></label>
+              <label><span class="muted">비밀번호</span><input id="detail-security-password" class="app-input mt-1" value="${escapeAttr(r.security_password || '')}"></label>
             </dl>
           </section>
         </div>
         <aside class="space-y-3 rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
           <div class="flex items-center justify-between gap-2">
             <h4 class="font-semibold">납품처 사진</h4>
-            <span id="detail-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+            <div class="flex items-center gap-2">
+              <span id="detail-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+              <label class="btn btn-ghost text-xs cursor-pointer">사진 추가<input id="detail-photo-input" type="file" accept="image/*" multiple class="hidden" disabled></label>
+            </div>
           </div>
-          <p class="text-xs text-zinc-500">대시보드에서는 조회만 가능합니다. 사진 추가/삭제는 납품처 관리에서 진행하세요.</p>
           <div id="detail-photo-grid" class="grid grid-cols-3 gap-2"></div>
           <div id="detail-photo-large-wrap" class="hidden rounded-lg border border-zinc-700 bg-black p-2">
             <img id="detail-photo-large" alt="선택한 납품처 사진" class="max-h-[360px] w-full rounded object-contain">
           </div>
           <div>
             <div class="muted mb-1">비고</div>
-            <div id="detail-memo" class="min-h-20 rounded border border-zinc-700 bg-zinc-900/50 p-2 whitespace-pre-wrap">${escapeHtml(deliveryPointMemo(r) || '-')}</div>
+            <textarea id="detail-memo" rows="5" class="app-textarea">${escapeHtml(r.dp_memo || '')}</textarea>
           </div>
         </aside>
       </div>
@@ -1071,6 +1074,18 @@ function openDetailModal(r) {
 
   openModal(wrap, { width: '5xl' });
   wrap.querySelector('#detail-close').addEventListener('click', closeModal);
+  wrap.querySelector('#detail-save').addEventListener('click', saveDeliveryPoint);
+  wrap.querySelector('#detail-photo-input').addEventListener('change', event => addDetailPhotos(event.target.files));
+  wrap.addEventListener('paste', event => {
+    const files = [...(event.clipboardData?.items || [])]
+      .filter(item => item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+    if (files.length) {
+      event.preventDefault();
+      addDetailPhotos(files);
+    }
+  });
 
   const renderDetailPhotos = () => {
     const grid = wrap.querySelector('#detail-photo-grid');
@@ -1084,26 +1099,123 @@ function openDetailModal(r) {
       return;
     }
     grid.innerHTML = detailPhotos.map((photo, idx) => `
-      <button type="button" data-detail-photo-view="${idx}" class="h-20 overflow-hidden rounded border border-zinc-700 bg-zinc-900">
-        <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
-      </button>`).join('');
+      <div class="relative h-20 overflow-hidden rounded border border-zinc-700 bg-zinc-900">
+        <button type="button" data-detail-photo-view="${idx}" class="h-full w-full">
+          <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
+        </button>
+        <button type="button" data-detail-photo-remove="${idx}" class="absolute right-1 top-1 h-6 w-6 rounded bg-red-700/90 text-xs" aria-label="사진 삭제">×</button>
+      </div>`).join('');
     largeWrap.classList.remove('hidden');
     if (!large.src || !detailPhotos.some(p => p.dataUrl === large.src)) large.src = detailPhotos[0].dataUrl;
     grid.querySelectorAll('[data-detail-photo-view]').forEach(btn => {
       btn.addEventListener('click', () => { large.src = detailPhotos[Number(btn.dataset.detailPhotoView)]?.dataUrl || ''; });
     });
+    grid.querySelectorAll('[data-detail-photo-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        detailPhotos.splice(Number(btn.dataset.detailPhotoRemove), 1);
+        large.src = '';
+        renderDetailPhotos();
+      });
+    });
   };
 
+  async function addDetailPhotos(fileList) {
+    if (!detailsLoaded) {
+      toast('납품처 정보를 불러온 뒤 사진을 추가할 수 있습니다.', 'warn');
+      return;
+    }
+    const files = [...(fileList || [])].filter(file => file?.type?.startsWith('image/'));
+    if (!files.length) return;
+    if (detailPhotos.length + files.length > MAX_DELIVERY_POINT_PHOTOS) {
+      toast(`사진은 최대 ${MAX_DELIVERY_POINT_PHOTOS}장까지 저장할 수 있습니다.`, 'warn');
+      return;
+    }
+    try {
+      for (const file of files) detailPhotos.push(await compressDeliveryPointPhoto(file));
+      renderDetailPhotos();
+    } catch (error) {
+      toast(error?.message || '사진 처리에 실패했습니다.', 'error');
+    } finally {
+      wrap.querySelector('#detail-photo-input').value = '';
+    }
+  }
+
+  async function saveDeliveryPoint() {
+    if (!r.delivery_point_id || !detailsLoaded) return;
+    const value = id => wrap.querySelector(`#${id}`).value.trim() || null;
+    const payload = {
+      code: value('detail-code'),
+      name: value('detail-name'),
+      region: value('detail-region'),
+      address: value('detail-address'),
+      contact: value('detail-contact'),
+      delivery_method: value('detail-delivery-method'),
+      access_method: value('detail-access-method'),
+      delivery_location: value('detail-delivery-location'),
+      security_key_location: value('detail-security-key'),
+      security_password: value('detail-security-password'),
+      memo: value('detail-memo'),
+      photos: detailPhotos
+    };
+    if (!payload.name) {
+      toast('납품처명을 입력해 주세요.', 'warn');
+      return;
+    }
+    const saveButton = wrap.querySelector('#detail-save');
+    saveButton.disabled = true;
+    saveButton.textContent = '저장 중...';
+    const { error } = await scopeByCenter(
+      supabase.from('delivery_points').update(payload).eq('id', r.delivery_point_id),
+      getRequiredCenter()
+    );
+    saveButton.disabled = false;
+    saveButton.textContent = '납품처 저장';
+    if (error) {
+      toast(`납품처 저장 실패: ${error.message}`, 'error');
+      return;
+    }
+    state.rows.forEach(row => {
+      if (String(row.delivery_point_id) !== String(r.delivery_point_id)) return;
+      row.dp_code = payload.code;
+      row.dp_name = payload.name;
+      row.dp_region = payload.region;
+      row.dp_address = payload.address;
+      row.dp_contact = payload.contact;
+      row.base_delivery_method = payload.delivery_method;
+      row.base_access_method = payload.access_method;
+      row.base_delivery_location = payload.delivery_location;
+      row.delivery_method = row.override_delivery_method ?? payload.delivery_method;
+      row.access_method = row.override_access_method ?? payload.access_method;
+      row.delivery_location = row.override_delivery_location ?? payload.delivery_location;
+      row.security_key_location = payload.security_key_location;
+      row.security_password = payload.security_password;
+      row.dp_memo = payload.memo;
+    });
+    applyFiltersAndSort();
+    render();
+    toast('납품처 정보가 저장되었습니다.', 'success');
+  }
+
   if (r.delivery_point_id) {
-    scopeByCenter(supabase.from('delivery_points').select('photos,memo').eq('id', r.delivery_point_id).single())
+    scopeByCenter(supabase.from('delivery_points').select('code,name,address,region,contact,delivery_method,access_method,delivery_location,security_key_location,security_password,photos,memo').eq('id', r.delivery_point_id).single())
       .then(({ data, error }) => {
         if (error) {
-          toast(`사진 불러오기 실패: ${error.message}`, 'warn');
+          toast(`납품처 정보 불러오기 실패: ${error.message}`, 'warn');
           detailPhotos = [];
         } else {
           detailPhotos = parseDeliveryPointPhotos(data?.photos);
           r.dp_memo = data?.memo ?? r.dp_memo;
-          wrap.querySelector('#detail-memo').textContent = deliveryPointMemo(r) || '-';
+          const fieldMap = {
+            'detail-code': 'code', 'detail-name': 'name', 'detail-region': 'region',
+            'detail-address': 'address', 'detail-contact': 'contact',
+            'detail-delivery-method': 'delivery_method', 'detail-access-method': 'access_method',
+            'detail-delivery-location': 'delivery_location', 'detail-security-key': 'security_key_location',
+            'detail-security-password': 'security_password', 'detail-memo': 'memo'
+          };
+          Object.entries(fieldMap).forEach(([id, key]) => { wrap.querySelector(`#${id}`).value = data?.[key] ?? ''; });
+          detailsLoaded = true;
+          wrap.querySelector('#detail-save').disabled = false;
+          wrap.querySelector('#detail-photo-input').disabled = false;
         }
         renderDetailPhotos();
       });

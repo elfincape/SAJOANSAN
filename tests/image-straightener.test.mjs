@@ -10,7 +10,7 @@ assert.match(page,/clipboardData\.items/, 'clipboard images should be accepted')
 assert.match(page,/paste-target'\)\.addEventListener\('click',[^\n]+\.focus\(\)/, 'clicking the plus target should prepare it for pasting');
 assert.match(page,/event\.key==='ArrowLeft'/, 'left keyboard navigation should be available');
 assert.match(page,/event\.key==='ArrowRight'/, 'right keyboard navigation should be available');
-assert.match(page,/type="range" min="-15" max="15" step="0\.1"/, 'rotation slider should support fine correction');
+assert.match(page,/type="range" min="-90" max="90" step="0\.1"/, 'rotation slider should support fine correction');
 assert.match(page,/style\.transform=`rotate\(\$\{value\}deg\)`/, 'slider value should rotate the displayed image');
 assert.match(page,/max-width:90%;max-height:90%;object-fit:contain/, 'photo should use the available stage without overlapping controls');
 
