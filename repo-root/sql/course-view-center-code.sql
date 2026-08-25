@@ -14,7 +14,7 @@
 -- PostgreSQL CREATE OR REPLACE VIEW cannot insert new columns in the middle of an
 -- existing view. This definition preserves the existing course_view column order
 -- shown by `select * from course_view limit 1`, and appends center columns at the
--- end so the dashboard can filter by center_code.
+-- end so the dashboard can filter by center_code and show delivery-point data.
 -- =============================================================================
 
 -- Safe pre-check: this never errors. Before running the patch it should show
@@ -24,7 +24,7 @@ select column_name, data_type
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'course_view'
-  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password', 'dp_contact_name')
+  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password', 'dp_contact_name', 'dp_memo')
 order by column_name;
 
 create or replace view public.course_view as
@@ -110,7 +110,8 @@ select
   cen.name as center_name,
   dp.security_key_location as security_key_location,
   dp.security_password as security_password,
-  dp.contact_name as dp_contact_name
+  dp.contact_name as dp_contact_name,
+  dp.memo as dp_memo
 from public.route_stops rs
 join public.routes r
   on r.id = rs.route_id
@@ -136,12 +137,12 @@ join public.delivery_points dp
  and dp.center_code = r.center_code;
 
 -- Verify step 1: confirm the columns now exist. This query is safe even if the
--- patch did not run, and should return 5 rows after the patch.
+-- patch did not run, and should return 7 rows after the patch.
 select column_name, data_type
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'course_view'
-  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password')
+  and column_name in ('center_code', 'route_center_code', 'center_name', 'security_key_location', 'security_password', 'dp_contact_name', 'dp_memo')
 order by column_name;
 
 -- Verify step 2: run this only after verify step 1 returns center_code.

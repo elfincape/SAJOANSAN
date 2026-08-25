@@ -472,7 +472,7 @@ function rowToFlat(stop) {
     '주소':       dp.address || '',
     '열쇠보관장소': dp.security_key_location || '',
     '비밀번호':   dp.security_password || '',
-    '비고':       sanitizeMemoForExport(stop.memo || dp.memo || ''),
+    '비고':       sanitizeMemoForExport([dp.memo, stop.memo].filter(Boolean).join('\n')),
     _sort: {
       driver_name:  driver.name || '',
       company_name: company.name || '',

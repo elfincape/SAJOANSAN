@@ -46,7 +46,7 @@ const COLUMNS = [
   { key: 'dp_address',             label: '주소',       sortKey: 'dp_address',              render: renderAddress, defaultWidth: 240 },
   { key: 'dp_contact_name',        label: '담당자',     sortable: false, render: () => '',                   defaultWidth: 90  },
   { key: 'dp_contact',             label: '휴대전화',   sortable: false, render: r => formatPhone(r.dp_contact), defaultWidth: 130 },
-  { key: 'stop_memo',              label: '비고',       sortable: false, render: r => escapeHtml(r.stop_memo || ''), defaultWidth: 200 }
+  { key: 'stop_memo',              label: '비고',       sortable: false, render: r => escapeHtml(deliveryPointMemo(r)), defaultWidth: 200 }
 ];
 
 const COL_MAP  = Object.fromEntries(COLUMNS.map(c => [c.key, c]));
@@ -171,7 +171,7 @@ async function loadData() {
   try {
     const center = getRequiredCenter();
     const data = await loadCourseRowsForCenter(center);
-    state.rows = data;
+    state.rows = await enrichDeliveryPointMemos(data, center);
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
@@ -193,6 +193,25 @@ async function loadData() {
   } finally {
     ind?.classList.add('hidden');
   }
+}
+
+async function enrichDeliveryPointMemos(rows, center) {
+  if (!rows.length || rows.every(row => Object.hasOwn(row, 'dp_memo'))) return rows;
+
+  const { data, error } = await scopeByCenter(
+    supabase.from('delivery_points').select('id,memo'),
+    center
+  );
+  if (error) {
+    console.warn('[dashboard] 납품처 비고를 별도로 불러오지 못했습니다:', error);
+    return rows;
+  }
+
+  const memoById = new Map((data || []).map(point => [String(point.id), point.memo]));
+  return rows.map(row => ({
+    ...row,
+    dp_memo: row.dp_memo ?? memoById.get(String(row.delivery_point_id)) ?? null
+  }));
 }
 
 async function loadCourseRowsForCenter(center) {
@@ -800,7 +819,7 @@ function renderGroups() {
                 <td>${escapeHtml(s.security_key_location || '')}</td>
                 <td>${escapeHtml(s.security_password || '')}</td>
                 <td>${renderAddress(s)}</td>
-                <td>${escapeHtml(s.stop_memo || '')}</td>
+                <td>${escapeHtml(deliveryPointMemo(s))}</td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -827,6 +846,13 @@ function renderDriver(r) {
     return `${main} <span class="text-[11px] text-zinc-500">/ ${renderDriverIdentity(r.secondary_driver_name, r.secondary_driver_phone)}</span>`;
   }
   return main;
+}
+
+function deliveryPointMemo(r) {
+  const values = [r.dp_memo, r.stop_memo]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  return [...new Set(values)].join('\n');
 }
 
 function renderDriverIdentity(name, phone) {
@@ -1034,7 +1060,7 @@ function openDetailModal(r) {
           </div>
           <div>
             <div class="muted mb-1">비고</div>
-            <div class="min-h-20 rounded border border-zinc-700 bg-zinc-900/50 p-2 whitespace-pre-wrap">${escapeHtml(r.stop_memo || '-')}</div>
+            <div id="detail-memo" class="min-h-20 rounded border border-zinc-700 bg-zinc-900/50 p-2 whitespace-pre-wrap">${escapeHtml(deliveryPointMemo(r) || '-')}</div>
           </div>
         </aside>
       </div>
@@ -1069,13 +1095,15 @@ function openDetailModal(r) {
   };
 
   if (r.delivery_point_id) {
-    scopeByCenter(supabase.from('delivery_points').select('photos').eq('id', r.delivery_point_id).single())
+    scopeByCenter(supabase.from('delivery_points').select('photos,memo').eq('id', r.delivery_point_id).single())
       .then(({ data, error }) => {
         if (error) {
           toast(`사진 불러오기 실패: ${error.message}`, 'warn');
           detailPhotos = [];
         } else {
           detailPhotos = parseDeliveryPointPhotos(data?.photos);
+          r.dp_memo = data?.memo ?? r.dp_memo;
+          wrap.querySelector('#detail-memo').textContent = deliveryPointMemo(r) || '-';
         }
         renderDetailPhotos();
       });
