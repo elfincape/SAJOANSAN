@@ -18,7 +18,11 @@ assert.match(edge, /fallback:'empty'/);
 assert.match(edge, /현재 센터 운영 DB 스냅샷만 근거/);
 assert.doesNotMatch(edge, /search_course_rows|search_delivery_points|search_drivers|search_vehicles|list_routes/);
 assert.match(tools, /OPERATIONS_QUERY_SCHEMA/);
-assert.match(tools, /Math\.min\(100,/);
+assert.doesNotMatch(tools, /Math\.min\(100,/);
+assert.match(edge, /async function restAll/);
+assert.match(edge, /Range:`\$\{from\}-\$\{from\+REST_PAGE_SIZE-1\}`/);
+assert.doesNotMatch(edge, /rows\.slice\(0,100\)/);
+assert.doesNotMatch(edge, /결과 행은 최대 100개/);
 assert.match(tools, /확인할 수 없는 컬럼/);
 
 console.log('operations assistant security invariants: ok');

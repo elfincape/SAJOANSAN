@@ -61,7 +61,8 @@ export function validateQueryPlan(value:unknown):QueryPlan{
   });
   const select=[...new Set(selectRaw.map(String))];if(!select.length)throw new Error('표시할 컬럼을 확인하지 못했습니다.');for(const field of select)if(!OPERATIONS_QUERY_SCHEMA[field])throw new Error(`표시할 수 없는 컬럼: ${field}`);
   const sort=sortRaw.map((item):SortRule=>{if(!item||typeof item!=='object')throw new Error('정렬 형식이 올바르지 않습니다.');const s=item as Record<string,unknown>,field=String(s.field||''),direction=s.direction==='desc'?'desc':'asc';if(!OPERATIONS_QUERY_SCHEMA[field])throw new Error(`정렬할 수 없는 컬럼: ${field}`);return{field,direction}});
-  return{conditions,select,sort,limit:Math.max(1,Math.min(100,Number(raw.limit)||100))};
+  const requestedLimit=Number(raw.limit);
+  return{conditions,select,sort,limit:Number.isFinite(requestedLimit)&&requestedLimit>0?Math.floor(requestedLimit):Number.MAX_SAFE_INTEGER};
 }
 
 function normalizeConditionValue(def:FieldDefinition,operator:FilterOperator,value:unknown){
