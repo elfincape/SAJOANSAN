@@ -1,4 +1,5 @@
 import {normalizeCenter} from './tools.ts';
+import {expandResultPlan} from './result-plan.js';
 
 const CORS={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
 const MODEL='claude-haiku-4-5-20251001',AI_URL='https://aiapiflow.com/v1/messages',REST_PAGE_SIZE=1000;
@@ -61,7 +62,7 @@ async function safeStops(e:ReturnType<typeof envs>,token:string,center:string,ro
 async function safeCourseRows(e:ReturnType<typeof envs>,token:string,center:string,routeIds:string[]=[]){try{return await restAll(e,token,'course_view',`select=*&center_code=eq.${center}`)}catch{const ids=routeIds.length?routeIds:(await safeRestVariants(e,token,'routes',[`select=id&center_code=eq.${center}`])).map((r:any)=>r.id).filter(Boolean);return ids.length?await safeRestVariants(e,token,'course_view',[`select=*&route_id=in.(${ids.map(enc).join(',')})`]):[]}}
 
 async function answerFromSnapshot(question:string,snapshot:Snapshot,key:string,centerCode:string,requestId:string){
-  const prompt=`너는 현재 센터 운영 DB 스냅샷만 근거로 답하는 한국어 도우미다. SQL을 만들거나 실행하지 않는다. 제공된 JSON 안의 데이터만 사용한다. 질문에 필요한 집계, 필터, 그룹화를 직접 판단해서 답하라. 가능하면 Excel에 바로 붙여넣기 쉬운 표를 만든다. 질문이 개수면 1행 표를 만든다. 조건에 맞는 결과 행은 개수와 관계없이 전부 반환하고 임의로 생략하거나 일부만 표시하지 않는다. 데이터가 부족하면 추측하지 말고 조회 결과 없음 또는 확인 불가라고 답한다. 응답은 반드시 JSON 하나만 반환한다. 형식: {"answer":"요약","columns":[{"key":"col","label":"표시명","type":"text|number"}],"rows":[{"col":"값"}],"notices":[],"meta":{"truncated":false}}
+  const prompt=`너는 현재 센터 운영 DB 스냅샷만 근거로 답하는 한국어 도우미다. SQL을 만들거나 실행하지 않는다. 제공된 JSON 안의 데이터만 사용한다. 질문에 필요한 집계, 필터, 그룹화를 직접 판단해서 답하라. 질문이 개수나 단일 요약이면 rows에 직접 답한다. 목록이나 표를 요청하면 rows를 직접 나열하지 말고 서버가 전체 행을 생성하도록 반드시 resultPlan을 만든다. resultPlan.dataset은 routes, deliveryPoints, drivers, vehicles, courseRows 중 하나다. conditions의 field와 select 및 sort의 field에는 선택한 dataset 객체에 실제로 존재하는 한글 키를 그대로 사용한다. operator는 eq, neq, contains, is_empty, not_empty, lt, lte, gt, gte 중 하나다. 조건이 없으면 conditions는 빈 배열이다. 결과 개수 제한은 만들지 않는다. 데이터가 부족하면 추측하지 말고 조회 결과 없음 또는 확인 불가라고 답한다. 응답은 반드시 JSON 하나만 반환한다. 목록 응답 형식: {"answer":"요약","resultPlan":{"dataset":"deliveryPoints","conditions":[{"field":"지역","operator":"eq","value":"경기"}],"select":["코드","납품처명","주소"],"sort":[{"field":"납품처명","direction":"asc"}]},"columns":[],"rows":[],"notices":[],"meta":{"truncated":false}}. 단일 응답 형식: {"answer":"요약","columns":[{"key":"col","label":"표시명","type":"text|number"}],"rows":[{"col":"값"}],"notices":[],"meta":{"truncated":false}}
 센터:${centerCode}
 질문:${JSON.stringify(question)}
 스냅샷:${JSON.stringify(snapshot)}`;
@@ -72,6 +73,8 @@ async function answerFromSnapshot(question:string,snapshot:Snapshot,key:string,c
 }
 function parseJsonObject(text:string){const raw=text.match(/\{[\s\S]*\}/)?.[0]||text;try{return JSON.parse(raw)}catch{throw coded('MODEL_FAILED',502)}}
 function normalizeAssistantResult(value:any,snapshot:Snapshot,centerCode:string,requestId:string){
+  const expanded=expandResultPlan(value?.resultPlan||value?.result_plan,snapshot);
+  if(expanded)return{answer:`조건에 맞는 결과 ${expanded.rows.length}개 행을 모두 표시했습니다.`,columns:expanded.columns,rows:expanded.rows,notices:[],meta:{centerCode,rowCount:expanded.rows.length,truncated:false,requestId,generatedAt:new Date().toISOString()}};
   const columns=Array.isArray(value?.columns)?value.columns.slice(0,40).filter((c:any)=>c&&typeof c.key==='string').map((c:any)=>({key:String(c.key).slice(0,60),label:String(c.label||c.key).slice(0,80),type:c.type==='number'?'number':'text'})):[];
   const rows=Array.isArray(value?.rows)?value.rows.map((row:any)=>Object.fromEntries(columns.map(c=>[c.key,row?.[c.key]??'']))):[];
   return{answer:String(value?.answer||'조회 결과 없음').slice(0,1000),columns,rows,notices:Array.isArray(value?.notices)?value.notices.map(String).slice(0,5):[],meta:{centerCode,rowCount:rows.length,truncated:!!value?.meta?.truncated||snapshot.truncated,requestId,generatedAt:new Date().toISOString()}};

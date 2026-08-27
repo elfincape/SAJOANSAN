@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const edge = readFileSync(new URL('../supabase/functions/operations-assistant/index.ts', import.meta.url), 'utf8');
 const tools = readFileSync(new URL('../supabase/functions/operations-assistant/tools.ts', import.meta.url), 'utf8');
+const resultPlan = readFileSync(new URL('../supabase/functions/operations-assistant/result-plan.js', import.meta.url), 'utf8');
 
 assert.match(edge, /authorization:`Bearer \$\{token\}`/);
 assert.match(edge, /user_center_access/);
@@ -23,6 +24,10 @@ assert.match(edge, /async function restAll/);
 assert.match(edge, /Range:`\$\{from\}-\$\{from\+REST_PAGE_SIZE-1\}`/);
 assert.doesNotMatch(edge, /rows\.slice\(0,100\)/);
 assert.doesNotMatch(edge, /결과 행은 최대 100개/);
+assert.match(edge, /목록이나 표를 요청하면 rows를 직접 나열하지 말고/);
+assert.match(edge, /import \{expandResultPlan\} from '\.\/result-plan\.js'/);
+assert.match(resultPlan, /rows:rows\.map\(row=>Object\.fromEntries/);
+assert.match(edge, /truncated:false/);
 assert.match(tools, /확인할 수 없는 컬럼/);
 
 console.log('operations assistant security invariants: ok');
