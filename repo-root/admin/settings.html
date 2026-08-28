@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>설정 · 관리 허브</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .feature-switch{position:relative;width:3.25rem;height:1.8rem;border:0;border-radius:999px;background:#52525b;transition:background-color .2s;cursor:pointer;flex:none}
+    .feature-switch::after{content:"";position:absolute;top:.2rem;left:.2rem;width:1.4rem;height:1.4rem;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0008;transition:transform .2s}
+    .feature-switch[aria-checked="true"]{background:#059669}
+    .feature-switch[aria-checked="true"]::after{transform:translateX(1.45rem)}
+    .feature-switch:focus-visible{outline:3px solid #34d399;outline-offset:3px}
+    .feature-panel{overflow:hidden;border:1px solid #3f3f46;border-radius:.75rem;background:#27272a80}
+    .feature-row{display:flex;align-items:center;gap:1rem;padding:.8rem 1rem}
+    .feature-row+.feature-row{border-top:1px solid #3f3f46}
+    .feature-label{flex:1;font-size:.875rem;font-weight:500}
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+  <header class="border-b border-zinc-800">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-4">
+      <h1 class="text-base font-semibold">설정</h1>
+      <div class="flex-1"></div>
+      <a href="/admin/" class="btn btn-ghost">관리 허브</a>
+      <button id="logout-btn" class="btn btn-ghost">로그아웃</button>
+    </div>
+  </header>
+  <main class="flex-1 max-w-3xl w-full mx-auto px-4 py-8">
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+      <h2 class="text-lg font-semibold mr-auto">기능 표시</h2>
+      <button id="enable-all" class="btn btn-ghost">전체 켜기</button>
+      <button id="disable-all" class="btn btn-ghost">전체 끄기</button>
+    </div>
+    <div id="feature-groups" class="space-y-6"></div>
+    <p id="save-status" class="text-xs text-emerald-400 mt-5 min-h-5" aria-live="polite"></p>
+  </main>
+  <script type="module">
+    import { requireRole, signOut } from '/js/auth.js';
+    import { forceCenterSelectionFromUrl, requireSelectedCenter, withCenterParam } from '/js/center.js';
+    import { PRIVATE_FEATURE_DEFAULTS, isPrivateFeatureOwner, loadPrivateFeatures, savePrivateFeatures } from '/js/private-features.js';
+
+    const profile = await requireRole('editor');
+    if (!profile) throw new Error('로그인이 필요합니다.');
+    if (!isPrivateFeatureOwner(profile)) {
+      location.replace('/admin/');
+      throw new Error('설정 접근 권한이 없습니다.');
+    }
+    const center = await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });
+    document.querySelector('a[href="/admin/"]').href = withCenterParam('/admin/', center);
+    document.getElementById('logout-btn').addEventListener('click', signOut);
+
+    const groups = [
+      { title:'관리 기능', items:[
+        ['routes','코스 관리'],['deliveryPoints','납품처 관리'],['drivers','기사 관리'],['vehicles','차량 관리'],
+        ['companies','운수사 관리'],['dispatchParser','배차정보 파서'],['transfers','이배송 관리'],
+        ['palletSlips','파레트 전표관리'],['oneTopWork','1탑2실 작업'],['dailyTemperature','1탑2실 템플릿 생성'],
+        ['coupangEntry','쿠팡 입문확인'],['haulCalculator','하불 배차 계산']
+      ]},
+      { title:'관리자 기능', items:[['exportData','코스표 내려받기'],['importData','CSV 일괄 가져오기'],['users','사용자 관리']] },
+      { title:'추가 기능', items:[
+        ['haulPrices','하불 배차 계산 금액'],['imageStraightener','기울기 보정'],
+        ['ansanGimhaeBusanAnsan','안산김해부산안산'],['auditLog','변경 이력']
+      ]}
+    ];
+    let features = loadPrivateFeatures(profile);
+    const root = document.getElementById('feature-groups');
+    const status = document.getElementById('save-status');
+
+    function render(){
+      root.innerHTML = groups.map(group => `<section><h3 class="text-xs font-semibold text-zinc-400 mb-2">${group.title}</h3><div class="feature-panel">${group.items.map(([key,label]) => `<div class="feature-row"><span class="feature-label">${label}</span><button class="feature-switch" type="button" role="switch" aria-checked="${Boolean(features[key])}" aria-label="${label}" data-feature="${key}"></button></div>`).join('')}</div></section>`).join('');
+    }
+    function persist(next){
+      features = { ...features, ...next };
+      savePrivateFeatures(profile, features);
+      render();
+      status.textContent = '저장됨';
+      clearTimeout(persist.timer);
+      persist.timer = setTimeout(() => { status.textContent = ''; }, 1200);
+    }
+    root.addEventListener('click', event => {
+      const button = event.target.closest('[data-feature]');
+      if (button) persist({ [button.dataset.feature]: button.getAttribute('aria-checked') !== 'true' });
+    });
+    document.getElementById('enable-all').addEventListener('click', () => persist(Object.fromEntries(Object.keys(PRIVATE_FEATURE_DEFAULTS).map(key => [key,true]))));
+    document.getElementById('disable-all').addEventListener('click', () => persist(Object.fromEntries(Object.keys(PRIVATE_FEATURE_DEFAULTS).map(key => [key,false]))));
+    render();
+  </script>
+</body>
+</html>

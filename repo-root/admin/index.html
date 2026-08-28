@@ -33,7 +33,6 @@
   <!-- 본문 -->
   <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-8">
     <p class="text-sm text-zinc-400 mb-6">관리할 항목을 선택하세요.</p>
-    <section id="private-feature-settings" class="hidden mb-5 rounded-lg border border-zinc-700 bg-zinc-800/50 p-4"></section>
     <div id="menu-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
   </main>
 
@@ -46,7 +45,7 @@
       requireSelectedCenter,
       withCenterParam
     } from '/js/center.js';
-    import { isPrivateFeatureOwner, loadPrivateFeatures, savePrivateFeatures } from '/js/private-features.js';
+    import { isPrivateFeatureOwner, loadPrivateFeatures } from '/js/private-features.js';
 
     const profile = await requireRole('editor');
     if (!profile) { /* 리다이렉트 됨 */ }
@@ -63,55 +62,44 @@
     const isPrivateOwner = isPrivateFeatureOwner(profile);
     const privateFeatures = loadPrivateFeatures(profile);
     const menus = [
-      { href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 납품처(운행시간) 편집',
+      { feature:'routes', href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 납품처(운행시간) 편집',
         icon: iconRoute(), color: 'emerald' },
-      { href: '/admin/delivery-points.html', title: '납품처 관리',    desc: '납품처 마스터(주소·진입조건·마감시간)',
+      { feature:'deliveryPoints', href: '/admin/delivery-points.html', title: '납품처 관리',    desc: '납품처 마스터(주소·진입조건·마감시간)',
         icon: iconStore(), color: 'sky' },
-      { href: '/admin/drivers.html',         title: '기사 관리',      desc: '기사 명부와 연락처',
+      { feature:'drivers', href: '/admin/drivers.html',         title: '기사 관리',      desc: '기사 명부와 연락처',
         icon: iconUser(),  color: 'amber' },
-      { href: '/admin/vehicles.html',        title: '차량 관리',      desc: '차량번호·톤수·팔레트 적재량',
+      { feature:'vehicles', href: '/admin/vehicles.html',        title: '차량 관리',      desc: '차량번호·톤수·팔레트 적재량',
         icon: iconTruck(), color: 'violet' },
-      { href: '/admin/companies.html',       title: '운수사 관리',    desc: '운수사 정보',
+      { feature:'companies', href: '/admin/companies.html',       title: '운수사 관리',    desc: '운수사 정보',
         icon: iconBuilding(), color: 'rose' },
-      { href: '/admin/dispatch-parser.html', title: '배차정보 파서',  desc: '배차 문자 자동 파싱',
+      { feature:'dispatchParser', href: '/admin/dispatch-parser.html', title: '배차정보 파서',  desc: '배차 문자 자동 파싱',
         icon: iconParser(), color: 'sky' },
-      { href: '/admin/transfers.html', title: '이배송 관리', desc: '이배송 관리',
+      { feature:'transfers', href: '/admin/transfers.html', title: '이배송 관리', desc: '이배송 관리',
         icon: iconTransfer(), color: 'emerald' },
-      { href: '/admin/pallet-slips.html', title: '파레트 전표관리', desc: '엑셀 전표 매칭 후 결과 내려받기',
+      { feature:'palletSlips', href: '/admin/pallet-slips.html', title: '파레트 전표관리', desc: '엑셀 전표 매칭 후 결과 내려받기',
         icon: '📦', color: 'violet' },
-      { href: '/admin/one-top-two-room-work.html', title: '1탑2실 작업', desc: '영수증 촬영·온도 분석·차량번호별 Excel 반영',
+      { feature:'oneTopWork', href: '/admin/one-top-two-room-work.html', title: '1탑2실 작업', desc: '영수증 촬영·온도 분석·차량번호별 Excel 반영',
         icon: '📷', color: 'sky' },
-      { href: '/admin/daily-temperature.html', title: '1탑2실 템플릿 생성', desc: '고정·광역·임시 순서 유지 템플릿 생성',
+      { feature:'dailyTemperature', href: '/admin/daily-temperature.html', title: '1탑2실 템플릿 생성', desc: '고정·광역·임시 순서 유지 템플릿 생성',
         icon: '🌡️', color: 'emerald' },
-      { href: '/admin/coupang-entry.html', title: '쿠팡 입문확인', desc: '쿠팡 시간표 이미지·배차정보 매칭 엑셀 생성',
+      { feature:'coupangEntry', href: '/admin/coupang-entry.html', title: '쿠팡 입문확인', desc: '쿠팡 시간표 이미지·배차정보 매칭 엑셀 생성',
         icon: '🧾', color: 'cyan' },
-      ...(isPrivateOwner && privateFeatures.ansanGimhaeBusanAnsan ? [{ href: '/admin/ansan-gimhae-busan-ansan.html', title: '안산김해부산안산', desc: '',
+      ...(isPrivateOwner ? [{ feature:'ansanGimhaeBusanAnsan', href: '/admin/ansan-gimhae-busan-ansan.html', title: '안산김해부산안산', desc: '',
         icon: '🔁', color: 'amber' }] : []),
-      ...(isPrivateOwner && privateFeatures.imageStraightener ? [{ href: '/admin/image-straightener.html', title: '기울기 보정', desc: '',
+      ...(isPrivateOwner ? [{ feature:'imageStraightener', href: '/admin/image-straightener.html', title: '기울기 보정', desc: '',
         icon: '↻', color: 'cyan' }] : []),
-      { href: '/admin/haul-dispatch-calculator.html', title: '하불 배차 계산', desc: '실제 구간단가 기준 최저가 차량 조합 계산',
+      { feature:'haulCalculator', href: '/admin/haul-dispatch-calculator.html', title: '하불 배차 계산', desc: '실제 구간단가 기준 최저가 차량 조합 계산',
         icon: '₩', color: 'emerald' },
       ...(isAdmin ? [
-        { href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
-        { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
-        { href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태',
+        { feature:'exportData', href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
+        { feature:'importData', href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
+        { feature:'users', href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태',
           icon: iconShield(), color: 'cyan',  adminOnly: true },
-        ...(isPrivateOwner && privateFeatures.auditLog ? [{ href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
+        ...(isPrivateOwner ? [{ feature:'auditLog', href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
           icon: iconLog(),    color: 'zinc',  adminOnly: true }] : [])
-      ] : [])
-    ];
-
-    if (isPrivateOwner) {
-      const settings = document.getElementById('private-feature-settings');
-      settings.classList.remove('hidden');
-      const toggles = [['haulPrices','하불 배차 계산 금액'],['imageStraightener','기울기 보정'],['ansanGimhaeBusanAnsan','안산김해부산안산'],['auditLog','변경 이력']];
-      settings.innerHTML = `<div class="text-sm font-semibold mb-3">비공개 기능 설정</div><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">${toggles.map(([key,label]) => `<label class="flex items-center gap-2 rounded border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-xs cursor-pointer"><input type="checkbox" data-private-feature="${key}" ${privateFeatures[key] ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>`;
-      settings.querySelectorAll('[data-private-feature]').forEach(input => input.addEventListener('change', () => {
-        privateFeatures[input.dataset.privateFeature] = input.checked;
-        savePrivateFeatures(profile, privateFeatures);
-        location.reload();
-      }));
-    }
+      ] : []),
+      ...(isPrivateOwner ? [{ href:'/admin/settings.html', title:'설정', desc:'관리 허브 기능 표시 설정', icon:'⚙', color:'zinc' }] : [])
+    ].filter(menu => !menu.feature || privateFeatures[menu.feature]);
 
     const COLOR = {
       emerald: { bg: 'bg-emerald-600/10', border: 'border-emerald-600/30', icon: 'text-emerald-400' },

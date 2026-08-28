@@ -14,13 +14,23 @@ assert.equal(loadPrivateFeatures(owner).haulPrices,true);
 assert.equal(loadPrivateFeatures(owner).imageStraightener,true);
 assert.equal(loadPrivateFeatures(owner).ansanGimhaeBusanAnsan,false);
 assert.equal(loadPrivateFeatures(owner).auditLog,false);
+for(const key of ['routes','deliveryPoints','drivers','vehicles','companies','dispatchParser','transfers','palletSlips','oneTopWork','dailyTemperature','coupangEntry','haulCalculator','exportData','importData','users']){
+  assert.equal(PRIVATE_FEATURE_DEFAULTS[key],true,`${key} should be enabled by default`);
+}
 
 const hub=readFileSync(new URL('../repo-root/admin/index.html',import.meta.url),'utf8');
 assert.match(hub,/isPrivateFeatureOwner\(profile\)/);
-assert.match(hub,/privateFeatures\.imageStraightener \?/);
-assert.match(hub,/privateFeatures\.ansanGimhaeBusanAnsan \?/);
-assert.match(hub,/privateFeatures\.auditLog \?/);
-assert.match(hub,/data-private-feature/);
+assert.match(hub,/href:'\/admin\/settings\.html'/);
+assert.match(hub,/\.filter\(menu => !menu\.feature \|\| privateFeatures\[menu\.feature\]\)/);
+
+const settings=readFileSync(new URL('../repo-root/admin/settings.html',import.meta.url),'utf8');
+assert.match(settings,/isPrivateFeatureOwner\(profile\)/);
+assert.match(settings,/role="switch"/);
+assert.match(settings,/aria-checked=/);
+assert.doesNotMatch(settings,/type="checkbox"/);
+assert.match(settings,/전체 켜기/);
+assert.match(settings,/전체 끄기/);
+for(const key of Object.keys(PRIVATE_FEATURE_DEFAULTS))assert.match(settings,new RegExp(`['"]${key}['"]`));
 
 for(const [file,flag] of [['image-straightener.html','imageStraightener'],['ansan-gimhae-busan-ansan.html','ansanGimhaeBusanAnsan'],['audit-log.html','auditLog']]){
   const source=readFileSync(new URL(`../repo-root/admin/${file}`,import.meta.url),'utf8');
