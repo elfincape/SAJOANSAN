@@ -45,7 +45,7 @@
     import {decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam} from '/js/center.js';
     import {calculateHaulCombinations,destinationsFor} from '/js/haul-dispatch-calculator.js';
 
-    const $=id=>document.getElementById(id),won=new Intl.NumberFormat('ko-KR');
+    const $=id=>document.getElementById(id);
     const profile=await requireRole('editor');
     if(!profile)throw new Error('Unauthorized');
     await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
@@ -81,8 +81,7 @@
     function renderResult(result){
       return `<article class="result-card ${result.rank===1?'winner':''} rounded-xl border border-zinc-700 overflow-hidden">
         <header class="p-4 border-b border-zinc-700/80 flex flex-wrap items-center gap-3">
-          <div><div class="text-xs ${result.rank===1?'text-emerald-300':'text-zinc-400'}">${result.rank}위${result.rank===1?' · 최저가':''}</div><div class="text-xl font-bold mt-1">${won.format(result.totalCost)}원</div></div>
-          ${result.extraCost?`<span class="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-1 text-xs text-amber-300">최저가 대비 +${won.format(result.extraCost)}원</span>`:''}
+          <div class="text-xl font-bold ${result.rank===1?'text-emerald-300':'text-zinc-100'}">${result.rank}위</div>
           <div class="ml-auto text-right text-xs text-zinc-400"><div>차량 ${result.vehicleCount}대</div><div>잔여 ${result.idleSpace}P · 혼적 ${result.mixedCount}대</div></div>
         </header>
         <div class="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">${result.vehicles.map(renderVehicle).join('')}</div>
@@ -90,7 +89,7 @@
       </article>`;
     }
 
-    function renderVehicle(vehicle){return `<section class="vehicle-card rounded-lg border border-zinc-700 p-3"><div class="flex justify-between items-start"><div><strong>${vehicle.type}</strong><div class="text-xs text-zinc-500 mt-0.5">${vehicle.mode}</div></div><span class="text-sm text-emerald-300">${won.format(vehicle.rate)}원</span></div><div class="grid grid-cols-2 gap-2 mt-3 text-xs"><div class="rounded bg-sky-500/10 p-2"><span class="text-zinc-500">냉동</span><div class="font-semibold mt-0.5">${vehicle.frozen}P</div></div><div class="rounded bg-emerald-500/10 p-2"><span class="text-zinc-500">냉장</span><div class="font-semibold mt-0.5">${vehicle.chilled}P</div></div></div><div class="mt-3 text-xs text-zinc-400 flex justify-between"><span>사용 ${vehicle.usedSpace} / ${vehicle.capacity}P</span><span>잔여 ${vehicle.remainingSpace}P</span></div></section>`}
+    function renderVehicle(vehicle){return `<section class="vehicle-card rounded-lg border border-zinc-700 p-3"><div><strong>${vehicle.type}</strong><div class="text-xs text-zinc-500 mt-0.5">${vehicle.mode}</div></div><div class="grid grid-cols-2 gap-2 mt-3 text-xs"><div class="rounded bg-sky-500/10 p-2"><span class="text-zinc-500">냉동</span><div class="font-semibold mt-0.5">${vehicle.frozen}P</div></div><div class="rounded bg-emerald-500/10 p-2"><span class="text-zinc-500">냉장</span><div class="font-semibold mt-0.5">${vehicle.chilled}P</div></div></div><div class="mt-3 text-xs text-zinc-400 flex justify-between"><span>사용 ${vehicle.usedSpace} / ${vehicle.capacity}P</span><span>잔여 ${vehicle.remainingSpace}P</span></div></section>`}
     function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]))}
   </script>
 </body>
