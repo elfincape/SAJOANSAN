@@ -33,6 +33,7 @@
   <!-- 본문 -->
   <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-8">
     <p class="text-sm text-zinc-400 mb-6">관리할 항목을 선택하세요.</p>
+    <section id="private-feature-settings" class="hidden mb-5 rounded-lg border border-zinc-700 bg-zinc-800/50 p-4"></section>
     <div id="menu-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
   </main>
 
@@ -45,6 +46,7 @@
       requireSelectedCenter,
       withCenterParam
     } from '/js/center.js';
+    import { isPrivateFeatureOwner, loadPrivateFeatures, savePrivateFeatures } from '/js/private-features.js';
 
     const profile = await requireRole('editor');
     if (!profile) { /* 리다이렉트 됨 */ }
@@ -58,6 +60,8 @@
 
     // 메뉴 정의
     const isAdmin = profile.role === 'admin';
+    const isPrivateOwner = isPrivateFeatureOwner(profile);
+    const privateFeatures = loadPrivateFeatures(profile);
     const menus = [
       { href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 납품처(운행시간) 편집',
         icon: iconRoute(), color: 'emerald' },
@@ -81,10 +85,10 @@
         icon: '🌡️', color: 'emerald' },
       { href: '/admin/coupang-entry.html', title: '쿠팡 입문확인', desc: '쿠팡 시간표 이미지·배차정보 매칭 엑셀 생성',
         icon: '🧾', color: 'cyan' },
-      { href: '/admin/ansan-gimhae-busan-ansan.html', title: '안산김해부산안산', desc: '',
-        icon: '🔁', color: 'amber' },
-      { href: '/admin/image-straightener.html', title: '기울기 보정', desc: '',
-        icon: '↻', color: 'cyan' },
+      ...(isPrivateOwner && privateFeatures.ansanGimhaeBusanAnsan ? [{ href: '/admin/ansan-gimhae-busan-ansan.html', title: '안산김해부산안산', desc: '',
+        icon: '🔁', color: 'amber' }] : []),
+      ...(isPrivateOwner && privateFeatures.imageStraightener ? [{ href: '/admin/image-straightener.html', title: '기울기 보정', desc: '',
+        icon: '↻', color: 'cyan' }] : []),
       { href: '/admin/haul-dispatch-calculator.html', title: '하불 배차 계산', desc: '실제 구간단가 기준 최저가 차량 조합 계산',
         icon: '₩', color: 'emerald' },
       ...(isAdmin ? [
@@ -92,10 +96,22 @@
         { href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
         { href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태',
           icon: iconShield(), color: 'cyan',  adminOnly: true },
-        { href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
-          icon: iconLog(),    color: 'zinc',  adminOnly: true }
+        ...(isPrivateOwner && privateFeatures.auditLog ? [{ href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
+          icon: iconLog(),    color: 'zinc',  adminOnly: true }] : [])
       ] : [])
     ];
+
+    if (isPrivateOwner) {
+      const settings = document.getElementById('private-feature-settings');
+      settings.classList.remove('hidden');
+      const toggles = [['haulPrices','하불 배차 계산 금액'],['imageStraightener','기울기 보정'],['ansanGimhaeBusanAnsan','안산김해부산안산'],['auditLog','변경 이력']];
+      settings.innerHTML = `<div class="text-sm font-semibold mb-3">비공개 기능 설정</div><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">${toggles.map(([key,label]) => `<label class="flex items-center gap-2 rounded border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-xs cursor-pointer"><input type="checkbox" data-private-feature="${key}" ${privateFeatures[key] ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>`;
+      settings.querySelectorAll('[data-private-feature]').forEach(input => input.addEventListener('change', () => {
+        privateFeatures[input.dataset.privateFeature] = input.checked;
+        savePrivateFeatures(profile, privateFeatures);
+        location.reload();
+      }));
+    }
 
     const COLOR = {
       emerald: { bg: 'bg-emerald-600/10', border: 'border-emerald-600/30', icon: 'text-emerald-400' },

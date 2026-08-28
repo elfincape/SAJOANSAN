@@ -46,9 +46,11 @@
     import { supabase } from '/js/supabase.js';
     import { SUPABASE_ANON_KEY, SUPABASE_URL } from '/js/config.js';
     import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+    import {loadPrivateFeatures} from '/js/private-features.js';
 
     const profile=await requireRole('editor');
     if(!profile)throw new Error('권한 없음');
+    if(!loadPrivateFeatures(profile).ansanGimhaeBusanAnsan){location.replace(withCenterParam('/admin/'));throw new Error('Feature disabled')}
     const center=await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
     mountHeaderCenterSwitcher(next=>location.replace(withCenterParam(location.pathname,next)));
     decorateCenterLinks(document,center);

@@ -119,12 +119,15 @@
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, openModal, closeModal } from '/js/ui.js';
+    import {decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam} from '/js/center.js';
+    import {loadPrivateFeatures} from '/js/private-features.js';
 
     // -------------------------------------------------------------------------
     // 권한
     // -------------------------------------------------------------------------
     const me = await requireRole('admin');
     if (!me) { /* 리다이렉트 */ }
+    if(!loadPrivateFeatures(me).auditLog){location.replace(withCenterParam('/admin/'));throw new Error('Feature disabled')}
     document.getElementById('user-badge').textContent =
       `${me.display_name || me.email || ''} (${me.role})`;
     await requireSelectedCenter({ force: forceCenterSelectionFromUrl() });

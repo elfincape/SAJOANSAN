@@ -58,9 +58,11 @@
   <script type="module">
     import { requireRole } from '/js/auth.js';
     import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
+    import {loadPrivateFeatures} from '/js/private-features.js';
 
     const profile=await requireRole('editor');
     if(!profile) throw new Error('Unauthorized');
+    if(!loadPrivateFeatures(profile).imageStraightener){location.replace(withCenterParam('/admin/'));throw new Error('Feature disabled')}
     await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
     mountHeaderCenterSwitcher(next=>location.replace(withCenterParam(location.pathname,next)));
     decorateCenterLinks(document);

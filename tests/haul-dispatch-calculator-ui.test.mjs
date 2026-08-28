@@ -10,9 +10,10 @@ assert.match(page,/list="destination-list"/);
 assert.match(page,/calculateHaulCombinations\(\{origin,destination,frozen,chilled,limit:10\}\)/);
 assert.match(page,/vehicle\.usedSpace/);
 assert.match(page,/vehicle\.remainingSpace/);
-assert.doesNotMatch(page,/result\.totalCost/);
-assert.doesNotMatch(page,/result\.extraCost/);
-assert.doesNotMatch(page,/vehicle\.rate/);
+assert.match(page,/const showPrices=isPrivateFeatureOwner\(profile\)&&loadPrivateFeatures\(profile\)\.haulPrices/);
+assert.match(page,/showPrices\?`<div[^`]+formatWon\(result\.totalCost\)/);
+assert.match(page,/showPrices&&result\.extraCost\?/);
+assert.match(page,/showPrices\?`<span[^`]+formatWon\(vehicle\.rate\)/);
 assert.doesNotMatch(page,/Intl\.NumberFormat/);
 
 console.log('haul dispatch calculator UI checks passed');
