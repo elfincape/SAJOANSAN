@@ -960,7 +960,7 @@ function openDetailModal(r) {
       const unloadStartMin = displayToBizMin((wrap.querySelector('#edit-unload-start')?.value || '').trim());
       const unloadEndMin = displayToBizMin((wrap.querySelector('#edit-unload-end')?.value || '').trim());
       const deadlineMin = displayToBizMin((wrap.querySelector('#edit-deadline')?.value || '').trim());
-      const stopPayload = centerPayload({
+      const stopPayload = {
         stop_order: Number(wrap.querySelector('#edit-stop-order')?.value || 1),
         arrival_text: toNullable(wrap.querySelector('#edit-arrival')?.value),
         arrival_business_min: arrivalMin,
@@ -974,7 +974,7 @@ function openDetailModal(r) {
         override_access_method: toNullable(wrap.querySelector('#edit-amethod')?.value),
         override_delivery_location: toNullable(wrap.querySelector('#edit-dloc')?.value),
         memo: toNullable(wrap.querySelector('#edit-memo')?.value)
-      });
+      };
       const routePayload = centerPayload({
         name: toNullable(wrap.querySelector('#edit-route-name')?.value),
         car_number: toNullable(wrap.querySelector('#edit-car-number')?.value),
@@ -990,9 +990,24 @@ function openDetailModal(r) {
         security_password: toNullable(wrap.querySelector('#edit-pass')?.value)
       });
 
-      const { error: stopErr } = await scopeByCenter(
-        supabase.from('route_stops').update(stopPayload).eq('id', stopId)
-      );
+      if (!r.route_id) {
+        toast('저장 실패(코스순번): 연결된 코스를 확인할 수 없습니다.', 'error');
+        return;
+      }
+
+      const { data: scopedRoute, error: routeScopeErr } = await scopeByCenter(
+        supabase.from('routes').select('id').eq('id', r.route_id)
+      ).maybeSingle();
+      if (routeScopeErr || !scopedRoute) {
+        toast(`저장 실패(코스순번): ${routeScopeErr?.message || '선택한 센터의 코스가 아닙니다.'}`, 'error');
+        return;
+      }
+
+      const { error: stopErr } = await supabase
+        .from('route_stops')
+        .update(stopPayload)
+        .eq('id', stopId)
+        .eq('route_id', r.route_id);
       if (stopErr) {
         toast(`저장 실패(코스순번): ${stopErr.message}`, 'error');
         return;
