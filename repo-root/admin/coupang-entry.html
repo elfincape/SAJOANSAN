@@ -134,6 +134,7 @@
 각 행에서 센터명, 예약시간, 물량, 냉장, 냉동 값을 추출해라.
 센터명이 있지만 예약시간이 비어 있는 행도 누락하지 말고 reservationTime을 null로 넣어라.
 센터명은 원문 그대로 centerRaw에 넣어라.
+센터명 초성에 ㄱㅈㅇ이 들어가면 반드시 곤지암으로, ㅍㅌ이 들어가면 반드시 평택으로 판단해라.
 B2B 여부를 판단해 isB2B에 넣어라.
 centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 예약시간은 HH:mm 형식으로 통일해라.
@@ -604,7 +605,14 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     return [...new Set(out)];
   }
   function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') { if (typeof v.result === 'number') return normalizeTime(v.result) || ''; return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); } return String(v).trim(); }
-  function normalizeCenterName(value) { return String(value || '').replace(/군지암/g, '곤지암').trim(); }
+  function normalizeCenterName(value) {
+    const text = String(value || '').replace(/군지암/g, '곤지암').trim();
+    const suffix = /b2b|비투비/i.test(text) ? ' B2B' : '';
+    const compact = text.replace(/\s+/g, '');
+    if (compact.includes('ㄱㅈㅇ')) return `곤지암${suffix}`;
+    if (compact.includes('ㅍㅌ')) return `평택${suffix}`;
+    return text;
+  }
   function centerKey(value) { return normalizeCenterName(value).toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
   function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
   function numberOrNull(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? n : null; }
