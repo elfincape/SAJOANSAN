@@ -6,6 +6,12 @@
 repo-root/templates/one-top-two-room-template.xlsx
 ```
 
+`admin/one-top-two-room-work.html`은 선택 센터가 평택(`002`)이면 아래 평택 전용 파일을 사용합니다.
+
+```text
+repo-root/templates/one-top-two-room-template_PYT.xlsx
+```
+
 운영 중 기본 템플릿을 교체하려면 GitHub에서 같은 경로/파일명으로 Excel 파일을 업로드하거나 덮어쓰면 됩니다.
 화면의 파일 업로드는 기본 템플릿을 바꾸지 않고 현재 작업에서만 임시로 교체합니다.
 
