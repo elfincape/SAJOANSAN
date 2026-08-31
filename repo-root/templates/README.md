@@ -1,9 +1,10 @@
 # 1탑2실 템플릿 기본 파일 위치
 
-`admin/daily-temperature.html`은 접속 시 아래 파일을 우선 기본 템플릿으로 불러옵니다.
+`admin/daily-temperature.html`은 선택한 센터에 따라 아래 기본 템플릿을 불러옵니다.
 
 ```text
-repo-root/templates/one-top-two-room-template.xlsx
+사조안산센터: repo-root/templates/one-top-two-room-template.xlsx
+사조평택센터: repo-root/templates/one-top-two-room-template_PYT.xlsx
 ```
 
 `admin/one-top-two-room-work.html`은 선택 센터가 평택(`002`)이면 아래 평택 전용 파일을 사용합니다.

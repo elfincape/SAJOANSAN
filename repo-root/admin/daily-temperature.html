@@ -115,7 +115,7 @@
           </div>
         </div>
         <div class="text-xs text-zinc-400 leading-relaxed mb-3">
-          기본 저장 위치: <code class="text-emerald-300">repo-root/templates/one-top-two-room-template.xlsx</code><br>
+          기본 저장 위치: <code id="default-template-path" class="text-emerald-300">repo-root/templates/one-top-two-room-template.xlsx</code><br>
           GitHub에서 이 파일만 교체하면 다음 접속부터 기본 템플릿으로 사용됩니다.
         </div>
         <div class="flex flex-wrap gap-2 mb-3">
@@ -310,8 +310,21 @@
   'use strict';
 
   const TABLE_START_ROW = 5;
-  const DEFAULT_TEMPLATE_URL = '/templates/one-top-two-room-template.xlsx';
-  const DEFAULT_TEMPLATE_NAME = '저장된 기본 템플릿';
+  const CENTER_TEMPLATE_CONFIG = (() => {
+    const centerParam = new URLSearchParams(location.search).get('center') || '';
+    const storedCenter = localStorage.getItem('sajo.selectedCenterCode') || '';
+    const isPyeongtaek = ['pyeongtaek', '002', '사조평택센터', '평택'].includes(centerParam) || storedCenter === '002';
+    const fileName = isPyeongtaek
+      ? 'one-top-two-room-template_PYT.xlsx'
+      : 'one-top-two-room-template.xlsx';
+    return {
+      url: `/templates/${fileName}`,
+      path: `repo-root/templates/${fileName}`,
+      name: isPyeongtaek ? '저장된 평택 기본 템플릿' : '저장된 안산 기본 템플릿'
+    };
+  })();
+  const DEFAULT_TEMPLATE_URL = CENTER_TEMPLATE_CONFIG.url;
+  const DEFAULT_TEMPLATE_NAME = CENTER_TEMPLATE_CONFIG.name;
   const VB_SELECTION_CHANGE_CODE = `Private Sub Worksheet_SelectionChange(ByVal Target As Range)
     Dim shp As Shape
     Dim cel As Range
@@ -391,6 +404,7 @@ End Sub`;
 
   const $ = id => document.getElementById(id);
 
+  $('default-template-path').textContent = CENTER_TEMPLATE_CONFIG.path;
   $('template-file').addEventListener('change', e => handleTemplateFile(e.target.files?.[0]));
   $('reload-default-btn').addEventListener('click', () => loadDefaultTemplate({ showToast: true }));
   $('apply-day-btn').addEventListener('click', applyDayToAll);
