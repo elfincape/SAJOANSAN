@@ -53,8 +53,8 @@
 
   <main class="max-w-[1500px] mx-auto px-4 py-5 space-y-4">
     <section class="step-card">
-      <div class="flex items-center gap-2 mb-2"><span class="step-badge">1</span><h2 class="font-semibold">템플릿 엑셀 업로드</h2></div>
-      <p class="text-xs text-zinc-400 mb-3">업로드한 원본의 서식과 기존 삽입 사진을 유지합니다. 차량번호는 H열, 냉동/냉장은 J/K열, 온도기록지 사진은 Q열을 기준으로 처리합니다.</p>
+      <div class="flex items-center gap-2 mb-2"><span class="step-badge">1</span><h2 class="font-semibold">템플릿 엑셀</h2></div>
+      <p class="text-xs text-zinc-400 mb-3">선택된 센터의 템플릿을 자동으로 불러옵니다. 다른 파일을 선택하면 해당 원본의 서식과 기존 삽입 사진을 유지합니다.</p>
       <input id="template-file" type="file" accept=".xlsx,.xlsm" class="app-input text-sm">
       <div id="template-info" class="text-xs text-zinc-400 mt-2">선택된 템플릿 없음</div>
     </section>
@@ -162,6 +162,7 @@
   const SUPPLEMENT_EXCEL_IMAGE_MAX_HEIGHT = 1000;
   const SUPPLEMENT_EXCEL_IMAGE_TARGET_BYTES = 450 * 1024;
   const SUPPLEMENT_EXCEL_IMAGE_MIN_BYTES = 300 * 1024;
+  const DEFAULT_TEMPLATE_PATHS = { '001':'/templates/one-top-two-room-template.xlsx', '002':'/templates/one-top-two-room-template_PYT.xlsx' };
   const TABLE_START_ROW = 5;
   const TEMPLATE_SCAN_BUFFER_ROWS = 120;
   const TEMPLATE_MIN_SCAN_ROWS = 1000;
@@ -201,7 +202,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   $('match-workbook').addEventListener('click', matchWorkbook);
   $('download-workbook').addEventListener('click', downloadWorkbook);
   window.addEventListener('beforeunload', stopCamera);
-  window.addEventListener('one-top-cloud-ready', refreshCloudStatus);
+  window.addEventListener('one-top-cloud-ready', () => { refreshCloudStatus(); loadDefaultTemplate(); });
   $('analysis-default-date').value=defaultKoreanDate();
   updateCameraGuide(); renderCaptures(); renderAnalysis(); renderOutcome(); updateButtons();
 
@@ -209,6 +210,25 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
     if (!file) return;
     try {
       const buffer = await file.arrayBuffer();
+      await applyTemplateBuffer(buffer, file.name);
+    } catch (err) {
+      handleTemplateError(err);
+    }
+  }
+
+  async function loadDefaultTemplate() {
+    const path = DEFAULT_TEMPLATE_PATHS[String(window.appCenterCode || '001')] || DEFAULT_TEMPLATE_PATHS['001'];
+    $('template-info').textContent = '센터 템플릿을 불러오는 중...';
+    try {
+      const response = await fetch(path, { cache:'no-store' });
+      if (!response.ok) throw new Error(`센터 템플릿을 찾지 못했습니다. (${response.status})`);
+      await applyTemplateBuffer(await response.arrayBuffer(), path.split('/').pop());
+    } catch (err) {
+      handleTemplateError(err);
+    }
+  }
+
+  async function applyTemplateBuffer(buffer, name) {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
       const ws = workbook.worksheets[0];
@@ -216,16 +236,17 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
       const vehicles = collectVehicleRows(ws);
       if (!vehicles.length) throw new Error('H열에서 차량번호가 입력된 작업 행을 찾지 못했습니다.');
       state.templateBuffer = buffer.slice(0);
-      state.templateName = file.name;
+      state.templateName = name;
       state.outputWorkbook = null;
-      $('template-info').innerHTML = `<span class="text-emerald-300 font-medium">${escapeHtml(file.name)}</span> · ${escapeHtml(ws.name)} · 차량 행 ${vehicles.length}개 · Q열 사진표시 ${findPhotoMarkerRows(ws,vehicles).size}개`;
+      $('template-info').innerHTML = `<span class="text-emerald-300 font-medium">${escapeHtml(name)}</span> · ${escapeHtml(ws.name)} · 차량 행 ${vehicles.length}개 · Q열 사진표시 ${findPhotoMarkerRows(ws,vehicles).size}개`;
       toast('템플릿을 불러왔습니다. 기존 삽입 사진을 유지합니다.', 'success');
       updateButtons();
-    } catch (err) {
-      console.error(err); state.templateBuffer = null;
-      $('template-info').textContent = `템플릿 로드 실패: ${err.message || err}`;
-      toast(`템플릿 로드 실패: ${err.message || err}`, 'error'); updateButtons();
-    }
+  }
+
+  function handleTemplateError(err) {
+    console.error(err); state.templateBuffer = null;
+    $('template-info').textContent = `템플릿 로드 실패: ${err.message || err}`;
+    toast(`템플릿 로드 실패: ${err.message || err}`, 'error'); updateButtons();
   }
 
   async function startCamera() {
