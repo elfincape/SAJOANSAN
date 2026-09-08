@@ -48,3 +48,21 @@ const record = { ...parsed.records[0], cities: Array(12).fill('부산') };
 assert.equal(buildCharterWorkbook({records:[record]}, {}, XLSX).Sheets['평택 용차내역'].AE4.v, '부산');
 assert.throws(() => buildCharterWorkbook({records:[{...record,cities:Array(13).fill('부산')}]}, {}, XLSX), /12개/);
 console.log('PASS: supplied rates, regional exceptions, Q/S mappings, paired sorting by ton, stable ties, merged stops, AF total and T:AE boundaries');
+const errors = {
+  '!ref': 'A1:S5', B4: {t:'e',v:42}, Q4: {t:'e',v:15}, S4: s('#N/A'),
+  G4: {t:'e',v:23}, G5: s('정상 납품처'), H4: {t:'e',v:7},
+  '!merges': [1,7,16,18].map(c => ({s:{r:3,c},e:{r:4,c}}))
+};
+const errorResult = parseCharterSheet(errors, XLSX);
+assert.equal(errorResult.records.length, 1);
+assert.deepEqual(errorResult.records[0].destinations, ['', '정상 납품처']);
+assert.deepEqual(errorResult.records[0].cities, ['']);
+assert.equal(errorResult.records[0].stopCount, 0);
+for (const key of ['B4','G4','H4','Q4','S4']) assert.equal(errorResult.warnings.filter(w => w.startsWith(`${key}:`)).length, 1);
+const errorBook = buildCharterWorkbook(errorResult, {}, XLSX);
+const errorOut = XLSX.read(XLSX.write(errorBook, {type:'buffer',bookType:'xlsx'}), {type:'buffer'}).Sheets['평택 용차내역'];
+for (const key of ['C4','E4','F4','G4','T4']) assert.equal(errorOut[key]?.v ?? '', '');
+assert.equal(errorOut.H4.v, '정상 납품처');
+assert.equal(Object.values(errorOut).some(cell => cell?.t === 'e'), false);
+assert.equal(errors.B4.t, 'e'); // Source workbook is not changed.
+console.log('PASS: formula errors become blanks, preserve vehicle/destination slots, and report merged source errors once');
