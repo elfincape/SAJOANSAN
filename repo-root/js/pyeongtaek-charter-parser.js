@@ -1,21 +1,16 @@
 // SheetJS is passed explicitly so the same engine can run in browser and tests.
 const blank = cell => cell?.v == null || String(cell.v).trim() === '';
-const label = cell => String(cell?.v ?? '').replace(/\s/g, '');
 
 export function parseCharterSheet(sheet, XLSX) {
   if (!sheet?.['!ref']) throw new Error('선택한 시트가 비어 있습니다.');
-  if (label(sheet.B3) !== '일자' || label(sheet.G3) !== '납품처명') {
-    throw new Error('3행의 B열은 “일자”, G열은 “납품처명”이어야 합니다. 시트를 확인해 주세요.');
-  }
   const range = XLSX.utils.decode_range(sheet['!ref']);
   if (range.e.r > 100002) throw new Error('프로토타입은 데이터 100,000행까지 지원합니다. 파일을 나누어 주세요.');
-  const merges = (sheet['!merges'] || []).filter(m => m.s.c <= 1 && m.e.c >= 1 && m.e.r >= 3);
+  // Read by column position only. Title/header merges are not data groups.
+  const merges = (sheet['!merges'] || []).filter(m => m.s.c <= 1 && m.e.c >= 1 && m.s.r >= 3);
   const mergedRows = new Map();
   for (const merge of merges) {
-    if (merge.s.c !== 1 || merge.e.c !== 1 || merge.s.r < 3 || merge.e.r > range.e.r) {
-      throw new Error('B열 날짜 병합은 4행 이후의 B열 안에서만 허용됩니다.');
-    }
-    for (let r = merge.s.r; r <= merge.e.r; r++) {
+    // Formatting-only merged tails can extend beyond the populated sheet range.
+    for (let r = merge.s.r; r <= Math.min(merge.e.r, range.e.r); r++) {
       if (mergedRows.has(r)) throw new Error('B열 날짜 병합 영역이 겹칩니다.');
       mergedRows.set(r, merge);
     }
@@ -23,7 +18,7 @@ export function parseCharterSheet(sheet, XLSX) {
   const groups = new Map(), warnings = [];
   for (let r = 3; r <= range.e.r; r++) {
     const merge = mergedRows.get(r), start = merge?.s.r ?? r;
-    const date = sheet[`B${start + 1}`], destination = sheet[`G${r + 1}`];
+    const date = sheet[XLSX.utils.encode_cell({ r: start, c: merge?.s.c ?? 1 })], destination = sheet[`G${r + 1}`];
     if (blank(date)) {
       if (!blank(destination)) warnings.push(`${r + 1}행: 날짜가 없어 납품처를 제외했습니다.`);
       continue;

@@ -54,11 +54,38 @@ for (const bookType of ['xlsx', 'biff8']) {
 const noMerge = fixture(); noMerge['!merges'] = [];
 assert.deepEqual(parseCharterSheet(noMerge, XLSX).records[0].destinations, ['거래처 A']);
 const badHeader = fixture(); badHeader.G3 = s('다른 양식');
-assert.throws(() => parseCharterSheet(badHeader, XLSX), /3행/);
+assert.deepEqual(parseCharterSheet(badHeader, XLSX), parsed);
+delete badHeader.B3; delete badHeader.G3;
+assert.deepEqual(parseCharterSheet(badHeader, XLSX), parsed);
 assert.throws(() => parseCharterSheet({}, XLSX), /비어/);
 assert.throws(() => parseCharterSheet({ '!ref': 'A1:G3', B3: s('일자'), G3: s('납품처명') }, XLSX), /운행이 없습니다/);
 const crossing = fixture(); crossing['!merges'][0].e.c = 2;
-assert.throws(() => parseCharterSheet(crossing, XLSX), /B열 안/);
+assert.deepEqual(parseCharterSheet(crossing, XLSX), parsed);
+const mergedFour = {
+  '!ref': 'A1:G7', B3: s('운행일'), G3: s('거래처'), B4: { ...date },
+  G4: s('가'), G5: s('나'), G6: s('다'), G7: s('라'),
+  '!merges': [{ s: { r: 3, c: 1 }, e: { r: 6, c: 1 } },
+    { s: { r: 0, c: 0 }, e: { r: 2, c: 6 } }]
+};
+for (const bookType of ['xlsx', 'biff8']) {
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, mergedFour, '원본');
+  const input = XLSX.read(XLSX.write(wb, { type: 'buffer', bookType }), { type: 'buffer', cellNF: true });
+  const result = parseCharterSheet(input.Sheets['원본'], XLSX);
+  assert.equal(result.records.length, 1);
+  const out = buildCharterWorkbook(result, input, XLSX).Sheets['평택 용차내역'];
+  assert.equal(out.C4.v, date.v);
+  assert.deepEqual(['G4', 'H4', 'I4', 'J4'].map(key => out[key].v), ['가', '나', '다', '라']);
+}
+// Ignore header merges even when they extend into the first data row.
+mergedFour['!merges'].push({ s: { r: 2, c: 0 }, e: { r: 3, c: 2 } });
+assert.equal(parseCharterSheet(mergedFour, XLSX).records.length, 1);
+mergedFour['!merges'][0].e.r = 20;
+assert.deepEqual(parseCharterSheet(mergedFour, XLSX).records[0].destinations, ['가', '나', '다', '라']);
+// B belongs to an A:B merged date: use the merged cell's actual anchor.
+const leftAnchor = fixture();
+leftAnchor.A4 = leftAnchor.B4; delete leftAnchor.B4;
+leftAnchor['!merges'][0].s.c = 0;
+assert.equal(parseCharterSheet(leftAnchor, XLSX).records[0].date.v, date.v);
 const errorCell = fixture(); errorCell.G5 = { t: 'e', v: 7 };
 assert.throws(() => parseCharterSheet(errorCell, XLSX), /G5/);
 const many = fixture();
