@@ -92,7 +92,7 @@ const many = fixture();
 many['!ref'] = 'A1:G30'; many['!merges'] = [{ s: { r: 3, c: 1 }, e: { r: 29, c: 1 } }];
 for (let i = 4; i <= 30; i++) many[`G${i}`] = s(`경유${i - 3}`);
 const wide = buildCharterWorkbook(parseCharterSheet(many, XLSX), {}, XLSX).Sheets['평택 용차내역'];
-assert.equal(wide.AM4.v, '경유27');
+assert.equal(wide.AT4.v, '경유27');
 const addresses = {
   '!ref': 'A1:H11', B4: s('9월 8일'), B10: s('9월 8일'),
   '!merges': [ { s: { r: 3, c: 1 }, e: { r: 8, c: 1 } },
@@ -105,18 +105,18 @@ const addresses = {
 for (let r = 4; r <= 11; r++) addresses[`G${r}`] = s(`납품처${r}`);
 const addressResult = parseCharterSheet(addresses, XLSX);
 assert.equal(addressResult.records[0].stopCount, 5);
-assert.deepEqual(addressResult.records[0].cities, ['평택', '부산', '서울', '세종', '평택']);
+assert.deepEqual(addressResult.records[0].cities, ['평택', '부산', '강남', '세종', '평택']);
 assert.equal(addressResult.records[1].stopCount, 2);
-assert.deepEqual(addressResult.records[1].cities, ['', '시흥']);
-assert.match(addressResult.warnings[0], /H10/);
+assert.deepEqual(addressResult.records[1].cities, ['음성', '시흥']);
+assert.ok(addressResult.warnings.some(warning => warning.includes('Q열 톤수')));
 const addressOutput = buildCharterWorkbook(addressResult, {}, XLSX);
 const reopenedAddress = XLSX.read(XLSX.write(addressOutput, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' }).Sheets['평택 용차내역'];
-assert.equal(reopenedAddress.Y4.v, 5);
-assert.equal(reopenedAddress.Y4.t, 'n');
-assert.deepEqual(['T4','U4','V4','W4','X4'].map(key => reopenedAddress[key].v), ['평택','부산','서울','세종','평택']);
+assert.equal(reopenedAddress.AF4.v, 5);
+assert.equal(reopenedAddress.AF4.t, 'n');
+assert.deepEqual(['T4','U4','V4','W4','X4'].map(key => reopenedAddress[key].v), ['평택','부산','강남','세종','평택']);
 assert.equal(reopenedAddress.U5.v, '시흥');
-// Six unmerged addresses preserve their order without overwriting Y.
+// Six unmerged addresses use T:Y; AF is reserved for total stops.
 addresses.H5 = s('대구광역시 동구'); addresses['!merges'].pop();
 const six = buildCharterWorkbook(parseCharterSheet(addresses, XLSX), {}, XLSX).Sheets['평택 용차내역'];
-assert.equal(six.Y4.v, 6); assert.equal(six.Z4.v, '평택');
+assert.equal(six.AF4.v, 6); assert.equal(six.Y4.v, '평택');
 console.log('PASS: merged vehicle groups, same-date separation, warnings, C/G layout, XLS/XLSX round trips, date epochs, text safety, and >Z columns');

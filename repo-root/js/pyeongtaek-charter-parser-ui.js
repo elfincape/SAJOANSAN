@@ -103,7 +103,9 @@ function renderPreview() {
   parsed.records.slice(first, first + PAGE_SIZE).forEach((record, i) => {
     const values = Array(width).fill('');
     values[2] = displayCharterDate(record.date, !!source.Workbook?.WBProps?.date1904, XLSX);
-    values[24] = record.stopCount;
+    values[4] = record.sourceS?.v ?? '';
+    values[5] = record.sourceQ?.v ?? '';
+    values[31] = record.stopCount;
     record.destinations.forEach((value, j) => { values[destinationColumn(j)] = value; });
     record.cities.forEach((value, j) => { values[cityColumn(j)] = value; });
     row(body, [first + i + 4, ...values], 'td');
