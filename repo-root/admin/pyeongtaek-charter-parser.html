@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>평택 용차내역 파서 · 관리 허브</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    [hidden]{display:none!important}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    #preview td{min-width:45px;max-width:360px;white-space:pre-wrap;overflow-wrap:anywhere}
+    #preview td:nth-child(4){min-width:150px}
+    #preview td:nth-child(n+8){min-width:180px}
+  </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen">
+  <header class="border-b border-zinc-800">
+    <div class="max-w-[1200px] mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <a href="/admin/" class="text-xs text-zinc-400">← 관리 허브</a>
+      <h1 class="text-base font-semibold">평택 용차내역 파서</h1>
+      <span class="text-xs text-sky-300">프로토타입</span>
+      <a href="/" class="btn btn-ghost ml-auto">대시보드</a>
+    </div>
+  </header>
+  <main class="max-w-[1200px] mx-auto px-4 py-6 space-y-5">
+    <section class="border border-zinc-700 rounded-xl p-5 space-y-4">
+      <h2 class="font-semibold">엑셀 업로드</h2>
+      <p class="text-sm text-zinc-400">3행 제목, 4행부터 데이터를 읽습니다. B열의 날짜 병합 영역 하나를 차량 운행 한 건으로 묶습니다. 병합되지 않은 날짜는 행마다 별도 운행입니다.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <label><span class="app-label">원본 파일 (.xlsx, .xls)</span><input id="source-file" type="file" accept=".xlsx,.xls" class="app-input" disabled></label>
+        <label><span class="app-label">파싱할 시트</span><select id="source-sheet" class="app-select" disabled><option>파일을 먼저 선택하세요</option></select></label>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <button id="parse-btn" class="btn btn-primary" disabled>파싱 실행</button>
+        <span class="text-xs text-zinc-400">B열 일자 → 결과 C열 · G열 납품처명 → 결과 G열부터 순서대로</span>
+      </div>
+      <p id="status" role="status" aria-live="polite" class="text-sm text-zinc-300">로그인 확인 중…</p>
+    </section>
+    <section id="result-section" class="border border-zinc-700 rounded-xl overflow-hidden" hidden>
+      <div class="p-4 border-b border-zinc-700 space-y-2">
+        <h2 class="font-semibold">결과 미리보기</h2>
+        <p id="summary" class="text-sm text-emerald-300"></p>
+        <p class="text-xs text-zinc-400">결과 엑셀은 3행 제목, 4행부터 데이터입니다. A·B·D·E·F열은 비워 둡니다.</p>
+        <details id="warnings" class="text-sm text-amber-300" hidden><summary id="warning-count"></summary><ul id="warning-list" class="mt-2 max-h-40 overflow-auto"></ul></details>
+      </div>
+      <div class="overflow-auto max-h-[520px]" tabindex="0" aria-label="결과 엑셀 미리보기"><table id="preview" class="app-table"><thead></thead><tbody></tbody></table></div>
+      <div class="p-4 flex flex-wrap items-center gap-3">
+        <button id="prev-page" class="btn btn-ghost">이전</button><span id="page-info" class="text-xs text-zinc-400"></span><button id="next-page" class="btn btn-ghost">다음</button>
+        <button id="download-btn" class="btn btn-primary ml-auto" disabled>엑셀 다운로드</button>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/js/pyeongtaek-charter-parser-ui.js"></script>
+</body>
+</html>

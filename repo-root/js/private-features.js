@@ -2,7 +2,7 @@ export const PRIVATE_FEATURE_OWNER='elfincape@gmail.com';
 export const PRIVATE_FEATURE_DEFAULTS=Object.freeze({
   routes:true,deliveryPoints:true,drivers:true,vehicles:true,companies:true,dispatchParser:true,transfers:true,
   palletSlips:true,oneTopWork:true,dailyTemperature:true,coupangEntry:true,haulCalculator:true,
-  exportData:true,importData:true,users:true,
+  exportData:true,importData:true,users:true,pyeongtaekCharterParser:true,
   haulPrices:false,imageStraightener:false,ansanGimhaeBusanAnsan:false,auditLog:false
 });
 const STORAGE_KEY='sajo.privateFeatures.v1';
