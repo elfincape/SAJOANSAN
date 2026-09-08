@@ -1,6 +1,6 @@
 import { requireRole } from './auth.js';
 import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from './center.js';
-import { parseCharterSheet, buildCharterWorkbook, displayCharterDate } from './pyeongtaek-charter-parser.js';
+import { parseCharterSheet, buildCharterWorkbook, displayCharterDate, charterLayout } from './pyeongtaek-charter-parser.js';
 
 const $ = id => document.getElementById(id);
 const PAGE_SIZE = 50;
@@ -87,7 +87,7 @@ function runParser() {
 }
 
 function renderPreview() {
-  const width = parsed.records.reduce((max, record) => Math.max(max, record.destinations.length), 0);
+  const { headers, width, cityColumn, destinationColumn } = charterLayout(parsed.records);
   const head = $('preview').querySelector('thead'), body = $('preview').querySelector('tbody');
   head.replaceChildren(); body.replaceChildren();
   function row(parent, values, tag) {
@@ -95,13 +95,18 @@ function renderPreview() {
     for (const value of values) { const cell = document.createElement(tag); cell.textContent = value; tr.append(cell); }
     parent.append(tr);
   }
-  row(head, ['행', ...Array.from({ length: width + 6 }, (_, i) => {
+  row(head, ['행', ...Array.from({ length: width }, (_, i) => {
     const column = XLSX.utils.encode_col(i);
-    return i === 2 ? `${column} · 일자` : i >= 6 ? `${column} · 납품처${i - 5}` : column;
+    return headers[i] ? `${column} · ${headers[i]}` : column;
   })], 'th');
   const first = page * PAGE_SIZE;
   parsed.records.slice(first, first + PAGE_SIZE).forEach((record, i) => {
-    row(body, [first + i + 4, '', '', displayCharterDate(record.date, !!source.Workbook?.WBProps?.date1904, XLSX), '', '', '', ...Array.from({ length: width }, (_, j) => record.destinations[j] ?? '')], 'td');
+    const values = Array(width).fill('');
+    values[2] = displayCharterDate(record.date, !!source.Workbook?.WBProps?.date1904, XLSX);
+    values[24] = record.stopCount;
+    record.destinations.forEach((value, j) => { values[destinationColumn(j)] = value; });
+    record.cities.forEach((value, j) => { values[cityColumn(j)] = value; });
+    row(body, [first + i + 4, ...values], 'td');
   });
   const total = Math.ceil(parsed.records.length / PAGE_SIZE);
   $('page-info').textContent = `${page + 1} / ${total} 페이지 · 전체 ${parsed.records.length}건 (다운로드는 전체 결과)`;

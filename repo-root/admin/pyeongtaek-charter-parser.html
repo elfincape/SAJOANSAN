@@ -35,7 +35,7 @@
       </div>
       <div class="flex flex-wrap items-center gap-3">
         <button id="parse-btn" class="btn btn-primary" disabled>파싱 실행</button>
-        <span class="text-xs text-zinc-400">B열 일자 → 결과 C열 · G열 납품처명 → 결과 G열부터 순서대로</span>
+        <span class="text-xs text-zinc-400">B열 일자 → C열 · G열 납품처 → G열부터 · H열 주소의 지역명 → T열부터 · 착지수 → Y열</span>
       </div>
       <p id="status" role="status" aria-live="polite" class="text-sm text-zinc-300">로그인 확인 중…</p>
     </section>
@@ -43,7 +43,7 @@
       <div class="p-4 border-b border-zinc-700 space-y-2">
         <h2 class="font-semibold">결과 미리보기</h2>
         <p id="summary" class="text-sm text-emerald-300"></p>
-        <p class="text-xs text-zinc-400">결과 엑셀은 3행 제목, 4행부터 데이터입니다. A·B·D·E·F열은 비워 둡니다.</p>
+        <p class="text-xs text-zinc-400">결과 엑셀은 3행 제목, 4행부터 데이터입니다. 병합된 주소는 착지 1개로 셉니다. 지역명 6개부터는 Y열을 건너뛰어 Z열부터 표시합니다. 납품처가 13개를 넘으면 추가 납품처는 지역명 뒤의 빈 열에 이어집니다.</p>
         <details id="warnings" class="text-sm text-amber-300" hidden><summary id="warning-count"></summary><ul id="warning-list" class="mt-2 max-h-40 overflow-auto"></ul></details>
       </div>
       <div class="overflow-auto max-h-[520px]" tabindex="0" aria-label="결과 엑셀 미리보기"><table id="preview" class="app-table"><thead></thead><tbody></tbody></table></div>
