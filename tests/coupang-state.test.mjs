@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { loadCoupangPage } from './helpers/coupang-page.mjs';
+
+const { context: page, elements, evaluate } = loadCoupangPage();
+const seed = () => evaluate(`state.workbook = {}; state.matches = [{ include: true, schedule: {}, match: { matchedDispatch: { driver: '이전기사' } } }]; updateButtons();`);
+seed();
+elements.get('schedule-json').value = '[{"centerRaw":"평택2","reservationTime":"09:00"}]';
+page.loadScheduleJson();
+assert.equal(evaluate('state.matches.length'), 0, 'new schedule must invalidate old matches');
+assert.equal(elements.get('download-btn').disabled, true);
+seed();
+elements.get('dispatch-text').value = '평택2 5톤\n새기사 2222\n01022222222';
+page.parseDispatchInput();
+assert.equal(evaluate('state.matches.length'), 0, 'new dispatch must invalidate old matches');
+seed();
+elements.get('dispatch-text').listeners.input();
+assert.equal(evaluate('state.dispatchRows.length'), 0, 'editing dispatch must invalidate parsed records');
+assert.equal(evaluate('state.matches.length'), 0);
+seed();
+page.handleImageFile({name:'next.png',type:'image/png',size:1});
+assert.equal(evaluate('state.scheduleRows.length'), 0);
+assert.equal(evaluate('state.matches.length'), 0);
+assert.equal(page.numberOrNull(null), null);
+assert.equal(page.numberOrNull(''), null);
+assert.equal(page.numberOrNull('-'), null);
+assert.equal(page.numberOrNull('0'), 0);
+assert.equal(page.numberOrNull('1,200'), 1200);
+assert.equal(page.isActiveScheduleRow(page.normalizeScheduleRow({}, 0)), false);
+assert.equal(page.defaultEntryDate(new Date('2026-09-10T15:30:00Z')), '2026-09-11');
+assert.equal(page.defaultEntryDate(new Date('2026-09-10T14:59:00Z')), '2026-09-10');
+page.setEntryDate('2026-09-12');
+assert.equal(page.buildFilename(), '쿠팡 입문확인_20260912.xlsx');
+console.log('coupang input invalidation checks passed');
+
+// A slow API response must not overwrite a newer manually supplied schedule.
+const pending = loadCoupangPage();
+let finishRequest;
+let requestStarted;
+const started = new Promise(resolve => { requestStarted = resolve; });
+pending.context.fileToBase64 = async () => 'test';
+pending.context.callClaudeVision = () => {
+  requestStarted();
+  return new Promise(resolve => { finishRequest = resolve; });
+};
+pending.context.handleImageFile({ name: 'old.png', type: 'image/png', size: 1 });
+const analysis = pending.context.analyzeImage();
+await started;
+pending.elements.get('schedule-json').value = '[{"centerRaw":"인천12","reservationTime":"10:00"}]';
+pending.context.loadScheduleJson();
+finishRequest('[{"centerRaw":"평택2","reservationTime":"09:00"}]');
+await analysis;
+assert.equal(pending.evaluate('state.scheduleRows[0].centerRaw'), '인천12');
+assert.equal(pending.elements.get('analyze-image-btn').disabled, false);
+console.log('coupang stale API response checks passed');

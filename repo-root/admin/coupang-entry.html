@@ -155,6 +155,12 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   $('analyze-image-btn').addEventListener('click', analyzeImage);
   $('parse-dispatch-btn').addEventListener('click', parseDispatchInput);
   $('load-json-btn').addEventListener('click', loadScheduleJson);
+  $('schedule-json').addEventListener('input', invalidateSchedule);
+  $('dispatch-text').addEventListener('input', () => {
+    state.dispatchRows = [];
+    $('dispatch-count').textContent = '';
+    invalidateMatches();
+  });
   $('match-btn').addEventListener('click', runMatching);
   $('download-btn').addEventListener('click', downloadWorkbook);
 
@@ -171,7 +177,10 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   setEntryDate(defaultEntryDate());
   loadDefaultTemplate(false);
 
-  function defaultEntryDate() { return new Date().toISOString().slice(0, 10); }
+  function defaultEntryDate(now = new Date()) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
   function setEntryDate(value) {
     state.selectedDate = value || defaultEntryDate();
     $('entry-date').value = state.selectedDate;
@@ -229,6 +238,8 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     updateButtons();
   }
   function handleImageFile(file) {
+    invalidateSchedule();
+    $('schedule-json').value = '';
     state.imageFile = file || null;
     state.imageBase64 = '';
     state.imageMediaType = file?.type || 'image/png';
@@ -265,17 +276,22 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
   async function analyzeImage() {
     if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
+    invalidateSchedule();
+    const revision = state.scheduleRevision;
+    const imageFile = state.imageFile;
     const btn = $('analyze-image-btn');
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'API호출 중...';
     try {
-      const base64 = await getImageBase64();
+      const base64 = await fileToBase64(imageFile);
+      if (revision !== state.scheduleRevision) return;
       const text = await callClaudeVision({
         model: $('coupang-vision-model').value || 'claude-haiku-4-5-20251001',
-        mediaType: state.imageFile.type || 'image/png',
+        mediaType: imageFile.type || 'image/png',
         base64
       });
+      if (revision !== state.scheduleRevision) return;
       console.log('[coupang-entry] Claude 원본 응답 문자열:', text);
       const jsonText = extractJsonArrayText(text);
       console.log('[coupang-entry] JSON.parse 직전 문자열:', jsonText);
@@ -344,6 +360,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
 
   function loadScheduleJson() {
+    invalidateSchedule();
     try {
       const raw = $('schedule-json').value;
       console.log('[coupang-entry] JSON.parse 직전 문자열:', extractJsonArrayText(raw));
@@ -361,13 +378,16 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     }
   }
   function normalizeScheduleRow(row, index) {
-    const raw = normalizeCenterName(String(row.centerRaw || row.center || '').trim());
-    const base = normalizeCenterName(String(row.centerBase || raw.replace(/\s*b2b/ig, '')).trim());
-    return { ...row, _order: index, centerRaw: raw, centerBase: base, isB2B: Boolean(row.isB2B ?? /b2b/i.test(raw)), reservationTime: roundToNearestHalfHour(normalizeTime(row.reservationTime)), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
+    const raw = normalizeCenterName(row.centerRaw || row.center || row.centerBase || '');
+    // 원문에 있는 센터 번호를 API의 축약된 centerBase로 덮어쓰지 않는다.
+    const base = raw.replace(/\s*b2b/ig, '').trim();
+    const isB2B = /b2b/i.test(raw) || row.isB2B === true || String(row.isB2B).toLowerCase() === 'true';
+    return { ...row, _order: index, centerRaw: `${base}${isB2B ? ' B2B' : ''}`, centerBase: base, isB2B, reservationTime: roundToNearestHalfHour(normalizeTime(row.reservationTime)), quantity: numberOrNull(row.quantity), cold: numberOrNull(row.cold ?? row.refrigerated), frozen: numberOrNull(row.frozen) };
   }
   function isActiveScheduleRow(row) { return Boolean(row.reservationTime || row.quantity != null || row.cold != null || row.frozen != null); }
 
   function parseDispatchInput() {
+    invalidateMatches();
     state.usedGroupFills = new Set();
     state.dispatchRows = parseDispatchText($('dispatch-text').value);
     $('dispatch-count').textContent = state.dispatchRows.length ? `${state.dispatchRows.length}건` : '파싱 결과 없음';
@@ -413,12 +433,13 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     return color;
   }
   function expandCenterExpression(text) {
-    const cleaned = normalizeCenterName(String(text || '').replace(/^쿠팡\s*/,'').replace(/\s+/g, ' ').trim());
+    const cleaned = normalizeCenterName(String(text || '').replace(/^쿠팡\s*/,'')).replace(/([가-힣\d])\s+B2B/gi, '$1B2B');
     const parts = cleaned.split(/[\/+,，、\s]+/).filter(Boolean); const result = []; let lastRegion = ''; let lastBaseLabel = '';
     parts.forEach(part => {
       if (/^(b2b|비투비)$/i.test(part) && lastBaseLabel) { result.push(centerKeyObj(`${lastBaseLabel}B2B`)); return; }
-      const m = part.match(/^([가-힣]+)?(\d+)(\s*b2b|b2b)?$/i);
+      const m = part.match(/^([가-힣]+)?(\d*)(b2b)?$/i);
       if (!m) return;
+      if (!m[1] && (!m[2] || !lastRegion)) return;
       if (m[1]) lastRegion = m[1];
       const baseLabel = `${lastRegion}${m[2]}`;
       lastBaseLabel = baseLabel;
@@ -447,14 +468,25 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
       return { matchedDispatch: null, matchType: 'unmatched', confidence: 0, warning: 'B2B 매칭 실패' };
     }
     const exact = dispatchRows.find(d => d.centerKey === baseKey && !d.isB2B); if (exact) return { matchedDispatch: exact, matchType: 'exact', confidence: 1, warning: '' };
-    const grouped = dispatchRows.find(d => d.centerBaseKey === baseKey); if (grouped) return { matchedDispatch: grouped, matchType: 'group_expanded', confidence: .9, warning: '' };
     return { matchedDispatch: null, matchType: 'unmatched', confidence: 0, warning: '매칭 실패' };
   }
   function renderMatches() {
     const body = $('match-body'); $('empty-state').classList.toggle('hidden', state.matches.length > 0);
     $('match-count').textContent = state.matches.length ? `${state.matches.length}건` : '';
     body.innerHTML = state.matches.map((m, idx) => { const d = m.match.matchedDispatch; return `<tr class="border-b border-zinc-800 ${m.match.warning ? 'bg-amber-950/20' : ''}"><td class="px-2 py-1 text-center"><input type="checkbox" data-include="${idx}" ${d ? 'checked' : ''} ${d ? '' : 'disabled'}></td><td class="px-2 py-1 font-mono">${escapeHtml(m.schedule.reservationTime || '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.centerRaw)}</td><td class="px-2 py-1">${escapeHtml(m.schedule.quantity ?? '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.cold ?? '')}</td><td class="px-2 py-1">${escapeHtml(m.schedule.frozen ?? '')}</td><td class="px-2 py-1">${escapeHtml(d?.driver || '')}</td><td class="px-2 py-1 font-mono">${escapeHtml(d?.vehicle || '')}</td><td class="px-2 py-1">${escapeHtml(m.match.matchType)} (${Math.round(m.match.confidence*100)}%)</td><td class="px-2 py-1 text-amber-300">${escapeHtml(m.match.warning || '')}</td></tr>`; }).join('');
-    body.querySelectorAll('[data-include]').forEach(cb => cb.addEventListener('change', () => { state.matches[Number(cb.dataset.include)].include = cb.checked; }));
+    body.querySelectorAll('[data-include]').forEach(cb => cb.addEventListener('change', () => { state.matches[Number(cb.dataset.include)].include = cb.checked; updateButtons(); }));
+  }
+
+  function invalidateMatches() {
+    state.matches = [];
+    renderMatches();
+    renderScheduleCount();
+    updateButtons();
+  }
+  function invalidateSchedule() {
+    state.scheduleRevision = (state.scheduleRevision || 0) + 1;
+    state.scheduleRows = [];
+    invalidateMatches();
   }
 
   async function downloadWorkbook() {
@@ -606,19 +638,16 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
   function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') { if (typeof v.result === 'number') return normalizeTime(v.result) || ''; return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); } return String(v).trim(); }
   function normalizeCenterName(value) {
-    const text = String(value || '').replace(/군지암/g, '곤지암').trim();
-    const suffix = /b2b|비투비/i.test(text) ? ' B2B' : '';
-    const compact = text.replace(/\s+/g, '');
-    if (compact.includes('ㄱㅈㅇ')) return `곤지암${suffix}`;
-    if (compact.includes('ㅍㅌ')) {
-      const numberSuffix = compact.match(/ㅍㅌ(\d+)/)?.[1] || '';
-      return `평택${numberSuffix}${suffix}`;
-    }
-    return text;
+    return String(value || '')
+      .replace(/군지암|ㄱㅈㅇ/g, '곤지암')
+      .replace(/ㅍㅌ/g, '평택')
+      .replace(/([가-힣])\s+(?=\d)/g, '$1')
+      .replace(/\s*(?:b2b|비투비)/gi, ' B2B')
+      .replace(/\s+/g, ' ').trim();
   }
   function centerKey(value) { return normalizeCenterName(value).toLowerCase().replace(/\s+/g, '').replace(/비투비/g, 'b2b'); }
   function normalizePhone(raw) { const d = String(raw || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : String(raw || '').trim(); }
-  function numberOrNull(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? n : null; }
+  function numberOrNull(v) { const text = String(v ?? '').replace(/[^\d.-]/g, ''); if (!text) return null; const n = Number(text); return Number.isFinite(n) ? n : null; }
   function extractClaudeText(json) {
     console.log('[coupang-entry] Claude 응답 객체:', json);
     if (typeof json === 'string') return json.trim();
@@ -656,7 +685,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   async function fileToBase64(file) { const buf = await file.arrayBuffer(); let binary = ''; new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); }); return btoa(binary); }
   function renderScheduleCount() { $('match-count').textContent = state.scheduleRows.length ? `시간표 ${state.scheduleRows.length}행` : ''; }
   function updateButtons() { $('download-btn').disabled = !state.workbook || !state.matches.some(m => m.include && m.match.matchedDispatch); }
-  function buildFilename() { const d = new Date(); return `쿠팡 입문확인_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.xlsx`; }
+  function buildFilename() { return `쿠팡 입문확인_${state.selectedDate.replace(/-/g, '')}.xlsx`; }
   function saveBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
   let toastTimer = null; function toast(message, type = 'info') { const el = $('toast'); el.textContent = message; el.className = 'fixed left-1/2 bottom-6 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none show'; el.className += ` ${type === 'error' ? 'bg-rose-950/95 border border-rose-700 text-rose-100' : type === 'success' ? 'bg-emerald-950/95 border border-emerald-700 text-emerald-100' : 'bg-zinc-800 border border-zinc-700 text-zinc-100'}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
   function escapeHtml(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }

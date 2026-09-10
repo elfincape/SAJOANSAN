@@ -69,8 +69,11 @@ Deno.serve(async req => {
 });
 
 async function safeReadJson(req: Request) {
-  try { return await req.json(); }
+  let body: unknown;
+  try { body = await req.json(); }
   catch (err) { throw new AppError('Invalid JSON request body', 400, { stack: errorStack(err) }); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError('JSON request body must be an object', 400);
+  return body as Record<string, any>;
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown, model: string) {
@@ -96,10 +99,10 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   try { data = bodyText ? JSON.parse(bodyText) : null; }
   catch (err) {
     console.error('[coupang-vision] Claude response JSON parse failed', { requestURL: url, model, status: res.status, responseText: bodyText, stack: errorStack(err) });
-    throw new AppError(`Claude response JSON parse failed: ${errorMessage(err)}`, 502, {
+    throw new AppError(`Claude response JSON parse failed: ${errorMessage(err)}`, res.status === 429 ? 429 : 502, {
       requestURL: url,
       model,
-      status: res.status,
+      upstreamStatus: res.status,
       responseText: bodyText,
       aiapiflowResponseText: bodyText,
       stack: errorStack(err)
@@ -109,10 +112,10 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   console.log('[coupang-vision] Claude parsed JSON:', data);
   if (!res.ok) {
     console.error('[coupang-vision] AIAPIFlow request failed', { requestURL: url, model, status: res.status, responseText: bodyText, raw: data });
-    throw new AppError(data?.error?.message || data?.message || `AIAPIFlow request failed: ${res.status} ${res.statusText}`, 502, {
+    throw new AppError(data?.error?.message || data?.message || `AIAPIFlow request failed: ${res.status} ${res.statusText}`, res.status === 429 ? 429 : 502, {
       requestURL: url,
       model,
-      status: res.status,
+      upstreamStatus: res.status,
       responseText: bodyText,
       aiapiflowResponseText: bodyText,
       raw: data
@@ -144,7 +147,7 @@ class AppError extends Error {
 
 function errorPayload(err: unknown) {
   if (err instanceof AppError) {
-    return { error: err.message, status: err.status, ...err.details, stack: err.stack || null };
+    return { ...err.details, error: err.message, status: err.status, stack: err.stack || null };
   }
   return { error: errorMessage(err), status: 500, stack: errorStack(err) };
 }
