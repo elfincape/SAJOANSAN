@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>엑셀 시트 비교 · 관리 허브</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/excel-compare.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="compare-header"><div class="compare-container header-inner">
+    <a href="/admin/" class="btn btn-ghost">← 관리 허브</a>
+    <h1>엑셀 시트 비교</h1><span id="user-badge" class="muted"></span>
+  </div></header>
+  <main class="compare-container">
+    <fieldset id="workspace" disabled>
+      <section class="file-grid" aria-label="비교할 엑셀 파일">
+        <article class="panel file-card"><h3><span class="number">1</span> 시트 1</h3>
+          <label class="file-label" for="left-file">첫 번째 엑셀 파일<input id="left-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" aria-describedby="left-info"></label>
+          <p id="left-info" class="muted file-info">선택된 파일 없음 · 파일당 최대 20MB</p>
+          <div class="sheet-settings"><label>비교할 시트<select id="left-sheet" disabled></select></label>
+            <label>제목 행<input id="left-header" type="number" min="0" step="1" value="1" disabled></label></div>
+          <p class="hint">제목이 없으면 0을 입력하세요. 제목 행 다음부터 비교합니다.</p>
+          <div id="left-sample" class="sample muted">파일을 선택하면 열과 데이터를 미리 볼 수 있습니다.</div>
+        </article>
+        <article class="panel file-card"><h3><span class="number">2</span> 시트 2</h3>
+          <label class="file-label" for="right-file">두 번째 엑셀 파일<input id="right-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" aria-describedby="right-info"></label>
+          <p id="right-info" class="muted file-info">선택된 파일 없음 · 파일당 최대 20MB</p>
+          <div class="sheet-settings"><label>비교할 시트<select id="right-sheet" disabled></select></label>
+            <label>제목 행<input id="right-header" type="number" min="0" step="1" value="1" disabled></label></div>
+          <p class="hint">같은 파일을 양쪽에 선택해 서로 다른 시트도 비교할 수 있습니다.</p>
+          <div id="right-sample" class="sample muted">파일을 선택하면 열과 데이터를 미리 볼 수 있습니다.</div>
+        </article>
+      </section>
+      <section class="panel section-gap"><div class="section-title"><h3><span class="number">3</span> 비교할 열 연결</h3><button id="add-pair" class="btn btn-ghost" type="button" disabled>+ 비교 열 추가</button></div>
+        <p class="muted">연결한 모든 열의 값이 같은 행을 찾습니다. 예: 시트 1 A·B·C열 ↔ 시트 2 B·C·F열.</p>
+        <div id="pairs" class="pairs"><p class="empty">두 파일의 시트를 선택하면 비교 열을 연결할 수 있습니다.</p></div>
+        <label class="duplicate-label">값 비교 기준<select id="value-mode"><option value="raw">실제 셀 값 (숫자·문자 구분)</option><option value="display">셀에 표시된 값</option></select></label>
+        <div class="options"><label><input id="trim-values" type="checkbox" checked> 앞뒤 공백 무시</label><label><input id="ignore-case" type="checkbox"> 영문 대소문자 무시</label></div>
+        <p class="hint">기본은 실제 값으로 비교합니다. 숫자 1과 문자 “1”은 다릅니다. 표시값 비교는 서식·반올림이 적용된 문자열을 비교합니다. 모든 비교 열에 값이 있어야 조건을 충족하며, 0은 인정하고 빈칸·공백만 있는 값·오류 셀은 제외합니다.</p>
+      </section>
+      <section class="panel section-gap"><h3><span class="number">4</span> 결과 방식 선택</h3>
+        <div class="mode-options"><label class="mode-card"><input type="radio" name="result-mode" value="extract" checked><span><strong>매칭한 행에서 값 가져오기</strong><small>선택한 열을 상대 시트의 맞는 행 옆에 추가합니다.</small></span></label>
+          <label class="mode-card"><input type="radio" name="result-mode" value="exists"><span><strong>존재 여부만 확인</strong><small>양쪽 시트에서 같은 값의 존재를 TRUE / FALSE로 확인합니다.</small></span></label></div>
+        <div id="extract-options"><div class="import-grid">
+          <div><h4>시트 2에서 → 시트 1로 가져올 열</h4><div id="left-imports" class="column-choices">두 시트를 먼저 선택해 주세요.</div></div>
+          <div><h4>시트 1에서 → 시트 2로 가져올 열</h4><div id="right-imports" class="column-choices">두 시트를 먼저 선택해 주세요.</div></div>
+        </div><label class="duplicate-label">같은 비교 값이 여러 행에 있을 때<select id="duplicates">
+          <option value="occurrence">등장 순서대로 1:1 연결</option><option value="unique">양쪽 모두 유일한 값만 가져오기</option><option value="first">상대 시트의 첫 행 사용 (중복 재사용)</option>
+        </select></label><p class="hint">1:1 연결은 원본 행 순서를 따릅니다. 중복으로 상대 행이 부족하면 값은 비워두고 표시합니다. 존재 여부는 연결 여부와 별도로 계산합니다.</p></div>
+      </section>
+      <div class="run-bar"><span id="ready-counts" class="muted">두 시트와 비교 열을 선택해 주세요.</span><button id="run-btn" type="button" class="btn btn-primary" disabled>비교 실행</button></div>
+    </fieldset>
+    <p id="status" role="status" aria-live="polite">로그인 정보를 확인하는 중…</p>
+    <section id="result-section" hidden>
+      <div class="section-title"><h2>비교 결과</h2><button id="download-btn" type="button" class="btn btn-primary" disabled>결과 Excel 다운로드</button></div>
+      <div id="statistics" class="file-grid"></div>
+      <div class="panel section-gap result-panel"><div class="result-controls">
+        <label>기준 시트<select id="result-side"><option value="left">시트 1 기준</option><option value="right">시트 2 기준</option></select></label>
+        <label>보기<select id="result-filter"><option value="all">전체 행</option><option value="true">TRUE · 상대 시트에 존재</option><option value="false">FALSE · 상대 시트에 없음</option><option value="excluded">조건 미충족</option><option value="duplicate">중복 관련 행</option></select></label>
+        <span class="hint">다운로드에는 필터와 관계없이 양쪽 전체 결과와 요약이 포함됩니다.</span></div>
+        <div class="table-scroll"><table id="preview" class="app-table"><thead></thead><tbody></tbody></table></div>
+        <div class="pagination"><span id="page-info" class="muted"></span><button id="prev-page" type="button" class="btn btn-ghost">이전</button><button id="next-page" type="button" class="btn btn-ghost">다음</button></div>
+      </div>
+    </section>
+    <p class="footer-note">수식은 파일에 저장된 계산값을 사용합니다. Excel에서 계산 후 저장한 파일을 선택해 주세요. 결과는 원본 행 순서를 유지하는 새 파일이며, 원본 서식·수식·매크로는 복제하지 않습니다.</p>
+  </main>
+  <script type="module" src="/js/excel-compare-ui.js"></script>
+</body>
+</html>
