@@ -154,6 +154,10 @@ drop index if exists public.companies_name_key;
 create unique index if not exists delivery_points_center_code_uidx
   on public.delivery_points(center_code, code);
 
+-- Allow the same delivery point code in different centers.
+alter table public.delivery_points drop constraint if exists delivery_points_code_key;
+drop index if exists public.delivery_points_code_key;
+
 create unique index if not exists routes_center_company_car_name_uidx
   on public.routes(center_code, company_id, car_number, name);
 
