@@ -146,6 +146,11 @@ create index if not exists audit_log_center_code_idx       on public.audit_log(c
 create unique index if not exists companies_center_name_uidx
   on public.companies(center_code, name);
 
+-- The old global name rule rejects companies shared by Ansan and Pyeongtaek.
+-- Keep the center/name guard above, then remove the obsolete global guard.
+alter table public.companies drop constraint if exists companies_name_key;
+drop index if exists public.companies_name_key;
+
 create unique index if not exists delivery_points_center_code_uidx
   on public.delivery_points(center_code, code);
 
