@@ -146,7 +146,7 @@
     let healthSchemaReady = false;
     const documents = mountDriverDocuments($('driver-documents'), {
       adapter: oneDriveDocuments,
-      getExpiry: () => state.rows.find(row => row.id === state.selectedId)?.health_certificate_expires_on,
+      getExpiry: () => $('f-health-expiry').value,
       onSaved: (driverId,kind,expiry) => {
         if (kind === 'health_certificate') {
           const row = state.rows.find(r => r.id === driverId);

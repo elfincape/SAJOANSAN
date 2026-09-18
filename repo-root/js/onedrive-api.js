@@ -8,7 +8,7 @@ async function call(action,body,binary=false) {
     method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_ANON_KEY,...(multipart?{}:{'Content-Type':'application/json'})},
     body:multipart?body:JSON.stringify(body||{}),signal:AbortSignal.timeout(110000)
   });
-  if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'OneDrive 요청에 실패했습니다.');}
+  if(!response.ok){const error=await response.json().catch(()=>({}));throw Object.assign(new Error(error.error||'OneDrive 요청에 실패했습니다.'),{status:response.status});}
   return binary?response.blob():response.json();
 }
 export const oneDriveDocuments = {
@@ -19,7 +19,13 @@ export const oneDriveDocuments = {
     const form=new FormData();
     form.set('driverId',driverId);form.set('kind',kind);form.set('file',file);
     form.set('expiresOn',expiresOn||'');form.set('requestId',requestId);
-    return call('upload',form);
+    for(let attempt=0;;attempt++){
+      try{return await call('upload',form);}
+      catch(error){
+        if(attempt>=2||![409,429,502,503].includes(error.status))throw error;
+        await new Promise(resolve=>setTimeout(resolve,1500*(attempt+1)));
+      }
+    }
   }
 };
 export async function connectOneDrive() {
