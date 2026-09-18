@@ -193,6 +193,7 @@
 </main>
 
 <script type="module">
+import { fetchAllRows, loadUnassignedDeliveryPoints } from '/js/unassigned-delivery-points.js';
 import { supabase } from '/js/supabase.js';
 import { requireRole, getCurrentProfile } from '/js/auth.js';
 import { bizMinToStandard } from '/js/time.js';
@@ -380,7 +381,7 @@ async function loadData() {
         deadline_text, deadline_business_min, memo
       )
     `)
-    .order('stop_order', { ascending: true });
+    .order('stop_order', { ascending: true }).order('id');
 
   query = query.eq('route.center_code', getRequiredCenter().code);
 
@@ -388,15 +389,23 @@ async function loadData() {
     query = query.eq('route.active', true);
   }
 
-  const { data, error } = await query;
-  if (error) {
+  try {
+    const data = await fetchAllRows(() => query);
+    const unassigned = await loadUnassignedDeliveryPoints(supabase, getRequiredCenter());
+    const rows = (data || []).filter(r => r.route);
+    const represented = new Set(rows.map(row => String(row.delivery_point?.id)));
+    state.rows = [...rows, ...unassigned.filter(point => !represented.has(String(point.id)))
+      .map(point => ({ route: null, delivery_point: point }))];
+    state.flat = state.rows.map(rowToFlat);
+  } catch (error) {
     console.error(error);
+    state.rows = [];
+    state.flat = [];
+    rebuildFilterOptions();
+    applyFiltersAndRender();
     toast(`데이터 로드 실패: ${error.message}`, 'error');
     return;
   }
-
-  state.rows = (data || []).filter(r => r.route);
-  state.flat = state.rows.map(rowToFlat);
 
   rebuildFilterOptions();
   applyFiltersAndRender();

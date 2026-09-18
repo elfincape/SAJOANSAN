@@ -4,6 +4,7 @@
 // 상태: state 객체 1개. 변경 시 syncUrl() + render()
 // =============================================================================
 
+import { fetchAllRows, loadUnassignedDeliveryPoints, unassignedDashboardRow } from './unassigned-delivery-points.js';
 import { supabase }                              from './supabase.js';
 import { requireRole, getCurrentProfile, signOut } from './auth.js';
 import { bizMinToStandard, displayToBizMin }     from './time.js';
@@ -176,7 +177,10 @@ async function loadData() {
   try {
     const center = getRequiredCenter();
     const data = await loadCourseRowsForCenter(center);
-    state.rows = await enrichDeliveryPointMemos(data, center);
+    const unassigned = await loadUnassignedDeliveryPoints(supabase, center);
+    const courseRows = await enrichDeliveryPointMemos(data, center);
+    const represented = new Set(courseRows.map(row => String(row.delivery_point_id)));
+    state.rows = [...courseRows, ...unassigned.filter(point => !represented.has(String(point.id))).map(unassignedDashboardRow)];
 
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
@@ -221,10 +225,10 @@ async function enrichDeliveryPointMemos(rows, center) {
 
 async function loadCourseRowsForCenter(center) {
   // 1차: course_view 자체가 center_code를 제공하는 경우 서버에서 바로 센터 필터링
-  const scoped = await scopeByCenter(
-    supabase.from('course_view').select('*'),
+  const scoped = await fetchAllRows(() => scopeByCenter(
+    supabase.from('course_view').select('*').order('stop_id'),
     center
-  );
+  )).then(data => ({ data }), error => ({ error }));
 
   if (!scoped.error) return scoped.data || [];
 
@@ -779,7 +783,7 @@ function renderGroups() {
 
   const groups = new Map();
   for (const r of state.filtered) {
-    const key = r.route_id || `_no_route_${r.stop_id}`;
+    const key = r.route_id || '_unassigned';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
