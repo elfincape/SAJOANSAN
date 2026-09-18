@@ -1,4 +1,13 @@
-export const KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
+export const FOLDER_KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
+export const LABELS = {food_transport:'식품운반업_앞',food_transport_back:'식품운반업_뒤',livestock_transport:'축산물운반업_앞',livestock_transport_back:'축산물운반업_뒤',freight_license:'화물운송사자격증',vehicle_registration:'차량등록증',identity:'신분증',health_certificate:'보건증'};
+export const KINDS = Object.keys(LABELS);
+export const folderKind = kind => kind.endsWith('_back') ? kind.slice(0,-5) : kind;
+export function filePart(value,fallback) {
+  return Array.from(String(value||fallback).normalize('NFC').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g,'-').replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'')).slice(0,45).join('') || fallback;
+}
+export function documentFilename({center,plates,name,company},kind,extension) {
+  return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),LABELS[kind]].join('_')+'.'+extension;
+}
 const SITE = 'https://sajoansan.vercel.app';
 const CLIENT_ID = '56899a37-25c3-43e2-b006-6e001d538185';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -53,11 +62,22 @@ export function makeHandler(env, fetcher=fetch) {
   }
   async function driver(user,id) {
     if(!/^[0-9a-f-]{36}$/i.test(id||''))throw fail('기사를 선택해 주세요.');
-    const row=(await db('drivers?select=id,center_code,health_certificate_expires_on&id=eq.'+enc(id),{token:user.token}))[0];
+    const row=(await db('drivers?select=id,name,company_id,center_code,health_certificate_expires_on&id=eq.'+enc(id),{token:user.token}))[0];
     if(!row)throw fail('해당 기사에 접근할 수 없습니다.',403);
     return row;
   }
-  async function settings(){const s=(await db('onedrive_settings?select=*&id=eq.true'))[0];if(!s||!KINDS.every(k=>s.folders[k]))throw fail('저장 폴더 설정이 필요합니다.',503);return s;}
+  async function naming(user,d) {
+    const centerFilter='&center_code=eq.'+enc(d.center_code);
+    const [centers,companies,routes]=await Promise.all([
+      db('centers?select=name&code=eq.'+enc(d.center_code),{token:user.token}),
+      d.company_id?db('companies?select=name&id=eq.'+enc(d.company_id)+centerFilter,{token:user.token}):[],
+      db('routes?select=primary_driver_id,secondary_driver_id,primary_vehicle_id,secondary_vehicle_id&active=eq.true'+centerFilter+'&or=(primary_driver_id.eq.'+enc(d.id)+',secondary_driver_id.eq.'+enc(d.id)+')',{token:user.token})
+    ]);
+    const ids=[...new Set(routes.flatMap(r=>[r.primary_driver_id===d.id?r.primary_vehicle_id:null,r.secondary_driver_id===d.id?r.secondary_vehicle_id:null]).filter(Boolean))];
+    const vehicles=ids.length?await db('vehicles?select=plate_number&id=in.('+ids.map(enc).join(',')+')'+centerFilter,{token:user.token}):[];
+    return {center:centers[0]?.name||d.center_code,company:companies[0]?.name,name:d.name,plates:[...new Set(vehicles.map(v=>v.plate_number).filter(Boolean))].sort().join('+')};
+  }
+  async function settings(){const s=(await db('onedrive_settings?select=*&id=eq.true'))[0];if(!s||!FOLDER_KINDS.every(k=>s.folders[k]))throw fail('저장 폴더 설정이 필요합니다.',503);return s;}
   async function grant(body) {
     if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET) throw fail('OneDrive 앱 설정을 확인해 주세요.',503);
     const res=await fetcher(TOKEN,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:CLIENT_ID,client_secret:env.ONEDRIVE_CLIENT_SECRET,redirect_uri:redirect,...body}),signal:AbortSignal.timeout(20000)});
@@ -102,7 +122,7 @@ export function makeHandler(env, fetcher=fetch) {
     const drive=await (await graph('/me/drive',tokens.access_token)).json();
     if(String(drive.id).toLowerCase()!==config.expected_drive_id.toLowerCase())throw fail('지정한 OneDrive 소유자 계정으로 로그인해 주세요.',403);
     const folders={};
-    await Promise.all(KINDS.map(async kind=>{
+    await Promise.all(FOLDER_KINDS.map(async kind=>{
       const item=await (await graph('/shares/'+enc(shareToken(config.folders[kind]))+'/driveItem',tokens.access_token)).json();
       if(!item.folder||String(item.parentReference?.driveId).toLowerCase()!==String(drive.id).toLowerCase())throw fail('지정 폴더를 확인할 수 없습니다.',403);
       folders[kind]={driveId:item.parentReference.driveId,folderId:item.id};
@@ -182,15 +202,23 @@ export function makeHandler(env, fetcher=fetch) {
             if(completed.driver_id!==id||completed.document_type!==kind||completed.uploaded_by!==user.id)throw fail('업로드 요청이 일치하지 않습니다.',409);
             return json({saved:true});
           }
-          const connection=await connected(),folder=connection.folders[kind];
+          const connection=await connected(),folder=connection.folders[folderKind(kind)];
           let journal=(await db('onedrive_uploads?select=*&request_id=eq.'+request))[0];
-          const filename=d.center_code+'_'+id+'_'+request+'_'+fingerprint+'.'+extension;
-          if(journal&&(journal.user_id!==user.id||journal.driver_id!==id||journal.kind!==kind||journal.file_name!==filename))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
+          const filename=journal?.file_name||documentFilename(await naming(user,d),kind,extension);
+          if(journal&&(journal.user_id!==user.id||journal.driver_id!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
           if(!journal){
-            journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename};
+            journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
-          const path='/drives/'+enc(journal.drive_id)+'/items/'+enc(journal.folder_id)+':/'+enc(filename);
+          // Each request has its own folder: exact readable filenames never overwrite another document.
+          const folderName=id+'_'+request;
+          const folderPath='/drives/'+enc(journal.drive_id)+'/items/'+enc(journal.folder_id);
+          const foundFolder=await graph(folderPath+':/'+enc(folderName),connection.accessToken,{allowMissing:true});
+          const uploadFolder=foundFolder?await foundFolder.json():await (await graph(folderPath+'/children',connection.accessToken,{
+            method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:folderName,folder:{},'@microsoft.graph.conflictBehavior':'fail'})
+          })).json();
+          if(!uploadFolder.folder||!uploadFolder.id)throw fail('저장 폴더를 확인할 수 없습니다.',502);
+          const path='/drives/'+enc(journal.drive_id)+'/items/'+enc(uploadFolder.id)+':/'+enc(filename);
           const existing=await graph(path,connection.accessToken,{allowMissing:true});
           const item=existing?await existing.json():await (await graph(path+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':mime},body:bytes})).json();
           if(item.size!==file.size)throw fail('저장 파일 크기를 확인할 수 없습니다.',502);

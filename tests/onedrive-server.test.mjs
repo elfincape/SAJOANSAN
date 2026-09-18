@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import {makeHandler,validDate,imageType,shareToken,hash} from '../supabase/functions/onedrive-auth/handler.js';
+import {makeHandler,validDate,imageType,shareToken,hash,documentFilename,folderKind,KINDS} from '../supabase/functions/onedrive-auth/handler.js';
 const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-service',SUPABASE_ANON_KEY:'test-anon',ONEDRIVE_CLIENT_ID:'56899a37-25c3-43e2-b006-6e001d538185',ONEDRIVE_CLIENT_SECRET:'test-secret'};
 const id='00000000-0000-4000-8000-000000000001',uid='00000000-0000-4000-8000-000000000002';
 const kinds=['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 let role='admin',active=true,visible=true,oauth,connection,journal,document,commits=0,puts=0,locked=false,dbFail=false,graphFail=false;
+const graphFiles=new Map(),graphFolders=new Map();
 const result=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json'}});
 async function fake(input,options={}){
  const url=new URL(input),p=url.pathname,b=typeof options.body==='string'?JSON.parse(options.body):null;
@@ -11,7 +12,14 @@ async function fake(input,options={}){
  if(p.startsWith('/rest/v1/')){
    const table=p.slice('/rest/v1/'.length),method=options.method||'GET';
    if(table==='user_profiles')return result([{id:uid,role,active}]);
-   if(table==='drivers')return result(visible?[{id,center_code:'002'}]:[]);
+   if(table==='drivers')return result(visible?[{id,name:'홍길동',company_id:'company',center_code:'002'}]:[]);
+   if(['centers','companies','routes','vehicles'].includes(table)){
+     assert.equal(options.headers.Authorization,'Bearer user');
+     if(table==='centers')return result([{name:'사조평택센터'}]);
+     if(table==='companies')return result([{name:'이안물류'}]);
+     if(table==='routes')return result([{primary_driver_id:id,primary_vehicle_id:'vehicle'}]);
+     return result([{plate_number:'경기80바1234'}]);
+   }
    assert.equal(options.headers.Authorization,'Bearer test-service','private DB reads must use server credential');
    if(table==='onedrive_settings')return result([{expected_drive_id:'drive',folders:Object.fromEntries(kinds.map(k=>[k,'https://1drv.ms/'+k]))}]);
    if(table==='onedrive_oauth'){
@@ -48,7 +56,14 @@ async function fake(input,options={}){
    if(graphFail)return result({},429);
    if(p==='/v1.0/me/drive')return result({id:'drive'});
    if(p.startsWith('/v1.0/shares/'))return result({id:'folder',folder:{},parentReference:{driveId:'drive'}});
-   if(options.method==='PUT'){puts++;return result({id:'item',size:12});}
+   if(options.method==='POST'&&p.endsWith('/children')){
+     const folder={id:'upload-folder',folder:{}};
+     graphFolders.set(p.replace(/\/children$/,':/'+encodeURIComponent(b.name)),folder);
+     return result(folder);
+   }
+   if(graphFolders.has(p))return result(graphFolders.get(p));
+   if(options.method==='PUT'){puts++;const item={id:'item',size:12};graphFiles.set(p.replace(/:\/content$/,''),item);return result(item);}
+   if(graphFiles.has(p))return result(graphFiles.get(p));
    return result({},404);
  }
  throw Error('Unexpected fetch '+url);
@@ -85,8 +100,17 @@ graphFail=true;assert.equal((await handler(upload())).status,429);graphFail=fals
 dbFail=true;assert.equal((await handler(upload())).status,502);assert.equal(commits,0);dbFail=false;
 assert.equal((await handler(upload())).status,200);
 assert.equal(commits,1);
+assert.equal(puts,1,'retry after DB failure must reuse uploaded bytes');
 assert.equal((await handler(upload())).status,200);assert.equal(commits,1,'repeated request must not commit twice');
 assert(!journal.file_name.includes('private-name'));
+assert.equal(journal.file_name,'사조평택센터_경기80바1234_홍길동_이안물류_보건증.png');
+assert.equal(KINDS.length,8);
+assert.equal(folderKind('food_transport_back'),'food_transport');
+assert.equal(folderKind('livestock_transport_back'),'livestock_transport');
+assert.equal(documentFilename({center:'안산',plates:'123가4567',name:'김기사',company:'운수사'},'food_transport','jpg'),'안산_123가4567_김기사_운수사_식품운반업_앞.jpg');
+assert.equal(documentFilename({center:'평택',plates:'123가4567',name:'김기사',company:'운수사'},'livestock_transport_back','png'),'평택_123가4567_김기사_운수사_축산물운반업_뒤.png');
+assert.equal(documentFilename({center:'평택',name:'김기사'},'identity','jpg'),'평택_차량미지정_김기사_운수사미지정_신분증.jpg');
+assert(!documentFilename({center:'a/b',name:'../a:b*',company:'c?d'},'identity','jpg').match(/[\\/:*?"<>|]/));
 assert(validDate('2028-02-29'));assert(!validDate('2026-02-29'));
 assert.throws(()=>imageType(new TextEncoder().encode('<svg>')));
 assert.throws(()=>shareToken('https://attacker.example/path'));
