@@ -104,6 +104,7 @@
         </form>
         <div class="px-4 py-3 border-t border-zinc-700">
           <button type="button" id="onedrive-connect" class="btn btn-ghost hidden">OneDrive 연결 / 재연결</button>
+          <button type="button" id="onedrive-archive-config" class="btn btn-ghost hidden">삭제 보관 폴더 설정</button>
           <p id="onedrive-status" class="text-xs text-zinc-400 mt-1"></p>
         </div>
         <div id="driver-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>
@@ -154,6 +155,15 @@
           applyAndRender();
         }
       }
+    });
+    $('onedrive-archive-config').classList.toggle('hidden', profile.role !== 'admin');
+    $('onedrive-archive-config').addEventListener('click',async()=>{
+      const url=window.prompt('삭제한 사진을 보관할 OneDrive 폴더 공유 링크를 입력하세요.');
+      if(!url?.trim())return;
+      $('onedrive-archive-config').disabled=true;
+      try{await oneDriveDocuments.configureArchive(url.trim());toast('삭제 보관 폴더 설정 완료','success');}
+      catch(error){toast(error.message,'error');}
+      finally{$('onedrive-archive-config').disabled=false;}
     });
     $('onedrive-connect').classList.toggle('hidden', profile.role !== 'admin');
     $('onedrive-connect').addEventListener('click', async () => {

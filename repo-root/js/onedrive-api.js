@@ -13,6 +13,8 @@ async function call(action,body,binary=false) {
 }
 export const oneDriveDocuments = {
   status:()=>call('status'),
+  configureArchive:url=>call('archive-config',{url}),
+  remove:(driverId,kind,version)=>call('remove',{driverId,kind,version}),
   list:async driverId=>(await call('list',{driverId})).documents,
   download:(driverId,kind)=>call('download',{driverId,kind},true),
   upload:async ({driverId,kind,file,expiresOn,requestId})=>{

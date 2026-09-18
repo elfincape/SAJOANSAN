@@ -37,7 +37,8 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
       const detail=document.createElement('p');detail.className='text-xs text-zinc-400';
       const status=document.createElement('span');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
       const view=document.createElement('button');view.type='button';view.className='btn btn-ghost text-xs';view.textContent='저장 사진 보기';view.disabled=true;
-      const slot={input,view,status,detail,preview,url:null,stored:false,busy:false,touched:false};
+      const remove=document.createElement('button');remove.type='button';remove.className='btn btn-danger text-xs';remove.textContent='사진 삭제';remove.disabled=true;
+      const slot={remove,version:null,input,view,status,detail,preview,url:null,stored:false,busy:false,touched:false};
       slots.set(kind,slot);
       const state=value=>{
         status.hidden=false;status.textContent=value;
@@ -65,13 +66,13 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
           await ready;
           if(connectionError)throw connectionError;
           await adapter.upload({driverId,kind,file,expiresOn:expiry,requestId});
-          if(current()){slot.stored=true;state('DB저장됨');detail.textContent='';}
+          if(current()){slot.stored=true;slot.version=requestId;state('DB저장됨');detail.textContent='';}
           onSaved(driverId,kind,expiry);
         }).catch(error=>{
           if(current()){state('저장실패');detail.textContent=error.message+' 사진을 다시 선택하면 재시도합니다.';}
         }).finally(()=>{
           pending--;slot.busy=false;
-          if(current()){input.value='';input.disabled=false;view.disabled=!slot.stored;}
+          if(current()){input.value='';input.disabled=false;view.disabled=!slot.stored;remove.disabled=!slot.stored;}
         });
         queue=task;
         return task;
@@ -99,15 +100,34 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
         catch(error){if(current())detail.textContent=error.message;}
         finally{slot.busy=false;if(current()){view.disabled=false;input.disabled=false;}}
       });
-      box.append(caption,preview,detail,status,view,pasteTarget);host.append(box);
+      remove.addEventListener('click',()=>{
+        if(!current()||slot.busy||!slot.stored||!slot.version||!adapter)return;
+        if(!window.confirm(label+' 사진을 삭제 보관 폴더로 이동하시겠습니까?'))return;
+        const versionToRemove=slot.version;
+        slot.busy=true;slot.touched=true;input.disabled=true;view.disabled=true;remove.disabled=true;pending++;
+        detail.textContent='삭제 보관 폴더로 이동 중…';
+        const task=queue.then(()=>adapter.remove(driverId,kind,versionToRemove)).then(()=>{
+          if(!current())return;
+          slot.stored=false;slot.version=null;status.hidden=true;
+          if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
+          preview.hidden=true;preview.removeAttribute('src');input.value='';
+          detail.textContent='사진 삭제 완료 · OneDrive 보관 폴더로 이동했습니다.';
+        }).catch(error=>{if(current())detail.textContent='삭제 실패: '+error.message;}).finally(()=>{
+          pending--;slot.busy=false;
+          if(current()){input.disabled=false;view.disabled=!slot.stored;remove.disabled=!slot.stored;}
+        });
+        queue=task;return task;
+      });
+      box.append(caption,preview,detail,status,view,pasteTarget,remove);host.append(box);
     }
     if(adapter){
       adapter.list(driverId).then(records=>{
         if(!current())return;
         for(const doc of records){
           const slot=slots.get(doc.document_type);if(!slot)continue;
-          slot.stored=true;
           if(!slot.touched){
+            slot.stored=true;slot.version=doc.request_id||doc.uploaded_at;
+            slot.remove.disabled=false;
             slot.status.hidden=false;slot.status.textContent='DB저장됨';slot.status.className='inline-block rounded px-2 py-1 text-xs bg-emerald-900 text-emerald-200';
             slot.detail.textContent=new Date(doc.uploaded_at).toLocaleString('ko-KR');
             slot.view.disabled=false;

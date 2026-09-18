@@ -86,3 +86,21 @@ await oldPaste({clipboardData:{files:[png]},preventDefault(){}});assert.equal(pa
 await boxes()[3].events.paste({clipboardData:{files:[png]},preventDefault(){}});
 assert.equal(pasteCalls[1].kind,'livestock_transport_back');assert.equal(pasteCalls[1].driverId,'other-driver');
 console.log('Clipboard target, auto-save, front/back, fallback files, text, invalid/multiple images and stale targets passed');
+
+let confirmDelete=false,deleteFail=false,deleteCalls=0;
+window.confirm=()=>confirmDelete;
+const deleting=mountDriverDocuments(host,{adapter:{
+ status:async()=>({connected:true}),
+ list:async()=>[{document_type:'identity',request_id:'saved-version',uploaded_at:'2026-09-18T00:00:00Z'}],
+ remove:async(id,kind,version)=>{deleteCalls++;assert.equal(id,'delete-driver');assert.equal(kind,'identity');assert.equal(version,'saved-version');if(deleteFail)throw Error('move failed');}
+}});
+deleting.reset('delete-driver');await flush();
+const deleteButton=boxes()[6].children[6];
+assert.equal(deleteButton.disabled,false);
+await deleteButton.events.click();assert.equal(deleteCalls,0);
+confirmDelete=true;deleteFail=true;
+await deleteButton.events.click();assert.equal(deleteCalls,1);assert.equal(parts(6).view.disabled,false);assert.match(parts(6).detail.textContent,/삭제 실패/);
+deleteFail=false;
+await deleteButton.events.click();assert.equal(deleteCalls,2);assert.equal(parts(6).status.hidden,true);assert.equal(parts(6).view.disabled,true);assert.equal(deleteButton.disabled,true);
+assert.match(parts(6).detail.textContent,/보관 폴더로 이동/);
+console.log('Photo delete confirmation, saved revision, failure preservation and success cleanup passed');

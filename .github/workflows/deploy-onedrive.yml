@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: '24'
       - run: node tests/onedrive-server.test.mjs
+      - run: node tests/onedrive-delete.test.mjs
+      - run: node tests/driver-documents.test.mjs
       - name: Apply front/back document schema
         run: node scripts/apply-onedrive-migration.mjs
       - uses: supabase/setup-cli@v3

@@ -143,7 +143,7 @@ export function makeHandler(env, fetcher=fetch) {
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
-      const user=await caller(req,['start','finish'].includes(action));
+      const user=await caller(req,['start','finish','archive-config'].includes(action));
       if(action==='start'){
         await settings();
         if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET)throw fail('OneDrive 앱 설정이 필요합니다.',503);
@@ -168,8 +168,53 @@ export function makeHandler(env, fetcher=fetch) {
       }
       if(action==='list'){
         const b=await req.json();await driver(user,b.driverId);
-        const data=await db('driver_documents?select=document_type,file_name,uploaded_at,mime_type,size_bytes&driver_id=eq.'+enc(b.driverId),{token:user.token});
+        const data=await db('driver_documents?select=document_type,file_name,uploaded_at,mime_type,size_bytes,request_id&driver_id=eq.'+enc(b.driverId),{token:user.token});
         return json({documents:data});
+      }
+      if(action==='archive-config'){
+        const b=await req.json();
+        if(typeof b.url!=='string'||b.url.length>2048)throw fail('보관 폴더 공유 링크를 입력해 주세요.');
+        return await withLock(async()=>{
+          const config=await settings(),connection=await connected();
+          const folder=await (await graph('/shares/'+enc(shareToken(b.url))+'/driveItem',connection.accessToken)).json();
+          const driveId=folder.parentReference?.driveId;
+          if(!folder.folder||!driveId||String(driveId).toLowerCase()!==config.expected_drive_id.toLowerCase())throw fail('연결된 OneDrive 계정의 폴더를 선택해 주세요.',409);
+          if(Object.values(connection.folders).some(f=>f.folderId===folder.id))throw fail('서류 저장 폴더와 다른 보관 폴더를 선택해 주세요.');
+          await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,delete_archive:{driveId,folderId:folder.id}}}});
+          return json({configured:true});
+        });
+      }
+      if(action==='remove'){
+        const b=await req.json();await driver(user,b.driverId);
+        if(!KINDS.includes(b.kind)||typeof b.version!=='string'||!b.version)throw fail('삭제할 사진을 다시 확인해 주세요.');
+        return await withLock(async()=>{
+          const item=(await db('driver_documents?select=*&driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind),{token:user.token}))[0];
+          if(!item)return json({removed:true});
+          if((item.request_id||item.uploaded_at)!==b.version)throw fail('사진이 변경되었습니다. 새로고침 후 다시 확인해 주세요.',409);
+          const destination=(await settings()).folders.delete_archive;
+          if(!destination?.driveId||!destination?.folderId)throw fail('관리자가 삭제 보관 폴더를 먼저 설정해 주세요.',409);
+          const ARCHIVE_DRIVE=destination.driveId.toUpperCase(),ARCHIVE_FOLDER=destination.folderId;
+          if(item.drive_id.toUpperCase()!==ARCHIVE_DRIVE)throw fail('삭제 보관 폴더와 사진의 계정이 다릅니다.',409);
+          const connection=await connected();
+          const folder=await (await graph('/drives/'+enc(ARCHIVE_DRIVE)+'/items/'+enc(ARCHIVE_FOLDER),connection.accessToken)).json();
+          if(!folder.folder||folder.id!==ARCHIVE_FOLDER||String(folder.parentReference?.driveId).toUpperCase()!==ARCHIVE_DRIVE)throw fail('삭제 보관 폴더를 확인할 수 없습니다.',502);
+          const path='/drives/'+enc(item.drive_id)+'/items/'+enc(item.item_id);
+          const original=await (await graph(path,connection.accessToken)).json();
+          if(original.parentReference?.id!==ARCHIVE_FOLDER){
+            const dot=item.file_name.lastIndexOf('.');
+            const name=(dot<0?item.file_name:item.file_name.slice(0,dot)).slice(0,160)+'_삭제_'+filePart(item.item_id,'사진')+(dot<0?'':item.file_name.slice(dot));
+            const moved=await (await graph(path,connection.accessToken,{method:'PATCH',
+              headers:{'Content-Type':'application/json',...(original.eTag?{'If-Match':original.eTag}:{})},
+              body:JSON.stringify({parentReference:{id:ARCHIVE_FOLDER},name,'@microsoft.graph.conflictBehavior':'fail'})
+            })).json();
+            if(moved.id!==item.item_id||moved.parentReference?.id!==ARCHIVE_FOLDER)throw fail('사진 이동 결과를 확인하지 못했습니다.',502);
+          }
+          await driver(user,b.driverId);
+          if(item.request_id)await db('onedrive_uploads?request_id=eq.'+enc(item.request_id),{method:'PATCH',body:{status:'archived'}});
+          const removed=await db('driver_documents?driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind)+'&item_id=eq.'+enc(item.item_id)+'&uploaded_at=eq.'+enc(item.uploaded_at),{method:'DELETE',prefer:'return=representation'});
+          if(!removed?.length)throw fail('사진 기록이 변경되었습니다. 새로고침 후 확인해 주세요.',409);
+          return json({removed:true});
+        });
       }
       if(action==='download'){
         const b=await req.json();await driver(user,b.driverId);
@@ -211,6 +256,7 @@ export function makeHandler(env, fetcher=fetch) {
             journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
+          if(journal.status==='archived')throw fail('이미 삭제한 업로드입니다. 사진을 새로 선택해 주세요.',409);
           if(journal.status==='committed')return json({saved:true});
           const path='/drives/'+enc(journal.drive_id)+'/items/'+enc(journal.folder_id)+':/'+enc(filename);
           const existingResponse=await graph(path,connection.accessToken,{allowMissing:true});
