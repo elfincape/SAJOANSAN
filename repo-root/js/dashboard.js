@@ -490,7 +490,7 @@ function scheduleApply() {
 // -----------------------------------------------------------------------------
 function applyFiltersAndSort() {
   const f = state.filters;
-  const q = f.search.toLowerCase();
+  const terms = f.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
   state.filtered = state.rows.filter(r => {
     if (f.company_name.size && !f.company_name.has(r.company_name)) return false;
@@ -515,11 +515,18 @@ function applyFiltersAndSort() {
       }
     }
 
-    if (q) {
-      // 현재 행의 모든 scalar 컬럼을 검색한다. 전화번호는 하이픈 유무와 관계없이 일치시킨다.
-      const hay = Object.values(r).filter(value => ['string','number','boolean'].includes(typeof value)).join(' ').toLowerCase();
-      const digits = q.replace(/\D/g, '');
-      if (!hay.includes(q) && !(digits.length >= 3 && hay.replace(/\D/g, '').includes(digits))) return false;
+    if (terms.length) {
+      // 모든 검색어가 행에 포함되면 순서와 관계없이 일치한다.
+      const values = Object.values(r).filter(value => ['string','number','boolean'].includes(typeof value));
+      const hay = values.join(' ').toLowerCase();
+      const matches = terms.every(term => {
+        if (hay.includes(term)) return true;
+        // 전화번호 형식의 검색어만 숫자로 비교해 문자 조건이 무시되지 않게 한다.
+        const digits = term.replace(/\D/g, '');
+        return /^[+()\d.-]+$/.test(term) && digits.length >= 3
+          && values.some(value => String(value).replace(/\D/g, '').includes(digits));
+      });
+      if (!matches) return false;
     }
 
     return true;
