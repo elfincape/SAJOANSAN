@@ -28,7 +28,8 @@ const COLUMNS = [
   { key: 'route_name',             label: '코스',       sortKey: 'route_name',              defaultWidth: 160 },
   { key: 'primary_vehicle_tonnage',label: '톤수',       sortKey: 'primary_vehicle_tonnage', align: 'right', defaultWidth: 70 },
   { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate',   defaultWidth: 110 },
-  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 180 },
+  { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 120 },
+  { key: 'primary_driver_phone',   label: '기사 연락처', sortKey: 'primary_driver_phone', render: renderDriverContact, defaultWidth: 180 },
   { key: 'stop_order',             label: '순서',       sortKey: 'stop_order', align: 'right', defaultWidth: 60 },
   { key: 'arrival_business_min',            label: '입차',     sortKey: 'arrival_business_min',            render: r => bizMinToStandard(r.arrival_business_min),            cls: 'biz-time', defaultWidth: 70 },
   { key: 'unloading_start_business_min',    label: '하차시작', sortKey: 'unloading_start_business_min',    render: r => bizMinToStandard(r.unloading_start_business_min),    cls: 'biz-time', defaultWidth: 80 },
@@ -100,6 +101,10 @@ function saveColumnPrefs() {
 
 function orderedColumns() {
   const known = state.colOrder.filter(k => COL_MAP[k]);
+  // 기존에 저장된 컬럼 순서에도 새 연락처 컬럼을 기사명 바로 뒤에 배치한다.
+  if (!known.includes('primary_driver_phone') && known.includes('primary_driver_name')) {
+    known.splice(known.indexOf('primary_driver_name') + 1, 0, 'primary_driver_phone');
+  }
   const extra = ALL_KEYS.filter(k => !known.includes(k));
   return [...known, ...extra].map(k => COL_MAP[k]);
 }
@@ -791,6 +796,7 @@ function renderGroups() {
         <span class="text-zinc-400">${escapeHtml(head.car_number || '')}</span>
         <span class="text-zinc-400">${escapeHtml(head.company_name || '')}</span>
         <span class="text-zinc-400">${renderDriver(head)}</span>
+        <span class="text-zinc-400">연락처: ${renderDriverContact(head)}</span>
         <span class="text-zinc-500 text-xs">${escapeHtml(head.primary_vehicle_plate || '')}</span>
         <span class="ml-auto text-xs text-zinc-500">납품처 ${stops.length}개</span>
       </header>
@@ -841,9 +847,17 @@ function renderGroups() {
 // 셀 렌더러
 // -----------------------------------------------------------------------------
 function renderDriver(r) {
-  const main = renderDriverIdentity(r.primary_driver_name, r.primary_driver_phone);
+  const main = escapeHtml(r.primary_driver_name || '');
   if (r.secondary_driver_name) {
-    return `${main} <span class="text-[11px] text-zinc-500">/ ${renderDriverIdentity(r.secondary_driver_name, r.secondary_driver_phone)}</span>`;
+    return `${main} <span class="text-[11px] text-zinc-500">/ ${escapeHtml(r.secondary_driver_name)}</span>`;
+  }
+  return main;
+}
+
+function renderDriverContact(r) {
+  const main = escapeHtml(formatPhone(r.primary_driver_phone) || '-');
+  if (r.secondary_driver_name || r.secondary_driver_phone) {
+    return `${main} <span class="text-[11px] text-zinc-500">/ 보조: ${escapeHtml(formatPhone(r.secondary_driver_phone) || '-')}</span>`;
   }
   return main;
 }
@@ -857,10 +871,7 @@ function deliveryPointMemo(r) {
 
 function renderDriverIdentity(name, phone) {
   const phoneText = phone ? formatPhone(phone) : '';
-  const phoneLink = phoneText
-    ? `<a href="tel:${escapeAttr(String(phone).replace(/\D/g,''))}" class="text-emerald-400 hover:underline" onclick="event.stopPropagation()">${escapeHtml(phoneText)}</a>`
-    : '';
-  return `${escapeHtml(name || '')}${phoneLink ? ` <span class="whitespace-nowrap">${phoneLink}</span>` : ''}`;
+  return `${escapeHtml(name || '')}${phoneText ? ` <span class="whitespace-nowrap">${escapeHtml(phoneText)}</span>` : ''}`;
 }
 
 function renderEntryCond(r) {
