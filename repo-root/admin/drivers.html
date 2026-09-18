@@ -6,6 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>기사 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
+  <link rel="stylesheet" href="/css/driver-documents.css">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
@@ -44,6 +45,7 @@
                 <th>이름</th>
                 <th>연락처</th>
                 <th>운수사</th>
+                <th>보건증 만료일</th>
                 <th class="text-right">주코스</th>
                 <th class="text-right">보조코스</th>
               </tr>
@@ -87,6 +89,12 @@
             <label class="app-label">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
           </div>
+          <div>
+            <label for="f-health-expiry" class="app-label">보건증 만료일</label>
+            <input id="f-health-expiry" type="date" class="app-input">
+            <p id="health-schema-note" class="text-xs text-amber-300 mt-1"></p>
+            <p class="text-xs text-zinc-400 mt-1">한국 시간 기준 · 만료일이 오늘부터 1개월 미만이면 우선 표시됩니다.</p>
+          </div>
           <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
@@ -94,11 +102,15 @@
             <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
+        <div id="driver-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>
       </section>
     </div>
   </main>
 
   <script type="module">
+    import { healthStatus, healthBadge, compareHealthDates, validDate, watchHealthDate } from '/js/driver-health.js';
+    import { mountDriverDocuments } from '/js/driver-documents.js';
+    import { fetchAllRows } from '/js/unassigned-delivery-points.js';
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, confirmDialog, formatPhone } from '/js/ui.js';
@@ -126,6 +138,11 @@
       sort: 'name'
     };
 
+    let healthSchemaReady = false;
+    const documents = mountDriverDocuments($('driver-documents'), {
+      getExpiry: () => state.rows.find(row => row.id === state.selectedId)?.health_certificate_expires_on
+    });
+    watchHealthDate(applyAndRender);
     bindEvents();
     await loadAll();
     resetForm();
@@ -134,12 +151,16 @@
     async function loadAll() {
       $('loading-indicator').classList.remove('hidden');
       try {
-        const [drv, co, rt] = await Promise.all([
-          scopeByCenter(supabase.from('drivers').select('*')),
+        const [drv, co, rt, health] = await Promise.all([
+          fetchAllRows(() => scopeByCenter(supabase.from('drivers').select('*').order('id'))).then(data => ({ data })),
           scopeByCenter(supabase.from('companies').select('id, name').order('name')),
-          scopeByCenter(supabase.from('routes').select('id, primary_driver_id, secondary_driver_id'))
+          scopeByCenter(supabase.from('routes').select('id, primary_driver_id, secondary_driver_id')),
+          scopeByCenter(supabase.from('drivers').select('health_certificate_expires_on').limit(1))
         ]);
         if (drv.error) throw drv.error;
+        healthSchemaReady = !health.error;
+        $('f-health-expiry').disabled = !healthSchemaReady;
+        $('health-schema-note').textContent = healthSchemaReady ? '' : '보건증 만료일 저장 준비가 필요합니다. 관리자에게 문의해 주세요.';
         state.rows = drv.data || [];
         state.companies = co.data || [];
         state.companyById = new Map(state.companies.map(c => [c.id, c]));
@@ -197,6 +218,7 @@
       } else {
         state.filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
       }
+      state.filtered.sort((a,b) => compareHealthDates(a.health_certificate_expires_on,b.health_certificate_expires_on));
       renderList();
     }
 
@@ -216,10 +238,13 @@
           tr.dataset.id = r.id;
           if (r.id === state.selectedId) tr.classList.add('selected');
           tr.classList.add('cursor-pointer');
+          const health = healthStatus(r.health_certificate_expires_on);
+          if (health.urgent) tr.classList.add(health.className);
           tr.innerHTML = `
             <td>${escapeHtml(r.name)}</td>
             <td>${escapeHtml(formatPhone(r.phone))}</td>
             <td>${escapeHtml(co?.name || '')}</td>
+            <td>${healthBadge(r.health_certificate_expires_on)}</td>
             <td class="text-right">${c.primary}</td>
             <td class="text-right">${c.secondary}</td>
           `;
@@ -249,6 +274,8 @@
       $('f-phone').value  = r?.phone || '';
       $('f-company').value = r?.company_id || '';
       $('f-memo').value   = r?.memo || '';
+      $('f-health-expiry').value = r?.health_certificate_expires_on || '';
+      documents.reset(r?.id);
       const isEdit = !!r?.id;
       $('form-title').textContent = isEdit ? r.name : '새 기사';
       $('form-mode-badge').textContent = isEdit ? '편집' : '신규';
@@ -287,7 +314,10 @@
       const name = $('f-name').value.trim();
       if (!name) { toast('이름은 필수입니다.', 'warn'); $('f-name').focus(); return; }
 
+      const expiry = $('f-health-expiry').value;
+      if (healthSchemaReady && expiry && !validDate(expiry)) { toast('올바른 만료일을 입력해 주세요.', 'warn'); return; }
       const payload = centerPayload({
+        ...(healthSchemaReady ? { health_certificate_expires_on: expiry || null } : {}),
         ...(($('f-id').value) ? { id: $('f-id').value } : {}),
         name,
         phone:      emptyToNull($('f-phone').value.trim()),

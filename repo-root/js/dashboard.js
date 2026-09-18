@@ -1,3 +1,4 @@
+import { healthStatus, healthBadge, compareHealthRows, rowHealthDate, watchHealthDate } from './driver-health.js';
 // 대시보드 - 코스표 조회 화면
 // =============================================================================
 // 데이터: Supabase course_view (한 번에 fetch, 클라이언트에서 필터/정렬)
@@ -31,6 +32,7 @@ const COLUMNS = [
   { key: 'primary_vehicle_plate',  label: '차량번호',   sortKey: 'primary_vehicle_plate',   defaultWidth: 110 },
   { key: 'primary_driver_name',    label: '주기사',     sortKey: 'primary_driver_name',     render: renderDriver, defaultWidth: 120 },
   { key: 'primary_driver_phone',   label: '기사 연락처', sortKey: 'primary_driver_phone', render: renderDriverContact, defaultWidth: 180 },
+  { key: 'driver_health', label: '보건증', sortable: false, render: renderDriverHealth, defaultWidth: 210 },
   { key: 'stop_order',             label: '순서',       sortKey: 'stop_order', align: 'right', defaultWidth: 60 },
   { key: 'arrival_business_min',            label: '입차',     sortKey: 'arrival_business_min',            render: r => bizMinToStandard(r.arrival_business_min),            cls: 'biz-time', defaultWidth: 70 },
   { key: 'unloading_start_business_min',    label: '하차시작', sortKey: 'unloading_start_business_min',    render: r => bizMinToStandard(r.unloading_start_business_min),    cls: 'biz-time', defaultWidth: 80 },
@@ -78,6 +80,8 @@ const state = {
     { key: 'primary_driver_name',  dir: 'asc' },
     { key: 'arrival_business_min', dir: 'asc' }
   ],
+  healthByDriver: new Map(),
+  healthAvailable: false,
   view: 'flat',
   // 컬럼 설정 (localStorage 영속)
   colOrder:   loadJSON('dash.colOrder',   ALL_KEYS),
@@ -105,6 +109,10 @@ function orderedColumns() {
   // 기존에 저장된 컬럼 순서에도 새 연락처 컬럼을 기사명 바로 뒤에 배치한다.
   if (!known.includes('primary_driver_phone') && known.includes('primary_driver_name')) {
     known.splice(known.indexOf('primary_driver_name') + 1, 0, 'primary_driver_phone');
+  }
+  if (!known.includes('driver_health')) {
+    const anchor = known.indexOf('primary_driver_phone');
+    known.splice(anchor < 0 ? known.length : anchor + 1, 0, 'driver_health');
   }
   const extra = ALL_KEYS.filter(k => !known.includes(k));
   return [...known, ...extra].map(k => COL_MAP[k]);
@@ -143,6 +151,7 @@ function visibleColumns() {
 
   applyFiltersAndSort();
   render();
+  watchHealthDate(() => { applyFiltersAndSort(); render(); });
 })();
 
 // -----------------------------------------------------------------------------
@@ -182,6 +191,8 @@ async function loadData() {
     const represented = new Set(courseRows.map(row => String(row.delivery_point_id)));
     state.rows = [...courseRows, ...unassigned.filter(point => !represented.has(String(point.id))).map(unassignedDashboardRow)];
 
+    await loadDriverHealth(center);
+
     populateMultiSelect('company_name', uniqVals('company_name'));
     populateMultiSelect('route_name',   uniqVals('route_name'));
     populateMultiSelect('car_number',   uniqVals('car_number'));
@@ -202,6 +213,30 @@ async function loadData() {
   } finally {
     ind?.classList.add('hidden');
   }
+}
+
+async function loadDriverHealth(center) {
+  try {
+    const drivers = await fetchAllRows(() => scopeByCenter(
+      supabase.from('drivers').select('id,health_certificate_expires_on').order('id'), center));
+    state.healthAvailable = true;
+    state.healthByDriver = new Map(drivers.map(driver => [String(driver.id), driver.health_certificate_expires_on]));
+    state.rows.forEach(row => {
+      row.primary_driver_health_expires_on = state.healthByDriver.get(String(row.primary_driver_id)) || null;
+      row.secondary_driver_health_expires_on = state.healthByDriver.get(String(row.secondary_driver_id)) || null;
+    });
+  } catch (error) {
+    state.healthAvailable = false;
+    state.healthByDriver = new Map();
+    toast('보건증 만료일을 불러오지 못했습니다. 만료 경고를 확인할 수 없습니다.', 'warn');
+  }
+}
+
+function renderDriverHealth(row) {
+  if (!state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id)) return '보건증 확인 불가';
+  const main = row.primary_driver_id ? '주: ' + healthBadge(row.primary_driver_health_expires_on) : '';
+  const sub = row.secondary_driver_id ? '보조: ' + healthBadge(row.secondary_driver_health_expires_on) : '';
+  return [main, sub].filter(Boolean).join('<br>');
 }
 
 async function enrichDeliveryPointMemos(rows, center) {
@@ -534,6 +569,8 @@ function applyFiltersAndSort() {
 
   const sorters = state.sort;
   state.filtered.sort((a, b) => {
+    const healthOrder = compareHealthRows(a,b);
+    if (healthOrder) return healthOrder;
     for (const s of sorters) {
       const r = compareVal(a[s.key], b[s.key]);
       if (r !== 0) return s.dir === 'asc' ? r : -r;
@@ -622,7 +659,7 @@ function renderFlatTable() {
       return `<td class="${cls} ${align}" title="${tip}">${html ?? ''}</td>`;
     }).join('');
 
-    return `<tr data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
+    return `<tr class="${healthStatus(rowHealthDate(row)).className}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
   }).join('')}</tbody>`;
 
   host.innerHTML = `<table class="data-table">${colgroup}${thead}${tbody}</table>`;
@@ -796,7 +833,7 @@ function renderGroups() {
   }
 
   for (const [, stops] of groups) {
-    stops.sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
+    stops.sort((a, b) => compareHealthRows(a,b) || (a.stop_order ?? 0) - (b.stop_order ?? 0));
 
     const head = stops[0];
     const card = document.createElement('section');
@@ -807,6 +844,7 @@ function renderGroups() {
         <span class="text-zinc-400">${escapeHtml(head.car_number || '')}</span>
         <span class="text-zinc-400">${escapeHtml(head.company_name || '')}</span>
         <span class="text-zinc-400">${renderDriver(head)}</span>
+        <span>${renderDriverHealth(head)}</span>
         <span class="text-zinc-400">연락처: ${renderDriverContact(head)}</span>
         <span class="text-zinc-500 text-xs">${escapeHtml(head.primary_vehicle_plate || '')}</span>
         <span class="ml-auto text-xs text-zinc-500">납품처 ${stops.length}개</span>
@@ -821,7 +859,7 @@ function renderGroups() {
           </tr></thead>
           <tbody>
             ${stops.map(s => `
-              <tr data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
+              <tr class="${healthStatus(rowHealthDate(s)).className}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
                 <td class="text-right">${s.stop_order ?? ''}</td>
                 <td class="biz-time">${bizMinToStandard(s.arrival_business_min)}</td>
                 <td class="biz-time">${bizMinToStandard(s.unloading_start_business_min)}</td>
