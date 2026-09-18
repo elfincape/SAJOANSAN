@@ -1,0 +1,27 @@
+name: Deploy OneDrive integration
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/onedrive-auth/**'
+      - '.github/workflows/deploy-onedrive.yml'
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tests/onedrive-server.test.mjs
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Deploy authenticated handler and OAuth callback
+        # Callback carries Microsoft code/state, not a Supabase JWT.
+        # handler.js verifies Supabase JWT and role on every non-callback action.
+        run: supabase functions deploy onedrive-auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

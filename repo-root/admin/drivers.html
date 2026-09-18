@@ -102,6 +102,10 @@
             <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
+        <div class="px-4 py-3 border-t border-zinc-700">
+          <button type="button" id="onedrive-connect" class="btn btn-ghost hidden">OneDrive 연결 / 재연결</button>
+          <p id="onedrive-status" class="text-xs text-zinc-400 mt-1"></p>
+        </div>
         <div id="driver-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>
       </section>
     </div>
@@ -109,6 +113,7 @@
 
   <script type="module">
     import { healthStatus, healthBadge, compareHealthDates, validDate, watchHealthDate } from '/js/driver-health.js';
+    import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '/js/onedrive-api.js';
     import { mountDriverDocuments } from '/js/driver-documents.js';
     import { fetchAllRows } from '/js/unassigned-delivery-points.js';
     import { supabase } from '/js/supabase.js';
@@ -140,8 +145,27 @@
 
     let healthSchemaReady = false;
     const documents = mountDriverDocuments($('driver-documents'), {
-      getExpiry: () => state.rows.find(row => row.id === state.selectedId)?.health_certificate_expires_on
+      adapter: oneDriveDocuments,
+      getExpiry: () => state.rows.find(row => row.id === state.selectedId)?.health_certificate_expires_on,
+      onSaved: (driverId,kind,expiry) => {
+        if (kind === 'health_certificate') {
+          const row = state.rows.find(r => r.id === driverId);
+          if (row) row.health_certificate_expires_on = expiry;
+          applyAndRender();
+        }
+      }
     });
+    $('onedrive-connect').classList.toggle('hidden', profile.role !== 'admin');
+    $('onedrive-connect').addEventListener('click', async () => {
+      $('onedrive-connect').disabled = true;
+      try { await connectOneDrive(); }
+      catch (error) { $('onedrive-status').textContent = error.message; $('onedrive-connect').disabled = false; }
+    });
+    try {
+      if (await finishOneDrive()) toast('OneDrive 연결 완료', 'success');
+      const connection = await oneDriveDocuments.status();
+      $('onedrive-status').textContent = connection.connected ? 'OneDrive 연결됨' : 'OneDrive 연결이 필요합니다.';
+    } catch (error) { $('onedrive-status').textContent = error.message; }
     watchHealthDate(applyAndRender);
     bindEvents();
     await loadAll();
