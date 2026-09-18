@@ -6,6 +6,7 @@ export function filePart(value,fallback) {
   return Array.from(String(value||fallback).normalize('NFC').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g,'-').replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'')).slice(0,45).join('') || fallback;
 }
 export function documentFilename({center,plates,name,company},kind,extension) {
+  center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
   return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),LABELS[kind]].join('_')+'.'+extension;
 }
 const SITE = 'https://sajoansan.vercel.app';
@@ -75,7 +76,7 @@ export function makeHandler(env, fetcher=fetch) {
     ]);
     const ids=[...new Set(routes.flatMap(r=>[r.primary_driver_id===d.id?r.primary_vehicle_id:null,r.secondary_driver_id===d.id?r.secondary_vehicle_id:null]).filter(Boolean))];
     const vehicles=ids.length?await db('vehicles?select=plate_number&id=in.('+ids.map(enc).join(',')+')'+centerFilter,{token:user.token}):[];
-    return {center:centers[0]?.name||d.center_code,company:companies[0]?.name,name:d.name,plates:[...new Set(vehicles.map(v=>v.plate_number).filter(Boolean))].sort().join('+')};
+    return {center:({'001':'안산','002':'평택'})[d.center_code]||centers[0]?.name||d.center_code,company:companies[0]?.name,name:d.name,plates:[...new Set(vehicles.map(v=>v.plate_number).filter(Boolean))].sort().join('+')};
   }
   async function settings(){const s=(await db('onedrive_settings?select=*&id=eq.true'))[0];if(!s||!FOLDER_KINDS.every(k=>s.folders[k]))throw fail('저장 폴더 설정이 필요합니다.',503);return s;}
   async function grant(body) {
@@ -210,17 +211,19 @@ export function makeHandler(env, fetcher=fetch) {
             journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
-          // Each request has its own folder: exact readable filenames never overwrite another document.
-          const folderName=id+'_'+request;
-          const folderPath='/drives/'+enc(journal.drive_id)+'/items/'+enc(journal.folder_id);
-          const foundFolder=await graph(folderPath+':/'+enc(folderName),connection.accessToken,{allowMissing:true});
-          const uploadFolder=foundFolder?await foundFolder.json():await (await graph(folderPath+'/children',connection.accessToken,{
-            method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:folderName,folder:{},'@microsoft.graph.conflictBehavior':'fail'})
-          })).json();
-          if(!uploadFolder.folder||!uploadFolder.id)throw fail('저장 폴더를 확인할 수 없습니다.',502);
-          const path='/drives/'+enc(journal.drive_id)+'/items/'+enc(uploadFolder.id)+':/'+enc(filename);
-          const existing=await graph(path,connection.accessToken,{allowMissing:true});
-          const item=existing?await existing.json():await (await graph(path+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':mime},body:bytes})).json();
+          if(journal.status==='committed')return json({saved:true});
+          const path='/drives/'+enc(journal.drive_id)+'/items/'+enc(journal.folder_id)+':/'+enc(filename);
+          const existingResponse=await graph(path,connection.accessToken,{allowMissing:true});
+          const existing=existingResponse?await existingResponse.json():null;
+          if(existing){
+            const owners=await db('driver_documents?select=driver_id,document_type&drive_id=eq.'+enc(journal.drive_id)+'&item_id=eq.'+enc(existing.id));
+            if(owners.some(row=>row.driver_id!==id||row.document_type!==kind)||
+               (!owners.length&&journal.item_id!==existing.id)){
+              throw fail('대상 폴더에 같은 이름의 다른 파일이 있습니다. 파일명을 확인해 주세요.',409);
+            }
+          }
+          // Replace the current document in its category folder, never reuse bytes by size alone.
+          const item=await (await graph(path+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':mime},body:bytes})).json();
           if(item.size!==file.size)throw fail('저장 파일 크기를 확인할 수 없습니다.',502);
           await db('onedrive_uploads?request_id=eq.'+request,{method:'PATCH',body:{item_id:item.id}});
           // Recheck caller visibility after external I/O.

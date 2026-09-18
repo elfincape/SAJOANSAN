@@ -38,7 +38,7 @@ async function fake(input,options={}){
      if(ok){connection={encrypted_tokens:oauth.encrypted_data};oauth=null;}
      return result(!!ok);
    }
-   if(table==='driver_documents')return result(document?[document]:[]);
+   if(table==='driver_documents')return result(document&&(!url.searchParams.has('request_id')||url.searchParams.get('request_id')==='eq.'+document.request_id)?[document]:[]);
    if(table==='onedrive_uploads'){
      if(method==='POST'){journal=b;return result(null);}
      if(method==='PATCH'){journal={...journal,...b};return result(null);}
@@ -46,7 +46,7 @@ async function fake(input,options={}){
    }
    if(table==='rpc/onedrive_commit_document'){
      if(dbFail)return result({},500);
-     commits++;document={driver_id:b.p_driver,document_type:b.p_kind,uploaded_by:b.p_user};
+     commits++;document={driver_id:b.p_driver,document_type:b.p_kind,uploaded_by:b.p_user,request_id:b.p_request};
      assert.equal(b.p_expiry,'2027-01-01');return result(null);
    }
    throw Error('unexpected DB '+table);
@@ -57,6 +57,7 @@ async function fake(input,options={}){
    if(p==='/v1.0/me/drive')return result({id:'drive'});
    if(p.startsWith('/v1.0/shares/'))return result({id:'folder',folder:{},parentReference:{driveId:'drive'}});
    if(options.method==='POST'&&p.endsWith('/children')){
+     assert.fail('Uploads must not create subfolders');
      const folder={id:'upload-folder',folder:{}};
      graphFolders.set(p.replace(/\/children$/,':/'+encodeURIComponent(b.name)),folder);
      return result(folder);
@@ -86,10 +87,10 @@ assert.equal((await handler(request('finish',{state:start.state,proof:'wrong'}))
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,200);
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,409);
 assert.equal((await (await handler(request('status'))).json()).connected,true);
-function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01'){
+function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01',requestId='00000000-0000-4000-8000-000000000003'){
  const form=new FormData();
  form.set('driverId',id);form.set('kind','health_certificate');form.set('expiresOn',expiry);
- form.set('requestId','00000000-0000-4000-8000-000000000003');form.set('file',new File([bytes],'private-name.png',{type}));
+ form.set('requestId',requestId);form.set('file',new File([bytes],'private-name.png',{type}));
  return new Request(env.SUPABASE_URL+'/functions/v1/onedrive-auth/upload',{method:'POST',headers:{Authorization:'Bearer user'},body:form});
 }
 visible=false;assert.equal((await handler(upload())).status,403);visible=true;
@@ -100,10 +101,19 @@ graphFail=true;assert.equal((await handler(upload())).status,429);graphFail=fals
 dbFail=true;assert.equal((await handler(upload())).status,502);assert.equal(commits,0);dbFail=false;
 assert.equal((await handler(upload())).status,200);
 assert.equal(commits,1);
-assert.equal(puts,1,'retry after DB failure must reuse uploaded bytes');
+assert.equal(puts,2,'retry must write the supplied bytes, never trust file size alone');
 assert.equal((await handler(upload())).status,200);assert.equal(commits,1,'repeated request must not commit twice');
 assert(!journal.file_name.includes('private-name'));
-assert.equal(journal.file_name,'사조평택센터_경기80바1234_홍길동_이안물류_보건증.png');
+assert.equal(journal.file_name,'평택_경기80바1234_홍길동_이안물류_보건증.png');
+assert.equal(graphFolders.size,0);
+assert([...graphFiles.keys()].every(p=>p.startsWith('/v1.0/drives/drive/items/folder:/')),'files must be direct children of configured folder');
+journal=null;
+const changed=new Uint8Array([137,80,78,71,13,10,26,10,1,2,3,4]);
+assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000004'))).status,200);
+assert.equal(puts,3,'same-size replacement must upload the new image');
+assert.equal(commits,2);
+assert.equal(documentFilename({center:'001',name:'기사'},'identity','png'),'안산_차량미지정_기사_운수사미지정_신분증.png');
+assert.equal(documentFilename({center:'002',name:'기사'},'health_certificate','jpg'),'평택_차량미지정_기사_운수사미지정_보건증.jpg');
 assert.equal(KINDS.length,8);
 assert.equal(folderKind('food_transport_back'),'food_transport');
 assert.equal(folderKind('livestock_transport_back'),'livestock_transport');
