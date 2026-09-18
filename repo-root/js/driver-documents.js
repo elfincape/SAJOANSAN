@@ -21,7 +21,7 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
     const title=document.createElement('h3');title.textContent='기사 서류 사진';title.className='font-semibold text-sm';host.append(title);
     const note=document.createElement('p');note.className='text-xs text-zinc-400';host.append(note);
     if(!driverId){note.textContent='기사 기본 정보를 먼저 저장한 후 사진을 선택하세요.';return;}
-    note.textContent='사진을 선택하면 자동 저장됩니다. 보건증은 만료일을 먼저 입력하세요.';
+    note.textContent='사진 선택 또는 각 칸에서 Ctrl+V로 붙여넣으면 자동 저장됩니다. 보건증은 만료일을 먼저 입력하세요.';
     let connectionError=null;
     // Resolve connection checks without an unhandled rejection before a file is selected.
     const ready=adapter?adapter.status().then(value=>{
@@ -47,9 +47,8 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
         if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);}
         slot.url=URL.createObjectURL(blob);urls.add(slot.url);preview.src=slot.url;preview.hidden=false;
       };
-      input.addEventListener('change',()=>{
-        const file=input.files?.[0];
-        if(!file||slot.busy)return;
+      function saveFile(file){
+        if(!file||slot.busy||!current())return;
         slot.touched=true;
         if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
         preview.hidden=true;preview.removeAttribute('src');
@@ -76,15 +75,31 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
         });
         queue=task;
         return task;
+      }
+      input.addEventListener('change',()=>saveFile(input.files?.[0]));
+      const pasteTarget=document.createElement('button');pasteTarget.type='button';
+      pasteTarget.className='block w-full rounded border border-dashed border-zinc-500 p-3 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-emerald-400';
+      pasteTarget.textContent='사진 붙여넣기 · 여기를 클릭한 뒤 Ctrl+V (Mac: ⌘V)';
+      pasteTarget.setAttribute('aria-label',label+' 사진 붙여넣기: 클릭 후 Ctrl+V');
+      box.addEventListener('paste',event=>{
+        const data=event.clipboardData;
+        if(!data||!current())return;
+        let files=Array.from(data.items||[]).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+        if(!files.length)files=Array.from(data.files||[]).filter(file=>file.type.startsWith('image/'));
+        if(!files.length)return; // Leave ordinary text paste untouched.
+        event.preventDefault();
+        if(slot.busy)return;
+        if(files.length!==1){detail.textContent='사진은 한 번에 한 장씩 붙여넣어 주세요.';return;}
+        return saveFile(files[0]);
       });
       view.addEventListener('click',async()=>{
         if(!adapter||slot.busy||!slot.stored)return;
-        view.disabled=true;input.disabled=true;
+        slot.busy=true;view.disabled=true;input.disabled=true;
         try{const blob=await adapter.download(driverId,kind);if(current()){show(blob);detail.textContent='저장된 사진';}}
         catch(error){if(current())detail.textContent=error.message;}
-        finally{if(current()){view.disabled=false;input.disabled=false;}}
+        finally{slot.busy=false;if(current()){view.disabled=false;input.disabled=false;}}
       });
-      box.append(caption,preview,detail,status,view);host.append(box);
+      box.append(caption,preview,detail,status,view,pasteTarget);host.append(box);
     }
     if(adapter){
       adapter.list(driverId).then(records=>{
