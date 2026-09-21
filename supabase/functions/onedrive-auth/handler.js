@@ -7,7 +7,7 @@ export function filePart(value,fallback) {
 }
 export function documentFilename({center,plates,name,company},kind,extension) {
   center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
-  return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),LABELS[kind]].join('_')+'.'+extension;
+  return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),(kind==='permit_pdf'?'인허가취합':LABELS[kind])].join('_')+'.'+extension;
 }
 const SITE = 'https://sajoansan.vercel.app';
 const CLIENT_ID = '56899a37-25c3-43e2-b006-6e001d538185';
@@ -30,7 +30,7 @@ export function shareToken(url) {
   if(u.protocol!=='https:'||!['1drv.ms','onedrive.live.com'].includes(u.hostname)) throw fail('저장 폴더 설정이 올바르지 않습니다.',503);
   return 'u!'+base64url(new TextEncoder().encode(url));
 }
-export function makeHandler(env, fetcher=fetch) {
+export function makeHandler(env, fetcher=fetch, buildPdf=null) {
   const root=env.SUPABASE_URL, service=env.SUPABASE_SERVICE_ROLE_KEY, anon=env.SUPABASE_ANON_KEY;
   const redirect=root+'/functions/v1/onedrive-auth/callback';
   const cors={'Access-Control-Allow-Origin':SITE,'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store','Vary':'Origin'};
@@ -143,7 +143,7 @@ export function makeHandler(env, fetcher=fetch) {
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
-      const user=await caller(req,['start','finish','archive-config'].includes(action));
+      const user=await caller(req,['start','finish','archive-config','pdf-config'].includes(action));
       if(action==='start'){
         await settings();
         if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET)throw fail('OneDrive 앱 설정이 필요합니다.',503);
@@ -171,7 +171,7 @@ export function makeHandler(env, fetcher=fetch) {
         const data=await db('driver_documents?select=document_type,file_name,uploaded_at,mime_type,size_bytes,request_id&driver_id=eq.'+enc(b.driverId),{token:user.token});
         return json({documents:data});
       }
-      if(action==='archive-config'){
+      if(action==='archive-config'||action==='pdf-config'){
         const b=await req.json();
         if(typeof b.url!=='string'||b.url.length>2048)throw fail('보관 폴더 공유 링크를 입력해 주세요.');
         return await withLock(async()=>{
@@ -180,8 +180,53 @@ export function makeHandler(env, fetcher=fetch) {
           const driveId=folder.parentReference?.driveId;
           if(!folder.folder||!driveId||String(driveId).toLowerCase()!==config.expected_drive_id.toLowerCase())throw fail('연결된 OneDrive 계정의 폴더를 선택해 주세요.',409);
           if(Object.values(connection.folders).some(f=>f.folderId===folder.id))throw fail('서류 저장 폴더와 다른 보관 폴더를 선택해 주세요.');
-          await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,delete_archive:{driveId,folderId:folder.id}}}});
+          await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,[action==='pdf-config'?'permit_pdf':'delete_archive']:{driveId,folderId:folder.id}}}});
           return json({configured:true});
+        });
+      }
+      if(action==='compile-pdf'){
+        if(!buildPdf)throw fail('PDF 서버가 준비되지 않았습니다.',503);
+        if(Number(req.headers.get('content-length'))>32*1024*1024)throw fail('취합할 사진 용량이 너무 큽니다.',413);
+        const form=await req.formData(),id=String(form.get('driverId')||'');
+        const d=await driver(user,id);
+        let versions;try{versions=JSON.parse(String(form.get('versions')||''));}catch{throw fail('사진 목록을 다시 불러와 주세요.');}
+        if(!versions||Object.keys(versions).length!==KINDS.length||!KINDS.every(k=>typeof versions[k]==='string'&&versions[k]))throw fail('서류 8장을 모두 저장한 후 취합해 주세요.');
+        const images=[];let total=0;
+        for(const kind of KINDS){
+          const file=form.get(kind);
+          if(!(file instanceof File)||file.size<=0||file.size>10*1024*1024)throw fail('취합 사진의 형식 또는 용량을 확인해 주세요.');
+          total+=file.size;if(total>30*1024*1024)throw fail('취합 사진은 총 30MB 이하만 가능합니다.',413);
+          const bytes=new Uint8Array(await file.arrayBuffer());
+          if(imageType(bytes)[0]!=='image/jpeg')throw fail('취합 사진 변환에 실패했습니다.');
+          images.push(bytes);
+        }
+        return await withLock(async()=>{
+          const check=async()=>{
+            const docs=await db('driver_documents?select=document_type,request_id,uploaded_at&driver_id=eq.'+enc(id),{token:user.token});
+            if(!KINDS.every(k=>docs.some(r=>r.document_type===k&&(r.request_id||r.uploaded_at)===versions[k])))throw fail('취합 중 서류가 변경되었습니다. 다시 PDF 저장을 눌러 주세요.',409);
+          };
+          await check();
+          const target=(await settings()).folders.permit_pdf;
+          if(!target?.driveId||!target?.folderId)throw fail('관리자가 PDF 저장 폴더를 먼저 설정해 주세요.',409);
+          const connection=await connected();
+          const folder=await (await graph('/drives/'+enc(target.driveId)+'/items/'+enc(target.folderId),connection.accessToken)).json();
+          if(!folder.folder||folder.id!==target.folderId)throw fail('PDF 저장 폴더를 확인할 수 없습니다.',502);
+          const filename=documentFilename(await naming(user,d),'permit_pdf','pdf');
+          const path='/drives/'+enc(target.driveId)+'/items/'+enc(target.folderId)+':/'+enc(filename);
+          const prior=(await db('driver_document_pdfs?select=*&driver_id=eq.'+enc(id)))[0];
+          const found=await graph(path,connection.accessToken,{allowMissing:true});
+          const existing=found?await found.json():null;
+          if(existing&&!(prior?.drive_id===target.driveId&&prior?.file_name===filename&&(!prior.item_id||prior.item_id===existing.id)))throw fail('PDF 폴더에 같은 이름의 다른 파일이 있습니다.',409);
+          const pdf=await buildPdf(images);
+          if(pdf.length>40*1024*1024)throw fail('PDF 용량이 너무 큽니다.',413);
+          await check();
+          // Reserve the name before Graph I/O so interrupted writes can be retried.
+          await db('driver_document_pdfs?on_conflict=driver_id',{method:'POST',prefer:'resolution=merge-duplicates',body:{driver_id:id,drive_id:target.driveId,file_name:filename,item_id:existing?.id||null,status:'saving',source_versions:versions}});
+          const item=await (await graph(path+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:pdf})).json();
+          if(item.size!==pdf.length)throw fail('PDF 저장 결과를 확인하지 못했습니다.',502);
+          await driver(user,id);
+          await db('driver_document_pdfs?driver_id=eq.'+enc(id),{method:'PATCH',body:{item_id:item.id,status:'saved',saved_at:new Date().toISOString()}});
+          return json({saved:true,fileName:filename});
         });
       }
       if(action==='remove'){
@@ -219,8 +264,9 @@ export function makeHandler(env, fetcher=fetch) {
       if(action==='download'){
         const b=await req.json();await driver(user,b.driverId);
         if(!KINDS.includes(b.kind))throw fail('서류 종류가 올바르지 않습니다.');
-        const item=(await db('driver_documents?select=drive_id,item_id,mime_type&driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind),{token:user.token}))[0];
+        const item=(await db('driver_documents?select=drive_id,item_id,mime_type,request_id,uploaded_at&driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind),{token:user.token}))[0];
         if(!item)throw fail('저장된 사진이 없습니다.',404);
+        if(b.version&&(item.request_id||item.uploaded_at)!==b.version)throw fail('사진이 변경되었습니다. 다시 취합해 주세요.',409);
         return await withLock(async()=>{
           const connection=await connected();
           const meta=await (await graph('/drives/'+enc(item.drive_id)+'/items/'+enc(item.item_id),connection.accessToken)).json();

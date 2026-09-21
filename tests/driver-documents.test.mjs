@@ -104,3 +104,18 @@ deleteFail=false;
 await deleteButton.events.click();assert.equal(deleteCalls,2);assert.equal(parts(6).status.hidden,true);assert.equal(parts(6).view.disabled,true);assert.equal(deleteButton.disabled,true);
 assert.match(parts(6).detail.textContent,/보관 폴더로 이동/);
 console.log('Photo delete confirmation, saved revision, failure preservation and success cleanup passed');
+
+let pdfCount=7,pdfFinish,pdfCalls=0;
+const pdfPanel=mountDriverDocuments(host,{adapter:{
+ status:async()=>({connected:true}),
+ list:async()=>DOCUMENT_TYPES.slice(0,pdfCount).map(([document_type])=>({document_type,request_id:document_type,uploaded_at:'2026-09-21T00:00:00Z'})),
+ compilePdf:async(id,progress)=>{pdfCalls++;assert.equal(id,'pdf-driver');progress('PDF 저장 중');await new Promise(r=>pdfFinish=r);return {fileName:'평택_차량_기사_회사_인허가취합.pdf'};}
+}});
+const pdfSection=()=>host.children.find(x=>x.tag==='section');
+pdfPanel.reset('pdf-driver');await flush();assert.equal(pdfSection().children[0].disabled,true);
+pdfCount=8;pdfPanel.reset('pdf-driver');await flush();assert.equal(pdfSection().children[0].disabled,false);
+const pdfTask=pdfSection().children[0].events.click();await flush();
+assert.equal(pdfSection().children[0].disabled,true);assert.equal(pdfCalls,1);
+pdfFinish();await pdfTask;assert.match(pdfSection().children[1].textContent,/OneDrive 저장 완료/);
+assert.equal(pdfSection().children[0].disabled,false);
+console.log('PDF button requires all eight saved slots and reports completion');

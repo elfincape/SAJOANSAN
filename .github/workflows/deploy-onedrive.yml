@@ -6,6 +6,7 @@ on:
       - 'supabase/functions/onedrive-auth/**'
       - '.github/workflows/deploy-onedrive.yml'
       - 'repo-root/sql/onedrive-document-sides.sql'
+      - 'repo-root/sql/onedrive-pdf.sql'
       - 'scripts/apply-onedrive-migration.mjs'
   workflow_dispatch:
 jobs:
@@ -21,6 +22,7 @@ jobs:
           node-version: '24'
       - run: node tests/onedrive-server.test.mjs
       - run: node tests/onedrive-delete.test.mjs
+      - run: node tests/onedrive-pdf.test.mjs
       - run: node tests/driver-documents.test.mjs
       - name: Apply front/back document schema
         run: node scripts/apply-onedrive-migration.mjs

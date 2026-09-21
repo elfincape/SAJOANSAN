@@ -111,6 +111,13 @@
             <button type="button" id="onedrive-archive-save" class="btn btn-primary">보관 폴더 저장</button>
             <p id="onedrive-archive-result" class="text-xs text-zinc-300" role="status"></p>
           </div>
+          <button type="button" id="onedrive-pdf-config" class="btn btn-ghost hidden">PDF 저장 폴더 설정</button>
+          <div id="onedrive-pdf-form" class="hidden mt-2 space-y-2">
+            <label for="onedrive-pdf-url" class="app-label">인허가 PDF 저장 폴더 공유 링크</label>
+            <input id="onedrive-pdf-url" type="url" class="app-input" autocomplete="off">
+            <button type="button" id="onedrive-pdf-save" class="btn btn-primary">PDF 폴더 저장</button>
+            <p id="onedrive-pdf-result" class="text-xs text-zinc-300" role="status"></p>
+          </div>
           <p id="onedrive-status" class="text-xs text-zinc-400 mt-1"></p>
         </div>
         <div id="driver-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>
@@ -178,6 +185,23 @@
         $('onedrive-archive-result').textContent='삭제 보관 폴더 설정 완료';
       }catch(error){$('onedrive-archive-result').textContent=error.message;}
       finally{$('onedrive-archive-save').disabled=false;}
+    });
+    $('onedrive-pdf-config').classList.toggle('hidden', profile.role !== 'admin');
+    $('onedrive-pdf-config').addEventListener('click',()=>{
+      $('onedrive-pdf-form').classList.toggle('hidden');
+      if(!$('onedrive-pdf-form').classList.contains('hidden'))$('onedrive-pdf-url').focus();
+    });
+    $('onedrive-pdf-save').addEventListener('click',async()=>{
+      const url=$('onedrive-pdf-url').value.trim();
+      if(!url){$('onedrive-pdf-result').textContent='폴더 공유 링크를 입력해 주세요.';return;}
+      $('onedrive-pdf-save').disabled=true;
+      $('onedrive-pdf-result').textContent='폴더 확인 및 저장 중…';
+      try{
+        await oneDriveDocuments.configurePdf(url);
+        $('onedrive-pdf-url').value='';
+        $('onedrive-pdf-result').textContent='PDF 저장 폴더 설정 완료';
+      }catch(error){$('onedrive-pdf-result').textContent=error.message;}
+      finally{$('onedrive-pdf-save').disabled=false;}
     });
     $('onedrive-connect').classList.toggle('hidden', profile.role !== 'admin');
     $('onedrive-connect').addEventListener('click', async () => {

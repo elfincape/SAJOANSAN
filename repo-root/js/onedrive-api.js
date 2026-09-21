@@ -1,3 +1,4 @@
+import { prepareCompilation } from './driver-pdf.js';
 import { supabase } from './supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 async function call(action,body,binary=false) {
@@ -14,9 +15,17 @@ async function call(action,body,binary=false) {
 export const oneDriveDocuments = {
   status:()=>call('status'),
   configureArchive:url=>call('archive-config',{url}),
+  configurePdf:url=>call('pdf-config',{url}),
+  compilePdf:async(driverId,onProgress)=>{
+    const {versions,images}=await prepareCompilation(oneDriveDocuments,driverId,onProgress);
+    const form=new FormData();form.set('driverId',driverId);form.set('versions',JSON.stringify(versions));
+    for(const [kind,blob] of images)form.set(kind,blob,kind+'.jpg');
+    onProgress?.('PDF 생성 및 OneDrive 저장 중…');
+    return call('compile-pdf',form);
+  },
   remove:(driverId,kind,version)=>call('remove',{driverId,kind,version}),
   list:async driverId=>(await call('list',{driverId})).documents,
-  download:(driverId,kind)=>call('download',{driverId,kind},true),
+  download:(driverId,kind,version)=>call('download',{driverId,kind,version},true),
   upload:async ({driverId,kind,file,expiresOn,requestId})=>{
     const form=new FormData();
     form.set('driverId',driverId);form.set('kind',kind);form.set('file',file);
