@@ -3,3 +3,21 @@
 .health-badge.health-soon { color:#fde68a; background:#78350f; font-weight:700; }
 tr.health-expired > td { background:rgba(127,29,29,.32) !important; }
 tr.health-soon > td { background:rgba(120,53,15,.3) !important; }
+.driver-document-preview { cursor:zoom-in; }
+.driver-document-zoom {
+  display:none;
+  position:fixed;
+  inset:5vh 5vw;
+  width:90vw;
+  height:90vh;
+  padding:16px;
+  object-fit:contain;
+  background:rgba(9,9,11,.96);
+  border:1px solid #52525b;
+  border-radius:8px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);
+  pointer-events:none;
+  z-index:100;
+}
+.driver-document-preview:hover ~ .driver-document-zoom,
+.driver-document-preview:focus-visible ~ .driver-document-zoom { display:block; }

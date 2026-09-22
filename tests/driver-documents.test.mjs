@@ -38,6 +38,9 @@ assert.equal(parts(0).status.tag,'span','save status must not be an upload butto
 assert.equal(parts(0).view.disabled,false);
 const select=slot=>{slot.input.files=[{name:'photo.jpg',type:'image/jpeg',size:100}];return slot.input.events.change();};
 const first=parts(0),second=parts(1);
+await first.view.events.click();
+assert.equal(first.preview.src,'blob:preview');
+assert.equal(boxes()[0].children[7].src,first.preview.src,'hover preview uses the downloaded full-resolution photo');
 const firstTask=select(first);
 assert.equal(first.status.textContent,'저장중');
 assert.equal(first.input.disabled,true);

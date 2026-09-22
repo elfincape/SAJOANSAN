@@ -52,7 +52,9 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
       const box=document.createElement('div');box.className='border border-zinc-700 rounded p-2 space-y-2';
       const caption=document.createElement('label');caption.textContent=label;
       const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';input.className='block w-full text-xs';caption.append(input);
-      const preview=document.createElement('img');preview.alt=label+' 사진';preview.hidden=true;preview.className='max-h-60 max-w-full object-contain';
+      const preview=document.createElement('img');preview.alt=label+' 사진';preview.hidden=true;preview.className='driver-document-preview max-h-60 max-w-full object-contain';
+      preview.tabIndex=0;preview.title='마우스를 올리면 확대됩니다.';
+      const zoom=document.createElement('img');zoom.alt='';zoom.className='driver-document-zoom';zoom.setAttribute('aria-hidden','true');
       const detail=document.createElement('p');detail.className='text-xs text-zinc-400';
       const status=document.createElement('span');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
       const view=document.createElement('button');view.type='button';view.className='btn btn-ghost text-xs';view.textContent='저장 사진 보기';view.disabled=true;
@@ -65,13 +67,13 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
       };
       const show=blob=>{
         if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);}
-        slot.url=URL.createObjectURL(blob);urls.add(slot.url);preview.src=slot.url;preview.hidden=false;
+        slot.url=URL.createObjectURL(blob);urls.add(slot.url);preview.src=slot.url;zoom.src=slot.url;preview.hidden=false;
       };
       function saveFile(file){
         if(!file||slot.busy||pdfBusy||!current())return;
         slot.touched=true;
         if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
-        preview.hidden=true;preview.removeAttribute('src');
+        preview.hidden=true;preview.removeAttribute('src');zoom.removeAttribute('src');
         const expiry=kind==='health_certificate'?(getExpiry?.()||null):null;
         try{
           validateDocumentFile(file);
@@ -129,7 +131,7 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
           if(!current())return;
           slot.stored=false;slot.version=null;status.hidden=true;
           if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
-          preview.hidden=true;preview.removeAttribute('src');input.value='';
+          preview.hidden=true;preview.removeAttribute('src');zoom.removeAttribute('src');input.value='';
           detail.textContent='사진 삭제 완료 · OneDrive 보관 폴더로 이동했습니다.';
         }).catch(error=>{if(current())detail.textContent='삭제 실패: '+error.message;}).finally(()=>{
           pending--;slot.busy=false;
@@ -137,7 +139,7 @@ export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved 
         });
         queue=task;return task;
       });
-      box.append(caption,preview,detail,status,view,pasteTarget,remove);host.append(box);
+      box.append(caption,preview,detail,status,view,pasteTarget,remove,zoom);host.append(box);
     }
     host.append(pdfArea);refreshPdf();
     if(adapter){
