@@ -67,13 +67,15 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
     if(!row)throw fail('해당 기사에 접근할 수 없습니다.',403);
     return row;
   }
-  async function naming(user,d) {
+  async function naming(user,d,companyOverride) {
     const centerFilter='&center_code=eq.'+enc(d.center_code);
+    const companyId=companyOverride===undefined?d.company_id:companyOverride;
     const [centers,companies,routes]=await Promise.all([
       db('centers?select=name&code=eq.'+enc(d.center_code),{token:user.token}),
-      d.company_id?db('companies?select=name&id=eq.'+enc(d.company_id)+centerFilter,{token:user.token}):[],
+      companyId?db('companies?select=name&id=eq.'+enc(companyId)+centerFilter,{token:user.token}):[],
       db('routes?select=primary_driver_id,secondary_driver_id,primary_vehicle_id,secondary_vehicle_id&active=eq.true'+centerFilter+'&or=(primary_driver_id.eq.'+enc(d.id)+',secondary_driver_id.eq.'+enc(d.id)+')',{token:user.token})
     ]);
+    if(companyId&&!companies.length)throw fail('선택한 운수사가 기사 센터에 속하지 않습니다.');
     const ids=[...new Set(routes.flatMap(r=>[r.primary_driver_id===d.id?r.primary_vehicle_id:null,r.secondary_driver_id===d.id?r.secondary_vehicle_id:null]).filter(Boolean))];
     const vehicles=ids.length?await db('vehicles?select=plate_number&id=in.('+ids.map(enc).join(',')+')'+centerFilter,{token:user.token}):[];
     return {center:({'001':'안산','002':'평택'})[d.center_code]||centers[0]?.name||d.center_code,company:companies[0]?.name,name:d.name,plates:[...new Set(vehicles.map(v=>v.plate_number).filter(Boolean))].sort().join('+')};
@@ -283,6 +285,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         const d=await driver(user,id);
         if(!KINDS.includes(kind)||!/^[0-9a-f-]{36}$/i.test(request))throw fail('업로드 정보가 올바르지 않습니다.');
         if(kind==='health_certificate'&&!validDate(expiry))throw fail('보건증 만료일을 입력해 주세요.');
+        const companyOverride=form.has('companyId')?String(form.get('companyId')||''):undefined;
+        if(companyOverride&&!/^[0-9a-f-]{36}$/i.test(companyOverride))throw fail('운수사 선택값이 올바르지 않습니다.');
         const file=form.get('file');
         if(!(file instanceof File)||file.size===0||file.size>LIMIT)throw fail('사진은 10MB 이하만 가능합니다.',413);
         const bytes=new Uint8Array(await file.arrayBuffer()),[mime,extension]=imageType(bytes);
@@ -296,7 +300,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           }
           const connection=await connected(),folder=connection.folders[folderKind(kind)];
           let journal=(await db('onedrive_uploads?select=*&request_id=eq.'+request))[0];
-          const filename=journal?.file_name||documentFilename(await naming(user,d),kind,extension);
+          const filename=journal?.file_name||documentFilename(await naming(user,d,companyOverride),kind,extension);
           if(journal&&(journal.user_id!==user.id||journal.driver_id!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
           if(!journal){
             journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};

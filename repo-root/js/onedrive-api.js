@@ -26,10 +26,11 @@ export const oneDriveDocuments = {
   remove:(driverId,kind,version)=>call('remove',{driverId,kind,version}),
   list:async driverId=>(await call('list',{driverId})).documents,
   download:(driverId,kind,version)=>call('download',{driverId,kind,version},true),
-  upload:async ({driverId,kind,file,expiresOn,requestId})=>{
+  upload:async ({driverId,kind,file,expiresOn,requestId,companyId})=>{
     const form=new FormData();
     form.set('driverId',driverId);form.set('kind',kind);form.set('file',file);
     form.set('expiresOn',expiresOn||'');form.set('requestId',requestId);
+    if(companyId!==undefined)form.set('companyId',companyId||'');
     for(let attempt=0;;attempt++){
       try{return await call('upload',form);}
       catch(error){
