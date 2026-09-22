@@ -12,7 +12,7 @@ const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_PAGES = 100;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const $ = id => document.getElementById(id);
-const state = { pdf: null, cards: [], drivers: [], companies: [], generation: 0, saving: false };
+const state = { pdf: null, cards: [], drivers: [], companies: [], generation: 0, saving: false, loading: false };
 
 function option(value, label) {
   const node = document.createElement('option'); node.value = value; node.textContent = label; return node;
@@ -125,15 +125,17 @@ function createCard(pageNumber) {
 
 async function loadPdf(file) {
   if (!file) return;
-  if (state.saving) { $('load-status').textContent = '등록이 끝난 뒤 PDF를 바꿔 주세요.'; return; }
+  if (state.saving || state.loading) { $('load-status').textContent = '현재 작업이 끝난 뒤 PDF를 바꿔 주세요.'; return; }
+  if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { $('load-status').textContent = 'PDF 파일을 선택해 주세요.'; return; }
+  if (!file.size || file.size > MAX_PDF_BYTES) { $('load-status').textContent = 'PDF는 50MB 이하만 선택할 수 있습니다.'; return; }
+  state.loading = true;
   $('pdf-file').disabled = true;
   const generation = ++state.generation;
   $('pages').replaceChildren(); $('assignment').hidden = true; $('save-bar').hidden = true;
   state.cards = [];
-  if (state.pdf) { await state.pdf.destroy(); state.pdf = null; }
-  if (file.size > MAX_PDF_BYTES) { $('load-status').textContent = 'PDF는 50MB 이하만 선택할 수 있습니다.'; $('pdf-file').disabled = false; return; }
   $('load-status').textContent = 'PDF를 읽는 중…';
   try {
+    if (state.pdf) { await state.pdf.destroy(); state.pdf = null; }
     const pdfjs = await import(PDFJS_URL);
     pdfjs.GlobalWorkerOptions.workerSrc = WORKER_URL;
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
@@ -150,7 +152,7 @@ async function loadPdf(file) {
       $('load-status').textContent = `${pageNumber}/${pdf.numPages}페이지 미리보기 생성됨`;
     }
   } catch (error) { $('load-status').textContent = 'PDF를 읽지 못했습니다: ' + error.message; }
-  finally { $('pdf-file').disabled = false; }
+  finally { state.loading = false; $('pdf-file').disabled = false; }
 }
 
 async function saveSelected() {
@@ -200,7 +202,37 @@ async function main() {
     ['default-company', defaultFields.companySelect], ['default-expiry', defaultFields.expiryInput]]) {
     const old = $(id); input.id = id; old.replaceWith(input);
   }
-  $('pdf-file').addEventListener('change', event => loadPdf(event.target.files?.[0]));
+  $('pdf-file').addEventListener('change', event => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    loadPdf(file);
+  });
+  const dropzone = $('pdf-dropzone');
+  let dragDepth = 0;
+  const highlight = active => {
+    dropzone.classList.toggle('border-emerald-400', active);
+    dropzone.classList.toggle('bg-emerald-900/20', active);
+  };
+  dropzone.addEventListener('dragenter', event => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault(); dragDepth++; highlight(true);
+  });
+  dropzone.addEventListener('dragover', event => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'copy';
+  });
+  dropzone.addEventListener('dragleave', event => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) highlight(false);
+  });
+  dropzone.addEventListener('drop', event => {
+    event.preventDefault(); dragDepth = 0; highlight(false);
+    const files = event.dataTransfer?.files;
+    if (files?.length !== 1) { $('load-status').textContent = 'PDF 파일을 한 개씩 놓아 주세요.'; return; }
+    loadPdf(files[0]);
+  });
+  window.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
+  window.addEventListener('drop', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
   $('apply-defaults').addEventListener('click', () => {
     for (const card of state.cards) setCenterFields(card.fields.centerSelect, card.fields.driverSelect,
       card.fields.companySelect, $('default-center').value, $('default-driver').value, $('default-company').value);
