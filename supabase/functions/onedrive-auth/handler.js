@@ -271,11 +271,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         if(b.version&&(item.request_id||item.uploaded_at)!==b.version)throw fail('사진이 변경되었습니다. 다시 취합해 주세요.',409);
         return await withLock(async()=>{
           const connection=await connected();
-          const meta=await (await graph('/drives/'+enc(item.drive_id)+'/items/'+enc(item.item_id),connection.accessToken)).json();
-          const target=new URL(meta['@microsoft.graph.downloadUrl']||'https://invalid.invalid');
-          if(target.protocol!=='https:'||!/(^|\.)(1drv\.com|onedrive\.live\.com|sharepoint\.com)$/.test(target.hostname))throw fail('사진 주소를 확인할 수 없습니다.',502);
-          const res=await fetcher(target,{signal:AbortSignal.timeout(30000)});
-          if(!res.ok)throw fail('사진을 불러오지 못했습니다.',502);
+          // Graph follows the temporary download redirect server-side, so storage host changes do not block saved photos.
+          const res=await graph('/drives/'+enc(item.drive_id)+'/items/'+enc(item.item_id)+'/content',connection.accessToken);
           return new Response(res.body,{headers:{...cors,'Content-Type':item.mime_type,'X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}});
         });
       }
