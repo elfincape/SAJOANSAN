@@ -16,7 +16,12 @@ async function fake(input,options={}){
    if(['centers','companies','routes','vehicles'].includes(table)){
      assert.equal(options.headers.Authorization,'Bearer user');
      if(table==='centers')return result([{name:'사조평택센터'}]);
-     if(table==='companies')return result([{name:'이안물류'}]);
+     if(table==='companies'){
+       const companyId=url.searchParams.get('id');
+       if(companyId==='eq.00000000-0000-4000-8000-000000000005')return result([{name:'새운수사'}]);
+       if(companyId==='eq.company')return result([{name:'이안물류'}]);
+       return result([]);
+     }
      if(table==='routes')return result([{primary_driver_id:id,primary_vehicle_id:'vehicle'}]);
      return result([{plate_number:'경기80바1234'}]);
    }
@@ -87,10 +92,11 @@ assert.equal((await handler(request('finish',{state:start.state,proof:'wrong'}))
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,200);
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,409);
 assert.equal((await (await handler(request('status'))).json()).connected,true);
-function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01',requestId='00000000-0000-4000-8000-000000000003'){
+function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01',requestId='00000000-0000-4000-8000-000000000003',companyId){
  const form=new FormData();
  form.set('driverId',id);form.set('kind','health_certificate');form.set('expiresOn',expiry);
  form.set('requestId',requestId);form.set('file',new File([bytes],'private-name.png',{type}));
+ if(companyId!==undefined)form.set('companyId',companyId);
  return new Request(env.SUPABASE_URL+'/functions/v1/onedrive-auth/upload',{method:'POST',headers:{Authorization:'Bearer user'},body:form});
 }
 visible=false;assert.equal((await handler(upload())).status,403);visible=true;
@@ -112,6 +118,11 @@ const changed=new Uint8Array([137,80,78,71,13,10,26,10,1,2,3,4]);
 assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000004'))).status,200);
 assert.equal(puts,3,'same-size replacement must upload the new image');
 assert.equal(commits,2);
+journal=null;
+assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000005'))).status,200);
+assert.match(journal.file_name,/_새운수사_보건증\.png$/);
+journal=null;
+assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000008'))).status,400);
 assert.equal(documentFilename({center:'001',name:'기사'},'identity','png'),'안산_차량미지정_기사_운수사미지정_신분증.png');
 assert.equal(documentFilename({center:'002',name:'기사'},'health_certificate','jpg'),'평택_차량미지정_기사_운수사미지정_보건증.jpg');
 assert.equal(KINDS.length,8);
