@@ -125,7 +125,7 @@ function createCard(pageNumber) {
   const kindLabel = document.createElement('label'); kindLabel.className = 'block text-xs space-y-1';
   const kindText = document.createElement('span'); kindText.textContent = '서류 종류';
   const kindSelect = document.createElement('select'); kindSelect.className = 'app-select';
-  kindSelect.append(option('', '서류 종류 선택'), ...DOCUMENT_TYPES.map(([kind, label]) => option(kind, label)));
+  kindSelect.append(option('', '서류 종류 선택'), ...DOCUMENT_TYPES.map(([kind, label]) => option(kind, label)), option('skip', '등록 제외'));
   kindLabel.append(kindText, kindSelect);
   const download = document.createElement('button'); download.type = 'button'; download.className = 'btn btn-ghost text-xs';
   download.textContent = 'JPG 다운로드';
@@ -183,10 +183,15 @@ async function loadPdf(file) {
 async function saveSelected() {
   if (state.saving || !state.pdf) return;
   let selected;
+  const skipped = state.cards.filter(card => card.checkbox.checked && (!card.kindSelect.value || card.kindSelect.value === 'skip')).length;
   try {
     selected = validateAssignments(state.cards.map(getCardAssignment), getDriverInfo(), state.drivers, state.companies);
-  } catch (error) { $('save-status').textContent = error.message; return; }
+  } catch (error) {
+    $('save-status').textContent = error.message;
+    return;
+  }
   state.saving = true; $('save-selected').disabled = true; $('pdf-file').disabled = true;
+  $('save-status').textContent = `${selected.length}장 등록 중${skipped ? ` · ${skipped}장 제외` : ''}`;
   let saved = 0;
   try {
     const connection = await oneDriveDocuments.status();
@@ -194,7 +199,10 @@ async function saveSelected() {
     const existing = new Map();
     for (const id of new Set(selected.map(item => item.driverId))) existing.set(id, await oneDriveDocuments.list(id));
     const replacements = selected.filter(item => existing.get(item.driverId)?.some(doc => doc.document_type === item.kind));
-    if (replacements.length && !window.confirm(`기존 서류 ${replacements.length}장을 새 이미지로 교체합니다. 계속할까요?`)) return;
+    if (replacements.length && !window.confirm(`기존 서류 ${replacements.length}장을 새 이미지로 교체합니다. 계속할까요?`)) {
+      $('save-status').textContent = '등록 취소';
+      return;
+    }
     for (const item of selected) {
       const card = state.cards[item.pageNumber - 1];
       card.note.textContent = '이미지 변환 중…';
@@ -206,7 +214,7 @@ async function saveSelected() {
           requestId: crypto.randomUUID() });
         saved++; card.note.textContent = '등록 완료'; card.checkbox.checked = false;
       } catch (error) { card.note.textContent = '등록 실패: ' + error.message; }
-      $('save-status').textContent = `${saved}/${selected.length}장 등록 완료`;
+      $('save-status').textContent = `${saved}/${selected.length}장 등록 완료${skipped ? ` · ${skipped}장 제외` : ''}`;
     }
   } catch (error) { $('save-status').textContent = error.message; }
   finally { state.saving = false; $('save-selected').disabled = false; $('pdf-file').disabled = false; }
