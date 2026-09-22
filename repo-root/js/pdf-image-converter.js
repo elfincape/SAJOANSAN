@@ -13,6 +13,7 @@ const MAX_PAGES = 100;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const $ = id => document.getElementById(id);
 const state = { pdf: null, cards: [], drivers: [], companies: [], generation: 0, saving: false, loading: false };
+let zoomRequest = 0;
 
 function option(value, label) {
   const node = document.createElement('option'); node.value = value; node.textContent = label; return node;
@@ -35,27 +36,23 @@ function onDriverChanged(centerSelect, driverSelect, companySelect, expiryInput)
   setCenterFields(centerSelect, driverSelect, companySelect, driver.center_code, driver.id, driver.company_id || '');
   expiryInput.value = driver.health_certificate_expires_on || '';
 }
-function makeFields(container, { center, driver = '', company = '', expiry = '' } = {}) {
-  const centerSelect = document.createElement('select'); centerSelect.className = 'app-select';
+function initializeDriverFields() {
+  const centerSelect = $('default-center');
+  const driverSelect = $('default-driver');
+  const companySelect = $('default-company');
+  const expiryInput = $('default-expiry');
   centerSelect.append(...CENTERS.map(item => option(item.code, item.name)));
-  const driverSelect = document.createElement('select'); driverSelect.className = 'app-select';
-  const companySelect = document.createElement('select'); companySelect.className = 'app-select';
-  const expiryInput = document.createElement('input'); expiryInput.type = 'date'; expiryInput.className = 'app-input'; expiryInput.value = expiry;
-  setCenterFields(centerSelect, driverSelect, companySelect, center, driver, company);
-  const fields = [['센터', centerSelect], ['기사', driverSelect], ['운수사', companySelect], ['보건증 만료일', expiryInput]];
-  for (const [name, input] of fields) {
-    const label = document.createElement('label'); label.className = 'text-xs space-y-1';
-    const text = document.createElement('span'); text.textContent = name; label.append(text, input); container.append(label);
-  }
+  setCenterFields(centerSelect, driverSelect, companySelect, getRequiredCenter().code);
   centerSelect.addEventListener('change', () => setCenterFields(centerSelect, driverSelect, companySelect, centerSelect.value));
   driverSelect.addEventListener('change', () => onDriverChanged(centerSelect, driverSelect, companySelect, expiryInput));
-  return { centerSelect, driverSelect, companySelect, expiryInput };
 }
 
 function getCardAssignment(card) {
-  return { pageNumber: card.pageNumber, selected: card.checkbox.checked, driverId: card.fields.driverSelect.value,
-    center: card.fields.centerSelect.value, companyId: card.fields.companySelect.value,
-    kind: card.kindSelect.value, expiry: card.fields.expiryInput.value };
+  return { pageNumber: card.pageNumber, selected: card.checkbox.checked, kind: card.kindSelect.value };
+}
+function getDriverInfo() {
+  return { driverId: $('default-driver').value, center: $('default-center').value,
+    companyId: $('default-company').value, expiry: $('default-expiry').value };
 }
 
 async function renderPage(pdf, pageNumber, maxWidth) {
@@ -86,18 +83,45 @@ async function imageForPage(pdf, pageNumber) {
   throw new Error(`${pageNumber}페이지를 10MB 이하 이미지로 변환하지 못했습니다.`);
 }
 
+function hideZoom() {
+  zoomRequest++;
+  $('preview-zoom').classList.add('hidden');
+  const area = $('preview-zoom-image');
+  for (const canvas of area.querySelectorAll('canvas')) canvas.width = canvas.height = 0;
+  area.replaceChildren();
+}
+async function showZoom(pageNumber, preview) {
+  const pdf = state.pdf;
+  if (!pdf) return;
+  const request = ++zoomRequest;
+  const panel = $('preview-zoom');
+  const area = $('preview-zoom-image');
+  const rect = preview.getBoundingClientRect();
+  panel.style.left = rect.left + rect.width / 2 > window.innerWidth / 2 ? '16px' : 'auto';
+  panel.style.right = rect.left + rect.width / 2 > window.innerWidth / 2 ? 'auto' : '16px';
+  $('preview-zoom-title').textContent = `${pageNumber}페이지 확대 미리보기`;
+  area.textContent = '확대 중…';
+  panel.classList.remove('hidden');
+  try {
+    const canvas = await renderPage(pdf, pageNumber, Math.min(900, window.innerWidth * 0.7));
+    if (request !== zoomRequest || pdf !== state.pdf) { canvas.width = canvas.height = 0; return; }
+    canvas.className = 'max-w-full max-h-[calc(100vh-6rem)] object-contain';
+    area.replaceChildren(canvas);
+  } catch (error) { if (request === zoomRequest) area.textContent = '확대 미리보기를 표시할 수 없습니다.'; }
+}
+
 function createCard(pageNumber) {
   const root = document.createElement('article'); root.className = 'rounded-lg border border-zinc-700 bg-zinc-800/40 p-3 space-y-3';
   const title = document.createElement('label'); title.className = 'flex items-center gap-2 font-semibold';
   const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true;
   title.append(checkbox, document.createTextNode(`${pageNumber}페이지`));
   const preview = document.createElement('div'); preview.className = 'h-48 bg-zinc-950 rounded flex items-center justify-center overflow-hidden';
+  preview.tabIndex = 0; preview.setAttribute('aria-label', `${pageNumber}페이지 미리보기, 마우스를 올리거나 포커스하면 확대`);
   preview.textContent = '미리보기 생성 중…';
-  const controls = document.createElement('div'); controls.className = 'grid grid-cols-2 gap-2';
-  const fields = makeFields(controls, {
-    center: $('default-center').value, driver: $('default-driver').value,
-    company: $('default-company').value, expiry: $('default-expiry').value
-  });
+  preview.addEventListener('mouseenter', () => showZoom(pageNumber, preview));
+  preview.addEventListener('mouseleave', hideZoom);
+  preview.addEventListener('focus', () => showZoom(pageNumber, preview));
+  preview.addEventListener('blur', hideZoom);
   const kindLabel = document.createElement('label'); kindLabel.className = 'block text-xs space-y-1';
   const kindText = document.createElement('span'); kindText.textContent = '서류 종류';
   const kindSelect = document.createElement('select'); kindSelect.className = 'app-select';
@@ -119,8 +143,8 @@ function createCard(pageNumber) {
     } catch (error) { note.textContent = error.message; }
     finally { download.disabled = false; }
   });
-  root.append(title, preview, controls, kindLabel, download, note); $('pages').append(root);
-  return { root, pageNumber, checkbox, preview, fields, kindSelect, note };
+  root.append(title, preview, kindLabel, download, note); $('pages').append(root);
+  return { root, pageNumber, checkbox, preview, kindSelect, note };
 }
 
 async function loadPdf(file) {
@@ -131,6 +155,7 @@ async function loadPdf(file) {
   state.loading = true;
   $('pdf-file').disabled = true;
   const generation = ++state.generation;
+  hideZoom();
   $('pages').replaceChildren(); $('assignment').hidden = true; $('save-bar').hidden = true;
   state.cards = [];
   $('load-status').textContent = 'PDF를 읽는 중…';
@@ -159,7 +184,7 @@ async function saveSelected() {
   if (state.saving || !state.pdf) return;
   let selected;
   try {
-    selected = validateAssignments(state.cards.map(getCardAssignment), state.drivers, state.companies);
+    selected = validateAssignments(state.cards.map(getCardAssignment), getDriverInfo(), state.drivers, state.companies);
   } catch (error) { $('save-status').textContent = error.message; return; }
   state.saving = true; $('save-selected').disabled = true; $('pdf-file').disabled = true;
   let saved = 0;
@@ -197,11 +222,7 @@ async function main() {
       fetchAllRows(() => supabase.from('companies').select('id,name,center_code').order('name'))
     ]);
   } catch (error) { $('load-status').textContent = '기사/운수사 목록을 불러오지 못했습니다: ' + error.message; return; }
-  const defaultFields = makeFields(document.createDocumentFragment(), { center: getRequiredCenter().code });
-  for (const [id, input] of [['default-center', defaultFields.centerSelect], ['default-driver', defaultFields.driverSelect],
-    ['default-company', defaultFields.companySelect], ['default-expiry', defaultFields.expiryInput]]) {
-    const old = $(id); input.id = id; old.replaceWith(input);
-  }
+  initializeDriverFields();
   $('pdf-file').addEventListener('change', event => {
     const file = event.target.files?.[0]; event.target.value = '';
     loadPdf(file);
@@ -233,11 +254,6 @@ async function main() {
   });
   window.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
   window.addEventListener('drop', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
-  $('apply-defaults').addEventListener('click', () => {
-    for (const card of state.cards) setCenterFields(card.fields.centerSelect, card.fields.driverSelect,
-      card.fields.companySelect, $('default-center').value, $('default-driver').value, $('default-company').value);
-    for (const card of state.cards) card.fields.expiryInput.value = $('default-expiry').value;
-  });
   $('save-selected').addEventListener('click', saveSelected);
   try { const connection = await oneDriveDocuments.status(); $('connection-status').textContent = connection.connected ? 'OneDrive 연결됨' : 'OneDrive 연결이 필요합니다.'; }
   catch (error) { $('connection-status').textContent = error.message; }
