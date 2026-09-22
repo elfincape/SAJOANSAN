@@ -6,7 +6,11 @@ const companies = [{ id: 'company-1', center_code: '001' }, { id: 'company-2', c
 const shared = { driverId: 'driver-1', center: '001', companyId: 'company-1', expiry: '' };
 const assignment = { pageNumber: 1, selected: true, kind: 'identity' };
 assert.deepEqual(validateAssignments([assignment], shared, drivers, companies), [{ ...assignment, ...shared }]);
-assert.throws(() => validateAssignments([{ ...assignment, selected: false }], shared, drivers, companies), /페이지를 선택/);
+assert.deepEqual(validateAssignments([assignment, { pageNumber: 2, selected: false, kind: '' }], shared, drivers, companies), [{ ...assignment, ...shared }]);
+assert.deepEqual(validateAssignments([assignment, { pageNumber: 2, selected: true, kind: '' }], shared, drivers, companies), [{ ...assignment, ...shared }]);
+assert.deepEqual(validateAssignments([assignment, { pageNumber: 2, selected: true, kind: 'skip' }], shared, drivers, companies), [{ ...assignment, ...shared }]);
+assert.throws(() => validateAssignments([{ ...assignment, selected: false }], shared, drivers, companies), /등록 대상 페이지/);
+assert.throws(() => validateAssignments([{ ...assignment, kind: '' }], shared, drivers, companies), /등록 대상 페이지/);
 assert.throws(() => validateAssignments([assignment], { ...shared, driverId: '' }, drivers, companies), /기사를 선택/);
 assert.throws(() => validateAssignments([assignment], { ...shared, center: '002' }, drivers, companies), /센터가 일치/);
 assert.throws(() => validateAssignments([assignment], { ...shared, companyId: 'company-2' }, drivers, companies), /운수사가 센터/);
