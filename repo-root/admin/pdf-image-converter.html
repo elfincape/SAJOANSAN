@@ -26,15 +26,13 @@
       <p id="load-status" role="status" class="text-sm text-zinc-300"></p>
     </section>
     <section id="assignment" hidden class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4 space-y-3">
-      <h2 class="font-semibold">공통 선택값</h2>
-      <p class="text-xs text-zinc-400">아래 선택값을 모든 페이지에 적용한 뒤 각 페이지에서 따로 수정할 수 있습니다. 센터를 바꾸면 해당 센터의 기사 목록이 표시됩니다. 운수사 변경은 저장 파일명에 반영되며 기사 명부의 소속은 바뀌지 않습니다.</p>
+      <h2 class="font-semibold">기사 정보</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <label class="text-xs">센터<select id="default-center" class="app-select mt-1"></select></label>
         <label class="text-xs">기사<select id="default-driver" class="app-select mt-1"></select></label>
         <label class="text-xs">운수사<select id="default-company" class="app-select mt-1"></select></label>
         <label class="text-xs">보건증 만료일<input id="default-expiry" type="date" class="app-input mt-1"></label>
       </div>
-      <button id="apply-defaults" type="button" class="btn btn-ghost">모든 페이지에 적용</button>
       <p id="connection-status" class="text-xs text-zinc-400" role="status"></p>
     </section>
     <section id="pages" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></section>
@@ -43,6 +41,10 @@
       <span id="save-status" class="text-sm" role="status" aria-live="polite"></span>
     </section>
   </main>
+  <div id="preview-zoom" class="hidden fixed top-1/2 -translate-y-1/2 z-50 pointer-events-none rounded-lg border border-zinc-600 bg-zinc-950 p-3 shadow-2xl w-[min(70vw,900px)] max-h-[calc(100vh-2rem)]" aria-hidden="true">
+    <p id="preview-zoom-title" class="text-sm font-semibold mb-2"></p>
+    <div id="preview-zoom-image" class="flex items-center justify-center overflow-hidden max-h-[calc(100vh-6rem)]"></div>
+  </div>
   <script type="module" src="/js/pdf-image-converter.js"></script>
 </body>
 </html>
