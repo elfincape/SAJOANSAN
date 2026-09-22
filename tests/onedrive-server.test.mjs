@@ -13,6 +13,7 @@ async function fake(input,options={}){
    const table=p.slice('/rest/v1/'.length),method=options.method||'GET';
    if(table==='user_profiles')return result([{id:uid,role,active}]);
    if(table==='drivers')return result(visible?[{id,name:'홍길동',company_id:'company',center_code:'002'}]:[]);
+   if(table==='driver_documents'&&options.headers.Authorization==='Bearer user')return result(document?[document]:[]);
    if(['centers','companies','routes','vehicles'].includes(table)){
      assert.equal(options.headers.Authorization,'Bearer user');
      if(table==='centers')return result([{name:'사조평택센터'}]);
@@ -51,7 +52,7 @@ async function fake(input,options={}){
    }
    if(table==='rpc/onedrive_commit_document'){
      if(dbFail)return result({},500);
-     commits++;document={driver_id:b.p_driver,document_type:b.p_kind,uploaded_by:b.p_user,request_id:b.p_request};
+     commits++;document={driver_id:b.p_driver,document_type:b.p_kind,uploaded_by:b.p_user,request_id:b.p_request,drive_id:'drive',item_id:'item',mime_type:'image/png'};
      assert.equal(b.p_expiry,'2027-01-01');return result(null);
    }
    throw Error('unexpected DB '+table);
@@ -61,6 +62,10 @@ async function fake(input,options={}){
    if(graphFail)return result({},429);
    if(p==='/v1.0/me/drive')return result({id:'drive'});
    if(p.startsWith('/v1.0/shares/'))return result({id:'folder',folder:{},parentReference:{driveId:'drive'}});
+   if(p==='/v1.0/drives/drive/items/item/content'){
+     assert.equal(options.headers.Authorization,'Bearer access-token');
+     return new Response(new Uint8Array([137,80,78,71]),{headers:{'Content-Type':'image/png'}});
+   }
    if(options.method==='POST'&&p.endsWith('/children')){
      assert.fail('Uploads must not create subfolders');
      const folder={id:'upload-folder',folder:{}};
@@ -111,6 +116,10 @@ assert.equal(puts,2,'retry must write the supplied bytes, never trust file size 
 assert.equal((await handler(upload())).status,200);assert.equal(commits,1,'repeated request must not commit twice');
 assert(!journal.file_name.includes('private-name'));
 assert.equal(journal.file_name,'평택_경기80바1234_홍길동_이안물류_보건증.png');
+const downloaded=await handler(request('download',{driverId:id,kind:'health_certificate',version:'00000000-0000-4000-8000-000000000003'}));
+assert.equal(downloaded.status,200);
+assert.deepEqual(new Uint8Array(await downloaded.arrayBuffer()),new Uint8Array([137,80,78,71]));
+assert.equal((await handler(request('download',{driverId:id,kind:'health_certificate',version:'old'}))).status,409);
 assert.equal(graphFolders.size,0);
 assert([...graphFiles.keys()].every(p=>p.startsWith('/v1.0/drives/drive/items/folder:/')),'files must be direct children of configured folder');
 journal=null;
