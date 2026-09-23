@@ -213,14 +213,28 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           if(!source.length)throw fail('해당 운수사에 등록된 사진이 없습니다.',404);
           const connection=await connected(),folder=connection.folders[b.kind],names=await naming(user,d);
           const pages=[];
+          let backNumber=0;
           for(const doc of source){
             await db('onedrive_locks?name=eq.connection&holder=eq.'+holder,{method:'PATCH',body:{expires_at:new Date(Date.now()+180000).toISOString()}});
             const request=crypto.randomUUID();
             const res=await graph('/drives/'+enc(doc.drive_id)+'/items/'+enc(doc.item_id)+'/content',connection.accessToken);
             const bytes=new Uint8Array(await res.arrayBuffer()),[mime,ext]=imageType(bytes);
             if(bytes.length>LIMIT||bytes.length!==doc.size_bytes||mime!==doc.mime_type)throw fail('운수사 사진의 형식 또는 용량이 변경되었습니다.',409);
-            const filename=documentFilename(names,doc.document_type,ext).replace('.'+ext,'_'+request+'.'+ext);
+            const filename=documentFilename(names,doc.document_type,ext).replace('.'+ext,(doc.document_type.endsWith('_back')?String(++backNumber):'')+'.'+ext);
+            const targetPath='/drives/'+enc(folder.driveId)+'/items/'+enc(folder.folderId)+':/'+enc(filename);
+            const found=await graph(targetPath,connection.accessToken,{allowMissing:true});
+            if(found){
+              const existing=await found.json();
+              const owners=await db('driver_documents?select=driver_id,document_type&drive_id=eq.'+enc(folder.driveId)+'&item_id=eq.'+enc(existing.id));
+              const staged=await db('onedrive_uploads?select=driver_id,kind&drive_id=eq.'+enc(folder.driveId)+'&item_id=eq.'+enc(existing.id));
+              if((!owners.length&&!staged.some(row=>row.driver_id===d.id&&row.kind===doc.document_type))||owners.some(row=>row.driver_id!==d.id||row.document_type!==doc.document_type))throw fail('같은 이름의 다른 파일이 있습니다. 파일명을 확인해 주세요.',409);
+              // Keep the old item and its bytes readable until every replacement is committed.
+              const backup=filename.slice(0,-ext.length-1)+'_이전_'+Date.now()+'.'+ext;
+              await graph('/drives/'+enc(folder.driveId)+'/items/'+enc(existing.id),connection.accessToken,{method:'PATCH',headers:{'Content-Type':'application/json',...(existing.eTag?{'If-Match':existing.eTag}:{})},body:JSON.stringify({name:backup,'@microsoft.graph.conflictBehavior':'fail'})});
+            }
+            await db('onedrive_uploads',{method:'POST',body:{request_id:request,user_id:user.id,driver_id:d.id,kind:doc.document_type,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename}});
             const item=await (await graph('/drives/'+enc(folder.driveId)+'/items/'+enc(folder.folderId)+':/'+enc(filename)+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':mime},body:bytes})).json();
+            await db('onedrive_uploads?request_id=eq.'+request,{method:'PATCH',body:{item_id:item.id}});
             if(item.size!==bytes.length)throw fail('사진 복사 결과를 확인하지 못했습니다.',502);
             pages.push({document_type:doc.document_type,page_number:doc.page_number,drive_id:folder.driveId,item_id:item.id,file_name:filename,mime_type:mime,size_bytes:bytes.length,request_id:request});
           }

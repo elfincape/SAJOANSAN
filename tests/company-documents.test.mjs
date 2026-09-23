@@ -11,6 +11,7 @@ const token=base64url(iv)+'.'+base64url(new Uint8Array(await crypto.subtle.encry
 const png=new Uint8Array([137,80,78,71,13,10,26,10,1]);
 let docs=[],driverDocs=[{id:'old'}],journals=[],role='editor',visible=true,configured=true,copyFailure=false,commits=0,puts=0,configs=0;
 let requestedDownload='';
+const graphFiles=new Map();
 const fetcher=async(input,options={})=>{
  const u=new URL(input),p=u.pathname,method=options.method||'GET',b=typeof options.body==='string'?JSON.parse(options.body):null;
  if(p==='/auth/v1/user')return response({id:user});
@@ -33,6 +34,7 @@ const fetcher=async(input,options={})=>{
    if(method==='POST'){journals.push(b);return response(null);}
    if(method==='PATCH'){Object.assign(journals.find(j=>j.request_id===request),b);return response(null);}
    if(request)return response(journals.filter(j=>j.request_id===request));
+   if(u.searchParams.has('item_id'))return response(journals.filter(j=>j.item_id===u.searchParams.get('item_id').slice(3)&&j.drive_id===u.searchParams.get('drive_id').slice(3)));
    return response(journals.filter(j=>j.company_id===u.searchParams.get('company_id')?.slice(3)&&j.kind===u.searchParams.get('kind')?.slice(3)));
   }
   if(table==='company_documents'){
@@ -56,6 +58,7 @@ const fetcher=async(input,options={})=>{
    assert.equal(b.p_driver,driver);assert.equal(b.p_company,company);
    driverDocs=b.p_pages;return response(null);
   }
+  if(table==='driver_documents')return response(driverDocs.filter(r=>r.item_id===u.searchParams.get('item_id')?.slice(3)).map(r=>({...r,driver_id:driver})));
   throw Error('Unexpected DB '+table);
  }
  assert.equal(u.hostname,'graph.microsoft.com');
@@ -63,10 +66,18 @@ const fetcher=async(input,options={})=>{
  if(method==='PUT'){
   puts++;
   if(copyFailure&&puts%2===0)return response({},500);
-  return response({id:'file-'+puts,size:png.length});
+  const item={id:'file-'+puts,size:png.length};
+  graphFiles.set(p.replace(/:\/content$/,''),item);
+  return response(item);
+ }
+ if(method==='PATCH'){
+  const entry=[...graphFiles].find(([,item])=>p.endsWith('/'+item.id));
+  assert(entry,'rename must target an existing photo');
+  graphFiles.delete(entry[0]);graphFiles.set(entry[0].slice(0,entry[0].lastIndexOf('/')+1)+encodeURIComponent(b.name),entry[1]);
+  return response(entry[1]);
  }
  if(p.endsWith('/content')){requestedDownload=p;return new Response(png,{headers:{'Content-Type':'image/png'}});}
- return response({},404);
+ return graphFiles.has(p)?response(graphFiles.get(p)):response({},404);
 };
 const handler=makeHandler(env,fetcher);
 const call=(action,body)=>handler(new Request(root+'/functions/v1/onedrive-auth/'+action,{method:'POST',headers:{Authorization:'Bearer user',...(body instanceof FormData?{}:{'Content-Type':'application/json'})},body:body instanceof FormData?body:JSON.stringify(body)}));
@@ -99,8 +110,13 @@ assert.deepEqual(driverDocs,[{id:'old'}],'copy failures must preserve current dr
 copyFailure=false;assert.equal((await call('replace-company',{driverId:driver,kind:'food_transport'})).status,200);
 assert.equal(driverDocs.length,13);assert.equal(driverDocs.filter(r=>r.document_type.endsWith('_back')).length,12);
 assert(driverDocs.every(r=>!docs.some(d=>d.item_id===r.item_id)),'driver copies must remain independent of company originals');
-assert(driverDocs.every(r=>/^안산_차량미지정_기사_운수사_식품운반업_(앞|뒤)_[0-9a-f-]+\.png$/.test(r.file_name)),'company replacement uses driver filenames');
+assert.equal(driverDocs[0].file_name,'안산_차량미지정_기사_운수사_식품운반업_앞.png');
+assert.deepEqual(driverDocs.filter(r=>r.document_type.endsWith('_back')).map(r=>r.file_name),Array.from({length:12},(_,i)=>'안산_차량미지정_기사_운수사_식품운반업_뒤'+(i+1)+'.png'));
 assert.equal((await call('replace-company',{driverId:driver,kind:'livestock_transport'})).status,404);
+const previous=driverDocs.map(r=>r.item_id);
+assert.equal((await call('replace-company',{driverId:driver,kind:'food_transport'})).status,200,'repeat replacement accepts clean filenames');
+assert(driverDocs.every(r=>!previous.includes(r.item_id)),'new copies get separate items');
+assert(previous.every(id=>[...graphFiles.values()].some(item=>item.id===id)),'old bytes remain available by item ID');
 // An interrupted upload reserves its number; later uploads and retries never reuse it.
 if(puts%2===0)puts++;
 copyFailure=true;
