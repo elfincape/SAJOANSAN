@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {makeHandler,base64url,FOLDER_KINDS} from '../supabase/functions/onedrive-auth/handler.js';
+import {makeHandler,base64url,FOLDER_KINDS,companyDocumentFilename} from '../supabase/functions/onedrive-auth/handler.js';
 const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 const user=id(1),driver=id(2),company=id(3),root='https://example.supabase.co';
 const env={SUPABASE_URL:root,SUPABASE_SERVICE_ROLE_KEY:'test',SUPABASE_ANON_KEY:'anon'};
@@ -32,7 +32,8 @@ const fetcher=async(input,options={})=>{
    const request=u.searchParams.get('request_id')?.slice(3);
    if(method==='POST'){journals.push(b);return response(null);}
    if(method==='PATCH'){Object.assign(journals.find(j=>j.request_id===request),b);return response(null);}
-   return response(journals.filter(j=>j.request_id===request));
+   if(request)return response(journals.filter(j=>j.request_id===request));
+   return response(journals.filter(j=>j.company_id===u.searchParams.get('company_id')?.slice(3)&&j.kind===u.searchParams.get('kind')?.slice(3)));
   }
   if(table==='company_documents'){
    let rows=docs;
@@ -47,7 +48,7 @@ const fetcher=async(input,options={})=>{
   if(table==='rpc/onedrive_commit_company_document'){
    assert.equal(b.p_company,company);commits++;
    if(!b.p_kind.endsWith('_back'))docs=docs.filter(r=>r.document_type!==b.p_kind);
-   docs.push({id:b.p_request,company_id:b.p_company,document_type:b.p_kind,page_number:docs.filter(r=>r.document_type===b.p_kind).length,drive_id:b.p_drive,item_id:b.p_item,file_name:b.p_filename,mime_type:b.p_mime,size_bytes:b.p_size,request_id:b.p_request,uploaded_by:b.p_user,uploaded_at:'2026-09-23'});
+   docs.push({id:b.p_request,company_id:b.p_company,document_type:b.p_kind,page_number:journals.find(j=>j.request_id===b.p_request).page_number,drive_id:b.p_drive,item_id:b.p_item,file_name:b.p_filename,mime_type:b.p_mime,size_bytes:b.p_size,request_id:b.p_request,uploaded_by:b.p_user,uploaded_at:'2026-09-23'});
    journals.find(j=>j.request_id===b.p_request).status='committed';
    return response(null);
   }
@@ -81,6 +82,10 @@ configured=false;assert.equal((await upload('food_transport',id(10))).status,409
 assert.equal((await upload('food_transport',id(10))).status,200);
 for(let n=11;n<23;n++)assert.equal((await upload('food_transport_back',id(n))).status,200);
 assert.equal(docs.length,13);assert.equal(new Set(journals.map(j=>j.file_name)).size,13);
+assert.equal(docs[0].file_name,'안산_운수사_식품운반업_앞.png');
+for(let n=1;n<=12;n++)assert.equal(docs[n].file_name,'안산_운수사_식품운반업_뒤'+n+'.png');
+assert.equal(companyDocumentFilename({center:'002',company:'한빛'},'livestock_transport','jpg'),'평택_한빛_축산물운반업_앞.jpg');
+assert.equal(companyDocumentFilename({center:'002',company:'한빛'},'livestock_transport_back','jpg',2),'평택_한빛_축산물운반업_뒤3.jpg');
 assert.equal((await upload('food_transport_back',id(22))).status,200);assert.equal(commits,13,'retry does not append a duplicate');
 assert.equal((await call('company-list',{driverId:company})).status,200);
 const page=docs[8];
@@ -94,5 +99,17 @@ assert.deepEqual(driverDocs,[{id:'old'}],'copy failures must preserve current dr
 copyFailure=false;assert.equal((await call('replace-company',{driverId:driver,kind:'food_transport'})).status,200);
 assert.equal(driverDocs.length,13);assert.equal(driverDocs.filter(r=>r.document_type.endsWith('_back')).length,12);
 assert(driverDocs.every(r=>!docs.some(d=>d.item_id===r.item_id)),'driver copies must remain independent of company originals');
+assert(driverDocs.every(r=>/^안산_차량미지정_기사_운수사_식품운반업_(앞|뒤)_[0-9a-f-]+\.png$/.test(r.file_name)),'company replacement uses driver filenames');
 assert.equal((await call('replace-company',{driverId:driver,kind:'livestock_transport'})).status,404);
+// An interrupted upload reserves its number; later uploads and retries never reuse it.
+if(puts%2===0)puts++;
+copyFailure=true;
+assert.equal((await upload('livestock_transport_back',id(30))).status,502);
+copyFailure=false;
+assert.equal((await upload('livestock_transport_back',id(31))).status,200);
+assert.equal((await upload('livestock_transport_back',id(30))).status,200);
+const retried=docs.find(r=>r.request_id===id(30)),later=docs.find(r=>r.request_id===id(31));
+assert.equal(retried.file_name,'안산_운수사_축산물운반업_뒤1.png');
+assert.equal(later.file_name,'안산_운수사_축산물운반업_뒤2.png');
+assert.equal(retried.page_number,0);assert.equal(later.page_number,1);
 console.log('Company permits: authorization, folder registration, 12 backs, idempotency, individual download and atomic independent replacement passed');

@@ -26,6 +26,7 @@ create policy company_documents_read on public.company_documents for select to a
  and exists(select 1 from public.companies where id=company_documents.company_id)
 );
 alter table public.onedrive_uploads alter column driver_id drop not null;
+alter table public.onedrive_uploads add column if not exists page_number integer;
 alter table public.onedrive_uploads add column if not exists company_id uuid references public.companies(id);
 create or replace function public.onedrive_commit_document(
  p_user uuid,p_driver uuid,p_kind text,p_drive text,p_item text,p_filename text,
@@ -68,7 +69,10 @@ begin
  if exists(select 1 from public.company_documents where request_id=p_request) then return; end if;
  page:=0;
  if p_kind in ('food_transport_back','livestock_transport_back') then
- select coalesce(max(page_number),-1)+1 into page from public.company_documents where company_id=p_company and document_type=p_kind;
+ select page_number into page from public.onedrive_uploads where request_id=p_request and company_id=p_company and kind=p_kind;
+ if page is null then
+   select coalesce(max(page_number),-1)+1 into page from public.company_documents where company_id=p_company and document_type=p_kind;
+ end if;
  end if;
  insert into public.company_documents(company_id,document_type,page_number,drive_id,item_id,file_name,mime_type,size_bytes,uploaded_by,request_id)
  values(p_company,p_kind,page,p_drive,p_item,p_filename,p_mime,p_size,p_user,p_request)

@@ -2,7 +2,7 @@ import { requireRole } from './auth.js';
 import { CENTERS, decorateCenterLinks, getRequiredCenter, requireSelectedCenter } from './center.js';
 import { DOCUMENT_TYPES } from './driver-documents.js';
 import { validateAssignments } from './pdf-image-assignment.js';
-import { oneDriveDocuments } from './onedrive-api.js';
+import { oneDriveDocuments, companyDocuments } from './onedrive-api.js';
 import { supabase } from './supabase.js';
 import { fetchAllRows } from './unassigned-delivery-points.js';
 
@@ -26,7 +26,7 @@ function driversIn(center) { return state.drivers.filter(row => row.center_code 
 function driverFor(id) { return state.drivers.find(row => row.id === id); }
 function setCenterFields(centerSelect, driverSelect, companySelect, center, driver = '', company = '') {
   centerSelect.value = center;
-  fillSelect(driverSelect, driversIn(center), '기사 선택', driver);
+  fillSelect(driverSelect, driversIn(center), '기사 선택 (미선택 시 운수사에 저장)', driver);
   fillSelect(companySelect, companiesIn(center), '운수사 선택', company);
 }
 function onDriverChanged(centerSelect, driverSelect, companySelect, expiryInput) {
@@ -194,9 +194,10 @@ async function saveSelected() {
   try {
     const connection = await oneDriveDocuments.status();
     if (!connection.connected) throw new Error('OneDrive 연결이 필요합니다. 기사 관리에서 관리자에게 연결을 요청해 주세요.');
-    const existing = new Map();
-    for (const id of new Set(selected.map(item => item.driverId))) existing.set(id, await oneDriveDocuments.list(id));
-    const replacements = selected.filter(item => existing.get(item.driverId)?.some(doc => doc.document_type === item.kind));
+    const adapter = selected[0].driverId ? oneDriveDocuments : companyDocuments;
+    const ownerId = selected[0].driverId || selected[0].companyId;
+    const existing = await adapter.list(ownerId);
+    const replacements = selected.filter(item => !item.kind.endsWith('_back') && existing.some(doc => doc.document_type === item.kind));
     if (replacements.length && !window.confirm(`기존 서류 ${replacements.length}장을 새 이미지로 교체합니다. 계속할까요?`)) {
       $('save-status').textContent = '등록 취소';
       return;
@@ -207,10 +208,10 @@ async function saveSelected() {
       try {
         const file = await imageForPage(state.pdf, item.pageNumber);
         card.note.textContent = 'OneDrive에 등록 중…';
-        await oneDriveDocuments.upload({ driverId: item.driverId, kind: item.kind, file,
+        await adapter.upload({ driverId: ownerId, kind: item.kind, file,
           companyId: item.companyId, expiresOn: item.kind === 'health_certificate' ? item.expiry : null,
           requestId: crypto.randomUUID() });
-        saved++; card.note.textContent = '등록 완료'; card.checkbox.checked = false;
+        saved++; card.note.textContent = (item.driverId ? '기사 서류' : '운수사 서류') + ' 등록 완료'; card.checkbox.checked = false;
       } catch (error) { card.note.textContent = '등록 실패: ' + error.message; }
       $('save-status').textContent = `${saved}/${selected.length}장 등록 완료${skipped ? ` · ${skipped}장 제외` : ''}`;
     }

@@ -9,6 +9,11 @@ export function documentFilename({center,plates,name,company},kind,extension) {
   center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
   return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),(kind==='permit_pdf'?'인허가취합':LABELS[kind])].join('_')+'.'+extension;
 }
+export function companyDocumentFilename({center,company},kind,extension,pageNumber=0) {
+  center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
+  const label=LABELS[kind]+(kind.endsWith('_back')?String(pageNumber+1):'');
+  return [filePart(center,'센터미지정'),filePart(company,'운수사미지정'),label].join('_')+'.'+extension;
+}
 const SITE = 'https://sajoansan.vercel.app';
 const CLIENT_ID = '56899a37-25c3-43e2-b006-6e001d538185';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -347,10 +352,23 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           const connection=await connected(),folder=companyMode?(await settings()).folders.company_permits:connection.folders[folderKind(kind)];
           if(!folder?.driveId||!folder?.folderId)throw fail('관리자가 운수사 인허가 저장소를 먼저 등록해 주세요.',409);
           let journal=(await db('onedrive_uploads?select=*&request_id=eq.'+request))[0];
-          const filename=journal?.file_name||(companyMode?[filePart(d.center_code,'센터'),filePart(d.name,'운수사'),LABELS[kind],request].join('_')+'.'+extension:documentFilename(await naming(user,d,companyOverride),kind,extension).replace('.'+extension,'_'+request+'.'+extension));
+          let pageNumber=0,filename=journal?.file_name;
+          if(!filename){
+            if(companyMode){
+              if(kind.endsWith('_back')){
+                const pages=await db('company_documents?select=page_number&company_id=eq.'+enc(id)+'&document_type=eq.'+enc(kind)+'&order=page_number.desc&limit=1');
+                const reservations=await db('onedrive_uploads?select=page_number&company_id=eq.'+enc(id)+'&kind=eq.'+enc(kind)+'&order=page_number.desc.nullslast&limit=1');
+                pageNumber=[...pages,...reservations].reduce((max,row)=>Math.max(max,row.page_number??-1),-1)+1;
+              }
+              const centers=await db('centers?select=name&code=eq.'+enc(d.center_code),{token:user.token});
+              filename=companyDocumentFilename({center:({'001':'안산','002':'평택'})[d.center_code]||centers[0]?.name||d.center_code,company:d.name},kind,extension,pageNumber);
+            }else{
+              filename=documentFilename(await naming(user,d,companyOverride),kind,extension).replace('.'+extension,'_'+request+'.'+extension);
+            }
+          }
           if(journal&&(journal.user_id!==user.id||journal[owner]!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
           if(!journal){
-            journal={request_id:request,user_id:user.id,[owner]:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
+            journal={request_id:request,user_id:user.id,[owner]:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint,...(companyMode?{page_number:pageNumber}:{})};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
           if(journal.status==='archived')throw fail('이미 삭제한 업로드입니다. 사진을 새로 선택해 주세요.',409);
@@ -361,6 +379,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           if(existing){
             const owners=await db(table+'?select='+owner+',document_type&drive_id=eq.'+enc(journal.drive_id)+'&item_id=eq.'+enc(existing.id));
             if(owners.some(row=>row[owner]!==id||row.document_type!==kind)||
+               (companyMode&&kind.endsWith('_back')&&owners.length&&journal.item_id!==existing.id)||
                (!owners.length&&journal.item_id!==existing.id)){
               throw fail('대상 폴더에 같은 이름의 다른 파일이 있습니다. 파일명을 확인해 주세요.',409);
             }
