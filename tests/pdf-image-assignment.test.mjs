@@ -11,7 +11,14 @@ assert.deepEqual(validateAssignments([assignment, { pageNumber: 2, selected: tru
 assert.deepEqual(validateAssignments([assignment, { pageNumber: 2, selected: true, kind: 'skip' }], shared, drivers, companies), [{ ...assignment, ...shared }]);
 assert.throws(() => validateAssignments([{ ...assignment, selected: false }], shared, drivers, companies), /등록 대상 페이지/);
 assert.throws(() => validateAssignments([{ ...assignment, kind: '' }], shared, drivers, companies), /등록 대상 페이지/);
-assert.throws(() => validateAssignments([assignment], { ...shared, driverId: '' }, drivers, companies), /기사를 선택/);
+assert.throws(() => validateAssignments([assignment], { ...shared, driverId: '', companyId: '' }, drivers, companies), /기사 또는 운수사/);
+const companyOnly={...shared,driverId:''};
+assert.throws(() => validateAssignments([assignment], companyOnly, drivers, companies), /운수사에는/);
+for(const kind of ['food_transport','food_transport_back','livestock_transport','livestock_transport_back']){
+  const result=validateAssignments([{...assignment,kind}],companyOnly,drivers,companies);
+  assert.equal(result[0].driverId,'');assert.equal(result[0].companyId,'company-1');
+}
+assert.throws(() => validateAssignments([{...assignment,kind:'food_transport'}],{...companyOnly,companyId:'company-2'},drivers,companies),/운수사가 센터/);
 assert.throws(() => validateAssignments([assignment], { ...shared, center: '002' }, drivers, companies), /센터가 일치/);
 assert.throws(() => validateAssignments([assignment], { ...shared, companyId: 'company-2' }, drivers, companies), /운수사가 센터/);
 assert.throws(() => validateAssignments([{ ...assignment, kind: 'health_certificate' }], shared, drivers, companies), /만료일/);
