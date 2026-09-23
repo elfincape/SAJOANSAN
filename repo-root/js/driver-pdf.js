@@ -15,16 +15,20 @@ export async function photoToJpeg(blob) {
 }
 export async function prepareCompilation(adapter,driverId,onProgress=()=>{},normalize=photoToJpeg) {
   const records=await adapter.list(driverId);
+  if(!records.length)throw new Error('저장된 서류 사진이 없습니다.');
+  const kinds=DOCUMENT_TYPES.map(([kind])=>kind);
+  const ordered=records.toSorted((a,b)=>kinds.indexOf(a.document_type)-kinds.indexOf(b.document_type)||(a.page_number||0)-(b.page_number||0));
   const versions={},images=[];
-  for(const [kind] of DOCUMENT_TYPES){
-    const row=records.find(r=>r.document_type===kind);
-    if(!row||!(row.request_id||row.uploaded_at))throw new Error('서류 8장을 모두 저장한 후 PDF를 만들 수 있습니다.');
-    versions[kind]=row.request_id||row.uploaded_at;
+  for(const row of ordered){
+    const key=row.id||row.document_type,version=row.request_id||row.uploaded_at;
+    if(!version||Object.hasOwn(versions,key))throw new Error('서류 목록을 새로고침해 주세요.');
+    versions[key]=version;
   }
-  for(const [kind,label] of DOCUMENT_TYPES){
-    onProgress('사진 취합 '+(images.length+1)+'/8 · '+label);
-    const blob=await adapter.download(driverId,kind,versions[kind]);
-    images.push([kind,await normalize(blob)]);
+  for(const row of ordered){
+    const key=row.id||row.document_type,label=DOCUMENT_TYPES.find(([k])=>k===row.document_type)?.[1]||row.document_type;
+    onProgress('사진 취합 '+(images.length+1)+'/'+ordered.length+' · '+label);
+    const blob=await adapter.download(driverId,row.document_type,versions[key],row.id);
+    images.push([key,await normalize(blob)]);
   }
   return {versions,images};
 }

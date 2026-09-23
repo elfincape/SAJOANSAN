@@ -12,7 +12,7 @@ export function validateAssignments(cards, shared, drivers, companies) {
   for (const card of selected) {
     if (card.kind === 'health_certificate' && !validDate(shared.expiry)) throw new Error('기사 정보에서 보건증 만료일을 입력해 주세요.');
     const key = card.kind;
-    if (keys.has(key)) throw new Error('같은 기사의 같은 서류 종류가 여러 페이지에 지정되었습니다. 한 장만 선택해 주세요.');
+    if (keys.has(key) && !['food_transport_back','livestock_transport_back'].includes(key)) throw new Error('같은 기사의 앞면 및 단일 서류는 한 장만 선택해 주세요. 뒷면은 여러 장 등록할 수 있습니다.');
     keys.add(key);
   }
   return selected.map(card => ({ ...card, ...shared }));

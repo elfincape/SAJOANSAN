@@ -67,6 +67,12 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
     if(!row)throw fail('해당 기사에 접근할 수 없습니다.',403);
     return row;
   }
+  async function company(user,id) {
+    if(!/^[0-9a-f-]{36}$/i.test(id||''))throw fail('운수사를 선택해 주세요.');
+    const row=(await db('companies?select=id,name,center_code&id=eq.'+enc(id),{token:user.token}))[0];
+    if(!row)throw fail('해당 운수사에 접근할 수 없습니다.',403);
+    return row;
+  }
   async function naming(user,d,companyOverride) {
     const centerFilter='&center_code=eq.'+enc(d.center_code);
     const companyId=companyOverride===undefined?d.company_id:companyOverride;
@@ -137,7 +143,13 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
     return Response.redirect(SITE+'/admin/drivers.html?onedrive_state='+enc(state),303);
   }
   return async req=>{
-    const url=new URL(req.url),action=url.pathname.split('/').filter(Boolean).at(-1);
+    const url=new URL(req.url),requestedAction=url.pathname.split('/').filter(Boolean).at(-1);
+    const companyMode=['company-list','company-upload','company-download','company-remove'].includes(requestedAction);
+    const action=companyMode?requestedAction.slice(8):requestedAction;
+    const table=companyMode?'company_documents':'driver_documents',owner=companyMode?'company_id':'driver_id';
+    const subject=companyMode?company:driver;
+    const permittedKinds=companyMode?KINDS.slice(0,4):KINDS;
+    const pageFilter=b=>b.documentId?'&id=eq.'+enc(b.documentId):'';
     const origin=req.headers.get('origin');
     if(origin&&origin!==SITE)return json({error:'허용되지 않은 출처입니다.'},403);
     if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
@@ -145,7 +157,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
-      const user=await caller(req,['start','finish','archive-config','pdf-config'].includes(action));
+      const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action));
       if(action==='start'){
         await settings();
         if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET)throw fail('OneDrive 앱 설정이 필요합니다.',503);
@@ -169,11 +181,11 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         });
       }
       if(action==='list'){
-        const b=await req.json();await driver(user,b.driverId);
-        const data=await db('driver_documents?select=document_type,file_name,uploaded_at,mime_type,size_bytes,request_id&driver_id=eq.'+enc(b.driverId),{token:user.token});
+        const b=await req.json();await subject(user,b.driverId);
+        const data=await db(table+'?select=id,document_type,page_number,file_name,uploaded_at,mime_type,size_bytes,request_id&'+owner+'=eq.'+enc(b.driverId)+'&order=document_type.asc,page_number.asc',{token:user.token});
         return json({documents:data});
       }
-      if(action==='archive-config'||action==='pdf-config'){
+      if(action==='archive-config'||action==='pdf-config'||action==='company-config'){
         const b=await req.json();
         if(typeof b.url!=='string'||b.url.length>2048)throw fail('보관 폴더 공유 링크를 입력해 주세요.');
         return await withLock(async()=>{
@@ -181,9 +193,36 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           const folder=await (await graph('/shares/'+enc(shareToken(b.url))+'/driveItem',connection.accessToken)).json();
           const driveId=folder.parentReference?.driveId;
           if(!folder.folder||!driveId||String(driveId).toLowerCase()!==config.expected_drive_id.toLowerCase())throw fail('연결된 OneDrive 계정의 폴더를 선택해 주세요.',409);
-          if(Object.values(connection.folders).some(f=>f.folderId===folder.id))throw fail('서류 저장 폴더와 다른 보관 폴더를 선택해 주세요.');
-          await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,[action==='pdf-config'?'permit_pdf':'delete_archive']:{driveId,folderId:folder.id}}}});
+          if([...Object.values(connection.folders),...['delete_archive','permit_pdf','company_permits'].filter(k=>k!==(action==='company-config'?'company_permits':action==='pdf-config'?'permit_pdf':'delete_archive')).map(k=>config.folders[k]).filter(Boolean)].some(f=>f.folderId===folder.id))throw fail('서류 저장 폴더와 다른 보관 폴더를 선택해 주세요.');
+          await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,[action==='company-config'?'company_permits':action==='pdf-config'?'permit_pdf':'delete_archive']:{driveId,folderId:folder.id}}}});
           return json({configured:true});
+        });
+      }
+      if(action==='replace-company'){
+        const b=await req.json(),d=await driver(user,b.driverId);
+        if(!['food_transport','livestock_transport'].includes(b.kind))throw fail('대체할 서류 종류가 올바르지 않습니다.');
+        if(!d.company_id)throw fail('기사 기본 정보에 운수사를 먼저 저장해 주세요.');
+        await company(user,d.company_id);
+        return await withLock(async holder=>{
+          const source=await db('company_documents?select=*&company_id=eq.'+enc(d.company_id)+'&document_type=in.('+b.kind+','+b.kind+'_back)&order=document_type.asc,page_number.asc',{token:user.token});
+          if(!source.length)throw fail('해당 운수사에 등록된 사진이 없습니다.',404);
+          const connection=await connected(),folder=connection.folders[b.kind],names=await naming(user,d);
+          const pages=[];
+          for(const doc of source){
+            await db('onedrive_locks?name=eq.connection&holder=eq.'+holder,{method:'PATCH',body:{expires_at:new Date(Date.now()+180000).toISOString()}});
+            const request=crypto.randomUUID();
+            const res=await graph('/drives/'+enc(doc.drive_id)+'/items/'+enc(doc.item_id)+'/content',connection.accessToken);
+            const bytes=new Uint8Array(await res.arrayBuffer()),[mime,ext]=imageType(bytes);
+            if(bytes.length>LIMIT||bytes.length!==doc.size_bytes||mime!==doc.mime_type)throw fail('운수사 사진의 형식 또는 용량이 변경되었습니다.',409);
+            const filename=documentFilename(names,doc.document_type,ext).replace('.'+ext,'_'+request+'.'+ext);
+            const item=await (await graph('/drives/'+enc(folder.driveId)+'/items/'+enc(folder.folderId)+':/'+enc(filename)+':/content',connection.accessToken,{method:'PUT',headers:{'Content-Type':mime},body:bytes})).json();
+            if(item.size!==bytes.length)throw fail('사진 복사 결과를 확인하지 못했습니다.',502);
+            pages.push({document_type:doc.document_type,page_number:doc.page_number,drive_id:folder.driveId,item_id:item.id,file_name:filename,mime_type:mime,size_bytes:bytes.length,request_id:request});
+          }
+          const latest=await driver(user,d.id);await company(user,d.company_id);
+          if(latest.company_id!==d.company_id)throw fail('기사 운수사가 변경되었습니다. 다시 시도해 주세요.',409);
+          await db('rpc/onedrive_replace_company_documents',{method:'POST',body:{p_user:user.id,p_driver:d.id,p_company:d.company_id,p_kind:b.kind,p_pages:pages,p_holder:holder}});
+          return json({saved:true,count:pages.length});
         });
       }
       if(action==='compile-pdf'){
@@ -192,10 +231,15 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         const form=await req.formData(),id=String(form.get('driverId')||'');
         const d=await driver(user,id);
         let versions;try{versions=JSON.parse(String(form.get('versions')||''));}catch{throw fail('사진 목록을 다시 불러와 주세요.');}
-        if(!versions||Object.keys(versions).length!==KINDS.length||!KINDS.every(k=>typeof versions[k]==='string'&&versions[k]))throw fail('서류 8장을 모두 저장한 후 취합해 주세요.');
+        if(!versions||Array.isArray(versions)||!Object.keys(versions).length||!Object.entries(versions).every(([k,v])=>(KINDS.includes(k)||/^[0-9a-f-]{36}$/i.test(k))&&typeof v==='string'&&v))throw fail('저장된 서류 사진을 선택해 주세요.');
+        const snapshot=await db('driver_documents?select=id,document_type,page_number,request_id,uploaded_at&driver_id=eq.'+enc(id)+'&order=page_number.asc',{token:user.token});
+        const keyFor=row=>Object.hasOwn(versions,row.id)?row.id:row.document_type;
+        const matches=docs=>docs.length===Object.keys(versions).length&&new Set(docs.map(keyFor)).size===docs.length&&docs.every(r=>(r.request_id||r.uploaded_at)===versions[keyFor(r)]);
+        if(!matches(snapshot))throw fail('취합 중 서류가 변경되었습니다. 다시 PDF 저장을 눌러 주세요.',409);
+        const ordered=snapshot.toSorted((a,b)=>KINDS.indexOf(a.document_type)-KINDS.indexOf(b.document_type)||(a.page_number||0)-(b.page_number||0));
         const images=[];let total=0;
-        for(const kind of KINDS){
-          const file=form.get(kind);
+        for(const row of ordered){
+          const file=form.get(keyFor(row));
           if(!(file instanceof File)||file.size<=0||file.size>10*1024*1024)throw fail('취합 사진의 형식 또는 용량을 확인해 주세요.');
           total+=file.size;if(total>30*1024*1024)throw fail('취합 사진은 총 30MB 이하만 가능합니다.',413);
           const bytes=new Uint8Array(await file.arrayBuffer());
@@ -204,8 +248,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         }
         return await withLock(async()=>{
           const check=async()=>{
-            const docs=await db('driver_documents?select=document_type,request_id,uploaded_at&driver_id=eq.'+enc(id),{token:user.token});
-            if(!KINDS.every(k=>docs.some(r=>r.document_type===k&&(r.request_id||r.uploaded_at)===versions[k])))throw fail('취합 중 서류가 변경되었습니다. 다시 PDF 저장을 눌러 주세요.',409);
+            const docs=await db('driver_documents?select=id,document_type,request_id,uploaded_at&driver_id=eq.'+enc(id),{token:user.token});
+            if(!matches(docs))throw fail('취합 중 서류가 변경되었습니다. 다시 PDF 저장을 눌러 주세요.',409);
           };
           await check();
           const target=(await settings()).folders.permit_pdf;
@@ -232,11 +276,13 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         });
       }
       if(action==='remove'){
-        const b=await req.json();await driver(user,b.driverId);
-        if(!KINDS.includes(b.kind)||typeof b.version!=='string'||!b.version)throw fail('삭제할 사진을 다시 확인해 주세요.');
+        const b=await req.json();await subject(user,b.driverId);
+        if(!permittedKinds.includes(b.kind)||typeof b.version!=='string'||!b.version)throw fail('삭제할 사진을 다시 확인해 주세요.');
         return await withLock(async()=>{
-          const item=(await db('driver_documents?select=*&driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind),{token:user.token}))[0];
-          if(!item)return json({removed:true});
+          const candidates=await db(table+'?select=*&'+owner+'=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind)+pageFilter(b),{token:user.token});
+          if(!candidates.length)return json({removed:true});
+          const item=candidates.find(r=>(r.request_id||r.uploaded_at)===b.version);
+          if(!item)throw fail('사진이 변경되었습니다. 목록을 다시 불러와 주세요.',409);
           if((item.request_id||item.uploaded_at)!==b.version)throw fail('사진이 변경되었습니다. 새로고침 후 다시 확인해 주세요.',409);
           const destination=(await settings()).folders.delete_archive;
           if(!destination?.driveId||!destination?.folderId)throw fail('관리자가 삭제 보관 폴더를 먼저 설정해 주세요.',409);
@@ -256,18 +302,21 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
             })).json();
             if(moved.id!==item.item_id||moved.parentReference?.id!==ARCHIVE_FOLDER)throw fail('사진 이동 결과를 확인하지 못했습니다.',502);
           }
-          await driver(user,b.driverId);
+          await subject(user,b.driverId);
           if(item.request_id)await db('onedrive_uploads?request_id=eq.'+enc(item.request_id),{method:'PATCH',body:{status:'archived'}});
-          const removed=await db('driver_documents?driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind)+'&item_id=eq.'+enc(item.item_id)+'&uploaded_at=eq.'+enc(item.uploaded_at),{method:'DELETE',prefer:'return=representation'});
+          const removed=await db(table+'?'+owner+'=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind)+'&item_id=eq.'+enc(item.item_id)+'&uploaded_at=eq.'+enc(item.uploaded_at),{method:'DELETE',prefer:'return=representation'});
           if(!removed?.length)throw fail('사진 기록이 변경되었습니다. 새로고침 후 확인해 주세요.',409);
           return json({removed:true});
         });
       }
       if(action==='download'){
-        const b=await req.json();await driver(user,b.driverId);
-        if(!KINDS.includes(b.kind))throw fail('서류 종류가 올바르지 않습니다.');
-        const item=(await db('driver_documents?select=drive_id,item_id,mime_type,request_id,uploaded_at&driver_id=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind),{token:user.token}))[0];
-        if(!item)throw fail('저장된 사진이 없습니다.',404);
+        const b=await req.json();await subject(user,b.driverId);
+        if(!permittedKinds.includes(b.kind))throw fail('서류 종류가 올바르지 않습니다.');
+        const candidates=await db(table+'?select=drive_id,item_id,mime_type,request_id,uploaded_at&'+owner+'=eq.'+enc(b.driverId)+'&document_type=eq.'+enc(b.kind)+pageFilter(b),{token:user.token});
+        if(!candidates.length)throw fail('저장된 사진이 없습니다.',404);
+        if(!b.version&&candidates.length>1)throw fail('여러 장의 사진이 있습니다. 목록을 새로고침해 주세요.',409);
+        const item=candidates.find(r=>!b.version||(r.request_id||r.uploaded_at)===b.version);
+        if(!item)throw fail('사진이 변경되었습니다. 다시 취합해 주세요.',409);
         if(b.version&&(item.request_id||item.uploaded_at)!==b.version)throw fail('사진이 변경되었습니다. 다시 취합해 주세요.',409);
         return await withLock(async()=>{
           const connection=await connected();
@@ -279,8 +328,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
       if(action==='upload'){
         if(Number(req.headers.get('content-length'))>LIMIT+65536)throw fail('사진은 10MB 이하만 가능합니다.',413);
         const form=await req.formData(),id=String(form.get('driverId')||''),kind=String(form.get('kind')||''),request=String(form.get('requestId')||''),expiry=String(form.get('expiresOn')||'');
-        const d=await driver(user,id);
-        if(!KINDS.includes(kind)||!/^[0-9a-f-]{36}$/i.test(request))throw fail('업로드 정보가 올바르지 않습니다.');
+        const d=await subject(user,id);
+        if(!permittedKinds.includes(kind)||!/^[0-9a-f-]{36}$/i.test(request))throw fail('업로드 정보가 올바르지 않습니다.');
         if(kind==='health_certificate'&&!validDate(expiry))throw fail('보건증 만료일을 입력해 주세요.');
         const companyOverride=form.has('companyId')?String(form.get('companyId')||''):undefined;
         if(companyOverride&&!/^[0-9a-f-]{36}$/i.test(companyOverride))throw fail('운수사 선택값이 올바르지 않습니다.');
@@ -290,17 +339,18 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
         if(file.type!==mime)throw fail('파일 내용과 사진 형식이 일치하지 않습니다.');
         const fingerprint=await hash(bytes);
         return await withLock(async holder=>{
-          const completed=(await db('driver_documents?select=driver_id,document_type,uploaded_by&request_id=eq.'+request))[0];
+          const completed=(await db(table+'?select='+owner+',document_type,uploaded_by&request_id=eq.'+request))[0];
           if(completed){
-            if(completed.driver_id!==id||completed.document_type!==kind||completed.uploaded_by!==user.id)throw fail('업로드 요청이 일치하지 않습니다.',409);
+            if(completed[owner]!==id||completed.document_type!==kind||completed.uploaded_by!==user.id)throw fail('업로드 요청이 일치하지 않습니다.',409);
             return json({saved:true});
           }
-          const connection=await connected(),folder=connection.folders[folderKind(kind)];
+          const connection=await connected(),folder=companyMode?(await settings()).folders.company_permits:connection.folders[folderKind(kind)];
+          if(!folder?.driveId||!folder?.folderId)throw fail('관리자가 운수사 인허가 저장소를 먼저 등록해 주세요.',409);
           let journal=(await db('onedrive_uploads?select=*&request_id=eq.'+request))[0];
-          const filename=journal?.file_name||documentFilename(await naming(user,d,companyOverride),kind,extension);
-          if(journal&&(journal.user_id!==user.id||journal.driver_id!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
+          const filename=journal?.file_name||(companyMode?[filePart(d.center_code,'센터'),filePart(d.name,'운수사'),LABELS[kind],request].join('_')+'.'+extension:documentFilename(await naming(user,d,companyOverride),kind,extension).replace('.'+extension,'_'+request+'.'+extension));
+          if(journal&&(journal.user_id!==user.id||journal[owner]!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
           if(!journal){
-            journal={request_id:request,user_id:user.id,driver_id:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
+            journal={request_id:request,user_id:user.id,[owner]:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
           if(journal.status==='archived')throw fail('이미 삭제한 업로드입니다. 사진을 새로 선택해 주세요.',409);
@@ -309,8 +359,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           const existingResponse=await graph(path,connection.accessToken,{allowMissing:true});
           const existing=existingResponse?await existingResponse.json():null;
           if(existing){
-            const owners=await db('driver_documents?select=driver_id,document_type&drive_id=eq.'+enc(journal.drive_id)+'&item_id=eq.'+enc(existing.id));
-            if(owners.some(row=>row.driver_id!==id||row.document_type!==kind)||
+            const owners=await db(table+'?select='+owner+',document_type&drive_id=eq.'+enc(journal.drive_id)+'&item_id=eq.'+enc(existing.id));
+            if(owners.some(row=>row[owner]!==id||row.document_type!==kind)||
                (!owners.length&&journal.item_id!==existing.id)){
               throw fail('대상 폴더에 같은 이름의 다른 파일이 있습니다. 파일명을 확인해 주세요.',409);
             }
@@ -320,8 +370,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           if(item.size!==file.size)throw fail('저장 파일 크기를 확인할 수 없습니다.',502);
           await db('onedrive_uploads?request_id=eq.'+request,{method:'PATCH',body:{item_id:item.id}});
           // Recheck caller visibility after external I/O.
-          await driver(user,id);
-          await db('rpc/onedrive_commit_document',{method:'POST',body:{p_user:user.id,p_driver:id,p_kind:kind,p_drive:journal.drive_id,p_item:item.id,p_filename:filename,p_mime:mime,p_size:file.size,p_expiry:kind==='health_certificate'?expiry:null,p_request:request,p_holder:holder}});
+          await subject(user,id);
+          await db('rpc/'+(companyMode?'onedrive_commit_company_document':'onedrive_commit_document'),{method:'POST',body:{p_user:user.id,[companyMode?'p_company':'p_driver']:id,p_kind:kind,p_drive:journal.drive_id,p_item:item.id,p_filename:filename,p_mime:mime,p_size:file.size,p_expiry:kind==='health_certificate'?expiry:null,p_request:request,p_holder:holder}});
           return json({saved:true});
         });
       }

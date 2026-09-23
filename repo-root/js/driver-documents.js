@@ -8,158 +8,144 @@ export function validateDocumentFile(file) {
   if (!file || !['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WEBP 사진을 선택해 주세요.');
   if (file.size <= 0 || file.size > 10 * 1024 * 1024) throw new Error('사진은 10MB 이하만 선택할 수 있습니다.');
 }
-export function mountDriverDocuments(host, { getExpiry, adapter = null, onSaved = () => {} } = {}) {
-  let generation=0,queue=Promise.resolve(),pending=0,pdfBusy=false,refreshCurrentPdf=()=>{};
+export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onSaved=()=>{}, companyMode=false }={}) {
+  let generation=0,pending=false,refreshCurrent=()=>{};
   const urls=new Set();
   const clearUrls=()=>{urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();};
-  window.addEventListener('beforeunload',event=>{
-    if(pending){event.preventDefault();event.returnValue='';}
-  });
-  function reset(driverId) {
-    const version=++generation;refreshCurrentPdf=()=>{};
-    clearUrls(); host.replaceChildren();
-    const title=document.createElement('h3');title.textContent='기사 서류 사진';title.className='font-semibold text-sm';host.append(title);
-    const note=document.createElement('p');note.className='text-xs text-zinc-400';host.append(note);
-    if(!driverId){note.textContent='기사 기본 정보를 먼저 저장한 후 사진을 선택하세요.';return;}
-    note.textContent='사진 선택 또는 각 칸에서 Ctrl+V로 붙여넣으면 자동 저장됩니다. 보건증은 만료일을 먼저 입력하세요.';
-    let connectionError=null;
-    // Resolve connection checks without an unhandled rejection before a file is selected.
-    const ready=adapter?adapter.status().then(value=>{
-      if(!value.connected)connectionError=new Error('관리자가 OneDrive를 먼저 연결해 주세요.');
-    }).catch(error=>{connectionError=error;}):Promise.resolve().then(()=>{connectionError=new Error('OneDrive 연결이 필요합니다.');});
-    const slots=new Map();
-    const pdfArea=document.createElement('section');pdfArea.className='border-t border-zinc-700 pt-3 space-y-2';
-    const pdfButton=document.createElement('button');pdfButton.type='button';pdfButton.className='btn btn-primary';pdfButton.textContent='인허가 PDF 저장';pdfButton.disabled=true;
-    const pdfNote=document.createElement('p');pdfNote.className='text-xs text-zinc-300';pdfNote.setAttribute('role','status');
-    const refreshPdf=()=>{
-      const complete=slots.size===8&&Array.from(slots.values()).every(slot=>slot.stored&&slot.version&&!slot.busy);
-      pdfButton.disabled=!complete||pending>0||pdfBusy||!adapter?.compilePdf;
-      if(!pdfBusy)pdfNote.textContent=complete?'8장 준비 완료 · 사진 칸 순서대로 PDF를 저장합니다.':'서류 8장을 모두 저장하면 PDF 취합이 가능합니다.';
-    };
-    refreshCurrentPdf=refreshPdf;
-    pdfButton.addEventListener('click',async()=>{
-      if(pdfButton.disabled||!current())return;
-      pdfBusy=true;pending++;refreshPdf();pdfButton.disabled=true;
-      try{
-        const result=await adapter.compilePdf(driverId,message=>{if(current())pdfNote.textContent=message;});
-        if(current())pdfNote.textContent='OneDrive 저장 완료 · '+result.fileName;
-      }catch(error){if(current())pdfNote.textContent='PDF 저장 실패: '+error.message;}
-      finally{pdfBusy=false;pending--;if(current())pdfButton.disabled=!Array.from(slots.values()).every(slot=>slot.stored&&slot.version&&!slot.busy);else refreshCurrentPdf();}
-    });
-    pdfArea.append(pdfButton,pdfNote);
-    const current=()=>generation===version;
-    for(const [kind,label] of DOCUMENT_TYPES){
-      const box=document.createElement('div');box.className='border border-zinc-700 rounded p-2 space-y-2';
-      const caption=document.createElement('label');caption.textContent=label;
-      const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';input.className='block w-full text-xs';caption.append(input);
-      const preview=document.createElement('img');preview.alt=label+' 사진';preview.hidden=true;preview.className='driver-document-preview max-h-60 max-w-full object-contain';
-      preview.tabIndex=0;preview.title='마우스를 올리면 확대됩니다.';
-      const zoom=document.createElement('img');zoom.alt='';zoom.className='driver-document-zoom';zoom.setAttribute('aria-hidden','true');
-      const detail=document.createElement('p');detail.className='text-xs text-zinc-400';
-      const status=document.createElement('span');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
-      const view=document.createElement('button');view.type='button';view.className='btn btn-ghost text-xs';view.textContent='저장 사진 보기';view.disabled=true;
-      const remove=document.createElement('button');remove.type='button';remove.className='btn btn-danger text-xs';remove.textContent='사진 삭제';remove.disabled=true;
-      const slot={remove,version:null,input,view,status,detail,preview,url:null,stored:false,busy:false,touched:false};
-      slots.set(kind,slot);
-      const state=value=>{
-        status.hidden=false;status.textContent=value;
-        status.className='inline-block rounded px-2 py-1 text-xs '+(value==='DB저장됨'?'bg-emerald-900 text-emerald-200':value==='저장실패'?'bg-red-900 text-red-200':'bg-amber-900 text-amber-200');
-      };
-      const show=blob=>{
-        if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);}
-        slot.url=URL.createObjectURL(blob);urls.add(slot.url);preview.src=slot.url;zoom.src=slot.url;preview.hidden=false;
-      };
-      function saveFile(file){
-        if(!file||slot.busy||pdfBusy||!current())return;
-        slot.touched=true;
-        if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
-        preview.hidden=true;preview.removeAttribute('src');zoom.removeAttribute('src');
-        const expiry=kind==='health_certificate'?(getExpiry?.()||null):null;
-        try{
-          validateDocumentFile(file);
-          if(kind==='health_certificate'&&!expiry)throw new Error('보건증 만료일을 입력한 뒤 사진을 다시 선택해 주세요.');
-        }catch(error){state('저장실패');detail.textContent=error.message;input.value='';return;}
-        const requestId=crypto.randomUUID();
-        show(file);state('저장중');detail.textContent=file.name;
-        slot.busy=true;input.disabled=true;view.disabled=true;pending++;refreshPdf();
-        // Serialize automatic uploads across all slots, including a driver change.
-        const task=queue.then(async()=>{
-          await ready;
-          if(connectionError)throw connectionError;
-          await adapter.upload({driverId,kind,file,expiresOn:expiry,requestId});
-          if(current()){slot.stored=true;slot.version=requestId;state('DB저장됨');detail.textContent='';}
-          onSaved(driverId,kind,expiry);
-        }).catch(error=>{
-          if(current()){state('저장실패');detail.textContent=error.message+' 사진을 다시 선택하면 재시도합니다.';}
-        }).finally(()=>{
-          pending--;slot.busy=false;
-          if(current()){input.value='';input.disabled=false;view.disabled=!slot.stored;remove.disabled=!slot.stored;refreshPdf();}else refreshCurrentPdf();
-        });
-        queue=task;
-        return task;
-      }
-      input.addEventListener('change',()=>saveFile(input.files?.[0]));
-      const pasteTarget=document.createElement('button');pasteTarget.type='button';
-      pasteTarget.className='block w-full rounded border border-dashed border-zinc-500 p-3 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-emerald-400';
-      pasteTarget.textContent='사진 붙여넣기 · 여기를 클릭한 뒤 Ctrl+V (Mac: ⌘V)';
-      pasteTarget.setAttribute('aria-label',label+' 사진 붙여넣기: 클릭 후 Ctrl+V');
-      box.addEventListener('paste',event=>{
-        const data=event.clipboardData;
-        if(!data||!current())return;
-        let files=Array.from(data.items||[]).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
-        if(!files.length)files=Array.from(data.files||[]).filter(file=>file.type.startsWith('image/'));
-        if(!files.length)return; // Leave ordinary text paste untouched.
-        event.preventDefault();
-        if(slot.busy)return;
-        if(files.length!==1){detail.textContent='사진은 한 번에 한 장씩 붙여넣어 주세요.';return;}
-        return saveFile(files[0]);
-      });
-      view.addEventListener('click',async()=>{
-        if(!adapter||slot.busy||pdfBusy||!slot.stored)return;
-        slot.busy=true;view.disabled=true;input.disabled=true;refreshPdf();
-        try{const blob=await adapter.download(driverId,kind);if(current()){show(blob);detail.textContent='저장된 사진';}}
-        catch(error){if(current())detail.textContent=error.message;}
-        finally{slot.busy=false;if(current()){view.disabled=false;input.disabled=false;refreshPdf();}}
-      });
-      remove.addEventListener('click',()=>{
-        if(!current()||slot.busy||pdfBusy||!slot.stored||!slot.version||!adapter)return;
-        if(!window.confirm(label+' 사진을 삭제 보관 폴더로 이동하시겠습니까?'))return;
-        const versionToRemove=slot.version;
-        slot.busy=true;slot.touched=true;input.disabled=true;view.disabled=true;remove.disabled=true;pending++;refreshPdf();
-        detail.textContent='삭제 보관 폴더로 이동 중…';
-        const task=queue.then(()=>adapter.remove(driverId,kind,versionToRemove)).then(()=>{
-          if(!current())return;
-          slot.stored=false;slot.version=null;status.hidden=true;
-          if(slot.url){URL.revokeObjectURL(slot.url);urls.delete(slot.url);slot.url=null;}
-          preview.hidden=true;preview.removeAttribute('src');zoom.removeAttribute('src');input.value='';
-          detail.textContent='사진 삭제 완료 · OneDrive 보관 폴더로 이동했습니다.';
-        }).catch(error=>{if(current())detail.textContent='삭제 실패: '+error.message;}).finally(()=>{
-          pending--;slot.busy=false;
-          if(current()){input.disabled=false;view.disabled=!slot.stored;remove.disabled=!slot.stored;refreshPdf();}else refreshCurrentPdf();
-        });
-        queue=task;return task;
-      });
-      box.append(caption,preview,detail,status,view,pasteTarget,remove,zoom);host.append(box);
-    }
-    host.append(pdfArea);refreshPdf();
-    if(adapter){
-      adapter.list(driverId).then(records=>{
-        if(!current())return;
-        for(const doc of records){
-          const slot=slots.get(doc.document_type);if(!slot)continue;
-          if(!slot.touched){
-            slot.stored=true;slot.version=doc.request_id||doc.uploaded_at;
-            slot.remove.disabled=false;
-            slot.status.hidden=false;slot.status.textContent='DB저장됨';slot.status.className='inline-block rounded px-2 py-1 text-xs bg-emerald-900 text-emerald-200';
-            slot.detail.textContent=new Date(doc.uploaded_at).toLocaleString('ko-KR');
-            slot.view.disabled=false;
-          }
-        }
-        refreshPdf();
-      }).catch(error=>{if(current())note.textContent=error.message;});
-    }
-  }
+  const el=(tag,text='',className='')=>{const node=document.createElement(tag);node.textContent=text;node.className=className;return node;};
+  window.addEventListener('beforeunload',event=>{if(pending){event.preventDefault();event.returnValue='';}});
   window.addEventListener('pagehide',clearUrls);
+  function reset(ownerId){
+    const generationId=++generation,current=()=>generationId===generation;
+    clearUrls();host.replaceChildren();
+    host.append(el('h3',companyMode?'운수사 인허가 사진':'기사 서류 사진','font-semibold text-sm'));
+    const notice=el('p','','text-xs text-zinc-300');notice.setAttribute('role','status');host.append(notice);
+    if(!ownerId){notice.textContent=(companyMode?'운수사':'기사')+' 기본 정보를 먼저 저장하세요.';return;}
+    notice.textContent='사진 선택 또는 Ctrl+V로 자동 저장됩니다. 뒷면은 여러 장 추가할 수 있습니다.';
+    let records=[],loaded=false;
+    const controls=[],areas=new Map(),types=companyMode?DOCUMENT_TYPES.slice(0,4):DOCUMENT_TYPES;
+    const version=row=>row.request_id||row.uploaded_at;
+    const addButton=(parent,label,action)=>{
+      const b=el('button',label,'btn btn-ghost text-xs');b.type='button';
+      b.addEventListener('click',action);parent.append(b);controls.push(b);return b;
+    };
+    let pdfButton,staticControls=0;
+    const refresh=()=>{controls.forEach(b=>b.disabled=pending||!loaded);if(pdfButton)pdfButton.disabled=pending||!loaded||!records.length;};
+    refreshCurrent=refresh;
+    async function reload(){
+      const result=await adapter.list(ownerId);
+      if(!current())return;
+      records=result;loaded=true;render();refresh();
+    }
+    async function run(work,{reloadAfter=true}={}){
+      if(pending||!current()||!loaded)return;
+      pending=true;refresh();
+      let resultMessage='';
+      try{resultMessage=await work()||'저장 완료';}
+      catch(error){resultMessage=error.message;}
+      finally{
+        if(reloadAfter&&current())try{await reload();}catch(error){loaded=false;resultMessage+=' · 목록 조회 실패: '+error.message;}
+        pending=false;refreshCurrent();
+        if(current())notice.textContent=resultMessage;
+      }
+    }
+    function preview(parent,row,blob){
+      const image=el('img'),zoom=el('img');
+      const url=URL.createObjectURL(blob);urls.add(url);
+      image.src=url;image.alt=row.file_name||'서류 사진';image.tabIndex=0;
+      image.className='driver-document-preview max-h-48 max-w-full object-contain';image.title='마우스를 올리면 확대됩니다.';
+      zoom.src=url;zoom.alt='';zoom.className='driver-document-zoom';zoom.setAttribute('aria-hidden','true');
+      parent.replaceChildren();parent.append(image,zoom);
+    }
+    function render(){
+      controls.splice(staticControls);
+      clearUrls();
+      for(const [kind] of types){
+        const area=areas.get(kind);area.replaceChildren();
+        const pages=records.filter(r=>r.document_type===kind).toSorted((a,b)=>(a.page_number||0)-(b.page_number||0));
+        if(!pages.length){area.append(el('p','등록된 사진 없음','text-xs text-zinc-500'));continue;}
+        pages.forEach((row,index)=>{
+          const card=el('div','','border-t border-zinc-700 pt-2 space-y-2');
+          card.append(el('p',(kind.endsWith('_back')?(index+1)+'번째 · ':'')+'DB저장됨 · '+new Date(row.uploaded_at).toLocaleString('ko-KR'),'text-xs text-emerald-300'));
+          const imageArea=el('div');card.append(imageArea);
+          addButton(card,'저장 사진 보기',()=>run(async()=>{
+            notice.textContent='사진 불러오는 중…';
+            const blob=await adapter.download(ownerId,kind,version(row),row.id);
+            if(current())preview(imageArea,row,blob);
+            return '저장된 사진 · 마우스를 올리면 확대됩니다.';
+          },{reloadAfter:false}));
+          addButton(card,'사진 삭제',()=>{
+            if(!window.confirm('선택한 사진을 삭제 보관 폴더로 이동하시겠습니까?'))return;
+            return run(async()=>{await adapter.remove(ownerId,kind,version(row),row.id);return '사진 삭제 완료';});
+          });
+          area.append(card);
+        });
+      }
+    }
+    for(const [kind,label] of types){
+      const box=el('section','','border border-zinc-700 rounded p-3 space-y-2');
+      const caption=el('label',label,'block text-sm font-medium');
+      const input=el('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';
+      input.multiple=kind.endsWith('_back');input.className='block w-full text-xs mt-2';controls.push(input);caption.append(input);
+      box.append(caption);
+      if(input.multiple)box.append(el('p','여러 장 선택 가능 · 기존 뒷면에 추가됩니다.','text-xs text-zinc-400'));
+      const save=files=>{
+        if(!files.length)return;
+        const expiry=getExpiry();
+        try{
+          files.forEach(validateDocumentFile);
+          if(!input.multiple&&files.length>1)throw new Error('앞면 및 단일 서류는 한 장만 선택해 주세요.');
+          if(kind==='health_certificate'&&!/^\d{4}-\d{2}-\d{2}$/.test(expiry))throw new Error('보건증 만료일을 먼저 선택해 주세요.');
+        }catch(error){notice.textContent=error.message;input.value='';return;}
+        return run(async()=>{
+          let saved=0;
+          try{
+            for(const file of files){
+              if(current())notice.textContent='저장중 · '+(saved+1)+'/'+files.length;
+              await adapter.upload({driverId:ownerId,kind,file,expiresOn:expiry,requestId:crypto.randomUUID()});
+              saved++;onSaved(ownerId,kind,expiry);
+            }
+            return saved+'장 저장 완료';
+          }catch(error){throw new Error(saved+'장 저장 완료 · 나머지 사진 저장 실패: '+error.message);}
+          finally{input.value='';}
+        });
+      };
+      input.addEventListener('change',()=>save(Array.from(input.files||[])));
+      const paste=addButton(box,'사진 붙여넣기 · 클릭 후 Ctrl+V',()=>{});
+      paste.setAttribute('aria-label',label+' 사진 붙여넣기');
+      box.addEventListener('paste',event=>{
+        if(pending||!loaded||!current())return;
+        const data=event.clipboardData;
+        let files=Array.from(data?.items||[]).filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);
+        if(!files.length)files=Array.from(data?.files||[]).filter(f=>f.type.startsWith('image/'));
+        if(files.length){event.preventDefault();return save(files);}
+      });
+      if(!companyMode&&['food_transport','livestock_transport'].includes(kind)&&adapter?.replaceCompany){
+        addButton(box,'운수사 대체',()=>{
+          if(!window.confirm(label.replace(' 앞','')+' 앞면과 모든 뒷면을 기사에 저장된 운수사의 사진으로 대체하시겠습니까?'))return;
+          return run(async()=>{
+            notice.textContent='운수사 사진 복사 중…';
+            const result=await adapter.replaceCompany(ownerId,kind);
+            return '운수사 사진 '+result.count+'장으로 대체했습니다.';
+          });
+        });
+      }
+      const area=el('div','','space-y-3');areas.set(kind,area);box.append(area);host.append(box);
+    }
+    if(adapter?.compilePdf&&!companyMode){
+      const area=el('section','','border-t border-zinc-700 pt-3 space-y-2');
+      pdfButton=addButton(area,'인허가 PDF 저장',()=>run(async()=>{
+        const result=await adapter.compilePdf(ownerId,message=>{if(current())notice.textContent=message;});
+        return 'OneDrive 저장 완료 · '+result.fileName;
+      },{reloadAfter:false}));
+      area.append(el('p','등록된 사진 전체를 서류 종류와 뒷면 순서대로 저장합니다.','text-xs text-zinc-400'));host.append(area);
+    }
+    staticControls=controls.length;refresh();
+    Promise.resolve().then(async()=>{
+      if(!adapter||(await adapter.status()).connected!==true)throw new Error('관리자가 OneDrive를 먼저 연결해 주세요.');
+      await reload();
+    }).catch(error=>{if(current())notice.textContent=error.message;});
+  }
   reset(null);
   return {reset};
 }

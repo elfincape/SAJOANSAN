@@ -5,7 +5,7 @@ export function fitImage(width,height,pageWidth,pageHeight,margin=18) {
 }
 export function makePdfBuilder(PDFDocument) {
   return async images=>{
-    if(images.length!==8)throw new Error('Eight images required');
+    if(!images.length)throw new Error('At least one image required');
     const pdf=await PDFDocument.create();
     pdf.setTitle('Permit documents');pdf.setCreator('SAJO driver document manager');
     for(const bytes of images){

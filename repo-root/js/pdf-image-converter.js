@@ -9,7 +9,6 @@ import { fetchAllRows } from './unassigned-delivery-points.js';
 const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
 const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
-const MAX_PAGES = 100;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const $ = id => document.getElementById(id);
 const state = { pdf: null, cards: [], drivers: [], companies: [], generation: 0, saving: false, loading: false };
@@ -165,7 +164,6 @@ async function loadPdf(file) {
     pdfjs.GlobalWorkerOptions.workerSrc = WORKER_URL;
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
     if (generation !== state.generation) { await pdf.destroy(); return; }
-    if (pdf.numPages > MAX_PAGES) { await pdf.destroy(); throw new Error('PDF는 100페이지 이하만 처리할 수 있습니다.'); }
     state.pdf = pdf; $('assignment').hidden = false; $('save-bar').hidden = false;
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       if (generation !== state.generation) return;

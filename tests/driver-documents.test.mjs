@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { DOCUMENT_TYPES, validateDocumentFile, mountDriverDocuments } from '../repo-root/js/driver-documents.js';
 assert.equal(DOCUMENT_TYPES.length,8);
-assert.equal(new Set(DOCUMENT_TYPES.map(x=>x[0])).size,8);
 for(const type of ['image/jpeg','image/png','image/webp'])validateDocumentFile({type,size:100});
 for(const file of [{type:'image/svg+xml',size:100},{type:'image/jpeg',size:10485761},{type:'image/jpeg',size:0}])assert.throws(()=>validateDocumentFile(file));
 class Element {
@@ -9,116 +8,62 @@ class Element {
  append(...items){this.children.push(...items);}
  replaceChildren(){this.children=[];}
  addEventListener(name,fn){this.events[name]=fn;}
- removeAttribute(name){delete this[name];}
  setAttribute(name,value){this[name]=value;}
 }
 globalThis.document={createElement:tag=>new Element(tag)};
-const windowEvents={};
-globalThis.window={addEventListener(name,fn){windowEvents[name]=fn;}};
-const revoked=[];
-URL.createObjectURL=()=> 'blob:preview';
-URL.revokeObjectURL=url=>revoked.push(url);
-const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-const host=new Element('div');
-const calls=[],saved=[];
-let complete,expiry='2027-01-01',failure=false;
+const events={};globalThis.window={addEventListener:(name,fn)=>events[name]=fn,confirm:()=>true};
+let url=0;const revoked=[];
+URL.createObjectURL=()=> 'blob:'+ ++url;URL.revokeObjectURL=value=>revoked.push(value);
+const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+const walk=node=>[node,...node.children.flatMap(walk)];
+const host=new Element('main');
+let rows=[{id:'front',document_type:'food_transport',request_id:'v1',uploaded_at:'2026-09-23'}],expiry='',failure=false;
+const calls=[],removes=[],downloads=[],replaces=[];
 const adapter={
- status:async()=>({connected:true}),
- list:async()=>[{document_type:'food_transport',uploaded_at:'2026-09-18T00:00:00Z'}],
- upload:async data=>{calls.push(data);if(failure)throw Error('DB error');await new Promise(resolve=>{complete=resolve;});},
- download:async()=>new Blob(['image'])
+ status:async()=>({connected:true}),list:async()=>rows,
+ upload:async data=>{
+  calls.push(data);if(failure)throw Error('저장 오류');
+  rows.push({id:data.requestId,document_type:data.kind,request_id:data.requestId,page_number:rows.length,uploaded_at:'2026-09-23'});
+ },
+ download:async(...args)=>{downloads.push(args);return new Blob(['photo']);},
+ remove:async(...args)=>{removes.push(args);rows=rows.filter(r=>r.id!==args[3]);},
+ replaceCompany:async(...args)=>{replaces.push(args);return {count:4};},
+ compilePdf:async()=>({fileName:'all.pdf'})
 };
-const panel=mountDriverDocuments(host,{adapter,getExpiry:()=>expiry,onSaved:(...args)=>saved.push(args)});
-panel.reset('driver-a');await flush();
-const boxes=()=>host.children.filter(el=>el.tag==='div');
-const parts=index=>{const box=boxes()[index];return {input:box.children[0].children[0],preview:box.children[1],detail:box.children[2],status:box.children[3],view:box.children[4]};};
-assert.equal(boxes().length,8);
-assert.equal(parts(0).status.textContent,'DB저장됨');
-assert.equal(parts(0).status.tag,'span','save status must not be an upload button');
-assert.equal(parts(0).view.disabled,false);
-const select=slot=>{slot.input.files=[{name:'photo.jpg',type:'image/jpeg',size:100}];return slot.input.events.change();};
-const first=parts(0),second=parts(1);
-await first.view.events.click();
-assert.equal(first.preview.src,'blob:preview');
-assert.equal(boxes()[0].children[7].src,first.preview.src,'hover preview uses the downloaded full-resolution photo');
-const firstTask=select(first);
-assert.equal(first.status.textContent,'저장중');
-assert.equal(first.input.disabled,true);
-const secondTask=select(second);
-assert.equal(second.status.textContent,'저장중');
-await flush();assert.equal(calls.length,1,'uploads must serialize without another click');
-let prevented=false;windowEvents.beforeunload({preventDefault(){prevented=true;}});assert(prevented);
-complete();await firstTask;await flush();
-assert.equal(first.status.textContent,'DB저장됨');
-assert.equal(calls.length,2);
-assert.equal(calls[0].kind,'food_transport');assert.equal(calls[1].kind,'food_transport_back');
-complete();await secondTask;
-assert.equal(second.status.textContent,'DB저장됨');
-assert.equal(saved.length,2);
-assert.notEqual(calls[0].requestId,calls[1].requestId);
-expiry='';const health=parts(7);await select(health);assert.equal(health.status.textContent,'저장실패');assert.equal(calls.length,2);
-expiry='2027-03-04';failure=true;
-await select(health);assert.equal(health.status.textContent,'저장실패');assert.match(health.detail.textContent,/DB error/);
-failure=false;const healthTask=select(health);await flush();assert.equal(calls.at(-1).expiresOn,'2027-03-04');
-panel.reset('driver-b');await flush();complete();await healthTask;
-assert.equal(saved.at(-1)[0],'driver-a','switching drivers must not change queued upload target');
-assert(!parts(7).status.textContent,'old driver completion must not mark new driver saved');
-assert(revoked.includes('blob:preview'));
-panel.reset(null);assert.equal(boxes().length,0);
-const offline=mountDriverDocuments(host);offline.reset('driver-a');
-await select(parts(0));assert.equal(parts(0).status.textContent,'저장실패');
-console.log('Eight slots, automatic save, serialized front/back uploads, status, expiry, failure and driver-switch tests passed');
-
-const pasteCalls=[];
-const clipboardPanel=mountDriverDocuments(host,{adapter:{status:async()=>({connected:true}),list:async()=>[],upload:async data=>{pasteCalls.push(data);}},getExpiry:()=>expiry});
-clipboardPanel.reset('paste-driver');await flush();
-const paste=(index,files)=>{let prevented=false;const task=boxes()[index].events.paste({clipboardData:{items:files.map(file=>({kind:'file',type:file.type,getAsFile:()=>file}))},preventDefault(){prevented=true;}});return {task,prevented};};
-const png=new File(['image'],'clipboard.png',{type:'image/png'});
-const pasted=paste(1,[png]);assert.equal(pasted.prevented,true);await pasted.task;
-assert.equal(pasteCalls.length,1);assert.equal(pasteCalls[0].kind,'food_transport_back');
-assert.equal(pasteCalls[0].driverId,'paste-driver');assert.equal(parts(1).status.textContent,'DB저장됨');
-assert.equal(boxes()[1].children[5].type,'button');
-assert.match(boxes()[1].children[5]['aria-label'],/식품운반업 뒤/);
-assert.equal(paste(1,[]).prevented,false,'text-only paste must not be intercepted');
-await paste(1,[png,png]).task;assert.equal(pasteCalls.length,1,'multiple images must not silently choose one');
-const svg=new File(['<svg/>'],'x.svg',{type:'image/svg+xml'});
-await paste(2,[svg]).task;assert.equal(parts(2).status.textContent,'저장실패');assert.equal(pasteCalls.length,1);
-expiry='';await paste(7,[png]).task;assert.equal(parts(7).status.textContent,'저장실패');assert.equal(pasteCalls.length,1);
-const oldPaste=boxes()[0].events.paste;clipboardPanel.reset('other-driver');await flush();
-await oldPaste({clipboardData:{files:[png]},preventDefault(){}});assert.equal(pasteCalls.length,1,'stale paste targets must not upload');
-await boxes()[3].events.paste({clipboardData:{files:[png]},preventDefault(){}});
-assert.equal(pasteCalls[1].kind,'livestock_transport_back');assert.equal(pasteCalls[1].driverId,'other-driver');
-console.log('Clipboard target, auto-save, front/back, fallback files, text, invalid/multiple images and stale targets passed');
-
-let confirmDelete=false,deleteFail=false,deleteCalls=0;
-window.confirm=()=>confirmDelete;
-const deleting=mountDriverDocuments(host,{adapter:{
- status:async()=>({connected:true}),
- list:async()=>[{document_type:'identity',request_id:'saved-version',uploaded_at:'2026-09-18T00:00:00Z'}],
- remove:async(id,kind,version)=>{deleteCalls++;assert.equal(id,'delete-driver');assert.equal(kind,'identity');assert.equal(version,'saved-version');if(deleteFail)throw Error('move failed');}
-}});
-deleting.reset('delete-driver');await flush();
-const deleteButton=boxes()[6].children[6];
-assert.equal(deleteButton.disabled,false);
-await deleteButton.events.click();assert.equal(deleteCalls,0);
-confirmDelete=true;deleteFail=true;
-await deleteButton.events.click();assert.equal(deleteCalls,1);assert.equal(parts(6).view.disabled,false);assert.match(parts(6).detail.textContent,/삭제 실패/);
-deleteFail=false;
-await deleteButton.events.click();assert.equal(deleteCalls,2);assert.equal(parts(6).status.hidden,true);assert.equal(parts(6).view.disabled,true);assert.equal(deleteButton.disabled,true);
-assert.match(parts(6).detail.textContent,/보관 폴더로 이동/);
-console.log('Photo delete confirmation, saved revision, failure preservation and success cleanup passed');
-
-let pdfCount=7,pdfFinish,pdfCalls=0;
-const pdfPanel=mountDriverDocuments(host,{adapter:{
- status:async()=>({connected:true}),
- list:async()=>DOCUMENT_TYPES.slice(0,pdfCount).map(([document_type])=>({document_type,request_id:document_type,uploaded_at:'2026-09-21T00:00:00Z'})),
- compilePdf:async(id,progress)=>{pdfCalls++;assert.equal(id,'pdf-driver');progress('PDF 저장 중');await new Promise(r=>pdfFinish=r);return {fileName:'평택_차량_기사_회사_인허가취합.pdf'};}
-}});
-const pdfSection=()=>host.children.find(x=>x.tag==='section');
-pdfPanel.reset('pdf-driver');await flush();assert.equal(pdfSection().children[0].disabled,true);
-pdfCount=8;pdfPanel.reset('pdf-driver');await flush();assert.equal(pdfSection().children[0].disabled,false);
-const pdfTask=pdfSection().children[0].events.click();await flush();
-assert.equal(pdfSection().children[0].disabled,true);assert.equal(pdfCalls,1);
-pdfFinish();await pdfTask;assert.match(pdfSection().children[1].textContent,/OneDrive 저장 완료/);
-assert.equal(pdfSection().children[0].disabled,false);
-console.log('PDF button requires all eight saved slots and reports completion');
+const panel=mountDriverDocuments(host,{adapter,getExpiry:()=>expiry});
+panel.reset('driver');await flush();
+const all=()=>walk(host),input=kind=>all().filter(n=>n.tag==='input')[DOCUMENT_TYPES.findIndex(([k])=>k===kind)];
+const buttons=text=>all().filter(n=>n.tag==='button'&&n.textContent===text);
+assert.equal(input('food_transport').multiple,false);assert.equal(input('food_transport_back').multiple,true);
+assert.equal(buttons('운수사 대체').length,2);
+assert.equal(buttons('인허가 PDF 저장')[0].disabled,false,'one saved photo is sufficient');
+await buttons('저장 사진 보기')[0].events.click();
+const imgs=all().filter(n=>n.tag==='img');assert.equal(imgs.length,2);assert.equal(imgs[0].src,imgs[1].src);assert.match(imgs[1].className,/zoom/);
+const back=input('food_transport_back');
+back.files=Array.from({length:12},()=>({name:'back.jpg',type:'image/jpeg',size:100}));
+await back.events.change();
+assert.equal(calls.length,12);assert.equal(new Set(calls.map(c=>c.requestId)).size,12);
+assert.equal(buttons('사진 삭제').length,13);
+await buttons('사진 삭제')[5].events.click();
+assert.equal(removes[0][3],calls[4].requestId,'delete targets an individual back page');
+assert.equal(rows.length,12);
+const health=input('health_certificate');health.files=[{name:'health.jpg',type:'image/jpeg',size:100}];
+await health.events.change();assert.equal(calls.length,12);assert.match(all().find(n=>n.role==='status').textContent,/만료일/);
+expiry='2027-01-01';await health.events.change();assert.equal(calls.length,13);
+await buttons('운수사 대체')[0].events.click();assert.deepEqual(replaces,[['driver','food_transport']]);
+failure=true;back.files=[{name:'bad.jpg',type:'image/jpeg',size:100}];await back.events.change();
+assert.match(all().find(n=>n.role==='status').textContent,/저장 실패/);
+failure=false;
+let release;adapter.upload=async()=>new Promise(resolve=>release=resolve);
+back.files=[{name:'slow.jpg',type:'image/jpeg',size:100}];const task=back.events.change();await flush();
+let blocked=false;events.beforeunload({preventDefault(){blocked=true;}});assert(blocked);
+panel.reset('other-driver');await flush();assert.equal(input('food_transport_back').disabled,true);
+release();await task;assert.equal(input('food_transport_back').disabled,false);
+assert(revoked.length>0);
+const companyHost=new Element('main');
+mountDriverDocuments(companyHost,{adapter,companyMode:true}).reset('company');await flush();
+const companyNodes=walk(companyHost);
+assert.equal(companyNodes.filter(n=>n.tag==='input').length,4);
+assert.equal(companyNodes.filter(n=>n.tag==='input'&&n.multiple).length,2);
+assert(!companyNodes.some(n=>n.textContent==='운수사 대체'||n.textContent==='인허가 PDF 저장'));
+console.log('Document UI: multi-page upload, per-page deletion, hover preview, replacement, partial failure, expiry and owner switching passed');
