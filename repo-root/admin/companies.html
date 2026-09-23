@@ -6,6 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>운수사 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
+  <link rel="stylesheet" href="/css/driver-documents.css">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
@@ -85,11 +86,20 @@
             <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
+        <div id="company-storage" class="hidden p-4 border-t border-zinc-700 space-y-2">
+          <label class="app-label" for="company-folder">운수사 인허가 파일 저장소</label>
+          <input id="company-folder" class="app-input" type="url" value="https://1drv.ms/f/c/6dace80ad4c07b59/IgCRF6DHb-8GQLZozZ3qz83pAVln53UZ6lkCVgU3kr9L0Fw?e=9tBipw">
+          <button id="company-folder-register" type="button" class="btn btn-ghost">저장소 등록</button>
+          <p id="company-folder-status" role="status" class="text-xs text-zinc-400"></p>
+        </div>
+        <div id="company-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>
       </section>
     </div>
   </main>
 
   <script type="module">
+    import { mountDriverDocuments } from '/js/driver-documents.js';
+    import { companyDocuments, oneDriveDocuments } from '/js/onedrive-api.js';
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, confirmDialog } from '/js/ui.js';
@@ -104,6 +114,15 @@
     decorateCenterLinks(document);
 
     const $ = (id) => document.getElementById(id);
+    const documents=mountDriverDocuments($('company-documents'),{adapter:companyDocuments,companyMode:true});
+    $('company-storage').classList.toggle('hidden',profile.role!=='admin');
+    $('company-folder-register').addEventListener('click',async()=>{
+      const button=$('company-folder-register');button.disabled=true;
+      $('company-folder-status').textContent='저장소 확인 중…';
+      try{await oneDriveDocuments.configureCompany($('company-folder').value.trim());$('company-folder-status').textContent='운수사 인허가 저장소 등록 완료';}
+      catch(error){$('company-folder-status').textContent=error.message;}
+      finally{button.disabled=false;}
+    });
 
     const state = {
       rows: [],
@@ -213,6 +232,7 @@
     }
 
     function rowToForm(r) {
+      documents.reset(r?.id);
       $('f-id').value   = r?.id   || '';
       $('f-name').value = r?.name || '';
       $('f-memo').value = r?.memo || '';

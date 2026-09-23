@@ -16,6 +16,9 @@ assert.throws(() => validateAssignments([assignment], { ...shared, center: '002'
 assert.throws(() => validateAssignments([assignment], { ...shared, companyId: 'company-2' }, drivers, companies), /운수사가 센터/);
 assert.throws(() => validateAssignments([{ ...assignment, kind: 'health_certificate' }], shared, drivers, companies), /만료일/);
 assert.equal(validateAssignments([{ ...assignment, kind: 'health_certificate' }], { ...shared, expiry: '2027-02-28' }, drivers, companies).length, 1);
-assert.throws(() => validateAssignments([assignment, { ...assignment, pageNumber: 2 }], shared, drivers, companies), /여러 페이지/);
+assert.throws(() => validateAssignments([assignment, { ...assignment, pageNumber: 2 }], shared, drivers, companies), /한 장만/);
+for(const kind of ['food_transport_back','livestock_transport_back']){
+  assert.equal(validateAssignments(Array.from({length:120},(_,i)=>({...assignment,kind,pageNumber:i+1})),shared,drivers,companies).length,120);
+}
 assert.equal(validateAssignments([assignment, { ...assignment, pageNumber: 2, kind: 'vehicle_registration' }], shared, drivers, companies).length, 2);
 console.log('PDF image assignment checks passed');

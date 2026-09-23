@@ -16,6 +16,8 @@ export const oneDriveDocuments = {
   status:()=>call('status'),
   configureArchive:url=>call('archive-config',{url}),
   configurePdf:url=>call('pdf-config',{url}),
+  configureCompany:url=>call('company-config',{url}),
+  replaceCompany:(driverId,kind)=>call('replace-company',{driverId,kind}),
   compilePdf:async(driverId,onProgress)=>{
     const {versions,images}=await prepareCompilation(oneDriveDocuments,driverId,onProgress);
     const form=new FormData();form.set('driverId',driverId);form.set('versions',JSON.stringify(versions));
@@ -23,9 +25,9 @@ export const oneDriveDocuments = {
     onProgress?.('PDF 생성 및 OneDrive 저장 중…');
     return call('compile-pdf',form);
   },
-  remove:(driverId,kind,version)=>call('remove',{driverId,kind,version}),
+  remove:(driverId,kind,version,documentId)=>call('remove',{driverId,kind,version,documentId}),
   list:async driverId=>(await call('list',{driverId})).documents,
-  download:(driverId,kind,version)=>call('download',{driverId,kind,version},true),
+  download:(driverId,kind,version,documentId)=>call('download',{driverId,kind,version,documentId},true),
   upload:async ({driverId,kind,file,expiresOn,requestId,companyId})=>{
     const form=new FormData();
     form.set('driverId',driverId);form.set('kind',kind);form.set('file',file);
@@ -38,6 +40,17 @@ export const oneDriveDocuments = {
         await new Promise(resolve=>setTimeout(resolve,1500*(attempt+1)));
       }
     }
+  }
+};
+export const companyDocuments = {
+  status:oneDriveDocuments.status,
+  list:async driverId=>(await call('company-list',{driverId})).documents,
+  download:(driverId,kind,version,documentId)=>call('company-download',{driverId,kind,version,documentId},true),
+  remove:(driverId,kind,version,documentId)=>call('company-remove',{driverId,kind,version,documentId}),
+  upload:async({driverId,kind,file,requestId})=>{
+    const form=new FormData();
+    form.set('driverId',driverId);form.set('kind',kind);form.set('file',file);form.set('requestId',requestId);
+    return call('company-upload',form);
   }
 };
 export async function connectOneDrive() {
