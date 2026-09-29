@@ -8,7 +8,7 @@ export function validateDocumentFile(file) {
   if (!file || !['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WEBP 사진을 선택해 주세요.');
   if (file.size <= 0 || file.size > 10 * 1024 * 1024) throw new Error('사진은 10MB 이하만 선택할 수 있습니다.');
 }
-export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onSaved=()=>{}, companyMode=false }={}) {
+export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onSaved=()=>{}, onRecords=()=>{}, companyMode=false }={}) {
   let generation=0,pending=false,refreshCurrent=()=>{};
   const urls=new Set();
   const clearUrls=()=>{urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();};
@@ -34,6 +34,7 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onS
     refreshCurrent=refresh;
     async function reload(){
       const result=await adapter.list(ownerId);
+      onRecords(ownerId,result);
       if(!current())return;
       records=result;loaded=true;render();refresh();
     }
@@ -44,7 +45,7 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onS
       try{resultMessage=await work()||'저장 완료';}
       catch(error){resultMessage=error.message;}
       finally{
-        if(reloadAfter&&current())try{await reload();}catch(error){loaded=false;resultMessage+=' · 목록 조회 실패: '+error.message;}
+        if(reloadAfter)try{await reload();}catch(error){onRecords(ownerId,null);loaded=false;resultMessage+=' · 목록 조회 실패: '+error.message;}
         pending=false;refreshCurrent();
         if(current())notice.textContent=resultMessage;
       }

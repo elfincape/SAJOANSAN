@@ -377,12 +377,17 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
               const centers=await db('centers?select=name&code=eq.'+enc(d.center_code),{token:user.token});
               filename=companyDocumentFilename({center:({'001':'안산','002':'평택'})[d.center_code]||centers[0]?.name||d.center_code,company:d.name},kind,extension,pageNumber);
             }else{
-              filename=documentFilename(await naming(user,d,companyOverride),kind,extension).replace('.'+extension,'_'+request+'.'+extension);
+              if(kind.endsWith('_back')){
+                const pages=await db('driver_documents?select=page_number&driver_id=eq.'+enc(id)+'&document_type=eq.'+enc(kind)+'&order=page_number.desc&limit=1');
+                const reservations=await db('onedrive_uploads?select=page_number&driver_id=eq.'+enc(id)+'&kind=eq.'+enc(kind)+'&order=page_number.desc.nullslast&limit=1');
+                pageNumber=[...pages,...reservations].reduce((max,row)=>Math.max(max,row.page_number??-1),-1)+1;
+              }
+              filename=documentFilename(await naming(user,d,companyOverride),kind,extension).replace('.'+extension,(kind.endsWith('_back')?String(pageNumber+1):'')+'.'+extension);
             }
           }
           if(journal&&(journal.user_id!==user.id||journal[owner]!==id||journal.kind!==kind||journal.content_hash!==fingerprint))throw fail('기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',409);
           if(!journal){
-            journal={request_id:request,user_id:user.id,[owner]:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint,...(companyMode?{page_number:pageNumber}:{})};
+            journal={request_id:request,user_id:user.id,[owner]:id,kind,drive_id:folder.driveId,folder_id:folder.folderId,file_name:filename,content_hash:fingerprint,page_number:pageNumber};
             await db('onedrive_uploads',{method:'POST',body:journal});
           }
           if(journal.status==='archived')throw fail('이미 삭제한 업로드입니다. 사진을 새로 선택해 주세요.',409);
@@ -393,7 +398,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
           if(existing){
             const owners=await db(table+'?select='+owner+',document_type&drive_id=eq.'+enc(journal.drive_id)+'&item_id=eq.'+enc(existing.id));
             if(owners.some(row=>row[owner]!==id||row.document_type!==kind)||
-               (companyMode&&kind.endsWith('_back')&&owners.length&&journal.item_id!==existing.id)||
+               (kind.endsWith('_back')&&owners.length&&journal.item_id!==existing.id)||
                (!owners.length&&journal.item_id!==existing.id)){
               throw fail('대상 폴더에 같은 이름의 다른 파일이 있습니다. 파일명을 확인해 주세요.',409);
             }

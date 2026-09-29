@@ -30,7 +30,8 @@ const adapter={
  replaceCompany:async(...args)=>{replaces.push(args);return {count:4};},
  compilePdf:async()=>({fileName:'all.pdf'})
 };
-const panel=mountDriverDocuments(host,{adapter,getExpiry:()=>expiry});
+const notifications=[];
+const panel=mountDriverDocuments(host,{adapter,getExpiry:()=>expiry,onRecords:(id,rows)=>notifications.push([id,rows?.map(r=>({...r}))])});
 panel.reset('driver');await flush();
 const all=()=>walk(host),input=kind=>all().filter(n=>n.tag==='input')[DOCUMENT_TYPES.findIndex(([k])=>k===kind)];
 const buttons=text=>all().filter(n=>n.tag==='button'&&n.textContent===text);
@@ -47,6 +48,7 @@ assert.equal(buttons('사진 삭제').length,13);
 await buttons('사진 삭제')[5].events.click();
 assert.equal(removes[0][3],calls[4].requestId,'delete targets an individual back page');
 assert.equal(rows.length,12);
+assert.equal(notifications.at(-1)[1].length,12,'deleted document reflected after reload');
 const health=input('health_certificate');health.files=[{name:'health.jpg',type:'image/jpeg',size:100}];
 await health.events.change();assert.equal(calls.length,12);assert.match(all().find(n=>n.role==='status').textContent,/만료일/);
 expiry='2027-01-01';await health.events.change();assert.equal(calls.length,13);

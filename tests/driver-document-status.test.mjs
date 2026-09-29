@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { documentChecks, documentChecksHtml } from '../repo-root/js/driver-document-status.js';
+const rows = kinds => kinds.map(document_type => ({document_type}));
+assert.deepEqual(documentChecks([]).map(x=>x.checked),[false,false,false,false,false,false]);
+assert.deepEqual(documentChecks(rows(['food_transport','livestock_transport_back','identity'])).map(x=>x.checked),[false,false,false,false,true,false]);
+const complete=rows(['food_transport','food_transport_back','livestock_transport','livestock_transport_back','freight_license','vehicle_registration','identity','health_certificate']);
+assert(documentChecks(complete).every(x=>x.checked));
+assert.equal(documentChecks(complete.filter(x=>x.document_type!=='food_transport_back'))[0].checked,false);
+const html=documentChecksHtml(complete);
+assert.equal((html.match(/disabled/g)||[]).length,6);
+assert.equal((html.match(/ checked/g)||[]).length,6);
+assert.match(documentChecksHtml(null),/조회 실패/);
+console.log('Automatic document checks passed');

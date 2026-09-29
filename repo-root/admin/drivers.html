@@ -42,6 +42,7 @@
           <table class="app-table">
             <thead>
               <tr>
+                <th>서류 등록</th>
                 <th>이름</th>
                 <th>연락처</th>
                 <th>운수사</th>
@@ -128,6 +129,7 @@
   <script type="module">
     import { healthStatus, healthBadge, compareHealthDates, validDate, watchHealthDate } from '/js/driver-health.js';
     import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '/js/onedrive-api.js';
+    import { documentChecksHtml } from '/js/driver-document-status.js';
     import { mountDriverDocuments } from '/js/driver-documents.js';
     import { fetchAllRows } from '/js/unassigned-delivery-points.js';
     import { supabase } from '/js/supabase.js';
@@ -147,6 +149,7 @@
 
     const state = {
       rows: [],
+      documentRows: new Map(),
       filtered: [],
       companies: [],
       companyById: new Map(),
@@ -160,6 +163,7 @@
     let healthSchemaReady = false;
     const documents = mountDriverDocuments($('driver-documents'), {
       adapter: oneDriveDocuments,
+      onRecords: (driverId, records) => { state.documentRows.set(driverId, records); renderList(); },
       getExpiry: () => $('f-health-expiry').value,
       onSaved: (driverId,kind,expiry) => {
         if (kind === 'health_certificate') {
@@ -234,6 +238,14 @@
         $('f-health-expiry').disabled = !healthSchemaReady;
         $('health-schema-note').textContent = healthSchemaReady ? '' : '보건증 만료일 저장 준비가 필요합니다. 관리자에게 문의해 주세요.';
         state.rows = drv.data || [];
+        state.documentRows = new Map();
+        for (let offset=0; offset<state.rows.length; offset+=100) {
+          const ids=state.rows.slice(offset,offset+100).map(row=>row.id);
+          try {
+            const records=await fetchAllRows(() => supabase.from('driver_documents').select('id,driver_id,document_type').in('driver_id',ids).order('id'));
+            ids.forEach(id=>state.documentRows.set(id,records.filter(row=>row.driver_id===id)));
+          } catch { ids.forEach(id=>state.documentRows.set(id,null)); }
+        }
         state.companies = co.data || [];
         state.companyById = new Map(state.companies.map(c => [c.id, c]));
 
@@ -313,6 +325,7 @@
           const health = healthStatus(r.health_certificate_expires_on);
           if (health.urgent) tr.classList.add(health.className);
           tr.innerHTML = `
+            <td>${documentChecksHtml(state.documentRows.get(r.id))}</td>
             <td>${escapeHtml(r.name)}</td>
             <td>${escapeHtml(formatPhone(r.phone))}</td>
             <td>${escapeHtml(co?.name || '')}</td>

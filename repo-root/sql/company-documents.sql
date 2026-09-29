@@ -44,7 +44,10 @@ begin
  if p_kind='health_certificate' and p_expiry is null then raise exception 'Expiry required'; end if;
  page:=0;
  if p_kind in ('food_transport_back','livestock_transport_back') then
-   select coalesce(max(page_number),-1)+1 into page from public.driver_documents where driver_id=p_driver and document_type=p_kind;
+   select page_number into page from public.onedrive_uploads where request_id=p_request and driver_id=p_driver and kind=p_kind;
+   if page is null then
+     select coalesce(max(page_number),-1)+1 into page from public.driver_documents where driver_id=p_driver and document_type=p_kind;
+   end if;
  end if;
  insert into public.driver_documents(driver_id,document_type,page_number,drive_id,item_id,file_name,mime_type,size_bytes,uploaded_by,uploaded_at,request_id)
  values(p_driver,p_kind,page,p_drive,p_item,p_filename,p_mime,p_size,p_user,now(),p_request)
