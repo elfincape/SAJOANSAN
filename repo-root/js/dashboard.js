@@ -1,4 +1,4 @@
-import { healthStatus, healthBadge, compareHealthRows, rowHealthDate, watchHealthDate } from './driver-health.js';
+import { healthStatus, healthBadge, prioritizeHealthRows, rowHealthDate, watchHealthDate } from './driver-health.js';
 // 대시보드 - 코스표 조회 화면
 // =============================================================================
 // 데이터: Supabase course_view (한 번에 fetch, 클라이언트에서 필터/정렬)
@@ -569,14 +569,13 @@ function applyFiltersAndSort() {
 
   const sorters = state.sort;
   state.filtered.sort((a, b) => {
-    const healthOrder = compareHealthRows(a,b);
-    if (healthOrder) return healthOrder;
     for (const s of sorters) {
       const r = compareVal(a[s.key], b[s.key]);
       if (r !== 0) return s.dir === 'asc' ? r : -r;
     }
     return 0;
   });
+  state.filtered = prioritizeHealthRows(state.filtered, f);
 }
 
 function compareVal(a, b) {
@@ -833,7 +832,7 @@ function renderGroups() {
   }
 
   for (const [, stops] of groups) {
-    stops.sort((a, b) => compareHealthRows(a,b) || (a.stop_order ?? 0) - (b.stop_order ?? 0));
+    stops.sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
 
     const head = stops[0];
     const card = document.createElement('section');

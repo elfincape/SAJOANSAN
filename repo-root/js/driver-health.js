@@ -42,3 +42,21 @@ export function watchHealthDate(onChange) {
   document.addEventListener('visibilitychange', check);
   return () => { clearInterval(timer); document.removeEventListener('visibilitychange', check); };
 }
+
+export function prioritizeHealthRows(rows, filters = {}, today = koreaToday()) {
+  const filtering = Object.values(filters).some(value =>
+    value instanceof Set ? value.size > 0 : typeof value === 'string' ? value.trim().length > 0 : Boolean(value));
+  if (filtering) return rows;
+  const seen = new Set(), first = [], rest = [];
+  for (const row of rows) {
+    const drivers = ['primary', 'secondary'].filter(role =>
+      row[role + '_driver_id'] && healthStatus(row[role + '_driver_health_expires_on'], today).urgent
+    ).map(role => String(row[role + '_driver_id']));
+    if (drivers.some(id => !seen.has(id))) {
+      first.push(row);
+      drivers.forEach(id => seen.add(id));
+    } else rest.push(row);
+  }
+  first.sort((a,b) => compareHealthRows(a,b,today));
+  return [...first, ...rest];
+}

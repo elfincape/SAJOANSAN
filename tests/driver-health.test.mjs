@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { koreaToday, validDate, nextMonth, healthStatus, compareHealthDates, compareHealthRows, rowHealthDate } from '../repo-root/js/driver-health.js';
+import { koreaToday, validDate, nextMonth, healthStatus, compareHealthDates, compareHealthRows, rowHealthDate, prioritizeHealthRows } from '../repo-root/js/driver-health.js';
 assert.equal(koreaToday(new Date('2026-09-17T15:00:00Z')), '2026-09-18');
 assert.equal(nextMonth('2026-01-31'), '2026-02-28');
 assert.equal(nextMonth('2028-01-31'), '2028-02-29');
@@ -28,8 +28,9 @@ assert.equal(rowHealthDate({primary_driver_health_expires_on:'2026-12-31',second
 const dash=fs.readFileSync(new URL('../repo-root/js/dashboard.js',import.meta.url),'utf8');
 const filters=Object.fromEntries(['company_name','route_name','car_number','dp_region','driver_name','delivery_method','access_method','delivery_location','security_key_location','security_password','entry_cond'].map(k=>[k,new Set()]));
 filters.search='';
+rows.forEach(r => { if(r.primary_driver_health_expires_on)r.primary_driver_id=r.id; if(r.secondary_driver_health_expires_on)r.secondary_driver_id=r.id; });
 const state={filters,rows,sort:[{key:'id',dir:'desc'}]};
-const ctx=vm.createContext({state, compareHealthRows:(a,b)=>compareHealthRows(a,b,today)});
+const ctx=vm.createContext({state, prioritizeHealthRows:(rows,filters)=>prioritizeHealthRows(rows,filters,today)});
 const start=dash.indexOf('function applyFiltersAndSort()');
 vm.runInContext(dash.slice(start,dash.indexOf('// -----------------------------------------------------------------------------\n// 렌더',start)),ctx);
 ctx.applyFiltersAndSort();
@@ -45,3 +46,21 @@ adminCtx.applyAndRender();
 assert.equal(adminState.filtered[0].id,'earlier');
 assert.equal(adminState.filtered[1].id,'soon');
 console.log('Health expiry calendar boundaries, priority, secondary drivers and filtered sorting passed');
+
+const repeated=[
+ {id:'normal',primary_driver_id:'n',primary_driver_health_expires_on:'2027-01-01'},
+ {id:'first',primary_driver_id:'a',primary_driver_health_expires_on:'2026-09-01'},
+ {id:'second',primary_driver_id:'a',primary_driver_health_expires_on:'2026-09-01'},
+ {id:'sub-first',secondary_driver_id:'b',secondary_driver_health_expires_on:'2026-10-01'},
+ {id:'sub-second',primary_driver_id:'b',primary_driver_health_expires_on:'2026-10-01'}
+];
+assert.deepEqual(prioritizeHealthRows(repeated,{},today).map(r=>r.id),['first','sub-first','normal','second','sub-second']);
+assert.deepEqual(prioritizeHealthRows(repeated,{search:'기사'},today),repeated);
+assert.deepEqual(prioritizeHealthRows(repeated,{driver_name:new Set(['a'])},today),repeated);
+assert.equal(healthStatus(rowHealthDate(repeated[2],today),today).urgent,true);
+filters.search='';
+filters.driver_name.add('unused');
+state.rows=rows.map(r=>({...r,primary_driver_name:'unused'}));
+ctx.applyFiltersAndSort();
+assert.equal(state.filtered[0].id,'soon','active filter keeps normal descending ID order');
+console.log('One representative per driver; search/filter preserve order and highlighting passed');
