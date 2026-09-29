@@ -10,7 +10,7 @@ export function documentChecks(records) {
 }
 export function documentChecksHtml(records) {
   if (!records) return '<span class="text-xs text-zinc-400">조회 실패</span>';
-  return '<div class="flex gap-2 whitespace-nowrap">' + documentChecks(records).map(({label,checked}) =>
-    '<label class="inline-flex flex-col items-center gap-1 text-xs"><span>'+label+'</span><input type="checkbox" disabled aria-label="'+label+' 서류 등록" '+(checked?'checked':'')+' style="opacity:1;accent-color:#34d399;pointer-events:none"></label>'
+  return '<div class="driver-document-checks">' + documentChecks(records).map(({label,checked}) =>
+    '<label class="driver-document-check"><span>'+label+'</span><input type="checkbox" class="driver-document-checkbox" disabled aria-label="'+label+' 서류 등록" '+(checked?'checked':'')+'></label>'
   ).join('') + '</div>';
 }

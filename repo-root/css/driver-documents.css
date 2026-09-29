@@ -21,3 +21,22 @@ tr.health-soon > td { background:rgba(120,53,15,.3) !important; }
 }
 .driver-document-preview:hover ~ .driver-document-zoom,
 .driver-document-preview:focus-visible ~ .driver-document-zoom { display:block; }
+
+/* Keep the driver list readable while leaving room for the document editor. */
+.driver-management-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.driver-management-layout > section { min-width:0; }
+@media (min-width:1440px) {
+  .driver-management-layout { grid-template-columns:minmax(0,1fr) 380px; }
+}
+table.driver-list-table th, table.driver-list-table td { white-space:nowrap; padding:8px; }
+.driver-document-checks { display:flex; flex-wrap:nowrap; align-items:center; gap:10px; }
+.driver-document-check { display:inline-flex; flex-direction:row; align-items:center; gap:4px; font-size:12px; white-space:nowrap; }
+.driver-document-checkbox:disabled {
+  appearance:none; -webkit-appearance:none; display:inline-block;
+  width:16px; height:16px; flex:none; margin:0; border:1px solid #71717a;
+  border-radius:3px; background-color:#27272a; opacity:1; pointer-events:none;
+}
+.driver-document-checkbox:disabled:checked {
+  background-color:#10b981; border-color:#34d399;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
