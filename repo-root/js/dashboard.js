@@ -82,6 +82,7 @@ const state = {
   ],
   healthByDriver: new Map(),
   healthAvailable: false,
+  healthPromoted: new Set(),
   view: 'flat',
   // 컬럼 설정 (localStorage 영속)
   colOrder:   loadJSON('dash.colOrder',   ALL_KEYS),
@@ -233,9 +234,9 @@ async function loadDriverHealth(center) {
 }
 
 function renderDriverHealth(row) {
-  if (!state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id)) return '보건증 확인 불가';
-  const main = row.primary_driver_id ? '주: ' + healthBadge(row.primary_driver_health_expires_on) : '';
-  const sub = row.secondary_driver_id ? '보조: ' + healthBadge(row.secondary_driver_health_expires_on) : '';
+  if (!state.healthPromoted.has(row)) return '보건증 확인 불가';
+  const main = row.primary_driver_id ? '주: ' + healthBadge(row.primary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
+  const sub = row.secondary_driver_id ? '보조: ' + healthBadge(row.secondary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
   return [main, sub].filter(Boolean).join('<br>');
 }
 
@@ -575,7 +576,8 @@ function applyFiltersAndSort() {
     }
     return 0;
   });
-  if (state.healthAvailable !== false) state.filtered = prioritizeHealthRows(state.filtered, f);
+  state.healthPromoted = new Set();
+  if (state.healthAvailable !== false) state.filtered = prioritizeHealthRows(state.filtered, f, undefined, state.healthPromoted);
 }
 
 function compareVal(a, b) {
@@ -858,7 +860,7 @@ function renderGroups() {
           </tr></thead>
           <tbody>
             ${stops.map(s => `
-              <tr class="${(state.healthAvailable && (s.primary_driver_id || s.secondary_driver_id) ? healthStatus(rowHealthDate(s)).className : '')}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
+              <tr class="${(state.healthPromoted.has(s) ? healthStatus(rowHealthDate(s)).className : '')}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
                 <td class="text-right">${s.stop_order ?? ''}</td>
                 <td class="biz-time">${bizMinToStandard(s.arrival_business_min)}</td>
                 <td class="biz-time">${bizMinToStandard(s.unloading_start_business_min)}</td>

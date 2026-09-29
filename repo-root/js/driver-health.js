@@ -32,9 +32,9 @@ export function rowHealthDate(row, today = koreaToday()) {
 export function compareHealthRows(a, b, today = koreaToday()) {
   return compareHealthDates(rowHealthDate(a,today), rowHealthDate(b,today), today);
 }
-export function healthBadge(expiry, today = koreaToday()) {
+export function healthBadge(expiry, today = koreaToday(), highlighted = true) {
   const s = healthStatus(expiry,today);
-  return `<span class="health-badge ${s.className}">${s.label}${s.expiry ? ' · ' + s.expiry : ''}</span>`;
+  return `<span class="health-badge ${highlighted ? s.className : ''}">${s.label}${s.expiry ? ' · ' + s.expiry : ''}</span>`;
 }
 export function watchHealthDate(onChange) {
   let day = koreaToday();
@@ -44,7 +44,8 @@ export function watchHealthDate(onChange) {
   return () => { clearInterval(timer); document.removeEventListener('visibilitychange', check); };
 }
 
-export function prioritizeHealthRows(rows, filters = {}, today = koreaToday()) {
+export function prioritizeHealthRows(rows, filters = {}, today = koreaToday(), promoted = new Set()) {
+  promoted.clear();
   const filtering = Object.values(filters).some(value =>
     value instanceof Set ? value.size > 0 : typeof value === 'string' ? value.trim().length > 0 : Boolean(value));
   if (filtering) return rows;
@@ -55,6 +56,7 @@ export function prioritizeHealthRows(rows, filters = {}, today = koreaToday()) {
     ).map(role => String(row[role + '_driver_id']));
     if (drivers.some(id => !seen.has(id))) {
       first.push(row);
+      promoted.add(row);
       drivers.forEach(id => seen.add(id));
     } else rest.push(row);
   }
