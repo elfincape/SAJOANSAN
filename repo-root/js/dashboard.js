@@ -233,8 +233,12 @@ async function loadDriverHealth(center) {
   }
 }
 
+function dashboardHealthClass(row) {
+  return state.healthAvailable && state.healthPromoted.has(row) ? healthStatus(rowHealthDate(row)).className : '';
+}
+
 function renderDriverHealth(row) {
-  if (!state.healthPromoted.has(row)) return '보건증 확인 불가';
+  if (!state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id)) return '보건증 확인 불가';
   const main = row.primary_driver_id ? '주: ' + healthBadge(row.primary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
   const sub = row.secondary_driver_id ? '보조: ' + healthBadge(row.secondary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
   return [main, sub].filter(Boolean).join('<br>');
@@ -660,7 +664,7 @@ function renderFlatTable() {
       return `<td class="${cls} ${align}" title="${tip}">${html ?? ''}</td>`;
     }).join('');
 
-    return `<tr class="${(state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id) ? healthStatus(rowHealthDate(row)).className : '')}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
+    return `<tr class="${dashboardHealthClass(row)}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
   }).join('')}</tbody>`;
 
   host.innerHTML = `<table class="data-table">${colgroup}${thead}${tbody}</table>`;
@@ -860,7 +864,7 @@ function renderGroups() {
           </tr></thead>
           <tbody>
             ${stops.map(s => `
-              <tr class="${(state.healthPromoted.has(s) ? healthStatus(rowHealthDate(s)).className : '')}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
+              <tr class="${dashboardHealthClass(s)}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
                 <td class="text-right">${s.stop_order ?? ''}</td>
                 <td class="biz-time">${bizMinToStandard(s.arrival_business_min)}</td>
                 <td class="biz-time">${bizMinToStandard(s.unloading_start_business_min)}</td>
