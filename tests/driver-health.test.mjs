@@ -12,8 +12,8 @@ assert.equal(healthStatus('2026-09-17','2026-09-18').rank,0);
 assert.equal(healthStatus('2026-09-18','2026-09-18').label,'보건증 오늘 만료');
 assert.equal(healthStatus('2026-10-17','2026-09-18').rank,1);
 assert.equal(healthStatus('2026-10-18','2026-09-18').urgent,false);
-assert.equal(healthStatus(null,'2026-09-18').urgent,false);
-assert.equal(healthStatus('2026-02-29','2026-09-18').urgent,false);
+assert.equal(healthStatus(null,'2026-09-18').urgent,true);
+assert.equal(healthStatus('2026-02-29','2026-09-18').urgent,true);
 assert.equal(healthStatus('2026-02-28','2026-01-31').urgent,false);
 const today='2026-09-18';
 const rows=[
@@ -23,7 +23,7 @@ const rows=[
  {id:'missing'},
  {id:'earlier',primary_driver_health_expires_on:'2026-08-01'}
 ];
-assert.equal(rows.toSorted((a,b)=>compareHealthRows(a,b,today)).map(r=>r.id).join(','),'earlier,expired-secondary,soon,normal,missing');
+assert.equal(rows.toSorted((a,b)=>compareHealthRows(a,b,today)).map(r=>r.id).join(','),'earlier,expired-secondary,soon,missing,normal');
 assert.equal(rowHealthDate({primary_driver_health_expires_on:'2026-12-31',secondary_driver_health_expires_on:'2026-09-01'},today),'2026-09-01');
 const dash=fs.readFileSync(new URL('../repo-root/js/dashboard.js',import.meta.url),'utf8');
 const filters=Object.fromEntries(['company_name','route_name','car_number','dp_region','driver_name','delivery_method','access_method','delivery_location','security_key_location','security_password','entry_cond'].map(k=>[k,new Set()]));
@@ -64,3 +64,19 @@ state.rows=rows.map(r=>({...r,primary_driver_name:'unused'}));
 ctx.applyFiltersAndSort();
 assert.equal(state.filtered[0].id,'soon','active filter keeps normal descending ID order');
 console.log('One representative per driver; search/filter preserve order and highlighting passed');
+
+const missingRows = [
+ {id:'valid',primary_driver_id:'valid',primary_driver_health_expires_on:'2027-01-01'},
+ {id:'missing-first',primary_driver_id:'missing'},
+ {id:'missing-second',primary_driver_id:'missing'},
+ {id:'unassigned'},
+ {id:'secondary-missing',primary_driver_id:'valid',primary_driver_health_expires_on:'2027-01-01',secondary_driver_id:'secondary'}
+];
+assert.deepEqual(prioritizeHealthRows(missingRows,{},today).map(r=>r.id),['missing-first','secondary-missing','valid','missing-second','unassigned']);
+assert.equal(healthStatus(rowHealthDate(missingRows[4],today),today).className,'health-missing');
+assert.equal(healthStatus(rowHealthDate(missingRows[0],today),today).className,'');
+assert.deepEqual(prioritizeHealthRows(missingRows,{search:'missing'},today),missingRows);
+assert.deepEqual(prioritizeHealthRows(missingRows,{company_name:new Set(['회사'])},today),missingRows);
+state.healthAvailable=false; state.filters.driver_name.clear(); state.rows=missingRows;ctx.applyFiltersAndSort();
+assert.equal(state.filtered[0].id,'valid','failed health lookup must not prioritize missing dates');
+console.log('Missing dates: orange status, one row per driver, secondary driver, filters and unavailable data passed');

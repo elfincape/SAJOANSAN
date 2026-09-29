@@ -15,18 +15,19 @@ export function nextMonth(today) {
   return new Date(Date.UTC(year, month, Math.min(day, last))).toISOString().slice(0, 10);
 }
 export function healthStatus(expiry, today = koreaToday()) {
-  if (!validDate(expiry)) return { rank: 2, urgent: false, className: '', label: '미등록', expiry: '' };
+  if (!validDate(expiry)) return { rank: 2, urgent: true, className: 'health-missing', label: '미등록', expiry: '' };
   if (expiry < today) return { rank: 0, urgent: true, className: 'health-expired', label: '보건증 만료', expiry };
   if (expiry < nextMonth(today)) return { rank: 1, urgent: true, className: 'health-soon', label: expiry === today ? '보건증 오늘 만료' : '보건증 만료 임박', expiry };
-  return { rank: 2, urgent: false, className: '', label: '유효', expiry };
+  return { rank: 3, urgent: false, className: '', label: '유효', expiry };
 }
 export function compareHealthDates(a, b, today = koreaToday()) {
   const left = healthStatus(a, today), right = healthStatus(b, today);
   return left.rank - right.rank || (left.urgent && right.urgent ? left.expiry.localeCompare(right.expiry) : 0);
 }
 export function rowHealthDate(row, today = koreaToday()) {
-  return [row.primary_driver_health_expires_on, row.secondary_driver_health_expires_on]
-    .filter(Boolean).sort((a,b) => compareHealthDates(a,b,today))[0] || null;
+  return ['primary', 'secondary']
+    .filter(role => row[role + '_driver_id'] || row[role + '_driver_health_expires_on'])
+    .map(role => row[role + '_driver_health_expires_on'] || null).sort((a,b) => compareHealthDates(a,b,today))[0] || null;
 }
 export function compareHealthRows(a, b, today = koreaToday()) {
   return compareHealthDates(rowHealthDate(a,today), rowHealthDate(b,today), today);

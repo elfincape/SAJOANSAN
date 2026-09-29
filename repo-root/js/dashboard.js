@@ -575,7 +575,7 @@ function applyFiltersAndSort() {
     }
     return 0;
   });
-  state.filtered = prioritizeHealthRows(state.filtered, f);
+  if (state.healthAvailable !== false) state.filtered = prioritizeHealthRows(state.filtered, f);
 }
 
 function compareVal(a, b) {
@@ -658,7 +658,7 @@ function renderFlatTable() {
       return `<td class="${cls} ${align}" title="${tip}">${html ?? ''}</td>`;
     }).join('');
 
-    return `<tr class="${healthStatus(rowHealthDate(row)).className}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
+    return `<tr class="${(state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id) ? healthStatus(rowHealthDate(row)).className : '')}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
   }).join('')}</tbody>`;
 
   host.innerHTML = `<table class="data-table">${colgroup}${thead}${tbody}</table>`;
@@ -858,7 +858,7 @@ function renderGroups() {
           </tr></thead>
           <tbody>
             ${stops.map(s => `
-              <tr class="${healthStatus(rowHealthDate(s)).className}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
+              <tr class="${(state.healthAvailable && (s.primary_driver_id || s.secondary_driver_id) ? healthStatus(rowHealthDate(s)).className : '')}" data-stop-id="${escapeAttr(String(s.stop_id ?? ''))}">
                 <td class="text-right">${s.stop_order ?? ''}</td>
                 <td class="biz-time">${bizMinToStandard(s.arrival_business_min)}</td>
                 <td class="biz-time">${bizMinToStandard(s.unloading_start_business_min)}</td>
