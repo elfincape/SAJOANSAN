@@ -1,4 +1,4 @@
-import { healthStatus, healthBadge, prioritizeHealthRows, rowHealthDate, watchHealthDate } from './driver-health.js';
+import { healthStatus, validDate, healthBadge, prioritizeHealthRows, rowHealthDate, watchHealthDate } from './driver-health.js';
 // 대시보드 - 코스표 조회 화면
 // =============================================================================
 // 데이터: Supabase course_view (한 번에 fetch, 클라이언트에서 필터/정렬)
@@ -237,10 +237,32 @@ function dashboardHealthClass(row) {
   return state.healthAvailable && state.healthPromoted.has(row) ? healthStatus(rowHealthDate(row)).className : '';
 }
 
+
+function copyableHealthBadge(expiry, highlighted) {
+  const badge = healthBadge(expiry, undefined, highlighted);
+  if (!validDate(expiry)) return badge;
+  const date = expiry.replaceAll('-', '.');
+  return `<button type="button" data-health-date="${date}" title="클릭하여 ${date} 복사" style="font:inherit;color:inherit;cursor:copy">${badge}</button>`;
+}
+
+function bindHealthDateCopy(host) {
+  host.querySelectorAll('[data-health-copy]').forEach(cell => {
+    cell.addEventListener('click', async event => {
+      event.stopPropagation();
+      const target = event.target.closest('[data-health-date]') || cell.querySelector('[data-health-date]');
+      if (!target) { toast('복사할 보건증 만료일이 없습니다.', 'warn'); return; }
+      try {
+        await navigator.clipboard.writeText(target.dataset.healthDate);
+        toast('만료일 복사: ' + target.dataset.healthDate, 'success');
+      } catch { toast('복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해 주세요.', 'error'); }
+    });
+  });
+}
+
 function renderDriverHealth(row) {
   if (!state.healthAvailable && (row.primary_driver_id || row.secondary_driver_id)) return '보건증 확인 불가';
-  const main = row.primary_driver_id ? '주: ' + healthBadge(row.primary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
-  const sub = row.secondary_driver_id ? '보조: ' + healthBadge(row.secondary_driver_health_expires_on, undefined, state.healthPromoted.has(row)) : '';
+  const main = row.primary_driver_id ? '주: ' + copyableHealthBadge(row.primary_driver_health_expires_on, state.healthPromoted.has(row)) : '';
+  const sub = row.secondary_driver_id ? '보조: ' + copyableHealthBadge(row.secondary_driver_health_expires_on, state.healthPromoted.has(row)) : '';
   return [main, sub].filter(Boolean).join('<br>');
 }
 
@@ -661,13 +683,15 @@ function renderFlatTable() {
       const align = c.align === 'right' ? 'text-right' : '';
       const tip   = escapeAttr(stripHtml(html));
 
-      return `<td class="${cls} ${align}" title="${tip}">${html ?? ''}</td>`;
+      return `<td class="${cls} ${align}" ${c.key === 'driver_health' ? 'data-health-copy style="cursor:copy"' : ''} title="${tip}">${html ?? ''}</td>`;
     }).join('');
 
     return `<tr class="${dashboardHealthClass(row)}" data-stop-id="${escapeAttr(String(row.stop_id ?? ''))}">${tds}</tr>`;
   }).join('')}</tbody>`;
 
   host.innerHTML = `<table class="data-table">${colgroup}${thead}${tbody}</table>`;
+
+  bindHealthDateCopy(host);
 
   // 헤더 클릭 (정렬)
   host.querySelectorAll('thead th').forEach(th => {
@@ -849,7 +873,7 @@ function renderGroups() {
         <span class="text-zinc-400">${escapeHtml(head.car_number || '')}</span>
         <span class="text-zinc-400">${escapeHtml(head.company_name || '')}</span>
         <span class="text-zinc-400">${renderDriver(head)}</span>
-        <span>${renderDriverHealth(head)}</span>
+        <span data-health-copy>${renderDriverHealth(head)}</span>
         <span class="text-zinc-400">연락처: ${renderDriverContact(head)}</span>
         <span class="text-zinc-500 text-xs">${escapeHtml(head.primary_vehicle_plate || '')}</span>
         <span class="ml-auto text-xs text-zinc-500">납품처 ${stops.length}개</span>
@@ -893,6 +917,7 @@ function renderGroups() {
       });
     });
 
+    bindHealthDateCopy(card);
     root.appendChild(card);
   }
 }
