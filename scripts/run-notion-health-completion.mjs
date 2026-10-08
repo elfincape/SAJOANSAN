@@ -27,5 +27,14 @@ for(const center of ['001','002']) {
     cursor=data.nextCursor;
   }
   if(!finished)throw new Error('Completion scan limit reached.');
+  if(!dryRun) {
+    const statusResponse=await fetch('https://'+ref+'.supabase.co/functions/v1/notion-health/status',{
+      method:'POST',headers:{apikey:key,...(key.startsWith('eyJ')?{Authorization:'Bearer '+key}:{}),'Content-Type':'application/json'},
+      body:JSON.stringify({center}),signal:AbortSignal.timeout(30000)});
+    const status=await statusResponse.json().catch(()=>({}));
+    if(!statusResponse.ok || status.center!==center || !Number.isFinite(Date.parse(status.lastUpdatedAt)))
+      throw new Error('Persisted completion update time was not available.');
+    console.log('Center '+center+' last successful update: '+status.lastUpdatedAt);
+  }
   console.log('Center '+center+': scanned '+scanned+', eligible '+eligible+', completed '+completed+(dryRun?' (read only)':''));
 }

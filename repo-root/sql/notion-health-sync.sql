@@ -26,3 +26,26 @@ revoke all on function public.notion_health_acquire(uuid) from public, anon, aut
 revoke all on function public.notion_health_release(uuid) from public, anon, authenticated;
 grant execute on function public.notion_health_acquire(uuid) to service_role;
 grant execute on function public.notion_health_release(uuid) to service_role;
+
+create table if not exists public.notion_health_completion_status (
+  center_code text primary key check (center_code in ('001','002')),
+  last_completed_at timestamptz not null
+);
+alter table public.notion_health_completion_status enable row level security;
+revoke all on public.notion_health_completion_status from public, anon, authenticated;
+grant all on public.notion_health_completion_status to service_role;
+create or replace function public.notion_health_record_completion(p_center text)
+returns timestamptz language plpgsql security definer set search_path=pg_catalog as $$
+declare completed_at timestamptz=clock_timestamp();
+begin
+  if p_center not in ('001','002') or p_center is null then
+    raise exception 'Invalid center';
+  end if;
+  insert into public.notion_health_completion_status(center_code,last_completed_at)
+  values(p_center,completed_at)
+  on conflict(center_code) do update set last_completed_at=excluded.last_completed_at;
+  return completed_at;
+end;
+$$;
+revoke all on function public.notion_health_record_completion(text) from public, anon, authenticated;
+grant execute on function public.notion_health_record_completion(text) to service_role;

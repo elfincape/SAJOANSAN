@@ -37,6 +37,19 @@ if(profile) {
   $('logout-btn').addEventListener('click',signOut);
   $('sync-center').textContent=(center.code==='002'?'평택':'안산')+' 센터 기사만 동기화합니다.';
   message('test-status','연결 테스트 버튼을 눌러 확인하세요.');
+  function showLastUpdate(value) {
+    const date=value?new Date(value):null;
+    $('complete-last-updated').textContent=date && Number.isFinite(date.getTime())
+      ? '마지막 업데이트: '+new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',
+          year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(date)+' (한국 시간)'
+      : '마지막 업데이트: 아직 완료된 반영 기록이 없습니다.';
+  }
+  async function refreshLastUpdate() {
+    try{const data=await call('status',{center:center.code});showLastUpdate(data.lastUpdatedAt);}
+    catch{$('complete-last-updated').textContent='마지막 업데이트: 조회하지 못했습니다.';}
+  }
+  setInterval(()=>{if(!document.hidden)void refreshLastUpdate();},60000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshLastUpdate();});
   async function preview() {
     ready=false;
     const result=await call('preview',{center:center.code});
@@ -100,7 +113,7 @@ if(profile) {
     try {
       for(let batch=0;batch<6000;batch++) {
         const data=await call('complete',{center:center.code,cursor});add(data);progress();
-        if(!data.hasMore){finished=true;break;}
+        if(!data.hasMore){showLastUpdate(data.lastUpdatedAt);finished=true;break;}
         if(!data.nextCursor || data.nextCursor===cursor)throw new Error('조회 위치를 확인할 수 없습니다. 다시 실행해 주세요.');
         cursor=data.nextCursor;
       }
@@ -113,6 +126,6 @@ if(profile) {
     } finally{busy=false;$('complete-btn').textContent='갱신 완료 즉시 반영';buttons();}
   });
   busy=true;
-  try{await preview();}catch(error){message('preview-status','대상 조회 실패 · '+reason(error));}
+  try{await Promise.all([preview(),refreshLastUpdate()]);}catch(error){message('preview-status','대상 조회 실패 · '+reason(error));}
   finally{busy=false;buttons();}
 }

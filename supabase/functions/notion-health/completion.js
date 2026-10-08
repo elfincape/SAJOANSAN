@@ -24,6 +24,12 @@ export function completionCandidate(page,driver,center,today) {
   const expiry=driver.health_certificate_expires_on;
   return validDate(expiry) && expiry>today && (old===null || expiry>old);
 }
+export async function completionStatus(env,service,fetcher,body) {
+  validateSyncInput({...body,cursor:null});
+  const rows=await database(env,service,fetcher)('notion_health_completion_status?select=last_completed_at&center_code=eq.'+body.center+'&limit=1');
+  if(!Array.isArray(rows))throw notionError('마지막 업데이트 시간을 조회할 수 없습니다.',503,'database_error');
+  return {center:body.center,lastUpdatedAt:rows[0]?.last_completed_at || null};
+}
 export async function completionBatch(env,service,fetcher,body,options={}) {
   validateCompletionInput(body);
   if(!env.NOTION_API_TOKEN?.trim() || !UUID.test(env.NOTION_DATA_SOURCE_ID?.trim() || ''))
@@ -73,6 +79,11 @@ export async function completionBatch(env,service,fetcher,body,options={}) {
       result.scanned++;
     }
     result.hasMore=Boolean(found.has_more);result.nextCursor=result.hasMore?found.next_cursor:null;
+    if(!result.hasMore && !body.dryRun) {
+      result.lastUpdatedAt=await db('rpc/notion_health_record_completion',{p_center:body.center});
+      if(typeof result.lastUpdatedAt!=='string'||!Number.isFinite(Date.parse(result.lastUpdatedAt)))
+        throw notionError('마지막 업데이트 시간을 저장하지 못했습니다.',503,'database_error');
+    }
     return result;
   } catch(error) {
     hold=Boolean(error.extra?.uncertainWrite);

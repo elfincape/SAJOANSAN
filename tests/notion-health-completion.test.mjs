@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { completionBatch, completionCandidate, validateCompletionInput } from '../supabase/functions/notion-health/completion.js';
+import { completionBatch, completionStatus, completionCandidate, validateCompletionInput } from '../supabase/functions/notion-health/completion.js';
 import { webProperties } from '../supabase/functions/notion-health/sync.js';
 import { makeHandler } from '../supabase/functions/notion-health/handler.js';
 const now=new Date('2026-10-08T16:00:00Z'),today='2026-10-09';
@@ -21,6 +21,7 @@ function mock(initial,drivers) {
     const body=init.body?JSON.parse(init.body):null;calls.push({url,init,body});
     if(url.endsWith('notion_health_acquire')){if(lease)return json(false);lease=body.p_token;return json(true);}
     if(url.endsWith('notion_health_release')){if(lease===body.p_token)lease=null;return new Response(null,{status:204});}
+    if(url.endsWith('notion_health_record_completion'))return json(now.toISOString());
     if(url.includes('/data_sources/')&&url.endsWith('/query')) {
       assert.equal(body.filter.and[0].select.equals,'평택');
       assert.ok(!JSON.stringify(body.filter).includes('처리 상태'));
@@ -126,4 +127,32 @@ test('invalid body and unauthenticated completion calls are rejected before acce
   let calls=0;const handler=makeHandler(env,async()=>{calls++;throw new Error();});
   const response=await handler(new Request('https://project.test/functions/v1/notion-health/complete',{method:'POST',body:'{"center":"002"}'}));
   assert.equal(response.status,401);assert.equal(calls,0);
+});
+
+test('update time is recorded only after successful final batch, including zero changes',async()=>{
+  const m=mock([page(1),page(2),page(3)],[driver(1),driver(2),driver(3)]);
+  const first=await completionBatch(env,'service',m.fetcher,{center:'002'},options);
+  assert.equal(first.hasMore,true);assert.ok(!m.calls.some(c=>c.url.endsWith('notion_health_record_completion')));
+  const final=await completionBatch(env,'service',m.fetcher,{center:'002',cursor:first.nextCursor},options);
+  assert.equal(final.lastUpdatedAt,now.toISOString());
+  assert.equal(m.calls.filter(c=>c.url.endsWith('notion_health_record_completion')).length,1);
+  const empty=mock([],[]);
+  assert.equal((await completionBatch(env,'service',empty.fetcher,{center:'002'},options)).lastUpdatedAt,now.toISOString());
+});
+test('dry run and failed completion leave last successful update time unchanged',async()=>{
+  const dry=mock([page(1)],[driver(1)]);
+  await completionBatch(env,'service',dry.fetcher,{center:'002',dryRun:true},options);
+  assert.ok(!dry.calls.some(c=>c.url.endsWith('notion_health_record_completion')));
+  const failed=mock([page(1)],[driver(1)]);failed.failPatch=403;
+  await assert.rejects(()=>completionBatch(env,'service',failed.fetcher,{center:'002'},options));
+  assert.ok(!failed.calls.some(c=>c.url.endsWith('notion_health_record_completion')));
+});
+test('status reads persisted time for selected center and returns null for no successful run',async()=>{
+  for(const stamp of [now.toISOString(),null]){
+    const calls=[];
+    const fetcher=async(url,init)=>{calls.push({url,init});return json(stamp?[{last_completed_at:stamp}]:[]);};
+    const result=await completionStatus(env,'service',fetcher,{center:'002'});
+    assert.equal(result.lastUpdatedAt,stamp);assert.equal(result.center,'002');
+    assert.match(calls[0].url,/center_code=eq\.002/);assert.equal(calls[0].init.method,'GET');
+  }
 });
