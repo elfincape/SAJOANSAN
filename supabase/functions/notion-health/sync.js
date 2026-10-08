@@ -26,7 +26,7 @@ export function webProperties(driver,today,now) {
     '최근 동기화일':{date:{start:now}}
   };
 }
-function database(env,service,fetcher) {
+export function database(env,service,fetcher) {
   return async(path,body) => {
     const response=await fetcher(env.SUPABASE_URL+'/rest/v1/'+path,{
       method:body?'POST':'GET',headers:{apikey:service,...(service.startsWith('sb_secret_')?{}:{Authorization:'Bearer '+service}),

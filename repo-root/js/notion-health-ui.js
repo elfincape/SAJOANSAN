@@ -14,6 +14,7 @@ function list(id,lines) {
 function buttons() {
   $('test-btn').disabled=busy;
   $('preview-btn').disabled=busy;
+  $('complete-btn').disabled=busy;
   $('sync-btn').disabled=busy || !ready || total===0;
 }
 async function call(action,body={}) {
@@ -21,7 +22,7 @@ async function call(action,body={}) {
   if(!session)throw new Error('다시 로그인해 주세요.');
   const response=await fetch(SUPABASE_URL+'/functions/v1/notion-health/'+action,{
     method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_ANON_KEY,
-      'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(110000)
+      'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(140000)
   });
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Object.assign(new Error(data.error || 'Notion 연동 요청에 실패했습니다.'),{data});
@@ -88,6 +89,28 @@ if(profile) {
       const delay=error.data?.retryAfterSeconds?' 저장 결과 확인을 위해 3분 후 다시 시도해 주세요.':' 다시 실행하면 이미 반영된 건을 확인하며 이어서 처리합니다.';
       message('sync-status','동기화 중단 · '+reason(error)+delay);
     } finally {busy=false;$('sync-btn').textContent='Notion 동기화';buttons();}
+  });
+  $('complete-btn').addEventListener('click',async()=>{
+    busy=true;buttons();$('complete-btn').textContent='갱신 확인 중…';
+    const totals={scanned:0,completed:0,unchanged:0};
+    const add=data=>{for(const key of Object.keys(totals))totals[key]+=data[key] || 0;};
+    const progress=()=>list('complete-details',['확인 '+totals.scanned+'건 · 갱신 완료 '+totals.completed+'건 · 기존 상태 유지 '+totals.unchanged+'건']);
+    let cursor=null,finished=false;
+    message('complete-status','웹에 저장된 새 만료일을 확인하고 있습니다.');
+    try {
+      for(let batch=0;batch<6000;batch++) {
+        const data=await call('complete',{center:center.code,cursor});add(data);progress();
+        if(!data.hasMore){finished=true;break;}
+        if(!data.nextCursor || data.nextCursor===cursor)throw new Error('조회 위치를 확인할 수 없습니다. 다시 실행해 주세요.');
+        cursor=data.nextCursor;
+      }
+      if(!finished)throw new Error('처리 범위를 초과했습니다. 다시 실행해 주세요.');
+      message('complete-status','갱신 완료 반영이 끝났습니다.',true);
+    } catch(error) {
+      if(error.data?.summary)add(error.data.summary);
+      progress();
+      message('complete-status','완료 반영 중단 · '+reason(error)+(error.data?.retryAfterSeconds?' 3분 후 다시 시도해 주세요.':' 다시 실행하면 완료된 이력을 유지하며 처리합니다.'));
+    } finally{busy=false;$('complete-btn').textContent='갱신 완료 즉시 반영';buttons();}
   });
   busy=true;
   try{await preview();}catch(error){message('preview-status','대상 조회 실패 · '+reason(error));}

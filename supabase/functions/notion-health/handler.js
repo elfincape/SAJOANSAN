@@ -1,4 +1,5 @@
 import { previewTargets, syncBatch, validateSyncInput } from './sync.js';
+import { completionBatch, validateCompletionInput } from './completion.js';
 export const REQUIRED_PROPERTIES = {
   '기사명':'title', '센터':'select', '웹 기사 ID':'rich_text', '갱신 건 ID':'rich_text',
   '보건증 만료일':'date', '만료 상태':'select', '처리 상태':'select', '담당자':'people',
@@ -62,7 +63,7 @@ export function makeHandler(env, fetcher=fetch) {
     try {
       const path=new URL(req.url).pathname.replace(/\/$/,'');
       const action=path.split('/').at(-1);
-      if (!['test','preview','sync'].includes(action) || !path.endsWith('/notion-health/'+action)) throw fail('지원하지 않는 요청입니다.',404);
+      if (!['test','preview','sync','complete'].includes(action) || !path.endsWith('/notion-health/'+action)) throw fail('지원하지 않는 요청입니다.',404);
       const keys=serverKeys(env);
       const service=keys[0];
       if (!service || !env.SUPABASE_URL) throw fail('서버 설정을 확인해 주세요.',503,'server_configuration');
@@ -102,6 +103,10 @@ export function makeHandler(env, fetcher=fetch) {
         if(raw.length>2000) throw new Error();
         body=JSON.parse(raw);
       } catch {throw fail('요청 내용을 확인해 주세요.',400,'invalid_body');}
+      if(action==='complete') {
+        validateCompletionInput(body);
+        return json(await completionBatch(env,service,fetcher,body));
+      }
       validateSyncInput(body);
       if(action==='preview') return json(await previewTargets(env,service,fetcher,body));
       await checkConnection(env,fetcher);

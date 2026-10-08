@@ -9,6 +9,7 @@ on:
       - 'repo-root/js/driver-health.js'
       - 'scripts/apply-notion-health-migration.mjs'
       - 'scripts/check-notion-health.mjs'
+      - 'scripts/run-notion-health-completion.mjs'
       - '.github/workflows/deploy-notion-health.yml'
   workflow_dispatch:
 jobs:
@@ -33,3 +34,7 @@ jobs:
         run: supabase functions deploy notion-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
       - name: Verify deployed Notion connection
         run: node scripts/check-notion-health.mjs
+      - name: Verify completion matching without writing
+        run: node scripts/run-notion-health-completion.mjs --dry-run
+      - name: Apply renewed certificate completion
+        run: node scripts/run-notion-health-completion.mjs
