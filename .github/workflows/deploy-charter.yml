@@ -10,6 +10,8 @@ on:
       - 'scripts/apply-charter-migration.mjs'
       - 'tests/charter-normalized.test.mjs'
       - 'tests/charter-storage.test.mjs'
+      - 'tests/charter-db.test.mjs'
+      - 'scripts/check-charter-save.mjs'
       - '.github/workflows/deploy-charter.yml'
   workflow_dispatch:
 jobs:
@@ -28,9 +30,12 @@ jobs:
         env:
           XLSX_TEST_MODULE: /tmp/charter-test/xlsx.cjs
       - run: node tests/charter-storage.test.mjs
+      - run: node tests/charter-db.test.mjs
       - run: node tests/onedrive-server.test.mjs
       - name: Apply charter database schema
         run: node scripts/apply-charter-migration.mjs
+      - name: Verify charter DB save and update with rollback
+        run: node scripts/check-charter-save.mjs
       - uses: supabase/setup-cli@v3
         with:
           version: latest

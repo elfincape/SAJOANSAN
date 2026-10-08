@@ -124,15 +124,35 @@ async function loadDB(){
  const next=readArchive({schemaVersion:2,centerCode:center.code,trips:rows.map(r=>r.payload)},center.code);
  showTrips(next,'db',new Map(rows.map(r=>[r.id,r.version])));message('DB '+next.length+'운행을 불러왔습니다.');
 }
-async function saveDB(){
- const next=visible();let expected=versions;
- if(origin!=='db'){
-  expected=await existingVersions(center.code,next.map(t=>t.id));const count=expected.size;
-  if(count&&!await confirmDialog('동일 운행ID '+count+'건을 갱신합니다. 저장하시겠습니까?'))return;
- }
- const result=await saveCharterTrips(center.code,next,expected);for(const row of result)versions.set(row.id,row.version);
- origin='db';for(const t of next)dirtyIds.delete(t.id);dirty=dirtyIds.size>0;render();message('DB에 '+result.length+'운행을 저장했습니다.');
+
+function saveMessage(text,error=false){
+ $('db-save-status').textContent=text;$('db-save-status').className=error?'text-sm text-red-300':'text-sm text-zinc-300';
 }
+async function saveDB(){
+ const next=visible();let expected=versions,saved=0;
+ $('db-save').textContent='저장 중…';saveMessage('DB 저장 준비 중…');
+ try{
+  if(!next.length)throw new Error('저장할 데이터가 없습니다. 필터를 확인해 주세요.');
+  if(origin!=='db'){
+   expected=await existingVersions(center.code,next.map(t=>t.id));const count=expected.size;
+   if(count&&!await confirmDialog('동일 운행ID '+count+'건을 갱신합니다. 저장하시겠습니까?')){
+    saveMessage('DB 저장을 취소했습니다.');return;
+   }
+  }
+  for(let offset=0;offset<next.length;offset+=500){
+   const batch=next.slice(offset,offset+500);saveMessage('DB 저장 중… '+saved+' / '+next.length+'운행');
+   const result=await saveCharterTrips(center.code,batch,expected);
+   for(const row of result){versions.set(row.id,row.version);expected.set(row.id,row.version);dirtyIds.delete(row.id);}
+   saved+=result.length;origin='db';dirty=dirtyIds.size>0;
+  }
+  render();saveMessage('DB 저장 완료: '+saved+'운행');message('DB에 '+saved+'운행을 저장했습니다.');
+ }catch(error){
+  const detail=error.message||String(error);
+  saveMessage('DB 저장 실패'+(saved?' ('+saved+' / '+next.length+'운행 저장됨)':'')+': '+detail,true);
+  throw error;
+ }finally{$('db-save').textContent='DB 저장';}
+}
+
 function downloadJson(){
  const blob=new Blob([JSON.stringify(makeArchive(visible(),center.code),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download='용차_'+center.code+'_'+($('archive-month').value||'조회')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
