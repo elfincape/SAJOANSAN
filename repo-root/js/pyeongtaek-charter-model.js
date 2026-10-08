@@ -160,7 +160,7 @@ export function horizontalData(trips) {
  for(let i=0;i<12;i++){headers[8+i]='납품처'+(i+1);headers[20+i]='지역'+(i+1);}
  const detail=['납품처명','고객사','냉동','냉장','총수량'];
  for(let i=0;i<maxDeliveries;i++)for(const label of detail)headers.push(label+(i+1));
- headers.push('확인 필요');
+ headers.push('확인 필요','착지수확인');
  const rows=trips.map((t,index)=>{
   const stops=ordered[index],regions=stops.filter(s=>s.hasAddress).map(s=>s.region.name||null);
   if(regions.length>12)throw new Error((t.date||'미정')+' '+(t.course||t.id)+': 지역이 12개를 초과합니다.');
@@ -172,7 +172,8 @@ export function horizontalData(trips) {
   const filled=regions.filter(Boolean),moves=filled.reduce((n,name,i)=>n+(i>0&&name!==filled[i-1]?1:0),0);
   [filled.length,moves,t.arrivalTime,t.departureTime,exportQuantity(t.providedStopCount),exportQuantity(t.courseQuantity),t.id].forEach((v,i)=>row[32+i]=v);
   deliveries.forEach((d,i)=>[d.name,d.customer,exportQuantity(d.frozen),exportQuantity(d.chilled),exportQuantity(d.quantity)].forEach((v,j)=>row[40+i*5+j]=v));
-  row[headers.length-1]=activeIssues(t).length;
+  row[headers.length-2]=activeIssues(t).length;
+  row[headers.length-1]=typeof t.providedStopCount==='number'?filled.length-exportQuantity(t.providedStopCount):null;
   return row;
  });
  return {headers,rows};

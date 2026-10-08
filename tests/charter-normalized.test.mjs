@@ -62,10 +62,21 @@ for(const [names,total,moves] of [[['논산','논산','논산','인천'],4,1],[[
  const data=horizontalData([testRoute(names)]);assert.equal(data.rows[0][32],total);assert.equal(data.rows[0][33],moves);
  assert.equal(data.rows[0][42],12);assert.equal(data.rows[0][43],0);assert.equal(data.rows[0][44],13);
  assert.deepEqual(data.headers.slice(40,45),['납품처명1','고객사1','냉동1','냉장1','총수량1']);
- assert.equal(data.headers.at(-1),'확인 필요');assert.equal(data.headers.some(h=>h.includes('단가')),false);
+ assert.equal(data.headers.at(-2),'확인 필요');assert.equal(data.headers.at(-1),'착지수확인');assert.equal(data.headers.some(h=>h.includes('단가')),false);
 }
 const hidden=output.Sheets['평택 용차내역']['!cols'];
 for(let i=0;i<hidden.length;i++)assert.equal(!!hidden[i].hidden,(i>=13&&i<=19)||(i>=25&&i<=31));
 const hiddenRound=XLSX.read(XLSX.write(output,{type:'buffer',bookType:'xlsx'}),{type:'buffer',cellStyles:true}).Sheets['평택 용차내역']['!cols'];
 assert.equal(hiddenRound[13].hidden,true);assert.equal(hiddenRound[25].hidden,true);assert.equal(!!hiddenRound[12].hidden,false);
 console.log('PASS: integer export quantities, E/F/G vehicle contacts, compact delivery detail, hidden 6-12 columns, region stops/transitions and final issue column');
+
+for(const [original,expected] of [[3,0],[2,1],[4,-1],[0,3],[null,null]]){
+ const trip={...testRoute(['논산','인천','대전']),providedStopCount:original};
+ const data=horizontalData([trip]);assert.equal(data.headers.at(-1),'착지수확인');assert.equal(data.rows[0].at(-1),expected);
+}
+const stopCheckBook=buildNormalizedWorkbook([{...testRoute(['논산','인천','대전']),providedStopCount:2}],XLSX);
+const checkSheet=XLSX.read(XLSX.write(stopCheckBook,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}).Sheets['평택 용차내역'];
+const lastColumn=XLSX.utils.decode_range(checkSheet['!ref']).e.c;
+assert.equal(checkSheet[XLSX.utils.encode_cell({r:2,c:lastColumn})].v,'착지수확인');
+assert.equal(checkSheet[XLSX.utils.encode_cell({r:3,c:lastColumn})].v,1);
+console.log('PASS: final stop-count difference column with matching, positive, negative, zero and missing original counts');
