@@ -1,5 +1,6 @@
 import { previewTargets, syncBatch, validateSyncInput } from './sync.js';
 import { completionBatch, completionStatus, validateCompletionInput } from './completion.js';
+import { scheduledTick } from './scheduled.js';
 export const REQUIRED_PROPERTIES = {
   '기사명':'title', '센터':'select', '웹 기사 ID':'rich_text', '갱신 건 ID':'rich_text',
   '보건증 만료일':'date', '만료 상태':'select', '처리 상태':'select', '담당자':'people',
@@ -63,7 +64,7 @@ export function makeHandler(env, fetcher=fetch) {
     try {
       const path=new URL(req.url).pathname.replace(/\/$/,'');
       const action=path.split('/').at(-1);
-      if (!['test','preview','sync','complete','status'].includes(action) || !path.endsWith('/notion-health/'+action)) throw fail('지원하지 않는 요청입니다.',404);
+      if (!['test','preview','sync','complete','status','scheduled'].includes(action) || !path.endsWith('/notion-health/'+action)) throw fail('지원하지 않는 요청입니다.',404);
       const keys=serverKeys(env);
       const service=keys[0];
       if (!service || !env.SUPABASE_URL) throw fail('서버 설정을 확인해 주세요.',503,'server_configuration');
@@ -82,6 +83,7 @@ export function makeHandler(env, fetcher=fetch) {
           internal=verified.ok;
         }
       }
+      if(action==='scheduled' && !internal) throw fail('서버 예약 실행만 허용됩니다.',403,'forbidden');
       if (!internal) {
         const auth=req.headers.get('authorization') || '';
         if (!/^Bearer \S+$/i.test(auth)) throw fail('로그인이 필요합니다.',401,'unauthorized');
@@ -96,6 +98,7 @@ export function makeHandler(env, fetcher=fetch) {
         const profile=(await profileResponse.json())[0];
         if (profile?.active!==true || profile.role!=='admin') throw fail('활성 관리자만 Notion 연동을 실행할 수 있습니다.',403,'forbidden');
       }
+      if(action==='scheduled') return json(await scheduledTick(env,service,fetcher));
       if(action==='test') return json(await checkConnection(env,fetcher));
       let body;
       try {
