@@ -1,58 +1,41 @@
 {
   "updatedAt": "2026-10-09",
+  "layout": "일일보고 → 날짜별 문서 제목 목록 → 보고서 본문",
   "dataSourceId": "235be046-c0b7-4b78-91cf-fa5385d78e67",
-  "layout": "일일보고 / 연도 / 월 / 보고서 목록 (list)",
-  "monthCreation": "manual; future month folders are not automatically provisioned",
-  "centers": [
-    {
-      "center": "안산",
-      "dailyPageId": "3f3b98bf-5f20-81e6-acdc-c492ea09ba9f",
-      "yearPageId": "3f3b98bf-5f20-813d-b701-e6093ee4c596",
-      "monthPageId": "3f3b98bf-5f20-8155-83df-c5de9cc5a88b",
-      "year": 2026,
-      "month": 10,
-      "allReportsDatabaseId": "3f3b98bf5f2081c4ba73ef6ceceec7c8",
-      "allReportsInline": false,
-      "filter": {
-        "center": "안산",
-        "reportDateFrom": "2026-10-01",
-        "reportDateBefore": "2026-11-01"
-      },
-      "visibleProperties": [
-        "문서"
-      ],
-      "writingFormPageId": "3f3b98bf-5f20-81db-97d7-fca0b7ca9ac0"
-    },
-    {
-      "center": "평택",
-      "dailyPageId": "3f3b98bf-5f20-81e6-9c9a-e2bbe1e93fa0",
-      "yearPageId": "3f3b98bf-5f20-815f-9897-fdebdf8338cd",
-      "monthPageId": "3f3b98bf-5f20-81af-b4c1-e683e502640e",
-      "year": 2026,
-      "month": 10,
-      "allReportsDatabaseId": "3f3b98bf5f2081958023f261e26f49c5",
-      "allReportsInline": false,
-      "filter": {
-        "center": "평택",
-        "reportDateFrom": "2026-10-01",
-        "reportDateBefore": "2026-11-01"
-      },
-      "visibleProperties": [
-        "문서"
-      ],
-      "writingFormPageId": "3f3b98bf-5f20-817d-92f7-eb0321bf0709"
-    }
-  ],
+  "titleProperty": "문서",
   "visibleProperties": [
     "문서"
   ],
-  "taskStorage": "page body; vertical repeatable to-do blocks under 주요업무 / 미처리업무 / 익일 계획",
-  "removedProperties": [
-    "보고 상태",
-    "주요 업무",
-    "미처리 업무",
-    "익일 계획"
+  "taskStorage": "page body: repeatable vertical to-do blocks under 주요업무 / 미처리업무 / 익일 계획",
+  "centers": [
+    {
+      "center": "안산",
+      "pageId": "3f3b98bf-5f20-81e6-acdc-c492ea09ba9f",
+      "viewId": "3f3b98bf-5f20-813a-8617-000cc0c70b4d",
+      "filter": {
+        "center": "안산"
+      },
+      "sort": {
+        "property": "보고일",
+        "direction": "descending"
+      }
+    },
+    {
+      "center": "평택",
+      "pageId": "3f3b98bf-5f20-81e6-9c9a-e2bbe1e93fa0",
+      "viewId": "3f3b98bf-5f20-816d-89ce-000c7b42b874",
+      "filter": {
+        "center": "평택"
+      },
+      "sort": {
+        "property": "보고일",
+        "direction": "descending"
+      }
+    }
   ],
-  "titleProperty": "문서",
-  "newReportForm": "Copy writing form body into a new report. Native default database template is not configured."
+  "previousLayoutArchivePageId": "3f3b98bf-5f20-815d-b526-d84ac2b61f8b",
+  "defaultTemplate": {
+    "status": "pending",
+    "reason": "Notion connector cannot create/set default database templates; browser control initialization failed. Existing report bodies already contain the form."
+  }
 }
