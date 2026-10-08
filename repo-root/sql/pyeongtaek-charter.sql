@@ -81,7 +81,7 @@ create or replace view public.charter_deliveries with(security_invoker=true) as
 grant select on public.charter_deliveries to authenticated;
 
 create or replace function public.delete_charter_trip(p_center text,p_id text,p_version bigint)
-returns boolean language plpgsql security definer set search_path=public as $
+returns boolean language plpgsql security definer set search_path=public as $$
 declare removed integer;
 begin
  if not exists(select 1 from public.user_profiles where id=auth.uid() and active and role in ('editor','admin')) then raise exception '삭제 권한이 없습니다.';end if;
@@ -91,7 +91,7 @@ begin
  get diagnostics removed=row_count;
  if removed<>1 then raise exception '다른 사용자가 수정하거나 삭제한 데이터입니다. DB를 다시 조회해 주세요.';end if;
  return true;
-end $;
+end $$;
 revoke all on function public.delete_charter_trip(text,text,bigint) from public,anon;
 grant execute on function public.delete_charter_trip(text,text,bigint) to authenticated;
 
