@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "status": "awaiting_notion_web_connection_access",
+  "pages": {
+    "hq": "3f3b98bf-5f20-8119-8fa8-d1740579f9e0",
+    "ansan": "3f3b98bf-5f20-8167-b978-dc4547ba31e5",
+    "pyeongtaek": "3f3b98bf-5f20-8162-93f4-c3520e66afc0"
+  },
+  "centers": {
+    "001": {
+      "name": "안산",
+      "home": "3f3b98bf-5f20-8167-b978-dc4547ba31e5",
+      "transfers": true
+    },
+    "002": {
+      "name": "평택",
+      "home": "3f3b98bf-5f20-8162-93f4-c3520e66afc0",
+      "transfers": false
+    }
+  },
+  "dataSources": {
+    "daily": {
+      "title": "거점별 업무일지",
+      "ds": "235be046-c0b7-4b78-91cf-fa5385d78e67",
+      "id": "2712783dca0a4740b0d97dcc1ce25d38"
+    },
+    "incidents": {
+      "title": "거점 특이사항",
+      "ds": "1babb73c-44e8-496f-be39-670a7d898321",
+      "id": "d8dc198ffa304c34896e0ae0b2e27093"
+    },
+    "documents": {
+      "title": "기사 서류 관리",
+      "ds": "5d7f60f0-7329-4f4c-9047-f33bc8a04d95",
+      "id": "6e1ff653b376416d928d39edde3137c8"
+    },
+    "points": {
+      "title": "납품처 정보 확인",
+      "ds": "73aa532a-bc84-4338-8001-897b4e77a1d9",
+      "id": "7f28822a7e924e20903501d5edeef2e7"
+    },
+    "transfers": {
+      "title": "안산 이배송 관리",
+      "ds": "d9c91577-d8f4-4c16-9874-0f32be295865",
+      "id": "0b261e2acb784c8498039601e6b4cb4f"
+    }
+  },
+  "healthDataSource": "a5d815cb-929e-4d88-b855-f4f71f073d2b",
+  "implemented": [
+    "notion_daily_reports",
+    "notion_incident_logs",
+    "center_filtered_views",
+    "existing_health_linked_views"
+  ],
+  "pending": [
+    "teamspace_placement",
+    "group_access_rules",
+    "driver_document_sync",
+    "delivery_point_bidirectional_sync",
+    "ansan_transfer_bidirectional_sync",
+    "photo_transport",
+    "conflict_resolution"
+  ],
+  "rules": {
+    "dataIdentity": "Supabase UUID plus immutable center code",
+    "bidirectional": "Three-way field merge against last synchronized snapshot; concurrent changes require review",
+    "photos": "Transfer file bytes; do not persist expiring Notion download URLs as permanent references",
+    "notifications": "New business event only; synchronization writes must not retrigger notifications",
+    "deletion": "No propagation of destructive deletes without explicit business action"
+  }
+}
