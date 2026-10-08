@@ -150,31 +150,36 @@ export function readArchive(value,centerCode) {
  });
 }
 const sum = (trips,key) => {const values=trips.map(d=>d[key]).filter(v=>typeof v==='number');return values.length?values.reduce((s,v)=>s+v,0):null;};
+
+const exportQuantity=value=>typeof value==='number'?Math.floor(value):value??null;
 export function horizontalData(trips) {
  const ordered=trips.map(t=>orderedStops(t)),maxDeliveries=ordered.reduce((m,s)=>Math.max(m,s.reduce((n,x)=>n+x.deliveries.length,0)),0);
  if(maxDeliveries>1500)throw new Error('운행당 납품처가 너무 많습니다. 분리해서 내려받아 주세요.');
  const headers=Array(40).fill('');
- Object.assign(headers,{0:'형태',1:'코스',2:'일자',3:'호차',4:'차량번호',5:'톤수',31:'총착지',32:'기사명',33:'연락처',34:'입차시간',35:'비고',36:'원본 착수',37:'코스 총물량',38:'운행ID',39:'확인 필요'});
- for(let i=0;i<13;i++)headers[6+i]='납품처'+(i+1);
- for(let i=0;i<12;i++)headers[19+i]='지역'+(i+1);
- const detail=['납품처코드','납품처명','고객사','총 수량','냉동','냉장','주소','권역','구간단가'];
+ Object.assign(headers,{0:'형태',1:'코스',2:'일자',3:'호차',4:'차량번호',5:'기사명',6:'연락처',7:'톤수',32:'총착지',33:'지역이동',34:'입차시간',35:'비고',36:'원본 착수',37:'코스 총물량',38:'운행ID'});
+ for(let i=0;i<12;i++){headers[8+i]='납품처'+(i+1);headers[20+i]='지역'+(i+1);}
+ const detail=['납품처명','고객사','냉동','냉장','총수량'];
  for(let i=0;i<maxDeliveries;i++)for(const label of detail)headers.push(label+(i+1));
+ headers.push('확인 필요');
  const rows=trips.map((t,index)=>{
-  const stops=ordered[index];if(stops.filter(s=>s.hasAddress).length>12)throw new Error((t.date||'미정')+' '+(t.course||t.id)+': 지역이 12개를 초과합니다.');
+  const stops=ordered[index],regions=stops.filter(s=>s.hasAddress).map(s=>s.region.name||null);
+  if(regions.length>12)throw new Error((t.date||'미정')+' '+(t.course||t.id)+': 지역이 12개를 초과합니다.');
   const row=Array(headers.length).fill(null);
-  [t.type,t.course,t.date,t.vehicleSequence,t.vehicleNumber,t.tons].forEach((v,i)=>row[i]=v);
-  const deliveries=stops.flatMap(s=>s.deliveries),regions=stops.filter(s=>s.hasAddress);
-  deliveries.slice(0,13).forEach((d,i)=>row[6+i]=d.name);
-  regions.forEach((s,i)=>row[19+i]=s.region.name||null);
-  [calculatedStops(t),t.driver,t.phone,t.arrivalTime,t.departureTime,t.providedStopCount,t.courseQuantity,t.id,activeIssues(t).length].forEach((v,i)=>row[31+i]=v);
-  deliveries.forEach((d,i)=>{const reg=resolveRegion(d);[d.code,d.name,d.customer,d.quantity,d.frozen,d.chilled,d.address,reg.name||null,reg.rate?.[String(t.tons)]??null].forEach((v,j)=>row[40+i*9+j]=v);});
+  [t.type,t.course,t.date,t.vehicleSequence,t.vehicleNumber,t.driver,t.phone,t.tons].forEach((v,i)=>row[i]=v);
+  const deliveries=stops.flatMap(s=>s.deliveries);
+  deliveries.slice(0,12).forEach((d,i)=>row[8+i]=d.name);
+  regions.forEach((name,i)=>row[20+i]=name);
+  const filled=regions.filter(Boolean),moves=filled.reduce((n,name,i)=>n+(i>0&&name!==filled[i-1]?1:0),0);
+  [filled.length,moves,t.arrivalTime,t.departureTime,exportQuantity(t.providedStopCount),exportQuantity(t.courseQuantity),t.id].forEach((v,i)=>row[32+i]=v);
+  deliveries.forEach((d,i)=>[d.name,d.customer,exportQuantity(d.frozen),exportQuantity(d.chilled),exportQuantity(d.quantity)].forEach((v,j)=>row[40+i*5+j]=v));
+  row[headers.length-1]=activeIssues(t).length;
   return row;
  });
  return {headers,rows};
 }
 export function buildNormalizedWorkbook(trips,XLSX) {
  const {headers,rows}=horizontalData(trips),sheet=XLSX.utils.aoa_to_sheet([[],[],headers,...rows]);
- sheet['!cols']=headers.map((_,i)=>({wch:i===38?50:i<6?18:24}));
+ sheet['!cols']=headers.map((_,i)=>({wch:i===38?50:i<8?18:24,...((i>=13&&i<=19)||(i>=25&&i<=31)?{hidden:true}:{})}));
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,sheet,'평택 용차내역');
  return wb;
 }

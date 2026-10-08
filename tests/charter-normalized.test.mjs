@@ -30,10 +30,10 @@ updateField(parsed[0],'d-7','quantity','99');assert.equal(parsed[0].deliveries[3
 assert.throws(()=>updateField(parsed[0],null,'date','2026-02-30'),/일자/);
 const output=buildNormalizedWorkbook(parsed,XLSX);
 const reopened=XLSX.read(XLSX.write(output,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}).Sheets['평택 용차내역'];
-assert.equal(reopened.C4.v,'2026-09-08');assert.equal(reopened.E4.v,'12가3456');assert.equal(reopened.F4.v,2.5);assert.equal(reopened.AF4.v,3);
-assert.equal(reopened.G4.v,'부산점');assert.equal(reopened.T4.v,'부산');assert.equal(reopened.U4.v,'노원');assert.equal(reopened.V4.v,'수원');
-assert.equal(reopened.AQ4.v,'고객3');assert.equal(reopened.AS4.v,25);assert.equal(reopened.AR4.v,25);
-assert.equal(reopened.AG4.v,'기사');assert.equal(reopened.AH4.v,'01001234567');
+assert.equal(reopened.C4.v,'2026-09-08');assert.equal(reopened.E4.v,'12가3456');assert.equal(reopened.H4.v,2.5);assert.equal(reopened.AG4.v,3);
+assert.equal(reopened.I4.v,'부산점');assert.equal(reopened.U4.v,'부산');assert.equal(reopened.V4.v,'노원');assert.equal(reopened.W4.v,'수원');
+assert.equal(reopened.AP4.v,'고객3');assert.equal(reopened.AQ4.v,25);assert.equal(reopened.AS4.v,25);
+assert.equal(reopened.F4.v,'기사');assert.equal(reopened.G4.v,'01001234567');
 assert.equal(Object.values(reopened).some(c=>c?.t==='e'),false);
 const summary=routingSummary(parsed,'001');assert.equal(summary.count,1);assert.equal(summary.frozen,10);assert.equal(summary.chilled,5);assert.equal(summary.quantity,15);assert.ok(summary.companions.some(([name])=>name==='부산점'));assert.equal(summary.daily[0].date,'2026-09-08');
 const day={'!ref':'A1:U6',B4:text('2026-10-08'),D4:text('코스1'),S4:text('차량1'),G4:text('A'),H4:text('수원시'),D5:text('코스2'),S5:text('차량2'),G5:text('B'),H5:text('부산광역시'),D6:text('코스2'),S6:text('차량2'),G6:text('C'),H6:text('부산광역시'),'!merges':[{s:{r:3,c:1},e:{r:5,c:1}}]};
@@ -56,3 +56,16 @@ assert.equal(readArchive(legacy,'002')[0].arrivalTime,'전일 22:30');
 const timeOutput=horizontalData(timed);assert.equal(timeOutput.headers[35],'비고');assert.equal(timeOutput.rows[0][34],'09:30');assert.equal(timeOutput.rows[0][35],'메모: 출차 대기');
 assert.equal(FIELDS.find(f=>f[0]==='P')[2],'비고');
 console.log('PASS: arrival HH:MM extraction, previous-day prefix, Excel serial and legacy JSON normalization, editable time and plain remarks export');
+
+const testRoute=names=>({...parsed[0],tons:null,deliveries:names.map((name,i)=>({id:'r'+i,stopId:'s'+i,name:'거래처'+i,customer:'고객',address:name+'시',region:name,frozen:12.99,chilled:0.75,quantity:13.74}))});
+for(const [names,total,moves] of [[['논산','논산','논산','인천'],4,1],[['논산','인천','대전'],3,2]]){
+ const data=horizontalData([testRoute(names)]);assert.equal(data.rows[0][32],total);assert.equal(data.rows[0][33],moves);
+ assert.equal(data.rows[0][42],12);assert.equal(data.rows[0][43],0);assert.equal(data.rows[0][44],13);
+ assert.deepEqual(data.headers.slice(40,45),['납품처명1','고객사1','냉동1','냉장1','총수량1']);
+ assert.equal(data.headers.at(-1),'확인 필요');assert.equal(data.headers.some(h=>h.includes('단가')),false);
+}
+const hidden=output.Sheets['평택 용차내역']['!cols'];
+for(let i=0;i<hidden.length;i++)assert.equal(!!hidden[i].hidden,(i>=13&&i<=19)||(i>=25&&i<=31));
+const hiddenRound=XLSX.read(XLSX.write(output,{type:'buffer',bookType:'xlsx'}),{type:'buffer',cellStyles:true}).Sheets['평택 용차내역']['!cols'];
+assert.equal(hiddenRound[13].hidden,true);assert.equal(hiddenRound[25].hidden,true);assert.equal(!!hiddenRound[12].hidden,false);
+console.log('PASS: integer export quantities, E/F/G vehicle contacts, compact delivery detail, hidden 6-12 columns, region stops/transitions and final issue column');
