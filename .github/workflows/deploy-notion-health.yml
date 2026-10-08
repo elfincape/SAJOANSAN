@@ -10,6 +10,7 @@ on:
       - 'scripts/apply-notion-health-migration.mjs'
       - 'scripts/check-notion-health.mjs'
       - 'scripts/run-notion-health-completion.mjs'
+      - 'scripts/notion-health-cycle.mjs'
       - '.github/workflows/deploy-notion-health.yml'
   workflow_dispatch:
 jobs:
@@ -36,5 +37,5 @@ jobs:
         run: node scripts/check-notion-health.mjs
       - name: Verify completion matching without writing
         run: node scripts/run-notion-health-completion.mjs --dry-run
-      - name: Apply renewed certificate completion
+      - name: Sync management targets and complete renewed certificates
         run: node scripts/run-notion-health-completion.mjs

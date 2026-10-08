@@ -27,7 +27,7 @@
     <section class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-5 mt-5">
       <h2 class="text-lg font-semibold">보건증 관리 대상 동기화</h2>
       <p id="sync-center" class="text-sm text-zinc-400 mt-2">센터 확인 중…</p>
-      <p class="text-sm text-zinc-400 mt-2">미등록·만료 임박·오늘 만료·만료 기사를 Notion에 반영합니다. 연락일, 갱신 예정일, 담당자와 메모는 보존합니다.</p>
+      <p class="text-sm text-zinc-400 mt-2">미등록·만료 임박·오늘 만료·만료 기사를 15분 주기로 Notion에 반영합니다. 버튼으로 즉시 실행할 수도 있습니다. 연락일, 갱신 예정일, 담당자와 메모는 보존합니다.</p>
       <p id="preview-status" role="status" aria-live="polite" class="text-sm mt-4">대상 조회 중…</p>
       <ul id="preview-counts" class="text-sm text-zinc-400 mt-2 space-y-1"></ul>
       <div class="flex flex-wrap gap-3 mt-5">
@@ -46,7 +46,7 @@
       <p id="complete-status" role="status" aria-live="polite" class="text-sm mt-4"></p>
       <ul id="complete-details" class="text-sm text-zinc-400 mt-2 space-y-1"></ul>
     </section>
-    <p class="text-sm text-zinc-400 mt-5">관리 대상 등록은 Notion 동기화 버튼으로 실행합니다. 갱신 완료 처리는 자동으로 실행하며, 담당자 알림은 다음 단계에서 연결합니다.</p>
+    <p class="text-sm text-zinc-400 mt-5">관리 대상 등록과 갱신 완료 확인은 15분 주기로 실행합니다. 신규 항목 알림은 Notion에서 설정한 보건증 관리 대상 알림 자동화로 전달됩니다.</p>
   </main>
   <script type="module" src="/js/notion-health-ui.js"></script>
 </body>

@@ -1,4 +1,4 @@
-name: Complete renewed Notion health tasks
+name: Sync Notion health management
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'
@@ -20,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Complete renewed certificate tasks
+      - name: Sync targets and complete renewed certificates
         run: node scripts/run-notion-health-completion.mjs
