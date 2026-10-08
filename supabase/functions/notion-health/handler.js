@@ -66,7 +66,8 @@ export function makeHandler(env, fetcher=fetch) {
       if (!service || !env.SUPABASE_URL) throw fail('서버 설정을 확인해 주세요.',503,'server_configuration');
       // Server jobs can run this read-only check with a project secret key.
       // Browser callers must have a verified, active administrator session.
-      const internal=keys.includes(req.headers.get('apikey')) && !req.headers.get('origin');
+      const bearer=(req.headers.get('authorization') || '').replace(/^Bearer /i,'');
+      const internal=(keys.includes(req.headers.get('apikey')) || keys.includes(bearer)) && !req.headers.get('origin');
       if (!internal) {
         const auth=req.headers.get('authorization') || '';
         if (!/^Bearer \S+$/i.test(auth)) throw fail('로그인이 필요합니다.',401,'unauthorized');

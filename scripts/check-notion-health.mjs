@@ -11,7 +11,7 @@ if (!key) throw new Error('Server API key is unavailable.');
 const url='https://'+ref+'.supabase.co/functions/v1/notion-health/test';
 const blocked=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
 if (blocked.status!==401) throw new Error('Unauthenticated access was not rejected.');
-const response=await fetch(url,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},
+const response=await fetch(url,{method:'POST',headers:{apikey:key,...(key.startsWith('eyJ')?{Authorization:'Bearer '+key}:{}),'Content-Type':'application/json'},
   body:'{}',signal:AbortSignal.timeout(55000)});
 const result=await response.json().catch(()=>({}));
 if (!response.ok || !result.connected || !result.schemaValid || !result.readable) {

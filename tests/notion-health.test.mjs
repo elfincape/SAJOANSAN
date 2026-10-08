@@ -60,3 +60,8 @@ test('missing secrets, malformed source ID and archived sources fail safely',asy
     const m=mock(opts);const r=await m.handler(request({apikey:'server-test'}));assert.equal((await r.json()).code,code);
   }
 });
+
+test('server bearer credential works when API gateway strips apikey header',async()=>{
+  const m=mock();assert.equal((await m.handler(request({Authorization:'Bearer server-test'}))).status,200);
+  assert.equal(m.calls.length,2);
+});
