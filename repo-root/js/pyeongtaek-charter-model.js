@@ -196,3 +196,9 @@ export function routingSummary(trips,term='') {
  const daily=new Map();for(const {trip,delivery} of items){const key=trip.date||'미정';if(!daily.has(key))daily.set(key,[]);daily.get(key).push(delivery);}
  return {count:items.length,frozen:sum(items.map(i=>i.delivery),'frozen'),chilled:sum(items.map(i=>i.delivery),'chilled'),quantity:sum(items.map(i=>i.delivery),'quantity'),daily:[...daily].map(([date,ds])=>({date,frozen:sum(ds,'frozen'),chilled:sum(ds,'chilled'),quantity:sum(ds,'quantity')})),weekdays,companions:[...companions].sort((a,b)=>b[1]-a[1]),average:daily.size&&items.some(i=>i.delivery.quantity!==null)?sum(items.map(i=>i.delivery),'quantity')/daily.size:null};
 }
+
+export function charterWorkbookFilename(trips){
+ const dates=[...new Set(trips.map(t=>t.date).filter(validDate))].sort();
+ const date=dates.length>1?dates[0]+'~'+dates[dates.length-1]:dates[0]||'일자미정';
+ return date+'_평택센터_용차내역서_내부.xlsx';
+}

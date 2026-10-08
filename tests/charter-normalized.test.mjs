@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { FIELDS,normalizeValue,parseNormalizedSheet,makeArchive,readArchive,activeIssues,updateField,calculatedStops,buildNormalizedWorkbook,horizontalData,routingSummary } from '../repo-root/js/pyeongtaek-charter-model.js';
+import { FIELDS,normalizeValue,parseNormalizedSheet,makeArchive,readArchive,activeIssues,updateField,calculatedStops,buildNormalizedWorkbook,charterWorkbookFilename,horizontalData,routingSummary } from '../repo-root/js/pyeongtaek-charter-model.js';
 const XLSX=createRequire(import.meta.url)(process.env.XLSX_TEST_MODULE||'xlsx');
 const text=v=>({t:'s',v}),num=v=>({t:'n',v});
 const sheet={'!ref':'A1:U8',B4:num(46273),C4:text('용차'),D4:text('광역1'),E4:text('고정3'),Q4:num(2.5),R4:text('기사'),S4:text('12가3456'),T4:text('01001234567'),N4:num(60),M4:num(3),O4:num(0.25),P4:text('06:30 출차'),
@@ -80,3 +80,8 @@ const lastColumn=XLSX.utils.decode_range(checkSheet['!ref']).e.c;
 assert.equal(checkSheet[XLSX.utils.encode_cell({r:2,c:lastColumn})].v,'착지수확인');
 assert.equal(checkSheet[XLSX.utils.encode_cell({r:3,c:lastColumn})].v,1);
 console.log('PASS: final stop-count difference column with matching, positive, negative, zero and missing original counts');
+
+assert.equal(charterWorkbookFilename([{date:'2026-10-08'}]),'2026-10-08_평택센터_용차내역서_내부.xlsx');
+assert.equal(charterWorkbookFilename([{date:'2026-10-08'},{date:'2026-10-01'},{date:'2026-10-08'}]),'2026-10-01~2026-10-08_평택센터_용차내역서_내부.xlsx');
+assert.equal(charterWorkbookFilename([{date:null}]),'일자미정_평택센터_용차내역서_내부.xlsx');
+console.log('PASS: Excel filename uses exported business date or date range and requested center/report suffix');

@@ -1,7 +1,7 @@
 import { requireRole } from './auth.js';
 import { decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam } from './center.js';
 import { confirmDialog } from './ui.js';
-import { FIELDS,clone,parseNormalizedSheet,normalizeValue,updateField,activeIssues,calculatedStops,makeArchive,readArchive,horizontalData,buildNormalizedWorkbook,routingSummary } from './pyeongtaek-charter-model.js';
+import { FIELDS,clone,parseNormalizedSheet,normalizeValue,updateField,activeIssues,calculatedStops,makeArchive,readArchive,horizontalData,buildNormalizedWorkbook,charterWorkbookFilename,routingSummary } from './pyeongtaek-charter-model.js';
 import { loadCharterTrips,existingVersions,saveCharterTrips,deleteCharterTrip,listCharterArchives,purgeCharterMonth } from './pyeongtaek-charter-db.js';
 import { charterOneDrive } from './pyeongtaek-charter-onedrive.js';
 const $=id=>document.getElementById(id),PAGE=50;
@@ -195,7 +195,7 @@ async function initialize(){
  if(!globalThis.XLSX)throw new Error('엑셀 라이브러리를 불러오지 못했습니다. 새로고침해 주세요.');
  const now=new Date(),year=now.getFullYear();$('source-year').value=year;$('archive-month').value=year+'-'+String(now.getMonth()+1).padStart(2,'0');
  $('source-file').disabled=false;$('json-file').disabled=false;$('onedrive-url').value=localStorage.getItem('sajo.charter.folder.'+center.code)||'';
- const actions={'parse-btn':parseFile,'db-load':loadDB,'db-save':saveDB,'json-export':downloadJson,'archive-refresh':refreshArchives,'onedrive-config':configureDrive,'archive-save':archiveMonth,'archive-read':readDrive,'archive-purge':purgeMonth,'download-btn':()=>XLSX.writeFile(buildNormalizedWorkbook(visible(),XLSX),'용차_가로형_정산.xlsx',{compression:true}),'preview-toggle':()=>{$('preview-wrap').hidden=!$('preview-wrap').hidden;if(!$('preview-wrap').hidden)renderPreview();}};
+ const actions={'parse-btn':parseFile,'db-load':loadDB,'db-save':saveDB,'json-export':downloadJson,'archive-refresh':refreshArchives,'onedrive-config':configureDrive,'archive-save':archiveMonth,'archive-read':readDrive,'archive-purge':purgeMonth,'download-btn':()=>XLSX.writeFile(buildNormalizedWorkbook(visible(),XLSX),charterWorkbookFilename(visible()),{compression:true}),'preview-toggle':()=>{$('preview-wrap').hidden=!$('preview-wrap').hidden;if(!$('preview-wrap').hidden)renderPreview();}};
  for(const [id,action]of Object.entries(actions))$(id).onclick=()=>task(action);
  $('source-file').onchange=loadFile;$('json-file').onchange=()=>task(importJson);
  for(const id of ['from-date','to-date','customer-filter','course-filter','issues-only'])$(id).addEventListener('input',()=>{page=0;render();});
