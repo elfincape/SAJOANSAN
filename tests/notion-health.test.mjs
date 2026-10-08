@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeHandler, REQUIRED_PROPERTIES } from '../supabase/functions/notion-health/handler.js';
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server-test',
-  NOTION_API_TOKEN:'notion-private-test',NOTION_DATA_SOURCE_ID:'a5d815cb-929e-4d88-b855-f4f71f073d2b'};
+  SUPABASE_ANON_KEY:'anon-test', NOTION_API_TOKEN:'notion-private-test',NOTION_DATA_SOURCE_ID:'a5d815cb-929e-4d88-b855-f4f71f073d2b'};
 const schema={object:'data_source',properties:Object.fromEntries(Object.entries(REQUIRED_PROPERTIES).map(([name,type])=>[name,{type}]))};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status});
 const request=(headers={})=>new Request('https://test.supabase.co/functions/v1/notion-health/test',{method:'POST',headers});
@@ -11,6 +11,7 @@ function mock(options={}) {
   const fetcher=async(url,init)=>{
     calls.push([url,init]);
     if(url.endsWith('/auth/v1/user'))return json(options.user || {id:'00000000-0000-4000-8000-000000000001'},options.authStatus || 200);
+    if(url.endsWith('limit=0'))return json([],options.serviceStatus || 200);
     if(url.includes('/rest/v1/'))return json([{role:options.role || 'admin',active:options.active!==false}]);
     if(options.notionStatus)return json({message:env.NOTION_API_TOKEN},options.notionStatus);
     assert.equal(init.headers.Authorization,'Bearer '+env.NOTION_API_TOKEN);
@@ -64,4 +65,15 @@ test('missing secrets, malformed source ID and archived sources fail safely',asy
 test('server bearer credential works when API gateway strips apikey header',async()=>{
   const m=mock();assert.equal((await m.handler(request({Authorization:'Bearer server-test'}))).status,200);
   assert.equal(m.calls.length,2);
+});
+
+test('equivalent service JWT must be verified by project REST before Notion access',async()=>{
+  const jwt='eyJ.test';
+  const payload=btoa(JSON.stringify({role:'service_role'}));
+  const credential='eyJ.'+payload+'.signature';
+  const a=mock();assert.equal((await a.handler(request({Authorization:'Bearer '+credential}))).status,200);
+  assert.equal(a.calls.length,3);assert.ok(a.calls[0][0].endsWith('limit=0'));
+  const b=mock({serviceStatus:401,authStatus:401});
+  assert.equal((await b.handler(request({Authorization:'Bearer '+credential}))).status,401);
+  assert.ok(b.calls.every(([url])=>url.startsWith(env.SUPABASE_URL)));
 });

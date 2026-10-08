@@ -67,7 +67,18 @@ export function makeHandler(env, fetcher=fetch) {
       // Server jobs can run this read-only check with a project secret key.
       // Browser callers must have a verified, active administrator session.
       const bearer=(req.headers.get('authorization') || '').replace(/^Bearer /i,'');
-      const internal=(keys.includes(req.headers.get('apikey')) || keys.includes(bearer)) && !req.headers.get('origin');
+      let internal=(keys.includes(req.headers.get('apikey')) || keys.includes(bearer)) && !req.headers.get('origin');
+      // Management API may issue an equivalent service JWT with different bytes.
+      // Verify its signature through this project's REST API before trusting its role.
+      if (!internal && !req.headers.get('origin') && bearer.startsWith('eyJ')) {
+        let claims={};
+        try { claims=JSON.parse(atob(bearer.split('.')[1].replaceAll('-','+').replaceAll('_','/'))); } catch {}
+        if (claims.role==='service_role' && env.SUPABASE_ANON_KEY) {
+          const verified=await fetcher(env.SUPABASE_URL+'/rest/v1/user_profiles?select=id&limit=0',{
+            headers:{Authorization:'Bearer '+bearer,apikey:env.SUPABASE_ANON_KEY},signal:AbortSignal.timeout(10000)});
+          internal=verified.ok;
+        }
+      }
       if (!internal) {
         const auth=req.headers.get('authorization') || '';
         if (!/^Bearer \S+$/i.test(auth)) throw fail('로그인이 필요합니다.',401,'unauthorized');
