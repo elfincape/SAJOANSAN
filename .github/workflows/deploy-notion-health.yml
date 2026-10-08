@@ -1,0 +1,30 @@
+name: Deploy Notion health connection
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/notion-health/**'
+      - 'tests/notion-health.test.mjs'
+      - 'scripts/check-notion-health.mjs'
+      - '.github/workflows/deploy-notion-health.yml'
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/notion-health.test.mjs
+      - run: node --check repo-root/js/notion-health-ui.js
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Deploy authenticated connection check
+        run: supabase functions deploy notion-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+      - name: Verify deployed Notion connection
+        run: node scripts/check-notion-health.mjs

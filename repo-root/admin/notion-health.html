@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>보건증 Notion 연동 · 관리 허브</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen">
+  <header class="border-b border-zinc-800"><div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-4">
+    <h1 class="text-base font-semibold">보건증 Notion 연동</h1><div class="flex-1"></div>
+    <a id="hub-link" href="/admin/" class="btn btn-ghost">관리 허브</a>
+    <button id="logout-btn" class="btn btn-ghost">로그아웃</button>
+  </div></header>
+  <main class="max-w-3xl mx-auto px-4 py-8">
+    <section class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-5">
+      <h2 class="text-lg font-semibold">연결 확인</h2>
+      <p class="text-sm text-zinc-400 mt-2">보건증 갱신 목록의 접근 권한과 필요한 열을 확인합니다.</p>
+      <div class="flex flex-wrap gap-3 mt-5">
+        <button id="test-btn" class="btn btn-primary" disabled>연결 테스트</button>
+        <a href="https://app.notion.com/p/46ceeb04f20842c1b9b246a3657c3b21" target="_blank" rel="noopener noreferrer" class="btn btn-ghost">Notion 목록 열기</a>
+      </div>
+      <p id="test-status" role="status" aria-live="polite" class="text-sm mt-5">로그인 확인 중…</p>
+      <ul id="test-details" class="text-sm text-zinc-400 mt-3 space-y-1"></ul>
+    </section>
+    <p class="text-sm text-zinc-400 mt-5">현재 단계: 연결 테스트. 기사 데이터 동기화와 알림은 다음 단계에서 설정합니다.</p>
+  </main>
+  <script type="module" src="/js/notion-health-ui.js"></script>
+</body>
+</html>
