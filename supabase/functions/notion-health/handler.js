@@ -1,3 +1,4 @@
+import { previewTargets, syncBatch, validateSyncInput } from './sync.js';
 export const REQUIRED_PROPERTIES = {
   '기사명':'title', '센터':'select', '웹 기사 ID':'rich_text', '갱신 건 ID':'rich_text',
   '보건증 만료일':'date', '만료 상태':'select', '처리 상태':'select', '담당자':'people',
@@ -60,11 +61,12 @@ export function makeHandler(env, fetcher=fetch) {
     if (req.method!=='POST') return json({error:'POST 요청만 지원합니다.'},405);
     try {
       const path=new URL(req.url).pathname.replace(/\/$/,'');
-      if (!path.endsWith('/notion-health/test')) throw fail('지원하지 않는 요청입니다.',404);
+      const action=path.split('/').at(-1);
+      if (!['test','preview','sync'].includes(action) || !path.endsWith('/notion-health/'+action)) throw fail('지원하지 않는 요청입니다.',404);
       const keys=serverKeys(env);
       const service=keys[0];
       if (!service || !env.SUPABASE_URL) throw fail('서버 설정을 확인해 주세요.',503,'server_configuration');
-      // Server jobs can run this read-only check with a project secret key.
+      // Project server jobs can call these routes with verified server credentials.
       // Browser callers must have a verified, active administrator session.
       const bearer=(req.headers.get('authorization') || '').replace(/^Bearer /i,'');
       let internal=(keys.includes(req.headers.get('apikey')) || keys.includes(bearer)) && !req.headers.get('origin');
@@ -91,11 +93,21 @@ export function makeHandler(env, fetcher=fetch) {
           headers:{...(service.startsWith('sb_secret_')?{}:{Authorization:'Bearer '+service}),apikey:service},signal:AbortSignal.timeout(10000)});
         if (!profileResponse.ok) throw fail('사용자 권한을 확인할 수 없습니다.',503,'profile_unavailable');
         const profile=(await profileResponse.json())[0];
-        if (profile?.active!==true || profile.role!=='admin') throw fail('활성 관리자만 연결 테스트를 실행할 수 있습니다.',403,'forbidden');
+        if (profile?.active!==true || profile.role!=='admin') throw fail('활성 관리자만 Notion 연동을 실행할 수 있습니다.',403,'forbidden');
       }
-      return json(await checkConnection(env,fetcher));
+      if(action==='test') return json(await checkConnection(env,fetcher));
+      let body;
+      try {
+        const raw=await req.text();
+        if(raw.length>2000) throw new Error();
+        body=JSON.parse(raw);
+      } catch {throw fail('요청 내용을 확인해 주세요.',400,'invalid_body');}
+      validateSyncInput(body);
+      if(action==='preview') return json(await previewTargets(env,service,fetcher,body));
+      await checkConnection(env,fetcher);
+      return json(await syncBatch(env,service,fetcher,body));
     } catch(error) {
-      return json({error:error.status ? error.message:'연결 테스트 중 오류가 발생했습니다. 다시 시도해 주세요.',
+      return json({error:error.status ? error.message:'Notion 연동 중 오류가 발생했습니다. 다시 시도해 주세요.',
         code:error.code || 'server_error',...(error.extra || {})},error.status || 500);
     }
   };

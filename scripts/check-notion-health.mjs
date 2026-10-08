@@ -21,3 +21,13 @@ if (!response.ok || !result.connected || !result.schemaValid || !result.readable
   process.exit(1);
 }
 console.log('Deployed Notion connection verified: schema and read access, '+result.propertyCount+' properties. No records changed.');
+
+for(const center of ['001','002']) {
+  const preview=await fetch(url.replace(/test$/,'preview'),{method:'POST',headers:{apikey:key,
+    ...(key.startsWith('eyJ')?{Authorization:'Bearer '+key}:{}),'Content-Type':'application/json'},body:JSON.stringify({center}),signal:AbortSignal.timeout(55000)});
+  const data=await preview.json().catch(()=>({}));
+  if(!preview.ok || data.center!==center || !Number.isInteger(data.total)) {
+    console.error('Sync preview failed:',data.code || preview.status);process.exit(1);
+  }
+  console.log('Center '+center+' eligible health tasks: '+data.total+'; counts '+JSON.stringify(data.counts));
+}

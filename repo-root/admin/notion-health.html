@@ -24,7 +24,20 @@
       <p id="test-status" role="status" aria-live="polite" class="text-sm mt-5">로그인 확인 중…</p>
       <ul id="test-details" class="text-sm text-zinc-400 mt-3 space-y-1"></ul>
     </section>
-    <p class="text-sm text-zinc-400 mt-5">현재 단계: 연결 테스트. 기사 데이터 동기화와 알림은 다음 단계에서 설정합니다.</p>
+    <section class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-5 mt-5">
+      <h2 class="text-lg font-semibold">보건증 관리 대상 동기화</h2>
+      <p id="sync-center" class="text-sm text-zinc-400 mt-2">센터 확인 중…</p>
+      <p class="text-sm text-zinc-400 mt-2">미등록·만료 임박·오늘 만료·만료 기사를 Notion에 반영합니다. 연락일, 갱신 예정일, 담당자와 메모는 보존합니다.</p>
+      <p id="preview-status" role="status" aria-live="polite" class="text-sm mt-4">대상 조회 중…</p>
+      <ul id="preview-counts" class="text-sm text-zinc-400 mt-2 space-y-1"></ul>
+      <div class="flex flex-wrap gap-3 mt-5">
+        <button id="preview-btn" class="btn btn-ghost" disabled>대상 새로고침</button>
+        <button id="sync-btn" class="btn btn-primary" disabled>Notion 동기화</button>
+      </div>
+      <p id="sync-status" role="status" aria-live="polite" class="text-sm mt-4"></p>
+      <ul id="sync-details" class="text-sm text-zinc-400 mt-2 space-y-1"></ul>
+    </section>
+    <p class="text-sm text-zinc-400 mt-5">현재 단계: 버튼으로 동기화. 자동 실행·알림·보건증 갱신 후 완료 처리는 다음 단계에서 설정합니다.</p>
   </main>
   <script type="module" src="/js/notion-health-ui.js"></script>
 </body>

@@ -4,7 +4,10 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/notion-health/**'
-      - 'tests/notion-health.test.mjs'
+      - 'tests/notion-health*.test.mjs'
+      - 'repo-root/sql/notion-health-sync.sql'
+      - 'repo-root/js/driver-health.js'
+      - 'scripts/apply-notion-health-migration.mjs'
       - 'scripts/check-notion-health.mjs'
       - '.github/workflows/deploy-notion-health.yml'
   workflow_dispatch:
@@ -19,7 +22,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tests/notion-health.test.mjs
+      - run: node --test tests/notion-health*.test.mjs
+      - name: Prepare sync lock schema
+        run: node scripts/apply-notion-health-migration.mjs
       - run: node --check repo-root/js/notion-health-ui.js
       - uses: supabase/setup-cli@v3
         with:
