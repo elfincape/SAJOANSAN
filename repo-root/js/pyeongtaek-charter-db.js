@@ -30,3 +30,8 @@ export async function listCharterArchives(centerCode){
 export async function purgeCharterMonth(archiveId){
  const {data,error}=await supabase.rpc('purge_charter_month',{p_archive:archiveId});if(error)throw new Error(error.message);return data;
 }
+
+export async function deleteCharterTrip(centerCode,id,version){
+ const {data,error}=await supabase.rpc('delete_charter_trip',{p_center:centerCode,p_id:id,p_version:version});
+ if(error)throw new Error(error.message);return data;
+}

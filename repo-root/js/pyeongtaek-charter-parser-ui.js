@@ -2,7 +2,7 @@ import { requireRole } from './auth.js';
 import { decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam } from './center.js';
 import { confirmDialog } from './ui.js';
 import { FIELDS,clone,parseNormalizedSheet,normalizeValue,updateField,activeIssues,calculatedStops,makeArchive,readArchive,horizontalData,buildNormalizedWorkbook,routingSummary } from './pyeongtaek-charter-model.js';
-import { loadCharterTrips,existingVersions,saveCharterTrips,listCharterArchives,purgeCharterMonth } from './pyeongtaek-charter-db.js';
+import { loadCharterTrips,existingVersions,saveCharterTrips,deleteCharterTrip,listCharterArchives,purgeCharterMonth } from './pyeongtaek-charter-db.js';
 import { charterOneDrive } from './pyeongtaek-charter-onedrive.js';
 const $=id=>document.getElementById(id),PAGE=50;
 let center,profile,source,trips=[],versions=new Map(),origin='upload',page=0,fileRevision=0,editing=null,archives=[],busy=false,dirty=false,dirtyIds=new Set();
@@ -35,13 +35,13 @@ function showTrips(next,nextOrigin,nextVersions=new Map()){
  trips=next;origin=nextOrigin;versions=nextVersions;page=0;dirty=false;dirtyIds.clear();$('preview-wrap').hidden=true;render();
 }
 function render(){
- const shown=visible(),query=$('customer-filter').value,s=routingSummary(shown,query);
+ const shown=visible();page=Math.min(page,Math.max(0,Math.ceil(shown.length/PAGE)-1));const query=$('customer-filter').value,s=routingSummary(shown,query);
  $('summary').replaceChildren();for(const text of ['운행 '+shown.length+'건','냉동 '+number(s.frozen),'냉장 '+number(s.chilled),'총 수량 '+number(s.quantity),'납품일 평균 '+number(s.average)]){const box=document.createElement('span');box.className='metric';box.textContent=text;$('summary').append(box);}
  $('analysis').textContent='요일별 운행: '+['일','월','화','수','목','금','토'].map((day,i)=>day+' '+s.weekdays[i]).join(' · ')+(query?' | 함께 간 거래처: '+(s.companions.slice(0,10).map(([name,count])=>name+' '+count+'회').join(', ')||'없음'):'');
  const issues=shown.flatMap(t=>activeIssues(t).map(i=>({trip:t,...i})));$('warnings').hidden=!issues.length;$('warning-count').textContent='확인 필요 '+issues.length+'건';$('warning-list').replaceChildren();
- for(const issue of issues){const li=document.createElement('li');li.textContent=(issue.trip.date||'일자 미정')+' / '+(issue.trip.course||'코스 미정')+' / '+issue.cell+' '+issue.message;const button=document.createElement('button');button.className='btn btn-ghost text-xs ml-2';button.textContent='수정';button.onclick=()=>editTrip(issue.trip.id);li.append(button);$('warning-list').append(li);}
+ for(const issue of issues){const li=document.createElement('li');li.textContent=(issue.trip.date||'일자 미정')+' / '+(issue.trip.course||'코스 미정')+' / '+issue.cell+' '+issue.message;const button=document.createElement('button');button.className='btn btn-ghost text-xs ml-2';button.textContent='수정';button.onclick=()=>editTrip(issue.trip.id);const remove=document.createElement('button');remove.className='btn btn-danger text-xs ml-2';remove.textContent=issue.deliveryId?'납품처 삭제':'운행 삭제';remove.onclick=()=>task(()=>removeEntry(issue.trip.id,issue.deliveryId));li.append(button,remove);$('warning-list').append(li);}
  const body=$('trip-table').querySelector('tbody');body.replaceChildren();
- for(const t of shown.slice(page*PAGE,(page+1)*PAGE)){const button=document.createElement('button');button.textContent='수정';button.className='btn btn-ghost';button.onclick=()=>editTrip(t.id);cellRow(body,[t.date||'',(t.course||'')+' / '+(t.vehicleSequence||''),(t.vehicleNumber||'')+' / '+(t.tons??''),t.driver,t.deliveries.map(d=>d.name||'(빈칸)').join(', '),calculatedStops(t),activeIssues(t).length,button]);}
+ for(const t of shown.slice(page*PAGE,(page+1)*PAGE)){const button=document.createElement('button');button.textContent='수정';button.className='btn btn-ghost';button.onclick=()=>editTrip(t.id);const actions=document.createElement('div');actions.className='flex gap-2';const remove=document.createElement('button');remove.textContent='운행 삭제';remove.className='btn btn-danger';remove.onclick=()=>task(()=>removeEntry(t.id));actions.append(button,remove);cellRow(body,[t.date||'',(t.course||'')+' / '+(t.vehicleSequence||''),(t.vehicleNumber||'')+' / '+(t.tons??''),t.driver,t.deliveries.map(d=>d.name||'(빈칸)').join(', '),calculatedStops(t),activeIssues(t).length,actions]);}
  $('page-info').textContent=shown.length?(page+1)+' / '+Math.ceil(shown.length/PAGE)+' 페이지 · '+(origin==='db'?'DB':origin==='archive'?'보관본':'업로드')+(dirty?' · 미저장 수정 있음':''):'데이터가 없습니다.';
  if(!$('preview-wrap').hidden)renderPreview();enable();
 }
@@ -79,6 +79,28 @@ function applyEdit(event){
   trips=trips.map(t=>t.id===next.id?next:t);dirty=true;dirtyIds.add(next.id);$('edit-dialog').close();render();message('수정을 적용했습니다. DB 저장 버튼으로 저장해 주세요.');
  }catch(error){$('edit-error').textContent=error.message;}
 }
+
+async function removeEntry(id,deliveryId=null){
+ const trip=trips.find(t=>t.id===id);if(!trip)return;
+ const delivery=deliveryId?trip.deliveries.find(d=>d.id===deliveryId):null;
+ if(deliveryId&&!delivery)return;
+ const whole=!delivery||trip.deliveries.length===1,saved=versions.has(id);
+ const target=whole?'운행 전체와 소속 납품처':('납품처 '+(delivery.name||'(빈칸)')+' (원본 '+delivery.sourceRow+'행)');
+ const label=(trip.date||'일자 미정')+' / '+(trip.course||'코스 미정');
+ if(!await confirmDialog(label+'의 '+target+'를 삭제하시겠습니까?'+(saved?' DB에도 즉시 반영됩니다.':' 업로드·보관본에서 제외됩니다.'),{danger:true,okText:'삭제'}))return;
+ if(whole){
+  if(saved)await deleteCharterTrip(center.code,id,versions.get(id));
+  trips=trips.filter(t=>t.id!==id);versions.delete(id);dirtyIds.delete(id);
+ }else{
+  const next=clone(trip);next.deliveries=next.deliveries.filter(d=>d.id!==deliveryId);next.issues=next.issues.filter(i=>i.deliveryId!==deliveryId);next.updatedAt=new Date().toISOString();
+  if(saved){
+   const result=await saveCharterTrips(center.code,[next],versions);for(const row of result)versions.set(row.id,row.version);dirtyIds.delete(id);
+  }
+  trips=trips.map(t=>t.id===id?next:t);
+ }
+ dirty=dirtyIds.size>0;render();message((whole?'운행':'납품처')+'을 삭제했습니다.'+(saved?' DB에도 반영했습니다.':' 파싱을 다시 실행하거나 원본 보관본을 불러오면 다시 표시됩니다.'));
+}
+
 async function replaceAllowed(){return !dirty||await confirmDialog('저장하지 않은 수정이 있습니다. 다른 데이터를 불러오시겠습니까?');}
 async function loadFile(){
  const revision=++fileRevision;source=null;$('source-sheet').replaceChildren();enable();

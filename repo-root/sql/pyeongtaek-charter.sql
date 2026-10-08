@@ -79,5 +79,21 @@ create or replace view public.charter_deliveries with(security_invoker=true) as
  (d.value->>'quantity')::numeric as quantity,(d.value->>'frozen')::numeric as frozen,(d.value->>'chilled')::numeric as chilled
  from public.charter_trips t cross join lateral jsonb_array_elements(t.payload->'deliveries') d(value);
 grant select on public.charter_deliveries to authenticated;
+
+create or replace function public.delete_charter_trip(p_center text,p_id text,p_version bigint)
+returns boolean language plpgsql security definer set search_path=public as $
+declare removed integer;
+begin
+ if not exists(select 1 from public.user_profiles where id=auth.uid() and active and role in ('editor','admin')) then raise exception '삭제 권한이 없습니다.';end if;
+ if p_center is null or p_center not in ('001','002') or coalesce(p_id,'')='' or p_version is null or p_version<1 then raise exception '삭제할 운행을 확인해 주세요.';end if;
+ perform pg_advisory_xact_lock(hashtextextended('charter:'||p_center,0));
+ delete from public.charter_trips where center_code=p_center and id=p_id and version=p_version;
+ get diagnostics removed=row_count;
+ if removed<>1 then raise exception '다른 사용자가 수정하거나 삭제한 데이터입니다. DB를 다시 조회해 주세요.';end if;
+ return true;
+end $;
+revoke all on function public.delete_charter_trip(text,text,bigint) from public,anon;
+grant execute on function public.delete_charter_trip(text,text,bigint) to authenticated;
+
 notify pgrst,'reload schema';
 commit;
