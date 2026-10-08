@@ -8,7 +8,7 @@ export const FIELDS = [
  ['I','customer','고객사','text','delivery'],['J','quantity','총 수량','number','delivery'],
  ['K','frozen','냉동','number','delivery'],['L','chilled','냉장','number','delivery'],
  ['M','providedStopCount','착수','number','trip'],['N','courseQuantity','총 배송량','number','trip'],
- ['O','arrivalTime','입차시간','time','trip'],['P','departureTime','출차시간(비고)','time','trip'],
+ ['O','arrivalTime','입차시간','time','trip'],['P','departureTime','비고','text','trip'],
  ['Q','tons','톤수','number','trip'],['R','driver','기사명','text','trip'],
  ['S','vehicleNumber','차량번호','text','trip'],['T','phone','연락처','text','trip'],
  ['U','region','권역(구간)','text','delivery']
@@ -32,9 +32,15 @@ export function normalizeValue(value, kind, {XLSX,year,date1904=false}={}) {
   if(!parts)return null;const s=parts.map((v,i)=>i?String(Number(v)).padStart(2,'0'):v).join('-');return validDate(s)?s:null;
  }
  if(kind==='time'){
-  if(typeof value==='number'){const seconds=Math.round((value%1)*86400)%86400;return [Math.floor(seconds/3600),Math.floor(seconds%3600/60),seconds%60].map(v=>String(v).padStart(2,'0')).join(':');}
-  // Preserve notes written in the departure-time column.
-  return String(value).trim();
+  if(typeof value==='number'){
+   if(!Number.isFinite(value)||value<0)return null;
+   const minutes=Math.floor((value%1)*1440+1e-8)%1440;
+   return [Math.floor(minutes/60),minutes%60].map(v=>String(v).padStart(2,'0')).join(':');
+  }
+  const raw=String(value).trim(),match=raw.match(/(?:^|[^\d])([01]?\d|2[0-3]):([0-5]\d)(?!\d)/);
+  if(!match)return null;
+  const time=match[1].padStart(2,'0')+':'+match[2];
+  return (/전일/.test(raw)?'전일 ':'')+time;
  }
  return String(value).trim();
 }
@@ -148,7 +154,7 @@ export function horizontalData(trips) {
  const ordered=trips.map(t=>orderedStops(t)),maxDeliveries=ordered.reduce((m,s)=>Math.max(m,s.reduce((n,x)=>n+x.deliveries.length,0)),0);
  if(maxDeliveries>1500)throw new Error('운행당 납품처가 너무 많습니다. 분리해서 내려받아 주세요.');
  const headers=Array(40).fill('');
- Object.assign(headers,{0:'형태',1:'코스',2:'일자',3:'호차',4:'차량번호',5:'톤수',31:'총착지',32:'기사명',33:'연락처',34:'입차시간',35:'출차시간(비고)',36:'원본 착수',37:'코스 총물량',38:'운행ID',39:'확인 필요'});
+ Object.assign(headers,{0:'형태',1:'코스',2:'일자',3:'호차',4:'차량번호',5:'톤수',31:'총착지',32:'기사명',33:'연락처',34:'입차시간',35:'비고',36:'원본 착수',37:'코스 총물량',38:'운행ID',39:'확인 필요'});
  for(let i=0;i<13;i++)headers[6+i]='납품처'+(i+1);
  for(let i=0;i<12;i++)headers[19+i]='지역'+(i+1);
  const detail=['납품처코드','납품처명','고객사','총 수량','냉동','냉장','주소','권역','구간단가'];

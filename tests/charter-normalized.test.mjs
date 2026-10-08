@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { FIELDS,parseNormalizedSheet,makeArchive,readArchive,activeIssues,updateField,calculatedStops,buildNormalizedWorkbook,horizontalData,routingSummary } from '../repo-root/js/pyeongtaek-charter-model.js';
+import { FIELDS,normalizeValue,parseNormalizedSheet,makeArchive,readArchive,activeIssues,updateField,calculatedStops,buildNormalizedWorkbook,horizontalData,routingSummary } from '../repo-root/js/pyeongtaek-charter-model.js';
 const XLSX=createRequire(import.meta.url)(process.env.XLSX_TEST_MODULE||'xlsx');
 const text=v=>({t:'s',v}),num=v=>({t:'n',v});
 const sheet={'!ref':'A1:U8',B4:num(46273),C4:text('용차'),D4:text('광역1'),E4:text('고정3'),Q4:num(2.5),R4:text('기사'),S4:text('12가3456'),T4:text('01001234567'),N4:num(60),M4:num(3),O4:num(0.25),P4:text('06:30 출차'),
@@ -13,7 +13,7 @@ const sheet={'!ref':'A1:U8',B4:num(46273),C4:text('용차'),D4:text('광역1'),E
 };
 const parsed=parseNormalizedSheet(sheet,XLSX,{centerCode:'002',sourceName:'test.xlsx',sheetName:'원본',year:2026});
 assert.equal(parsed.length,2);assert.equal(parsed[0].date,'2026-09-08');assert.equal(parsed[0].vehicleSequence,'고정3');assert.equal(parsed[0].tons,2.5);
-assert.equal(parsed[0].phone,'01001234567');assert.equal(parsed[0].arrivalTime,'06:00:00');assert.equal(parsed[0].departureTime,'06:30 출차');
+assert.equal(parsed[0].phone,'01001234567');assert.equal(parsed[0].arrivalTime,'06:00');assert.equal(parsed[0].departureTime,'06:30 출차');
 assert.equal(parsed[0].deliveries.length,4);assert.equal(calculatedStops(parsed[0]),3);
 assert.equal(parsed[0].deliveries[2].customer,'고객3');
 assert.equal(parsed[0].deliveries[3].name,null);assert.equal(parsed[0].deliveries[3].quantity,null);assert.equal(parsed[0].deliveries[1].frozen,0);
@@ -41,3 +41,18 @@ assert.equal(parseNormalizedSheet(day,XLSX).length,2);
 const more={...parsed[0],deliveries:Array.from({length:14},(_,i)=>({...parsed[0].deliveries[0],id:'d'+i,stopId:'same',name:'거래처'+i}))};
 const wide=horizontalData([more]);assert.ok(wide.rows[0].includes('거래처13'));
 console.log('PASS: B:U mapping, date/merge grouping, #NA errors retained as null, stable trip IDs, DB-editable issues, JSON validation, paired rate sorting, horizontal Excel quantities and routing analytics');
+
+for(const [input,expected] of [
+ ['09:30 이전','09:30'],['전일 23:00 이전','전일 23:00'],[' 전일   9:05 이전 ','전일 09:05'],
+ ['06:00:00','06:00'],['23:59','23:59'],['24:00 이전',null],['12:60 이전',null],
+ ['시간 미정',null],['#N/A',null],[null,null],[0,'00:00'],[0.25,'06:00'],[0.99999,'23:59']
+])assert.equal(normalizeValue(input,'time'),expected);
+const arrivalSheet={...sheet,O4:text('전일 23:00 이전'),P4:text('메모: 출차 대기')};
+const timed=parseNormalizedSheet(arrivalSheet,XLSX,{centerCode:'002'});
+assert.equal(timed[0].arrivalTime,'전일 23:00');assert.equal(timed[0].departureTime,'메모: 출차 대기');
+updateField(timed[0],null,'arrivalTime','09:30 이전');assert.equal(timed[0].arrivalTime,'09:30');
+const legacy=makeArchive(timed,'002');legacy.trips[0].arrivalTime='전일 22:30 이전';
+assert.equal(readArchive(legacy,'002')[0].arrivalTime,'전일 22:30');
+const timeOutput=horizontalData(timed);assert.equal(timeOutput.headers[35],'비고');assert.equal(timeOutput.rows[0][34],'09:30');assert.equal(timeOutput.rows[0][35],'메모: 출차 대기');
+assert.equal(FIELDS.find(f=>f[0]==='P')[2],'비고');
+console.log('PASS: arrival HH:MM extraction, previous-day prefix, Excel serial and legacy JSON normalization, editable time and plain remarks export');
