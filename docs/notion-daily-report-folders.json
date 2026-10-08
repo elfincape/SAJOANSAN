@@ -1,0 +1,46 @@
+{
+  "updatedAt": "2026-10-09",
+  "dataSourceId": "235be046-c0b7-4b78-91cf-fa5385d78e67",
+  "layout": "일일보고 / 연도 / 월 / 보고서 목록 (list)",
+  "monthCreation": "manual; future month folders are not automatically provisioned",
+  "centers": [
+    {
+      "center": "안산",
+      "dailyPageId": "3f3b98bf-5f20-81e6-acdc-c492ea09ba9f",
+      "yearPageId": "3f3b98bf-5f20-813d-b701-e6093ee4c596",
+      "monthPageId": "3f3b98bf-5f20-8155-83df-c5de9cc5a88b",
+      "year": 2026,
+      "month": 10,
+      "allReportsDatabaseId": "3f3b98bf5f2081c4ba73ef6ceceec7c8",
+      "allReportsInline": false,
+      "filter": {
+        "center": "안산",
+        "reportDateFrom": "2026-10-01",
+        "reportDateBefore": "2026-11-01"
+      },
+      "visibleProperties": [
+        "보고명",
+        "보고 상태"
+      ]
+    },
+    {
+      "center": "평택",
+      "dailyPageId": "3f3b98bf-5f20-81e6-9c9a-e2bbe1e93fa0",
+      "yearPageId": "3f3b98bf-5f20-815f-9897-fdebdf8338cd",
+      "monthPageId": "3f3b98bf-5f20-81af-b4c1-e683e502640e",
+      "year": 2026,
+      "month": 10,
+      "allReportsDatabaseId": "3f3b98bf5f2081958023f261e26f49c5",
+      "allReportsInline": false,
+      "filter": {
+        "center": "평택",
+        "reportDateFrom": "2026-10-01",
+        "reportDateBefore": "2026-11-01"
+      },
+      "visibleProperties": [
+        "보고명",
+        "보고 상태"
+      ]
+    }
+  ]
+}
