@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { FIELDS,parseNormalizedSheet,makeArchive,readArchive,activeIssues,updateField,calculatedStops,buildNormalizedWorkbook,horizontalData,routingSummary } from '../repo-root/js/pyeongtaek-charter-model.js';
+const XLSX=createRequire(import.meta.url)(process.env.XLSX_TEST_MODULE||'xlsx');
+const text=v=>({t:'s',v}),num=v=>({t:'n',v});
+const sheet={'!ref':'A1:U8',B4:num(46273),C4:text('용차'),D4:text('광역1'),E4:text('고정3'),Q4:num(2.5),R4:text('기사'),S4:text('12가3456'),T4:text('01001234567'),N4:num(60),M4:num(3),O4:num(0.25),P4:text('06:30 출차'),
+ F4:text('001'),G4:text('수원 A'),H4:text('경기도 수원시'),I4:text('고객1'),J4:num(15),K4:num(10),L4:num(5),
+ F5:text('002'),G5:text('수원 B'),I5:text('고객2'),J5:num(20),K5:num(0),L5:num(20),
+ F6:text('003'),G6:text('부산점'),H6:text('부산광역시 강서구'),I6:text('고객3'),J6:num(25),K6:num(25),L6:num(0),U6:text('부산'),
+ F7:text('004'),G7:text('#NA'),H7:text('서울특별시 노원구'),J7:{t:'e',v:42},K7:text('#N/A'),L7:{t:'e',v:15},
+ B8:text('#NA'),D8:text('오류 운행'),Q8:{t:'e',v:42},S8:{t:'e',v:23},G8:text('정상점'),H8:text('경기도 시흥시'),K8:num(4),L8:num(5),
+ '!merges':[{s:{r:3,c:1},e:{r:6,c:1}},{s:{r:3,c:7},e:{r:4,c:7}},...[2,3,4,12,13,14,15,16,17,18,19].map(c=>({s:{r:3,c},e:{r:6,c}}))]
+};
+const parsed=parseNormalizedSheet(sheet,XLSX,{centerCode:'002',sourceName:'test.xlsx',sheetName:'원본',year:2026});
+assert.equal(parsed.length,2);assert.equal(parsed[0].date,'2026-09-08');assert.equal(parsed[0].vehicleSequence,'고정3');assert.equal(parsed[0].tons,2.5);
+assert.equal(parsed[0].phone,'01001234567');assert.equal(parsed[0].arrivalTime,'06:00:00');assert.equal(parsed[0].departureTime,'06:30 출차');
+assert.equal(parsed[0].deliveries.length,4);assert.equal(calculatedStops(parsed[0]),3);
+assert.equal(parsed[0].deliveries[2].customer,'고객3');
+assert.equal(parsed[0].deliveries[3].name,null);assert.equal(parsed[0].deliveries[3].quantity,null);assert.equal(parsed[0].deliveries[1].frozen,0);
+assert.equal(parsed[1].date,null);assert.equal(parsed[1].tons,null);assert.equal(parsed[1].vehicleNumber,null);
+assert.ok(activeIssues(parsed[0]).some(i=>i.cell==='J7'));assert.ok(activeIssues(parsed[1]).some(i=>i.field==='date'));
+assert.deepEqual(parseNormalizedSheet(sheet,XLSX,{centerCode:'002',sourceName:'test.xlsx',sheetName:'原本'}).map(t=>t.id)[0],parsed[0].id);
+const round=readArchive(JSON.parse(JSON.stringify(makeArchive(parsed,'002'))),'002');
+assert.equal(round[1].date,null);assert.equal(round[0].deliveries[1].frozen,0);
+assert.throws(()=>readArchive(makeArchive(parsed,'002'),'001'),/센터/);
+assert.throws(()=>readArchive({...makeArchive(parsed,'002'),trips:[parsed[0],parsed[0]]},'002'),/운행ID/);
+const originalId=parsed[1].id;updateField(parsed[1],null,'date','2026-10-08');assert.equal(parsed[1].id,originalId);assert.equal(parsed[1].date,'2026-10-08');
+assert.ok(parsed[1].issues.filter(i=>i.field==='date').every(i=>i.resolved));
+updateField(parsed[0],'d-7','quantity','99');assert.equal(parsed[0].deliveries[3].quantity,99);
+assert.throws(()=>updateField(parsed[0],null,'date','2026-02-30'),/일자/);
+const output=buildNormalizedWorkbook(parsed,XLSX);
+const reopened=XLSX.read(XLSX.write(output,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}).Sheets['평택 용차내역'];
+assert.equal(reopened.C4.v,'2026-09-08');assert.equal(reopened.E4.v,'12가3456');assert.equal(reopened.F4.v,2.5);assert.equal(reopened.AF4.v,3);
+assert.equal(reopened.G4.v,'부산점');assert.equal(reopened.T4.v,'부산');assert.equal(reopened.U4.v,'노원');assert.equal(reopened.V4.v,'수원');
+assert.equal(reopened.AQ4.v,'고객3');assert.equal(reopened.AS4.v,25);assert.equal(reopened.AR4.v,25);
+assert.equal(reopened.AG4.v,'기사');assert.equal(reopened.AH4.v,'01001234567');
+assert.equal(Object.values(reopened).some(c=>c?.t==='e'),false);
+const summary=routingSummary(parsed,'001');assert.equal(summary.count,1);assert.equal(summary.frozen,10);assert.equal(summary.chilled,5);assert.equal(summary.quantity,15);assert.ok(summary.companions.some(([name])=>name==='부산점'));assert.equal(summary.daily[0].date,'2026-09-08');
+const day={'!ref':'A1:U6',B4:text('2026-10-08'),D4:text('코스1'),S4:text('차량1'),G4:text('A'),H4:text('수원시'),D5:text('코스2'),S5:text('차량2'),G5:text('B'),H5:text('부산광역시'),D6:text('코스2'),S6:text('차량2'),G6:text('C'),H6:text('부산광역시'),'!merges':[{s:{r:3,c:1},e:{r:5,c:1}}]};
+assert.equal(parseNormalizedSheet(day,XLSX).length,2);
+const more={...parsed[0],deliveries:Array.from({length:14},(_,i)=>({...parsed[0].deliveries[0],id:'d'+i,stopId:'same',name:'거래처'+i}))};
+const wide=horizontalData([more]);assert.ok(wide.rows[0].includes('거래처13'));
+console.log('PASS: B:U mapping, date/merge grouping, #NA errors retained as null, stable trip IDs, DB-editable issues, JSON validation, paired rate sorting, horizontal Excel quantities and routing analytics');

@@ -1,0 +1,38 @@
+name: Deploy charter data management
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo-root/js/pyeongtaek-charter-*.js'
+      - 'repo-root/admin/pyeongtaek-charter-parser.html'
+      - 'repo-root/sql/pyeongtaek-charter.sql'
+      - 'supabase/functions/onedrive-auth/charter.js'
+      - 'scripts/apply-charter-migration.mjs'
+      - 'tests/charter-normalized.test.mjs'
+      - 'tests/charter-storage.test.mjs'
+      - '.github/workflows/deploy-charter.yml'
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: mkdir -p /tmp/charter-test && curl --fail --location --retry 3 https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js -o /tmp/charter-test/xlsx.cjs
+      - run: node tests/charter-normalized.test.mjs
+        env:
+          XLSX_TEST_MODULE: /tmp/charter-test/xlsx.cjs
+      - run: node tests/charter-storage.test.mjs
+      - run: node tests/onedrive-server.test.mjs
+      - name: Apply charter database schema
+        run: node scripts/apply-charter-migration.mjs
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Deploy OneDrive handler with charter archive actions
+        run: supabase functions deploy onedrive-auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

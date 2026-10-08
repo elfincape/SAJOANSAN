@@ -1,3 +1,4 @@
+import { handleCharter } from './charter.js';
 export const FOLDER_KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 export const LABELS = {food_transport:'식품운반업_앞',food_transport_back:'식품운반업_뒤',livestock_transport:'축산물운반업_앞',livestock_transport_back:'축산물운반업_뒤',freight_license:'화물운송사자격증',vehicle_registration:'차량등록증',identity:'신분증',health_certificate:'보건증'};
 export const KINDS = Object.keys(LABELS);
@@ -163,6 +164,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
       const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action));
+      if(action.startsWith('charter-')) return await handleCharter(action,req,user,{db,graph,connected,settings,withLock,json,fail,shareToken,hash});
       if(action==='start'){
         await settings();
         if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET)throw fail('OneDrive 앱 설정이 필요합니다.',503);

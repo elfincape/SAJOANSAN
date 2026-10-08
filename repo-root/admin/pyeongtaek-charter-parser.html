@@ -1,58 +1,67 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>평택 용차내역 파서 · 관리 허브</title>
-  <link rel="stylesheet" href="/css/common.css">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <style>
-    [hidden]{display:none!important}
-    .btn:disabled{opacity:.45;cursor:not-allowed}
-    #preview td{min-width:45px;max-width:360px;white-space:pre-wrap;overflow-wrap:anywhere}
-    #preview td:nth-child(4){min-width:150px}
-    #preview td:nth-child(n+8){min-width:180px}
-  </style>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
+ <title>평택 용차내역 관리 · 관리 허브</title>
+ <link rel="stylesheet" href="/css/common.css">
+ <script src="https://cdn.tailwindcss.com"></script>
+ <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+ <style>[hidden]{display:none!important}.btn:disabled{opacity:.45;cursor:not-allowed}.panel{border:1px solid #3f3f46;border-radius:12px;padding:20px;background:#18181b}.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.toolbar label{flex:1;min-width:140px}.scroll{overflow:auto;max-height:520px}.scroll td{white-space:nowrap}.edit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.edit-table input{min-width:130px}.issue{color:#fbbf24}.muted{color:#a1a1aa}dialog{width:min(1200px,95vw);max-height:90vh;overflow:auto;background:#18181b;color:#f4f4f5;border:1px solid #52525b;border-radius:12px;padding:20px}dialog::backdrop{background:#000b}.metric{padding:8px 12px;border:1px solid #3f3f46;border-radius:8px}button:focus-visible,a:focus-visible{outline:2px solid #34d399;outline-offset:2px}</style>
 </head>
 <body class="bg-zinc-900 text-zinc-100 min-h-screen">
-  <header class="border-b border-zinc-800">
-    <div class="max-w-[1200px] mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
-      <a href="/admin/" class="text-xs text-zinc-400">← 관리 허브</a>
-      <h1 class="text-base font-semibold">평택 용차내역 파서</h1>
-      <span class="text-xs text-sky-300">프로토타입</span>
-      <a href="/" class="btn btn-ghost ml-auto">대시보드</a>
-    </div>
-  </header>
-  <main class="max-w-[1200px] mx-auto px-4 py-6 space-y-5">
-    <section class="border border-zinc-700 rounded-xl p-5 space-y-4">
-      <h2 class="font-semibold">엑셀 업로드</h2>
-      <p class="text-sm text-zinc-400">3행 제목, 4행부터 데이터를 읽습니다. B열의 날짜 병합 영역 하나를 차량 운행 한 건으로 묶습니다. 병합되지 않은 날짜는 행마다 별도 운행입니다.</p>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <label><span class="app-label">원본 파일 (.xlsx, .xls)</span><input id="source-file" type="file" accept=".xlsx,.xls" class="app-input" disabled></label>
-        <label><span class="app-label">파싱할 시트</span><select id="source-sheet" class="app-select" disabled><option>파일을 먼저 선택하세요</option></select></label>
-      </div>
-      <div class="flex flex-wrap items-center gap-3">
-        <button id="parse-btn" class="btn btn-primary" disabled>파싱 실행</button>
-        <span class="text-xs text-zinc-400">B열 → C열 · Q열 톤수 → F열 · S열 → E열 · 납품처 → G열부터 · 지역 → T~AE열 · 총착지 → AF열</span>
-      </div>
-      <p id="status" role="status" aria-live="polite" class="text-sm text-zinc-300">로그인 확인 중…</p>
-    </section>
-    <section id="result-section" class="border border-zinc-700 rounded-xl overflow-hidden" hidden>
-      <div class="p-4 border-b border-zinc-700 space-y-2">
-        <h2 class="font-semibold">결과 미리보기</h2>
-        <p id="summary" class="text-sm text-emerald-300"></p>
-        <p class="text-xs text-zinc-400">결과는 3행 제목, 4행부터 데이터입니다. 병합된 주소는 착지 1개로 셉니다. Q열 톤수의 단가가 높은 착지부터 납품처와 지역을 함께 정렬합니다. 같은 단가는 원본 순서를 유지합니다. 지역은 최대 12개이며, 납품처 14개부터는 AG열에 이어집니다.</p>
-        <details id="warnings" class="text-sm text-amber-300" hidden><summary id="warning-count"></summary><ul id="warning-list" class="mt-2 max-h-40 overflow-auto"></ul></details>
-      </div>
-      <div class="overflow-auto max-h-[520px]" tabindex="0" aria-label="결과 엑셀 미리보기"><table id="preview" class="app-table"><thead></thead><tbody></tbody></table></div>
-      <div class="p-4 flex flex-wrap items-center gap-3">
-        <button id="prev-page" class="btn btn-ghost">이전</button><span id="page-info" class="text-xs text-zinc-400"></span><button id="next-page" class="btn btn-ghost">다음</button>
-        <button id="download-btn" class="btn btn-primary ml-auto" disabled>엑셀 다운로드</button>
-      </div>
-    </section>
-  </main>
-  <script type="module" src="/js/pyeongtaek-charter-parser-ui.js"></script>
+ <header class="border-b border-zinc-800"><div class="max-w-[1400px] mx-auto px-4 py-3 flex flex-wrap gap-3 items-center">
+  <a href="/admin/" class="btn btn-ghost">관리 허브</a><h1 class="font-semibold">평택 용차내역 관리</h1><span id="user-badge" class="text-xs text-zinc-400"></span><a href="/" class="btn btn-ghost ml-auto">대시보드</a>
+ </div></header>
+ <main class="max-w-[1400px] mx-auto px-4 py-6 space-y-5">
+  <p id="status" role="status" aria-live="polite" class="text-sm">로그인 확인 중…</p>
+  <section class="panel space-y-4">
+   <h2 class="font-semibold">엑셀 업로드</h2>
+   <p class="text-xs muted">3행 제목은 검사하지 않습니다. 4행부터 B~U열을 읽습니다. 오류값은 빈칸으로 처리하며 DB 확인에서 수정할 수 있습니다.</p>
+   <div class="toolbar">
+    <label><span class="app-label">원본 엑셀</span><input id="source-file" type="file" accept=".xlsx,.xls" class="app-input" disabled></label>
+    <label><span class="app-label">시트</span><select id="source-sheet" class="app-select" disabled></select></label>
+    <label style="max-width:150px"><span class="app-label">연도 없는 날짜의 기준 연도</span><input id="source-year" type="number" min="1900" max="9999" class="app-input"></label>
+    <button id="parse-btn" class="btn btn-primary" disabled>파싱 실행</button>
+   </div>
+  </section>
+  <section class="panel space-y-4">
+   <h2 class="font-semibold">DB 확인 · 조회</h2>
+   <div class="toolbar">
+    <label><span class="app-label">시작일</span><input id="from-date" type="date" class="app-input"></label>
+    <label><span class="app-label">종료일</span><input id="to-date" type="date" class="app-input"></label>
+    <button id="db-load" class="btn btn-primary" disabled>DB 불러오기</button>
+    <label style="flex:none"><span class="app-label">보관 JSON 불러오기</span><input id="json-file" type="file" accept=".json,application/json" class="app-input" disabled></label>
+   </div>
+   <div class="toolbar">
+    <label><span class="app-label">거래처명 · 코드 · 고객사</span><input id="customer-filter" class="app-input" placeholder="검색어"></label>
+    <label><span class="app-label">코스 · 호차</span><input id="course-filter" class="app-input" placeholder="검색어"></label>
+    <label class="cb" style="flex:none"><input id="issues-only" type="checkbox">확인 필요만</label>
+    <button id="filter-reset" class="btn btn-ghost">필터 초기화</button>
+   </div>
+   <div id="summary" class="toolbar text-sm"></div>
+   <div id="analysis" class="text-sm muted"></div>
+   <details id="warnings" hidden><summary id="warning-count" class="issue"></summary><ul id="warning-list" class="issue max-h-52 overflow-auto text-sm mt-2"></ul></details>
+   <div class="scroll"><table id="trip-table" class="app-table"><thead><tr><th>일자</th><th>코스 · 호차</th><th>차량 · 톤수</th><th>기사</th><th>납품처</th><th>착지</th><th>확인 필요</th><th>수정</th></tr></thead><tbody></tbody></table></div>
+   <div class="toolbar"><button id="prev-page" class="btn btn-ghost" disabled>이전</button><span id="page-info" class="text-xs muted"></span><button id="next-page" class="btn btn-ghost" disabled>다음</button>
+    <button id="db-save" class="btn btn-primary ml-auto" disabled>조회 운행 DB 저장</button>
+   </div>
+  </section>
+  <section class="panel space-y-3">
+   <h2 class="font-semibold">가로형 정산 파일</h2>
+   <p class="text-xs muted">운행ID마다 한 행으로 출력합니다. 지역 T~AE, 총착지 AF, 차량번호 E, 톤수 F를 유지합니다. 납품처별 물량·주소·고객사·단가는 오른쪽 상세 열에 포함됩니다. 검색에 해당하는 운행의 동승 납품처도 함께 내려받습니다.</p>
+   <div class="toolbar"><button id="download-btn" class="btn btn-primary" disabled>가로형 엑셀 다운로드</button><button id="json-export" class="btn btn-ghost" disabled>조회 운행 JSON 다운로드</button><button id="preview-toggle" class="btn btn-ghost" disabled>가로형 미리보기</button></div>
+   <div id="preview-wrap" class="scroll" hidden><table id="preview" class="app-table"><thead></thead><tbody></tbody></table></div>
+  </section>
+  <section class="panel space-y-4">
+   <h2 class="font-semibold">OneDrive 월별 보관</h2>
+   <div class="toolbar"><label><span class="app-label">용차 저장 폴더 공유 링크</span><input id="onedrive-url" type="url" class="app-input" placeholder="https://1drv.ms/…"></label><button id="onedrive-config" class="btn btn-ghost" disabled>저장 폴더 연결</button><button id="onedrive-open" class="btn btn-ghost">폴더 열기</button></div>
+   <p id="onedrive-status" class="text-xs muted">기존 Microsoft 계정 연결을 사용합니다. 공유 링크는 저장 폴더 연결 버튼으로 등록하세요.</p>
+   <div class="toolbar"><label><span class="app-label">보관할 월</span><input id="archive-month" type="month" class="app-input"></label><button id="archive-save" class="btn btn-primary" disabled>월 JSON OneDrive 보관·검증</button><button id="archive-refresh" class="btn btn-ghost" disabled>보관 목록</button></div>
+   <div class="toolbar"><label><span class="app-label">검증된 보관본</span><select id="archive-list" class="app-select"></select></label><button id="archive-read" class="btn btn-ghost" disabled>OneDrive JSON 불러오기</button><button id="archive-purge" class="btn btn-danger" disabled>보관된 월 DB 정리</button></div>
+   <p class="text-xs muted">월 보관·DB 정리는 관리자 기능입니다. OneDrive에 저장한 JSON을 다시 읽어 검증한 뒤에만 DB를 정리할 수 있습니다. 보관 이후 데이터가 수정되면 다시 보관해야 합니다.</p>
+  </section>
+ </main>
+ <dialog id="edit-dialog"><form id="edit-form"><div class="toolbar mb-4"><h2 class="font-semibold">운행 · 납품처 수정</h2><button id="edit-cancel" type="button" class="btn btn-ghost ml-auto">취소</button><button type="submit" class="btn btn-primary">수정 적용</button></div><p id="edit-error" class="issue text-sm mb-3" role="alert"></p><div id="edit-fields" class="edit-grid"></div><div id="edit-issues" class="space-y-2 mt-4 text-sm"></div><h3 class="font-semibold my-4">납품처별 물량</h3><div class="scroll"><table id="edit-deliveries" class="app-table edit-table"><thead></thead><tbody></tbody></table></div></form></dialog>
+ <script type="module" src="/js/pyeongtaek-charter-parser-ui.js"></script>
 </body>
 </html>
