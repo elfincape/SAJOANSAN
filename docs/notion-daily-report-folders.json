@@ -19,9 +19,9 @@
         "reportDateBefore": "2026-11-01"
       },
       "visibleProperties": [
-        "보고명",
-        "보고 상태"
-      ]
+        "문서"
+      ],
+      "writingFormPageId": "3f3b98bf-5f20-81db-97d7-fca0b7ca9ac0"
     },
     {
       "center": "평택",
@@ -38,9 +38,21 @@
         "reportDateBefore": "2026-11-01"
       },
       "visibleProperties": [
-        "보고명",
-        "보고 상태"
-      ]
+        "문서"
+      ],
+      "writingFormPageId": "3f3b98bf-5f20-817d-92f7-eb0321bf0709"
     }
-  ]
+  ],
+  "visibleProperties": [
+    "문서"
+  ],
+  "taskStorage": "page body; vertical repeatable to-do blocks under 주요업무 / 미처리업무 / 익일 계획",
+  "removedProperties": [
+    "보고 상태",
+    "주요 업무",
+    "미처리 업무",
+    "익일 계획"
+  ],
+  "titleProperty": "문서",
+  "newReportForm": "Copy writing form body into a new report. Native default database template is not configured."
 }
