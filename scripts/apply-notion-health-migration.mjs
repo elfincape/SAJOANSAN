@@ -24,8 +24,8 @@ begin
   perform public.notion_health_release(first_token);
   if not public.notion_health_acquire(second_token) then raise exception 'Owner release failed'; end if;
 end;
-$;
-do $
+$$;
+do $$
 declare first_token uuid='00000000-0000-4000-8000-000000000011'; second_token uuid='00000000-0000-4000-8000-000000000012'; state jsonb;
 begin
   if has_function_privilege('authenticated','public.notion_health_schedule_claim(uuid)','execute')
@@ -42,7 +42,7 @@ begin
   perform public.notion_health_schedule_release(first_token,0);
   if public.notion_health_schedule_claim(second_token) is not null then raise exception '15 minute due gate failed'; end if;
 end;
-$;
+$$;
 rollback;`;
 const checked=await fetch('https://api.supabase.com/v1/projects/'+ref+'/database/query',{
   method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
