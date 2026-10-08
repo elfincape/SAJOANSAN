@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "status": "awaiting_notion_web_connection_access",
   "pages": {
     "hq": "3f3b98bf-5f20-8119-8fa8-d1740579f9e0",
@@ -50,16 +50,19 @@
     "notion_daily_reports",
     "notion_incident_logs",
     "center_filtered_views",
-    "existing_health_linked_views"
+    "existing_health_linked_views",
+    "separate_center_work_pages",
+    "existing_linked_views_moved_with_filters_preserved",
+    "old_combined_screen_removed"
   ],
   "pending": [
-    "teamspace_placement",
     "group_access_rules",
     "driver_document_sync",
     "delivery_point_bidirectional_sync",
     "ansan_transfer_bidirectional_sync",
     "photo_transport",
-    "conflict_resolution"
+    "conflict_resolution",
+    "hq_original_database_placement"
   ],
   "rules": {
     "dataIdentity": "Supabase UUID plus immutable center code",
@@ -67,5 +70,59 @@
     "photos": "Transfer file bytes; do not persist expiring Notion download URLs as permanent references",
     "notifications": "New business event only; synchronization writes must not retrigger notifications",
     "deletion": "No propagation of destructive deletes without explicit business action"
+  },
+  "centerPages": {
+    "ansan": [
+      {
+        "title": "일일보고",
+        "id": "3f3b98bf-5f20-81e6-acdc-c492ea09ba9f"
+      },
+      {
+        "title": "기사 서류 관리",
+        "id": "3f3b98bf-5f20-815b-9a8c-d07f1056ece4"
+      },
+      {
+        "title": "납품처 정보 확인",
+        "id": "3f3b98bf-5f20-8118-8844-f37485168e38"
+      },
+      {
+        "title": "거점 특이사항",
+        "id": "3f3b98bf-5f20-817c-9e36-cdc583e9eddd"
+      },
+      {
+        "title": "이배송 관리",
+        "id": "3f3b98bf-5f20-81e3-8869-f02f67322353"
+      }
+    ],
+    "pyeongtaek": [
+      {
+        "title": "일일보고",
+        "id": "3f3b98bf-5f20-81e6-9c9a-e2bbe1e93fa0"
+      },
+      {
+        "title": "기사 서류 관리",
+        "id": "3f3b98bf-5f20-8196-a62d-e818e95ba7bf"
+      },
+      {
+        "title": "납품처 정보 확인",
+        "id": "3f3b98bf-5f20-81d0-86aa-ed24615f3f00"
+      },
+      {
+        "title": "거점 특이사항",
+        "id": "3f3b98bf-5f20-8111-81c5-d508d816ea3f"
+      }
+    ]
+  },
+  "teamspaces": {
+    "001": {
+      "id": "3f3b98bf-5f20-8197-8391-004271acf312",
+      "name": "안산센터 업무보드",
+      "verified": true
+    },
+    "002": {
+      "id": "3f3b98bf-5f20-81b4-9445-00427142d12f",
+      "name": "평택센터 업무보드",
+      "verified": true
+    }
   }
 }
