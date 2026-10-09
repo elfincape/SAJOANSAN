@@ -6,12 +6,14 @@ export async function allRows(db,path,order='id') {
 }
 export async function loadMaps(db,center) {
   const maps={};
-  for(const kind of ['companies','drivers','routes','points']){
+  const entries=await Promise.all(['companies','drivers','routes','points'].map(async kind=>{
     const table=kind==='points'?'notion_points_state':'notion_graph_state';
     const rows=await allRows(db,table+'?select=web_id,notion_id&center_code=eq.'+center+(kind==='points'?'':'&kind=eq.'+kind),'web_id');
-    maps[kind]={forward:new Map(),reverse:new Map()};
-    for(const r of rows)if(r.notion_id){maps[kind].forward.set(r.web_id,r.notion_id);maps[kind].reverse.set(r.notion_id.replaceAll('-','').toLowerCase(),r.web_id);}
-  }
+    const map={forward:new Map(),reverse:new Map()};
+    for(const r of rows)if(r.notion_id){map.forward.set(r.web_id,r.notion_id);map.reverse.set(r.notion_id.replaceAll('-','').toLowerCase(),r.web_id);}
+    return [kind,map];
+  }));
+  for(const [kind,map] of entries)maps[kind]=map;
   return maps;
 }
 export async function check(request,kind) {
@@ -139,3 +141,4 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
   }catch(error){hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}
   finally{if(!hold&&!options.lockToken)await db('rpc/notion_points_release','POST',{p_token:token});}
 }
+

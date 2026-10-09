@@ -63,8 +63,11 @@ async function loadContext(db,center,maps){
   const selects={companies:'id,center_code,name,memo',drivers:'id,center_code,name,phone,memo,company_id',
     routes:'id,center_code,name,car_number,active,company_id,primary_driver_id,secondary_driver_id,primary_vehicle_id,secondary_vehicle_id',
     points:'id,center_code,name,address,region,contact,contact_mobile,deadline_text,memo',vehicles:'id,center_code,plate_number,tonnage'};
-  for(const kind of Object.keys(selects))rows[kind]=new Map((await allRows(db,(kind==='points'?'delivery_points':kind)+'?select='+selects[kind]+'&center_code=eq.'+center)).map(r=>[r.id,r]));
-  const stops=await allRows(db,'course_view?select=stop_id,route_id,delivery_point_id,stop_order,arrival_text&center_code=eq.'+center,'stop_id');
+  const [entries,stops]=await Promise.all([
+    Promise.all(Object.keys(selects).map(async kind=>[kind,new Map((await allRows(db,(kind==='points'?'delivery_points':kind)+'?select='+selects[kind]+'&center_code=eq.'+center)).map(r=>[r.id,r]))])),
+    allRows(db,'course_view?select=stop_id,route_id,delivery_point_id,stop_order,arrival_text&center_code=eq.'+center,'stop_id')
+  ]);
+  for(const [kind,map] of entries)rows[kind]=map;
   return {rows,stops,maps};
 }
 export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
@@ -79,8 +82,8 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
     ...(kind==='points'?{}:{kind}),center_code:body.center,web_id:id,...values});
   try{
     const maps=await loadMaps(db,body.center),c=await loadContext(db,body.center,maps);
-    const ids=[...c.rows[kind].keys()].sort().filter(id=>body.id?id===body.id:!body.cursor||id>body.cursor).slice(0,5),started=Date.now();
-    for(const id of ids.slice(0,4)){
+    const ids=[...c.rows[kind].keys()].sort().filter(id=>body.id?id===body.id:!body.cursor||id>body.cursor).slice(0,13),started=Date.now();
+    for(const id of ids.slice(0,12)){
       if(result.processed&&Date.now()-started>25000)break;
       try{
       const state=await stateFor(id),pageID=state?.notion_id;
