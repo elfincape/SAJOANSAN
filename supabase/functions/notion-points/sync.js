@@ -41,8 +41,8 @@ export function validate(body) {
 export async function batch(env,key,body,fetcher=fetch,options={}) {
   validate(body);const db=dbClient(env,key,fetcher),request=pointsNotionClient(env,fetcher,options.wait);
   await check(env,request);
-  const token=crypto.randomUUID();
-  if(await db('rpc/notion_points_acquire','POST',{p_token:token})!==true)throw fail('다른 납품처 동기화가 진행 중입니다. 잠시 후 다시 실행해 주세요.',409,'sync_busy');
+  const token=options.lockToken||crypto.randomUUID();
+  if(!options.lockToken&&await db('rpc/notion_points_acquire','POST',{p_token:token})!==true)throw fail('다른 납품처 동기화가 진행 중입니다. 잠시 후 다시 실행해 주세요.',409,'sync_busy');
   const result={center:body.center,processed:0,created:0,updated:0,unchanged:0,imported:0,conflicts:0,hasMore:false,phase:body.phase||'web',nextCursor:null};
   let hold=false;
   async function stateFor(id){return (await db('notion_points_state?select=*&center_code=eq.'+body.center+'&web_id=eq.'+id))[0];}
@@ -159,5 +159,5 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     }
     return result;
   } catch(error) {hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}
-  finally {if(!hold)await db('rpc/notion_points_release','POST',{p_token:token});}
+  finally {if(!hold&&!options.lockToken)await db('rpc/notion_points_release','POST',{p_token:token});}
 }
