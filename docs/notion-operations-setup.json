@@ -53,12 +53,12 @@
     "existing_health_linked_views",
     "separate_center_work_pages",
     "existing_linked_views_moved_with_filters_preserved",
-    "old_combined_screen_removed"
+    "old_combined_screen_removed",
+    "delivery_point_bidirectional_sync"
   ],
   "pending": [
     "group_access_rules",
     "driver_document_sync",
-    "delivery_point_bidirectional_sync",
     "ansan_transfer_bidirectional_sync",
     "photo_transport",
     "conflict_resolution",
