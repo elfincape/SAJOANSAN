@@ -11,7 +11,7 @@ async function call(action,body){
     const r=await fetch(base+action,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(160000)});
     const result=await r.json().catch(()=>({}));
     if((result.code==='sync_busy'||result.code==='notion_429')&&i<30){await new Promise(r=>setTimeout(r,10000));continue;}
-    if(!r.ok)throw new Error('Graph '+action+' failed: '+(result.code||r.status));return result;
+    if(!r.ok)throw new Error('Graph '+action+' failed: '+(result.code||r.status)+(action==='repair'?' '+JSON.stringify(result.summary||{}):''));return result;
   }
 }
 const denied=await fetch(base+'sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
