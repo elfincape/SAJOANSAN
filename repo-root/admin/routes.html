@@ -68,6 +68,7 @@
   </main>
 
   <script type="module">
+    import { mountNotionGraph } from '/js/notion-graph-ui.js';
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { toast, openModal, closeModal, confirmDialog } from '/js/ui.js';
@@ -115,6 +116,7 @@
     bindEvents();
     await Promise.all([loadMasters(), loadRoutes()]);
     applyAndRender();
+    const notionGraph=mountNotionGraph({profile,kind:'routes',onRefresh:async()=>{await Promise.all([loadMasters(),loadRoutes()]);applyAndRender();}});
 
     // -------------------------------------------------------------------------
     // 데이터 로드
@@ -422,9 +424,9 @@
         if (isEdit) payload.id = route.id;
 
         try {
-          const { error } = await supabase
+          const { data: savedRoute, error } = await supabase
             .from('routes')
-            .upsert(payload, { onConflict: 'id' });
+            .upsert(payload, { onConflict: 'id' }).select('id').single();
           if (error) {
             toast(`저장 실패: ${error.message}`, 'error');
             return;
@@ -433,6 +435,7 @@
           closeModal();
           await loadRoutes();
           applyAndRender();
+          void notionGraph.syncOne(savedRoute.id);
         } catch {
           toast('저장 중 오류가 발생했습니다.', 'error');
         }
@@ -581,3 +584,4 @@
   </script>
 </body>
 </html>
+

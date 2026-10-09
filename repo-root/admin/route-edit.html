@@ -75,6 +75,7 @@
   </main>
 
   <script type="module">
+    import { mountNotionGraph } from '/js/notion-graph-ui.js';
     import { supabase } from '/js/supabase.js';
     import { requireRole } from '/js/auth.js';
     import { bizMinToDisplay, displayToBizMin, formatSlack } from '/js/time.js';
@@ -125,6 +126,7 @@
     renderRouteInfo();
     renderStops();
     initSortable();
+    const notionGraph=mountNotionGraph({profile,kind:'routes',getId:()=>routeId,onRefresh:async()=>{await loadAll();renderRouteInfo();renderStops();}});
 
     // =========================================================================
     // 3. 데이터 로드
@@ -310,6 +312,7 @@
             const { error } = await supabase.from('route_stops').upsert(payload, { onConflict: 'id' });
             if (error) throw error;
             toast('순서를 저장했습니다.', 'success');
+            void notionGraph.syncOne(routeId);
           } catch (e) {
             toast('순서 저장 실패. 되돌립니다.', 'error');
             state.stops = backup;
@@ -602,6 +605,7 @@
         closeModal();
         await loadAll();
         renderStops();
+        void notionGraph.syncOne(routeId);
       } catch {
         toast('저장 중 오류가 발생했습니다.', 'error');
       }
@@ -659,6 +663,7 @@
         toast('삭제되었습니다.', 'success');
         await loadAll();
         renderStops();
+        void notionGraph.syncOne(routeId);
       } catch {
         toast('삭제 중 오류가 발생했습니다.', 'error');
       }
@@ -694,3 +699,4 @@
   </script>
 </body>
 </html>
+

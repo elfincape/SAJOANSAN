@@ -127,6 +127,7 @@
   </main>
 
   <script type="module">
+    import { mountNotionGraph } from '/js/notion-graph-ui.js';
     import { healthStatus, healthBadge, compareHealthDates, validDate, watchHealthDate } from '/js/driver-health.js';
     import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '/js/onedrive-api.js';
     import { documentChecksHtml } from '/js/driver-document-status.js';
@@ -222,6 +223,9 @@
     bindEvents();
     await loadAll();
     resetForm();
+    const notionGraph=mountNotionGraph({profile,kind:'drivers',onRefresh:loadAll});
+    const linkedID=new URLSearchParams(location.search).get('id');
+    if(state.rows.some(r=>r.id===linkedID))selectRow(linkedID);
 
     // -------------------------------------------------------------------------
     async function loadAll() {
@@ -421,6 +425,7 @@
         toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
         await loadAll();
         selectRow(data.id);
+        void notionGraph.syncOne(data.id);
       } catch {
         toast('저장 중 오류가 발생했습니다.', 'error');
       } finally {
@@ -463,3 +468,4 @@
   </script>
 </body>
 </html>
+

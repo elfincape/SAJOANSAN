@@ -98,6 +98,7 @@
   </main>
 
   <script type="module">
+    import { mountNotionGraph } from '/js/notion-graph-ui.js';
     import { mountDriverDocuments } from '/js/driver-documents.js';
     import { companyDocuments, oneDriveDocuments } from '/js/onedrive-api.js';
     import { supabase } from '/js/supabase.js';
@@ -137,6 +138,9 @@
     bindEvents();
     await loadAll();
     resetForm();
+    const notionGraph=mountNotionGraph({profile,kind:'companies',onRefresh:loadAll});
+    const linkedID=new URLSearchParams(location.search).get('id');
+    if(state.rows.some(r=>r.id===linkedID))selectRow(linkedID);
 
     // -------------------------------------------------------------------------
     async function loadAll() {
@@ -297,6 +301,7 @@
         toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
         await loadAll();
         selectRow(data.id);
+        void notionGraph.syncOne(data.id);
       } catch {
         toast('저장 중 오류가 발생했습니다.', 'error');
       } finally {
@@ -346,3 +351,4 @@
   </script>
 </body>
 </html>
+
