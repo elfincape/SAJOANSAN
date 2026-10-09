@@ -91,6 +91,8 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     const fresh=await request('pages/'+page.id);
     if(fresh.last_edited_time!==page.last_edited_time){await markConflict(row,page);return;}
     const patch=webPatch(desired);
+    // Other field edits must not rewrite legacy deadline text or its numeric index.
+    if(web.deadline_text===desired.deadline_text){delete patch.deadline_text;delete patch.deadline_business_min;}
     if(photoHash!==webHash)patch.photos=photos;
     const expected=Object.fromEntries(Object.keys(FIELDS).map(k=>[k,row[k]??null]));expected.photos=row.photos||[];expected.contact_mobile=row.contact_mobile??null;
     if(Object.keys(FIELDS).some(k=>web[k]!==desired[k])||photoHash!==webHash) {

@@ -48,6 +48,17 @@ function fixture() {
 }
 const env={NOTION_API_TOKEN:'token',SUPABASE_URL:'https://project.supabase.co'};
 const options={wait:async()=>{}};
+
+test('legacy deadline instructions copy faithfully and unrelated edits preserve the existing numeric index',async()=>{
+  const f=fixture();Object.assign(f.rows[0],{deadline_text:'오전 검수 전까지',deadline_business_min:540});
+  assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).created,1);
+  assert.equal(plain(f.page.properties['납품마감']),'오전 검수 전까지');
+  f.page.properties['비고']={rich_text:[{text:{content:'notion memo'}}]};
+  assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).updated,1);
+  assert.equal(f.rows[0].memo,'notion memo');
+  assert.equal(f.rows[0].deadline_text,'오전 검수 전까지');
+  assert.equal(f.rows[0].deadline_business_min,540);
+});
 test('initial copy is idempotent; independent edits merge both ways; same-field conflict preserves both values',async()=>{
   const f=fixture();
   assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).created,1);

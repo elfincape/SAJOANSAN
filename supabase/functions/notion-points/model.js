@@ -19,7 +19,9 @@ export function normalize(key,value) {
   const s=String(value ?? '').trim();
   if(key==='deadline_text' && s) {
     const m=/^(\d{1,2})\s*[:.시]\s*(\d{1,2})\s*분?$/.exec(s);
-    if(!m || +m[1]>23 || +m[2]>59)throw fail('납품마감은 00:00~23:59 형식으로 입력해 주세요.',422,'invalid_deadline');
+    // Existing delivery deadlines also contain business instructions. Preserve their text.
+    if(!m)return s;
+    if(+m[1]>23 || +m[2]>59)throw fail('납품마감은 00:00~23:59 형식으로 입력해 주세요.',422,'invalid_deadline');
     return m[1].padStart(2,'0')+':'+m[2].padStart(2,'0');
   }
   return s;
@@ -70,7 +72,7 @@ export function webPatch(values) {
   if(!values.name)throw fail('납품처명을 입력해 주세요.',422,'missing_name');
   const result=Object.fromEntries(Object.entries(values).map(([k,v])=>[k,typeof v==='string'?v||null:v]));
   result.contact_mobile=result.contact;
-  if(values.deadline_text) {
+  if(/^\d{2}:\d{2}$/.test(values.deadline_text||'')) {
     const [h,m]=values.deadline_text.split(':').map(Number);result.deadline_business_min=h*60+m;
   }else result.deadline_business_min=null;
   return result;

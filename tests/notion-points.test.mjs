@@ -19,6 +19,10 @@ test('blanking values and checkboxes round-trip; deadlines follow current 00:00~
   assert.equal(webValues({name:'A',deadline_text:'9시5분'}).deadline_text,'09:05');
   const empty=webValues({name:'A'});assert.equal(webPatch(empty).deadline_business_min,null);assert.equal(webPatch(empty).memo,null);
   assert.throws(()=>webValues({name:'A',deadline_text:'28:00'}));
+  const instruction=webValues({name:'A',deadline_text:'오전 검수 전까지'});
+  assert.equal(instruction.deadline_text,'오전 검수 전까지');
+  assert.deepEqual(notionValues({properties:properties(instruction)}),instruction);
+  assert.equal(webPatch(instruction).deadline_business_min,null);
 });
 test('unauthenticated and inactive or non-admin browser calls cannot invoke sync',async()=>{
   const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server'};
