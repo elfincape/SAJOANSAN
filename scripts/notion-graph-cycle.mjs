@@ -35,6 +35,9 @@ for(const center of ['001','002']){
     }
     if(!done)throw new Error('Graph cycle did not finish');console.log('Center '+center+' '+kind+' '+JSON.stringify(totals));
   }
+}
+// Connect both centers before building the larger delivery-point previews.
+for(const center of ['001','002']){
   if(process.env.NOTION_GRAPH_SKIP_SUMMARY!=='1')for(const kind of ['companies','drivers','routes','points']){
     let cursor=null,done=false;const totals={processed:0,updated:0,unchanged:0,conflicts:0};
     for(let i=0;i<10000;i++){

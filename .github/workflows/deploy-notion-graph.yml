@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 concurrency:
   group: notion-graph-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -34,3 +34,4 @@ jobs:
       - run: node scripts/notion-graph-cycle.mjs
         env:
           NOTION_GRAPH_VERIFY: '1'
+
