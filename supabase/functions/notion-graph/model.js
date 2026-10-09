@@ -9,7 +9,9 @@ export const FIELDS={
     secondary_driver_id:['보조기사','relation','drivers'],stops:['납품처','relation','points','many']}
 };
 export const DAYS=['일','월','화','수','목','금','토'];
-export const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?
+  Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+export const equal=(a,b)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b));
 export const sorted=a=>[...new Set(a)].sort();
 export function webValues(kind,row,stops=[]) {
   return Object.fromEntries(Object.entries(FIELDS[kind]).map(([key,[,type]])=>[key,
@@ -72,3 +74,4 @@ export function validate(body) {
   if(body.cursor!==undefined&&body.cursor!==null&&(typeof body.cursor!=='string'||!body.cursor||body.cursor.length>500||
     ((body.phase||'web')!=='notion'&&!UUID.test(body.cursor))))throw fail('조회 위치를 확인해 주세요.');
 }
+
