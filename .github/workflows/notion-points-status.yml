@@ -1,0 +1,36 @@
+name: Check Notion delivery sync counts
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/notion-points-status.yml']
+  workflow_dispatch:
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read aggregate counts only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const {SUPABASE_PROJECT_REF:ref,SUPABASE_ACCESS_TOKEN:token}=process.env;
+          if(!/^[a-z]{20}$/.test(ref||'')||!token)throw new Error('Credentials unavailable');
+          const query=`SELECT p.center_code, count(*) AS web_total,
+            count(s.web_id) AS linked,
+            count(*) FILTER (WHERE s.status='정상') AS normal,
+            count(*) FILTER (WHERE s.status='충돌 확인') AS conflicts
+            FROM public.delivery_points p LEFT JOIN public.notion_points_state s
+            ON s.center_code=p.center_code AND s.web_id=p.id
+            WHERE p.center_code IN ('001','002') GROUP BY p.center_code ORDER BY p.center_code`;
+          const r=await fetch('https://api.supabase.com/v1/projects/'+ref+'/database/query',{
+            method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+            body:JSON.stringify({query}),signal:AbortSignal.timeout(30000)});
+          if(!r.ok)throw new Error('Aggregate query failed: '+r.status);
+          console.log(JSON.stringify(await r.json()));
+          NODE
