@@ -15,9 +15,13 @@ if(!check.ok||!checked.connected)throw new Error('Notion delivery connection che
 console.log('Notion delivery schema and authentication verified');
 for(const center of ['001','002']) {
   if(process.env.NOTION_POINTS_VERIFY==='1') {
-    const proof=await fetch(base+'verify',{method:'POST',headers:auth,body:JSON.stringify({center}),signal:AbortSignal.timeout(160000)});
-    const verified=await proof.json().catch(()=>({}));
-    if(!proof.ok||!verified.webToNotion||!verified.notionToWeb)throw new Error('Bidirectional round-trip verification failed: '+(verified.code||proof.status));
+    for(let attempt=0;attempt<31;attempt++){
+      const proof=await fetch(base+'verify',{method:'POST',headers:auth,body:JSON.stringify({center}),signal:AbortSignal.timeout(160000)});
+      const verified=await proof.json().catch(()=>({}));
+      if((verified.code==='sync_busy'||verified.code==='notion_429')&&attempt<30){await new Promise(r=>setTimeout(r,10000));continue;}
+      if(!proof.ok||!verified.webToNotion||!verified.notionToWeb)throw new Error('Bidirectional round-trip verification failed: '+(verified.code||proof.status));
+      break;
+    }
     console.log('Center '+center+' actual web ↔ Notion round trip verified; temporary fixture removed');
   }
   let phase='web',cursor=null,finished=false,retries=0;
@@ -34,3 +38,4 @@ for(const center of ['001','002']) {
   if(!finished)throw new Error('Sync did not finish');
   console.log('Center '+center+' '+JSON.stringify(summary));
 }
+
