@@ -33,4 +33,20 @@ jobs:
             body:JSON.stringify({query}),signal:AbortSignal.timeout(30000)});
           if(!r.ok)throw new Error('Aggregate query failed: '+r.status);
           console.log(JSON.stringify(await r.json()));
+          const detail=`SELECT p.center_code, count(*) AS conflicts,
+            count(*) FILTER (WHERE s.notion_id IS NOT NULL) AS already_linked,
+            count(*) FILTER (WHERE coalesce(trim(p.deadline_text),'')<>''
+              AND trim(p.deadline_text) !~ '^[0-9]{1,2}[[:space:]]*[:.시][[:space:]]*[0-9]{1,2}[[:space:]]*분?$') AS unsupported_time_format,
+            count(*) FILTER (WHERE coalesce(trim(p.deadline_text),'')=''
+              AND (p.deadline_business_min<0 OR p.deadline_business_min>=1440)) AS numeric_time_out_of_range,
+            count(*) FILTER (WHERE CASE WHEN jsonb_typeof(p.photos::jsonb)='array'
+              THEN jsonb_array_length(p.photos::jsonb)>6 ELSE false END) AS too_many_photos
+            FROM public.delivery_points p JOIN public.notion_points_state s
+            ON s.center_code=p.center_code AND s.web_id=p.id
+            WHERE s.status='충돌 확인' GROUP BY p.center_code ORDER BY p.center_code`;
+          const conflicts=await fetch('https://api.supabase.com/v1/projects/'+ref+'/database/query',{
+            method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+            body:JSON.stringify({query:detail}),signal:AbortSignal.timeout(30000)});
+          if(!conflicts.ok)throw new Error('Conflict diagnostic failed: '+conflicts.status);
+          console.log('Conflict format diagnostic: '+JSON.stringify(await conflicts.json()));
           NODE
