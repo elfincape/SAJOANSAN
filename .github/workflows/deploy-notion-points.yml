@@ -1,0 +1,40 @@
+name: Deploy and sync Notion delivery points
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/notion-points/**'
+      - 'repo-root/sql/notion-points-sync.sql'
+      - 'repo-root/js/notion-points-ui.js'
+      - 'scripts/notion-points-*.mjs'
+      - 'tests/notion-points*.test.mjs'
+      - '.github/workflows/deploy-notion-points.yml'
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: notion-delivery-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/notion-points*.test.mjs
+      - run: node --check repo-root/js/notion-points-ui.js
+      - if: github.event_name != 'schedule'
+        run: node scripts/notion-points-deploy.mjs
+      - if: github.event_name != 'schedule'
+        uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - if: github.event_name != 'schedule'
+        run: supabase functions deploy notion-points --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+      - run: node scripts/notion-points-cycle.mjs

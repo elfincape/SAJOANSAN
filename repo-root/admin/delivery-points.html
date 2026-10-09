@@ -45,7 +45,9 @@
             <option value="name">이름순</option>
           </select>
           <button id="new-btn" class="btn btn-primary">+ 신규</button>
+          <button id="notion-points-sync" class="btn btn-ghost hidden" type="button">노션 동기화</button>
         </div>
+        <p id="notion-points-status" class="px-3 text-xs text-zinc-400" role="status" aria-live="polite"></p>
 
         <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
           <table class="app-table">
@@ -222,6 +224,7 @@
 
   <script type="module">
     import { supabase } from '/js/supabase.js';
+    import { mountNotionPoints } from '/js/notion-points-ui.js';
     import { requireRole, getCurrentProfile } from '/js/auth.js';
     import { bizMinToDisplay, displayToBizMin } from '/js/time.js';
     import { toast, confirmDialog, formatPhone } from '/js/ui.js';
@@ -273,6 +276,9 @@
     bindEvents();
     await loadList();
     resetForm();
+    const notionPoints = mountNotionPoints({profile,onRefresh:loadList});
+    const requestedId = new URLSearchParams(location.search).get('id');
+    if (requestedId && state.rows.some(row => row.id === requestedId)) selectRow(requestedId);
 
     // -------------------------------------------------------------------------
     // 목록 로드
@@ -421,9 +427,11 @@
         deadline_text:         deadlineText ? normalizeTime(deadlineText) : null,
         deadline_business_min: deadlineBiz,
 
-        // 운영 DB 스키마에 없는 담당자/대표자 세부 컬럼은 payload에서 제외한다.
-        // 해당 값을 별도 컬럼으로 저장하려면 DB 마이그레이션 후 이 payload를 확장해야 한다.
-        // 호환: 실제 운영 스키마에는 contact_mobile 컬럼이 없을 수 있으므로 contact 컬럼만 동기화
+        contact_name: emptyToNull($('f-mgr-name').value.trim()),
+        contact_office: emptyToNull($('f-mgr-office').value.trim()),
+        contact_mobile: emptyToNull($('f-mgr-mobile').value.trim()),
+        rep_name: emptyToNull($('f-rep-name').value.trim()),
+        rep_phone: emptyToNull($('f-rep-phone').value.trim()),
         contact:        emptyToNull($('f-mgr-mobile').value.trim()),
         memo:           emptyToNull(stripLegacyPhotoPayload($('f-memo').value)),
         photos:         state.draftPhotos
@@ -604,6 +612,7 @@
         const savedId = data.id;
         await loadList();
         selectRow(savedId);
+        await notionPoints.syncOne(savedId);
       } catch (e) {
         console.error('[delivery-points] 저장 후 처리 중 오류', e);
       } finally {
