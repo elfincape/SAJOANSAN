@@ -3,11 +3,12 @@ import {fail} from './model.js';
 const PARENT='3f4b98bf-5f20-81c2-992e-fecda52668d7';
 const SOURCE='73aa532a-bc84-4338-8001-897b4e77a1d9';
 const OLD='7f28822a-7e92-4e20-9035-01d5edeef2e7';
+const ANCESTOR='3f3b98bf-5f20-8119-8fa8-d1740579f9e0';
 const MARK='SAJOANSAN original delivery source relocation 73aa532a';
 const text=x=>(x||[]).map(x=>x.plain_text??x.text?.content??'').join('');
 const same=(a,b)=>a?.replaceAll('-','')===b?.replaceAll('-','');
 const rich=content=>[{type:'text',text:{content}}];
-// Fixed, explicitly approved relocation; never restores the deleted ancestor.
+// Fixed, approved relocation; the deleted ancestor returns to trash before completion.
 export async function repairPointHome(env,key,fetcher=fetch){
   let stage='parent',reason=null;
   const diagnosticFetch=async(url,options)=>{
@@ -41,7 +42,22 @@ export async function repairPointHome(env,key,fetcher=fetch){
     if(!destination)destination=await request('databases','POST',{parent:{type:'page_id',page_id:PARENT},title:rich('납품처 정보 확인'),description:rich(MARK),initial_data_source:{properties:{'이동 준비':{title:{}}}}});
     if(!same(destination.parent?.page_id,PARENT)||text(destination.description)!==MARK)throw fail('이동 대상을 확인하지 못했습니다.',502,'uncertain_write');
     if(!same(source.parent?.database_id,destination.id)||source.in_trash){
-      stage='move';const moved=await request('data_sources/'+SOURCE,'PATCH',{parent:{type:'database_id',database_id:destination.id},in_trash:false});
+      stage='move';let moved;
+      const move=()=>request('data_sources/'+SOURCE,'PATCH',{parent:{type:'database_id',database_id:destination.id},in_trash:false});
+      try{moved=await move();}catch(error){
+        if(error.code!=='notion_400'||!reason?.includes('archived ancestor'))throw error;
+        const old=await request('databases/'+OLD),ancestor=await request('pages/'+ANCESTOR);
+        if(!same(old.parent?.page_id,ANCESTOR)||text(ancestor.properties?.title?.title)!=='거점 운영관리')throw fail('기존 원본 위치를 확인해 주세요.',422,'repair_scope');
+        const ancestorTrashed=ancestor.in_trash||ancestor.archived,oldTrashed=old.in_trash||old.archived;
+        try{
+          if(ancestorTrashed)await request('pages/'+ANCESTOR,'PATCH',{in_trash:false});
+          if(oldTrashed)await request('databases/'+OLD,'PATCH',{in_trash:false});
+          reason=null;moved=await move();
+        }finally{
+          try{if(oldTrashed)await request('databases/'+OLD,'PATCH',{in_trash:true});}
+          finally{if(ancestorTrashed)await request('pages/'+ANCESTOR,'PATCH',{in_trash:true});}
+        }
+      }
       if(!same(moved.parent?.database_id,destination.id)||moved.in_trash)throw fail('이동 결과를 확인하지 못했습니다.',502,'uncertain_write');
     }
     stage='empty_source_cleanup';const current=await request('databases/'+destination.id);
