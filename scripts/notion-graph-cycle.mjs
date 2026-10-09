@@ -16,6 +16,7 @@ async function call(action,body){
 }
 const denied=await fetch(base+'sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
 if(denied.status!==401)throw new Error('Unauthenticated graph sync was not rejected');
+if(process.env.NOTION_GRAPH_VERIFY==='1')console.log('Original delivery source relocation '+JSON.stringify(await call('repair',{})));
 const schema=await call('test',{});
 if(!schema.connected)throw new Error('Graph schema check failed: '+JSON.stringify(schema));
 console.log('Graph schema and authentication verified');
@@ -43,3 +44,4 @@ for(const center of ['001','002']){
     if(!done)throw new Error('Graph previews did not finish');console.log('Center '+center+' '+kind+' previews '+JSON.stringify(totals));
   }
 }
+

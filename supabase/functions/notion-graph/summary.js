@@ -98,7 +98,7 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
       }
       if(blockID){
         current=await readTree(request,await request('blocks/'+blockID));
-        if(current.in_trash||cleanID(current.parent?.page_id)!==cleanID(pageID)||current.type!=='callout')throw fail('자동 정보 영역의 이동·삭제 상태를 확인해 주세요.',422,'summary_manual');
+        if(current.in_trash||current.archived||current.is_archived||cleanID(current.parent?.page_id)!==cleanID(pageID)||current.type!=='callout')throw fail('자동 정보 영역의 이동·삭제 상태를 확인해 주세요.',422,'summary_manual');
         const actual=await treeHash(current);
         if(actual===hash){await save(id,{summary_block_id:blockID,summary_hash:hash,summary_status:'정상'});result.unchanged++;result.processed++;result.nextCursor=id;continue;}
         const recovering=['생성 중','갱신 중'].includes(state.summary_status);
@@ -128,3 +128,4 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
   }catch(error){hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}
   finally{if(!hold&&!options.lockToken)await db('rpc/notion_points_release','POST',{p_token:token});}
 }
+
