@@ -36,7 +36,11 @@ export function makeHandler(env,fetcher=fetch) {
       if(action==='test'){
         const request=pointsNotionClient(env,fetcher),integration=await request('users/me'),sources={};
         for(const kind of Object.keys(SOURCES)){try{await check(request,kind);sources[kind]='connected';}catch(error){sources[kind]=error.code||'unavailable';}}
-        return json({connected:Object.values(sources).every(x=>x==='connected'),integrationName:integration.name,sources});
+        const connected=Object.values(sources).every(x=>x==='connected'),diagnostics={};
+        if(!connected&&internal)for(const [kind,id] of Object.entries({companies:'3ae86f28-88a6-4644-b34a-11cf5f8df2b3',drivers:'3aacf7be-f54b-4327-aa63-55dde0d6c9b6',routes:'04f0ec36-55aa-49ae-a093-96841c500c80'})){
+          try{const db=await request('databases/'+id);diagnostics[kind]={dataSources:db.data_sources,inTrash:db.in_trash};}catch(error){diagnostics[kind]={code:error.code};}
+        }
+        return json({connected,integrationName:integration.name,...(!connected&&internal?{integrationID:integration.id,diagnostics}:{}),sources});
       }
       if(action==='verify'){if(!Object.hasOwn(CENTERS,body.center))throw fail('센터를 확인해 주세요.');return json(await verifyRoundTrip(env,key,body.center,fetcher));}
       if(action==='summary')return json(await summaryBatch(env,key,body,fetcher));
