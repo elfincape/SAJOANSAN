@@ -15,13 +15,24 @@ export async function loadMaps(db,center) {
   return maps;
 }
 export async function check(request,kind) {
-  const source=await request('data_sources/'+SOURCES[kind]);
+  let source;try{source=await request('data_sources/'+SOURCES[kind]);}catch(error){error.code=kind+'_'+(error.code||'source_error');throw error;}
   for(const [name,type,target] of Object.values(FIELDS[kind])){
     const p=source.properties?.[name];
     if(p?.type!==type)throw fail('노션 '+name+' 열 형식을 확인해 주세요.',422,'schema_mismatch');
     if(target&&p.relation?.data_source_id!==(target==='points'?'73aa532a-bc84-4338-8001-897b4e77a1d9':SOURCES[target]))throw fail('노션 관계 대상 DB를 확인해 주세요.',422,'schema_mismatch');
   }
   return {connected:true,kind};
+}
+export async function expandRelations(request,kind,page){
+  for(const [name,type] of Object.values(FIELDS[kind]))if(type==='relation'&&page.properties?.[name]?.has_more){
+    const p=page.properties[name],relation=[];let cursor=null,propertyID=p.id;
+    try{propertyID=decodeURIComponent(propertyID);}catch{}
+    do{const r=await request('pages/'+page.id+'/properties/'+encodeURIComponent(propertyID)+'?page_size=100'+(cursor?'&start_cursor='+encodeURIComponent(cursor):''));
+      relation.push(...r.results.map(x=>x.relation));cursor=r.has_more?r.next_cursor:null;
+    }while(cursor);
+    page.properties[name]={...p,relation,has_more:false};
+  }
+  return page;
 }
 export async function batch(env,key,body,fetcher=fetch,options={}) {
   validate(body);const db=dbClient(env,key,fetcher),request=pointsNotionClient(env,fetcher,options.wait);
@@ -57,13 +68,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     if(page.in_trash||page.is_archived||page.archived||page.properties?.['센터']?.select?.name!==CENTERS[body.center]||
       (state?.notion_id&&state.notion_id!==page.id)){await conflict(row,page);return;}
     // Retrieve every relation item; page responses truncate larger relation values.
-    for(const [name,type] of Object.values(FIELDS[kind]))if(type==='relation'&&page.properties?.[name]?.has_more){
-      const p=page.properties[name],relation=[];let cursor=null;
-      do{const r=await request('pages/'+page.id+'/properties/'+encodeURIComponent(p.id)+'?page_size=100'+(cursor?'&start_cursor='+encodeURIComponent(cursor):''));
-        relation.push(...r.results.map(x=>x.relation));cursor=r.has_more?r.next_cursor:null;
-      }while(cursor);
-      page.properties[name]={...p,relation,has_more:false};
-    }
+    await expandRelations(request,kind,page);
     const remote=remoteValues(kind,page,maps),merged=merge(state?.baseline,web,remote);
     if(merged.conflicts.length||!merged.values.name){await conflict(row,page);return;}
     const desired=merged.values;
@@ -85,6 +90,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
   async function importPage(page){
     if(page.in_trash||page.is_archived||page.properties?.['센터']?.select?.name!==CENTERS[body.center])throw fail('센터를 확인해 주세요.',422,'relation_scope');
     if(plain(page.properties?.['웹 ID']))return;
+    await expandRelations(request,kind,page);
     const desired=remoteValues(kind,page,maps);if(!desired.name){await conflict(null,page);return;}
     const reserved=(await db('notion_graph_state?select=*&notion_id=eq.'+page.id))[0];
     if(reserved&&(reserved.kind!==kind||reserved.center_code!==body.center)){await conflict(null,page);return;}

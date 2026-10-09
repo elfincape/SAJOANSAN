@@ -68,7 +68,7 @@ export function metadata(kind,center,id,status='정상') {
 export function validate(body) {
   if(!body||!Object.hasOwn(CENTERS,body.center)||!Object.hasOwn(SOURCES,body.kind))throw fail('센터와 정보 종류를 확인해 주세요.');
   if(body.id!==undefined&&!UUID.test(body.id))throw fail('식별 정보를 확인해 주세요.');
-  if(body.phase!==undefined&&!['web','notion','summary'].includes(body.phase))throw fail('동기화 단계를 확인해 주세요.');
+  if(body.phase!==undefined&&!['web','notion'].includes(body.phase))throw fail('동기화 단계를 확인해 주세요.');
   if(body.cursor!==undefined&&body.cursor!==null&&(typeof body.cursor!=='string'||!body.cursor||body.cursor.length>500||
     ((body.phase||'web')!=='notion'&&!UUID.test(body.cursor))))throw fail('조회 위치를 확인해 주세요.');
 }

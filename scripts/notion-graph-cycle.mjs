@@ -16,12 +16,13 @@ async function call(action,body){
 }
 const denied=await fetch(base+'sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
 if(denied.status!==401)throw new Error('Unauthenticated graph sync was not rejected');
-if(!(await call('test',{})).connected)throw new Error('Graph schema check failed');
+const schema=await call('test',{});
+if(!schema.connected)throw new Error('Graph schema check failed: '+JSON.stringify(schema));
 console.log('Graph schema and authentication verified');
 for(const center of ['001','002']){
   if(process.env.NOTION_GRAPH_VERIFY==='1'){
     const result=await call('verify',{center});
-    if(!result.webToNotion||!result.notionToWeb||!result.stopDetailsPreserved||!result.nativeMentions)throw new Error('Graph round trip failed');
+    if(!result.webToNotion||!result.notionToWeb||!result.stopDetailsPreserved||!result.nativeMentions||!result.concurrentStopEditsPreserved)throw new Error('Graph round trip failed');
     console.log('Center '+center+' actual relation round trip, stop restoration and native mentions verified; isolated fixtures removed');
   }
   for(const kind of ['companies','drivers','routes']){

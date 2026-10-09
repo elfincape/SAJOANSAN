@@ -82,6 +82,7 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
     const ids=[...c.rows[kind].keys()].sort().filter(id=>body.id?id===body.id:!body.cursor||id>body.cursor).slice(0,5),started=Date.now();
     for(const id of ids.slice(0,4)){
       if(result.processed&&Date.now()-started>25000)break;
+      try{
       const state=await stateFor(id),pageID=state?.notion_id;
       if(!pageID){result.conflicts++;result.processed++;result.nextCursor=id;continue;}
       const desired=summaryTree(kind,c.rows[kind].get(id),c),hash=await treeHash(desired);
@@ -118,6 +119,10 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
       for(let offset=0;offset<(desired.callout.children?.length||0);offset+=100)
         await request('blocks/'+blockID+'/children','PATCH',{children:desired.callout.children.slice(offset,offset+100)});
       await save(id,{summary_block_id:blockID,summary_hash:hash,summary_status:'정상'});result.updated++;result.processed++;result.nextCursor=id;
+      }catch(error){
+        if(error.code!=='summary_manual')throw error;
+        await save(id,{summary_status:'수동 확인'});result.conflicts++;result.processed++;result.nextCursor=id;
+      }
     }
     result.hasMore=!body.id&&ids.length>result.processed;if(!result.hasMore)result.nextCursor=null;return result;
   }catch(error){hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}

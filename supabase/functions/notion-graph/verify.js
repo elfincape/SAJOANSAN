@@ -17,6 +17,11 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch){
     for(const n of ids.drivers){await db('drivers','POST',{id:n,center_code:center,name:name('drivers',n),company_id:id,memo:'graph-probe'});await sync('drivers',n);}
     await db('routes','POST',{id,center_code:center,name:name('routes',id),car_number:'SYNCGRAPH-'+id,active:true,closed_days:[],company_id:id,primary_driver_id:id});
     await db('route_stops','POST',{route_id:id,delivery_point_id:id,stop_order:1,arrival_text:'09:00',arrival_business_min:540,memo:'graph-stop-probe'});await sync('routes');
+    const originalStops=await db('route_stops?select=*&route_id=eq.'+id+'&order=id.asc');
+    await db('route_stops?route_id=eq.'+id,'PATCH',{memo:'graph-concurrent-probe'});
+    assert(await db('rpc/notion_graph_apply','POST',{p_kind:'routes',p_center:center,p_id:id,p_expected:{_stops:originalStops},p_values:{stops:[]}})===null);
+    assert((await db('route_stops?select=memo&route_id=eq.'+id))[0]?.memo==='graph-concurrent-probe');
+    await db('route_stops?route_id=eq.'+id,'PATCH',{memo:'graph-stop-probe'});
     const routePage=await state('routes'),pointPage=await state('points'),a=await state('drivers'),b=await state('drivers',driver2);
     await request('pages/'+routePage,'PATCH',{properties:{'주기사':{relation:[{id:b}]}}});await sync('routes');
     assert((await db('routes?select=primary_driver_id&id=eq.'+id+scope))[0]?.primary_driver_id===driver2);
@@ -36,9 +41,11 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch){
     for(const kind of ['routes','points']){
       const r=await summaryBatch(env,key,{kind,center,id},fetcher,opts);assert(r.updated===1&&!r.conflicts);
       const page=await state(kind),blocks=await request('blocks/'+page+'/children?page_size=100');
-      assert(blocks.results.some(x=>x.type==='callout'&&x.callout.rich_text.some(t=>t.type==='mention'))||kind==='points');
+      const root=blocks.results.find(x=>x.type==='callout');assert(!!root);
+      const branches=await request('blocks/'+root.id+'/children?page_size=100');
+      assert(branches.results.some(x=>x.bulleted_list_item?.rich_text.some(t=>t.type==='mention')));
     }
-    return {verified:true,center,webToNotion:true,notionToWeb:true,stopDetailsPreserved:true,nativeMentions:true};
+    return {verified:true,center,webToNotion:true,notionToWeb:true,stopDetailsPreserved:true,nativeMentions:true,concurrentStopEditsPreserved:true};
   }finally{
     try{
       for(const kind of ['routes','drivers','companies','points'])for(const n of ids[kind]){

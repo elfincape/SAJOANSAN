@@ -34,8 +34,9 @@ export function makeHandler(env,fetcher=fetch) {
       const raw=await req.text();if(raw.length>3000)throw fail('요청이 너무 큽니다.');
       let body;try{body=JSON.parse(raw||'{}');}catch{throw fail('요청을 확인해 주세요.');}
       if(action==='test'){
-        const request=pointsNotionClient(env,fetcher);for(const kind of Object.keys(SOURCES))await check(request,kind);
-        return json({connected:true});
+        const request=pointsNotionClient(env,fetcher),integration=await request('users/me'),sources={};
+        for(const kind of Object.keys(SOURCES)){try{await check(request,kind);sources[kind]='connected';}catch(error){sources[kind]=error.code||'unavailable';}}
+        return json({connected:Object.values(sources).every(x=>x==='connected'),integrationName:integration.name,sources});
       }
       if(action==='verify'){if(!Object.hasOwn(CENTERS,body.center))throw fail('센터를 확인해 주세요.');return json(await verifyRoundTrip(env,key,body.center,fetcher));}
       if(action==='summary')return json(await summaryBatch(env,key,body,fetcher));

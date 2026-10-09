@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {webValues,remoteValues,properties,merge} from '../supabase/functions/notion-graph/model.js';
 import {summaryTree,normalizedTree,treeHash} from '../supabase/functions/notion-graph/summary.js';
 import {makeHandler} from '../supabase/functions/notion-graph/handler.js';
+import {expandRelations} from '../supabase/functions/notion-graph/sync.js';
 const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002';
 const maps=Object.fromEntries(['companies','drivers','routes','points'].map(k=>[k,{forward:new Map([[a,b]]),reverse:new Map([[b.replaceAll('-',''),a]])}]));
 test('independent relation changes merge; divergent assignments conflict',()=>{
@@ -16,9 +17,15 @@ test('relations round trip by stable IDs and reject cross-center or ambiguous as
   const values=webValues('routes',{name:'A',company_id:a,primary_driver_id:a,closed_days:[0,6]},[{delivery_point_id:a}]);
   const page={properties:Object.fromEntries(Object.entries(properties('routes',values,maps)).map(([k,p])=>[k,{...p,type:Object.keys(p)[0]}]))};
   assert.deepEqual(remoteValues('routes',page,maps),values);
-  page.properties['主기사']={};page.properties['주기사'].relation.push({id:b});assert.throws(()=>remoteValues('routes',page,maps),e=>e.code==='relation_cardinality');
+  page.properties['주기사'].relation.push({id:b});assert.throws(()=>remoteValues('routes',page,maps),e=>e.code==='relation_cardinality');
   page.properties['주기사'].relation=[{id:a}];assert.throws(()=>remoteValues('routes',page,maps),e=>e.code==='relation_scope');
   page.properties['주기사'].has_more=true;assert.throws(()=>remoteValues('routes',page,maps),e=>e.code==='relation_incomplete');
+});
+test('large relation lists fetch every page without double escaping property IDs',async()=>{
+  const page={id:a,properties:{'납품처':{id:'x%3Ay',relation:[{id:a}],has_more:true}}};let calls=0;
+  await expandRelations(async path=>{calls++;assert.ok(path.includes('/properties/x%3Ay?'));
+    return calls===1?{results:[{relation:{id:a}}],has_more:true,next_cursor:'next token'}:{results:[{relation:{id:b}}],has_more:false};},'routes',page);
+  assert.equal(calls,2);assert.deepEqual(page.properties['납품처'].relation,[{id:a},{id:b}]);assert.equal(page.properties['납품처'].has_more,false);
 });
 test('native mention previews retain course → point → company → driver hierarchy',async()=>{
   const row={id:a,name:'코스',center_code:'001',company_id:a,primary_driver_id:a,active:true};
