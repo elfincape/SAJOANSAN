@@ -18,7 +18,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -40,3 +40,6 @@ jobs:
       - run: node scripts/notion-points-cycle.mjs
         env:
           NOTION_POINTS_VERIFY: ${{ github.event_name != 'schedule' && '1' || '0' }}
+
+      - run: node scripts/notion-graph-cycle.mjs
+

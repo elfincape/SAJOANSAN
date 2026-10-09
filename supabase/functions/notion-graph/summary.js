@@ -77,16 +77,18 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
   if(!options.lockToken&&await db('rpc/notion_points_acquire','POST',{p_token:token})!==true)throw fail('다른 동기화가 진행 중입니다.',409,'sync_busy');
   const result={processed:0,updated:0,unchanged:0,conflicts:0,hasMore:false,nextCursor:null};let hold=false;
   const kind=body.kind,table=kind==='points'?'notion_points_state':'notion_graph_state';
-  const stateFor=async id=>(await db(table+'?select=notion_id,summary_block_id,summary_hash,summary_status&center_code=eq.'+body.center+'&web_id=eq.'+id+(kind==='points'?'':'&kind=eq.'+kind)))[0];
   const save=async(id,values)=>db(table+'?on_conflict='+(kind==='points'?'center_code,web_id':'kind,center_code,web_id'),'POST',{
     ...(kind==='points'?{}:{kind}),center_code:body.center,web_id:id,...values});
   try{
     const maps=await loadMaps(db,body.center),c=await loadContext(db,body.center,maps);
     const ids=[...c.rows[kind].keys()].sort().filter(id=>body.id?id===body.id:!body.cursor||id>body.cursor).slice(0,13),started=Date.now();
+    const stateRows=ids.length?await db(table+'?select=web_id,notion_id,summary_block_id,summary_hash,summary_status&center_code=eq.'+body.center+
+      '&web_id=in.('+ids.slice(0,12).join(',')+')'+(kind==='points'?'':'&kind=eq.'+kind)):[];
+    const states=new Map(stateRows.map(state=>[state.web_id,state]));
     for(const id of ids.slice(0,12)){
       if(result.processed&&Date.now()-started>25000)break;
       try{
-      const state=await stateFor(id),pageID=state?.notion_id;
+      const state=states.get(id),pageID=state?.notion_id;
       if(!pageID){result.conflicts++;result.processed++;result.nextCursor=id;continue;}
       const desired=summaryTree(kind,c.rows[kind].get(id),c),hash=await treeHash(desired);
       if(state.summary_hash===hash&&state.summary_status==='정상'){result.unchanged++;result.processed++;result.nextCursor=id;continue;}
