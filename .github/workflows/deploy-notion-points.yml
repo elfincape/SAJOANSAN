@@ -38,3 +38,5 @@ jobs:
       - if: github.event_name != 'schedule'
         run: supabase functions deploy notion-points --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
       - run: node scripts/notion-points-cycle.mjs
+        env:
+          NOTION_POINTS_VERIFY: ${{ github.event_name != 'schedule' && '1' || '0' }}
