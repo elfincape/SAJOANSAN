@@ -1,0 +1,59 @@
+name: Check Notion relationship counts
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/notion-graph-status.yml']
+  workflow_dispatch:
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read aggregate counts only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const {SUPABASE_PROJECT_REF:ref,SUPABASE_ACCESS_TOKEN:token}=process.env;
+          if(!/^[a-z]{20}$/.test(ref||'')||!token)throw new Error('Credentials unavailable');
+          const query=`WITH entities AS (
+            SELECT 'companies' AS kind,id,center_code FROM public.companies
+            UNION ALL SELECT 'drivers',id,center_code FROM public.drivers
+            UNION ALL SELECT 'routes',id,center_code FROM public.routes
+          ) SELECT e.kind,e.center_code,count(*) AS web_total,
+            count(s.notion_id) AS linked,
+            count(*) FILTER (WHERE s.status='정상') AS normal,
+            count(*) FILTER (WHERE s.status='충돌 확인') AS conflicts,
+            count(*) FILTER (WHERE s.summary_hash IS NOT NULL AND s.summary_status='정상') AS previews_ready
+            FROM entities e LEFT JOIN public.notion_graph_state s
+            ON s.kind=e.kind AND s.web_id=e.id AND s.center_code=e.center_code
+            WHERE e.center_code IN ('001','002') GROUP BY e.kind,e.center_code ORDER BY e.center_code,e.kind`;
+          const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
+          async function aggregate(query){
+            const r=await fetch('https://api.supabase.com/v1/projects/'+ref+'/database/query',{method:'POST',headers,body:JSON.stringify({query}),signal:AbortSignal.timeout(30000)});
+            if(!r.ok)throw new Error('Aggregate query failed: '+r.status);console.log(JSON.stringify(await r.json()));
+          }
+          await aggregate(query);
+          await aggregate(`SELECT p.center_code,count(*) AS delivery_points,
+            count(s.notion_id) AS linked,
+            count(*) FILTER (WHERE s.summary_hash IS NOT NULL AND s.summary_status='정상') AS previews_ready,
+            count(*) FILTER (WHERE s.summary_status='수동 확인') AS manual_previews
+            FROM public.delivery_points p LEFT JOIN public.notion_points_state s
+            ON s.web_id=p.id AND s.center_code=p.center_code
+            WHERE p.center_code IN ('001','002') GROUP BY p.center_code ORDER BY p.center_code`);
+          await aggregate(`SELECT r.center_code,count(*) AS routes,
+            coalesce(max(s.stop_count),0) AS maximum_stops,
+            count(*) FILTER (WHERE s.stop_count>25) AS paginated_relations,
+            count(*) FILTER (WHERE s.stop_count>100) AS relation_limit_exceeded
+            FROM public.routes r LEFT JOIN (SELECT route_id,count(*) AS stop_count FROM public.route_stops GROUP BY route_id) s
+            ON s.route_id=r.id WHERE r.center_code IN ('001','002') GROUP BY r.center_code ORDER BY r.center_code`);
+          await aggregate(`SELECT 'companies' AS kind,count(*) AS isolated_probe_rows FROM public.companies WHERE name='[관계 검증] companies '||id::text
+            UNION ALL SELECT 'drivers',count(*) FROM public.drivers WHERE name='[관계 검증] drivers '||id::text
+            UNION ALL SELECT 'routes',count(*) FROM public.routes WHERE name='[관계 검증] routes '||id::text
+            UNION ALL SELECT 'points',count(*) FROM public.delivery_points WHERE name='[관계 검증] points '||id::text AND code='SYNCGRAPH-'||id::text`);
+          NODE
