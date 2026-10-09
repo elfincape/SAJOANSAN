@@ -51,6 +51,9 @@ const options={wait:async()=>{}};
 test('initial copy is idempotent; independent edits merge both ways; same-field conflict preserves both values',async()=>{
   const f=fixture();
   assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).created,1);
+  const previousStamp=f.page.last_edited_time;
+  assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).unchanged,1);
+  assert.equal(f.page.last_edited_time,previousStamp);
   f.rows[0].address='web edit';f.page.properties['비고']={rich_text:[{text:{content:'notion edit'}}]};
   const result=await batch(env,'service',{center:'001',id:ID},f.fetcher,options);
   assert.equal(result.updated,1);assert.equal(f.created,1);

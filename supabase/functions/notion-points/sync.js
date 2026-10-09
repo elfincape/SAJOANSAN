@@ -43,7 +43,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
   await check(env,request);
   const token=crypto.randomUUID();
   if(await db('rpc/notion_points_acquire','POST',{p_token:token})!==true)throw fail('다른 납품처 동기화가 진행 중입니다. 잠시 후 다시 실행해 주세요.',409,'sync_busy');
-  const result={center:body.center,processed:0,created:0,updated:0,imported:0,conflicts:0,hasMore:false,phase:body.phase||'web',nextCursor:null};
+  const result={center:body.center,processed:0,created:0,updated:0,unchanged:0,imported:0,conflicts:0,hasMore:false,phase:body.phase||'web',nextCursor:null};
   let hold=false;
   async function stateFor(id){return (await db('notion_points_state?select=*&center_code=eq.'+body.center+'&web_id=eq.'+id))[0];}
   async function saveState(id,values){await db('notion_points_state?on_conflict=center_code,web_id','POST',{center_code:body.center,web_id:id,...values});}
@@ -82,6 +82,11 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     if(merged.conflicts.length){await markConflict(row,page);return;}
     const desired=merged.values;
     if(!desired.name){await markConflict(row,page);return;}
+    if(state?.status==='정상'&&page.properties?.['동기화 상태']?.select?.name==='정상'&&
+      Object.keys(FIELDS).every(k=>web[k]===desired[k]&&remote[k]===desired[k]&&state.baseline?.[k]===desired[k])&&
+      photoHash===webHash&&photoHash===remoteHash&&photoHash===state.photo_hash) {
+      result.unchanged++;return;
+    }
     // Recheck Notion before writes; patch only changed properties, preserving other users' fields.
     const fresh=await request('pages/'+page.id);
     if(fresh.last_edited_time!==page.last_edited_time){await markConflict(row,page);return;}

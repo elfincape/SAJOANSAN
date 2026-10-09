@@ -21,7 +21,7 @@ for(const center of ['001','002']) {
     console.log('Center '+center+' actual web ↔ Notion round trip verified; temporary fixture removed');
   }
   let phase='web',cursor=null,finished=false,retries=0;
-  const summary={processed:0,created:0,updated:0,imported:0,conflicts:0};
+  const summary={processed:0,created:0,updated:0,unchanged:0,imported:0,conflicts:0};
   for(let i=0;i<10000;i++) {
     const r=await fetch(base+'sync',{method:'POST',headers:auth,body:JSON.stringify({center,phase,cursor}),signal:AbortSignal.timeout(160000)});
     const result=await r.json().catch(()=>({}));
