@@ -70,7 +70,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
       await saveState(row.id,{notion_id:page.id,baseline:web,photo_hash:webHash,status:'정상',synced_at:new Date().toISOString()});
       result.created++;return;
     }
-    if(page.archived||page.in_trash||page.properties?.['센터']?.select?.name!==CENTERS[body.center]||
+    if(page.archived||page.is_archived||page.in_trash||page.properties?.['센터']?.select?.name!==CENTERS[body.center]||
       (state?.notion_id&&state.notion_id!==page.id)) {await markConflict(row,page);return;}
     const remote=notionValues(page),merged=merge(state?.baseline,web,remote);
     const remotePhotos=await downloadPhotos(page,fetcher),remoteHash=await hashPhotos(remotePhotos);

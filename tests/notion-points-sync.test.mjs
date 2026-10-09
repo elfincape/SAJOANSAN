@@ -76,6 +76,9 @@ test('initial copy is idempotent; independent edits merge both ways; same-field 
 });
 test('changed center and removed Notion rows do not cause cross-center writes or resurrection',async()=>{
   const f=fixture();await batch(env,'service',{center:'001',id:ID},f.fetcher,options);
+  f.page.is_archived=true;
+  assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).conflicts,1);
+  delete f.page.is_archived;
   f.page.properties['센터']={select:{name:CENTERS['002']}};
   assert.equal((await batch(env,'service',{center:'001',id:ID},f.fetcher,options)).conflicts,1);
   assert.equal(f.page.properties['센터'].select.name,'평택');

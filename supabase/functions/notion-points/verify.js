@@ -1,8 +1,26 @@
 import {batch,dbClient,pointsNotionClient} from './sync.js';
-import {CENTERS,fail,plain} from './model.js';
+import {CENTERS,UUID,fail,plain} from './model.js';
+const PROBES=['sync-probe','notion-to-web-probe','web-to-notion-probe'];
+async function removeProbe(db,request,center,row) {
+  if(!UUID.test(row.id)||row.code!=='SYNC-'+row.id||row.name!=='[연동 검증] '+row.id||!PROBES.includes(row.memo))return false;
+  const state=(await db('notion_points_state?select=notion_id&center_code=eq.'+center+'&web_id=eq.'+row.id))[0];
+  if(state?.notion_id){
+    const page=await request('pages/'+state.notion_id);
+    if(plain(page.properties?.['납품처명'])!==row.name||plain(page.properties?.['웹 납품처 ID'])!==row.id||
+      page.properties?.['센터']?.select?.name!==CENTERS[center])throw fail('검증 데이터 식별 확인에 실패했습니다.',502,'probe_identity_failed');
+    await request('pages/'+state.notion_id,'PATCH',{in_trash:true});
+  }
+  const removed=await db('delivery_points?center_code=eq.'+center+'&id=eq.'+row.id+'&code=eq.'+encodeURIComponent(row.code)+
+    '&name=eq.'+encodeURIComponent(row.name)+'&memo=in.('+PROBES.join(',')+')','DELETE');
+  if(removed?.length)await db('notion_points_state?center_code=eq.'+center+'&web_id=eq.'+row.id,'DELETE');
+  return !!removed?.length;
+}
 // Server-only smoke test using a newly generated, isolated row. Always removes its own fixture.
 export async function verifyRoundTrip(env,key,center,fetcher=fetch) {
   const db=dbClient(env,key,fetcher),request=pointsNotionClient(env,fetcher);
+  // Recover only our exact isolated fixture signatures after an interrupted smoke test.
+  const old=await db('delivery_points?select=id,code,name,memo&center_code=eq.'+center+'&code=like.SYNC-*');
+  for(const row of old)await removeProbe(db,request,center,row);
   const id=crypto.randomUUID(),code='SYNC-'+id;
   let notionId=null;
   try {
@@ -22,7 +40,7 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch) {
     return {verified:true,center,centerName:CENTERS[center],webToNotion:true,notionToWeb:true};
   } finally {
     if(!notionId)notionId=(await db('notion_points_state?select=notion_id&center_code=eq.'+center+'&web_id=eq.'+id))[0]?.notion_id;
-    if(notionId)await request('pages/'+notionId,'PATCH',{archived:true});
+    if(notionId)await request('pages/'+notionId,'PATCH',{in_trash:true});
     await db('delivery_points?center_code=eq.'+center+'&id=eq.'+id+'&code=eq.'+encodeURIComponent(code),'DELETE');
     await db('notion_points_state?center_code=eq.'+center+'&web_id=eq.'+id,'DELETE');
   }
