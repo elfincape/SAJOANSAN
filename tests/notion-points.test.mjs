@@ -11,10 +11,12 @@ test('different fields edited on each side merge; same field conflicts; initial 
   assert.deepEqual(merge(base,web,{...notion,address:'different'}).conflicts,['address']);
   assert.deepEqual(merge(null,web,notion).conflicts.sort(),['address','contact']);
 });
-test('blanking values and checkboxes round-trip; over-midnight deadline keeps existing web business time',()=>{
-  const values=webValues({name:'납품처',deadline_text:'25:30',allow_under_1ton:true,security_password:'door'});
+test('blanking values and checkboxes round-trip; deadlines follow current 00:00~23:59 web time policy',()=>{
+  const values=webValues({name:'납품처',deadline_text:'02:30',allow_under_1ton:true,security_password:'door'});
   assert.deepEqual(notionValues({properties:properties(values)}),values);
-  assert.equal(webPatch(values).deadline_business_min,1530);
+  assert.equal(webPatch(values).deadline_business_min,150);
+  assert.equal(webValues({name:'A',deadline_business_min:0}).deadline_text,'00:00');
+  assert.equal(webValues({name:'A',deadline_text:'9시5분'}).deadline_text,'09:05');
   const empty=webValues({name:'A'});assert.equal(webPatch(empty).deadline_business_min,null);assert.equal(webPatch(empty).memo,null);
   assert.throws(()=>webValues({name:'A',deadline_text:'28:00'}));
 });

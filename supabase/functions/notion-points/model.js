@@ -18,13 +18,23 @@ export function normalize(key,value) {
   if(FIELDS[key][1]==='checkbox')return !!value;
   const s=String(value ?? '').trim();
   if(key==='deadline_text' && s) {
-    const m=/^(\d{1,2}):(\d{2})$/.exec(s);
-    if(!m || +m[1]<4 || +m[1]>27 || +m[2]>59)throw fail('납품마감은 04:00~27:59 형식으로 입력해 주세요.',422,'invalid_deadline');
-    return m[1].padStart(2,'0')+':'+m[2];
+    const m=/^(\d{1,2})\s*[:.시]\s*(\d{1,2})\s*분?$/.exec(s);
+    if(!m || +m[1]>23 || +m[2]>59)throw fail('납품마감은 00:00~23:59 형식으로 입력해 주세요.',422,'invalid_deadline');
+    return m[1].padStart(2,'0')+':'+m[2].padStart(2,'0');
   }
   return s;
 }
-export function webValues(row) {return Object.fromEntries(Object.keys(FIELDS).map(k=>[k,normalize(k,k==='contact'?row.contact_mobile||row.contact:row[k])]));}
+export function webValues(row) {
+  return Object.fromEntries(Object.keys(FIELDS).map(k=>{
+    let value=k==='contact'?row.contact_mobile||row.contact:row[k];
+    if(k==='deadline_text'&&!value&&row.deadline_business_min!=null) {
+      const n=Number(row.deadline_business_min);
+      if(!Number.isInteger(n)||n<0||n>=1440)throw fail('납품마감 시간을 확인해 주세요.',422,'invalid_deadline');
+      value=String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+    }
+    return [k,normalize(k,value)];
+  }));
+}
 export function notionValues(page) {
   return Object.fromEntries(Object.entries(FIELDS).map(([k,[name,type]])=>{
     const p=page.properties?.[name];

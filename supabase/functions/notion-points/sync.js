@@ -130,14 +130,23 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     if(result.phase==='web') {
       const rows=await db('delivery_points?select=*&center_code=eq.'+body.center+'&order=id.asc&limit=3'+
         (body.id?'&id=eq.'+body.id:body.cursor?'&id=gt.'+body.cursor:''));
-      for(const row of rows.slice(0,2)){await syncRow(row);result.processed++;result.nextCursor=row.id;}
+      for(const row of rows.slice(0,2)){
+        try {await syncRow(row);}catch(error){
+          if(error.status!==422)throw error;
+          const state=await stateFor(row.id);await markConflict(row,state?.notion_id?{id:state.notion_id}:null);
+        }
+        result.processed++;result.nextCursor=row.id;
+      }
       if(body.id){result.hasMore=false;result.nextCursor=null;}
       else if(rows.length>2)result.hasMore=true;
       else {result.hasMore=true;result.phase='notion';result.nextCursor=null;}
     } else {
       const found=await request('data_sources/'+SOURCE+'/query','POST',{filter:{and:[{property:'센터',select:{equals:CENTERS[body.center]}},
         {property:'웹 납품처 ID',rich_text:{is_empty:true}}]},page_size:2,...(body.cursor?{start_cursor:body.cursor}:{})});
-      for(const page of found.results){await importPage(page);result.processed++;}
+      for(const page of found.results){
+        try {await importPage(page);}catch(error){if(error.status!==422)throw error;await markConflict(null,page);}
+        result.processed++;
+      }
       // Continue with Notion's opaque cursor, including conflict rows without repeatedly stopping on them.
       result.hasMore=!!found.has_more;result.nextCursor=found.next_cursor;
     }
