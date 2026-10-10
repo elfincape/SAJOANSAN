@@ -62,3 +62,27 @@ begin
 end;$$;
 revoke all on function public.notion_points_acquire(uuid),public.notion_points_release(uuid),public.notion_points_apply(uuid,text,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.notion_points_acquire(uuid),public.notion_points_release(uuid),public.notion_points_apply(uuid,text,jsonb,jsonb) to service_role;
+
+alter table public.notion_points_state add column if not exists web_photo_signature text,
+  add column if not exists notion_photo_fingerprint text;
+-- Return only small fields and a database-side photo signature, never image bytes.
+create or replace function public.notion_points_scan_web(p_center text,p_cursor uuid default null)
+returns jsonb language sql security invoker set search_path=pg_catalog,public as $$
+  select coalesce(jsonb_agg(item order by id),'[]'::jsonb) from (
+    select p.id,(to_jsonb(p)-'photos')||jsonb_build_object(
+      '_photo_sig',encode(sha256(convert_to(coalesce(p.photos::jsonb,'[]'::jsonb)::text,'UTF8')),'hex'),
+      '_has_photos',case when jsonb_typeof(coalesce(p.photos::jsonb,'[]'::jsonb))='array'
+        then jsonb_array_length(coalesce(p.photos::jsonb,'[]'::jsonb))>0 else true end) as item
+    from public.delivery_points p where p.center_code=p_center and (p_cursor is null or p.id>p_cursor)
+    order by p.id limit 101
+  ) selected;
+$$;
+-- Do not acknowledge a photo changed by a browser after the verified snapshot.
+create or replace function public.notion_points_photo_signature(p_center text,p_id uuid,p_photos jsonb)
+returns text language sql security invoker set search_path=pg_catalog,public as $$
+  select encode(sha256(convert_to(coalesce(photos::jsonb,'[]'::jsonb)::text,'UTF8')),'hex')
+  from public.delivery_points where id=p_id and center_code=p_center
+    and coalesce(photos::jsonb,'[]'::jsonb)=p_photos;
+$$;
+revoke all on function public.notion_points_scan_web(text,uuid),public.notion_points_photo_signature(text,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.notion_points_scan_web(text,uuid),public.notion_points_photo_signature(text,uuid,jsonb) to service_role;

@@ -5,6 +5,7 @@ import {batch,check} from './sync.js';
 import {summaryBatch} from './summary.js';
 import {verifyRoundTrip} from './verify.js';
 import {repairPointHome} from './repair.js';
+import {scan} from './scan.js';
 export function makeHandler(env,fetcher=fetch) {
   const cors={'Access-Control-Allow-Origin':'https://sajoansan.vercel.app','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info',
     'Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store','Vary':'Origin'};
@@ -14,7 +15,7 @@ export function makeHandler(env,fetcher=fetch) {
     if(req.method!=='POST')return json({error:'POST 요청만 지원합니다.'},405);
     try{
       const action=new URL(req.url).pathname.split('/').at(-1);
-      if(!['test','sync','summary','verify','repair'].includes(action))throw fail('지원하지 않는 요청입니다.',404);
+      if(!['test','sync','summary','verify','repair','scan'].includes(action))throw fail('지원하지 않는 요청입니다.',404);
       const keys=serverKeys(env),key=keys[0];if(!key||!env.SUPABASE_URL)throw fail('서버 설정을 확인해 주세요.',503);
       const auth=req.headers.get('authorization')||'',bearer=auth.replace(/^Bearer /i,'');
       let internal=!req.headers.get('origin')&&(keys.includes(req.headers.get('apikey'))||keys.includes(bearer));
@@ -24,7 +25,7 @@ export function makeHandler(env,fetcher=fetch) {
           headers:{Authorization:auth,apikey:env.SUPABASE_ANON_KEY},signal:AbortSignal.timeout(10000)})).ok;
       }
       if(!internal){
-        if(action==='verify'||action==='repair')throw fail('서버 검증만 허용됩니다.',403);
+        if(action==='verify'||action==='repair'||action==='scan')throw fail('서버 검증만 허용됩니다.',403);
         if(!/^Bearer \S+$/i.test(auth))throw fail('로그인이 필요합니다.',401);
         const r=await fetcher(env.SUPABASE_URL+'/auth/v1/user',{headers:{Authorization:auth,apikey:key},signal:AbortSignal.timeout(10000)});
         if(!r.ok)throw fail('로그인 세션을 확인해 주세요.',401);
@@ -34,6 +35,7 @@ export function makeHandler(env,fetcher=fetch) {
       }
       const raw=await req.text();if(raw.length>3000)throw fail('요청이 너무 큽니다.');
       let body;try{body=JSON.parse(raw||'{}');}catch{throw fail('요청을 확인해 주세요.');}
+      if(action==='scan')return json(await scan(env,key,body,fetcher));
       if(action==='repair')return json(await repairPointHome(env,key,fetcher));
       if(action==='test'){
         const request=pointsNotionClient(env,fetcher),integration=await request('users/me'),sources={};
@@ -51,4 +53,3 @@ export function makeHandler(env,fetcher=fetch) {
       ...(error.summary?{summary:error.summary}:{})},error.status||500);}
   };
 }
-

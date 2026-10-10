@@ -7,13 +7,14 @@ on:
       - 'repo-root/sql/notion-points-sync.sql'
       - 'repo-root/js/notion-points-ui.js'
       - 'scripts/notion-points-*.mjs'
+      - 'scripts/notion-scan-cycle.mjs'
       - 'tests/notion-points*.test.mjs'
       - '.github/workflows/deploy-notion-points.yml'
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 concurrency:
-  group: notion-delivery-sync
+  group: notion-master-sync
   cancel-in-progress: false
 jobs:
   sync:
@@ -27,7 +28,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tests/notion-points*.test.mjs
+      - run: node --test tests/notion-graph*.test.mjs tests/notion-points*.test.mjs
       - run: node --check repo-root/js/notion-points-ui.js
       - if: github.event_name != 'schedule'
         run: node scripts/notion-points-deploy.mjs
@@ -42,4 +43,3 @@ jobs:
           NOTION_POINTS_VERIFY: ${{ github.event_name != 'schedule' && '1' || '0' }}
 
       - run: node scripts/notion-graph-cycle.mjs
-

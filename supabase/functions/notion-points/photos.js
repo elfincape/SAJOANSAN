@@ -1,5 +1,12 @@
 import {fail} from './model.js';
 const LIMIT=1024*1024;
+export async function notionPhotoFingerprint(page){
+  const files=page.properties?.['사진']?.files;
+  if(!Array.isArray(files))return null;
+  const value=files.map(f=>{let path=f.file?.url||f.external?.url||'';try{const u=new URL(path);path=u.origin+u.pathname;}catch{}
+    return [f.name||'',f.type,path,f.file_upload?.id||''];});
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)))),n=>n.toString(16).padStart(2,'0')).join('');
+}
 export function photoBytes(photo) {
   const m=/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(photo?.dataUrl || '');
   if(!m || m[2].length>Math.ceil(LIMIT*4/3)+4)throw fail('사진은 JPG·PNG·WEBP·GIF 형식, 1MB 이하로 등록해 주세요.',422,'invalid_photo');

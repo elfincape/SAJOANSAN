@@ -1,5 +1,6 @@
 import {batch,dbClient,pointsNotionClient} from './sync.js';
 import {CENTERS,UUID,fail,plain} from './model.js';
+import {verifyCandidate} from '../notion-graph/scan.js';
 const PROBES=['sync-probe','notion-to-web-probe','web-to-notion-probe'];
 async function removeProbe(db,request,center,row) {
   if(!UUID.test(row.id)||row.code!=='SYNC-'+row.id||row.name!=='[연동 검증] '+row.id||!PROBES.includes(row.memo))return false;
@@ -34,14 +35,16 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch) {
     const state=(await db('notion_points_state?select=notion_id&center_code=eq.'+center+'&web_id=eq.'+id))[0];
     notionId=state?.notion_id;if(!notionId)throw fail('검증용 노션 연결을 확인하지 못했습니다.',502,'round_trip_failed');
     await request('pages/'+notionId,'PATCH',{properties:{'비고':{rich_text:[{type:'text',text:{content:'notion-to-web-probe'}}]}}});
+    await verifyCandidate(env,key,center,'points','notion',id,fetcher);
     const pulled=await batch(env,key,{center,id},fetcher,{lockToken:token});
     const row=(await db('delivery_points?select=memo&center_code=eq.'+center+'&id=eq.'+id))[0];
     if(pulled.conflicts||row?.memo!=='notion-to-web-probe')throw fail('노션에서 웹으로 수정 반영을 확인하지 못했습니다.',502,'round_trip_failed');
     await db('delivery_points?center_code=eq.'+center+'&id=eq.'+id,'PATCH',{memo:'web-to-notion-probe'});
+    await verifyCandidate(env,key,center,'points','web',id,fetcher);
     const pushed=await batch(env,key,{center,id},fetcher,{lockToken:token});
     const page=await request('pages/'+notionId);
     if(pushed.conflicts||plain(page.properties?.['비고'])!=='web-to-notion-probe')throw fail('웹에서 노션으로 수정 반영을 확인하지 못했습니다.',502,'round_trip_failed');
-    return {verified:true,center,centerName:CENTERS[center],webToNotion:true,notionToWeb:true};
+    return {verified:true,center,centerName:CENTERS[center],webToNotion:true,notionToWeb:true,candidateDetection:true};
   } finally {
     if(!notionId)notionId=(await db('notion_points_state?select=notion_id&center_code=eq.'+center+'&web_id=eq.'+id))[0]?.notion_id;
     if(notionId)await request('pages/'+notionId,'PATCH',{in_trash:true});
@@ -50,4 +53,3 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch) {
   }
   }finally{await db('rpc/notion_points_release','POST',{p_token:token});}
 }
-

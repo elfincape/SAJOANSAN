@@ -6,12 +6,13 @@ on:
       - 'supabase/functions/notion-graph/**'
       - 'repo-root/sql/notion-graph-sync.sql'
       - 'scripts/notion-graph-*.mjs'
+      - 'scripts/notion-scan-cycle.mjs'
       - 'tests/notion-graph*.test.mjs'
       - '.github/workflows/deploy-notion-graph.yml'
   workflow_dispatch:
 concurrency:
-  group: notion-graph-deploy
-  cancel-in-progress: true
+  group: notion-master-sync
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -34,4 +35,3 @@ jobs:
       - run: node scripts/notion-graph-cycle.mjs
         env:
           NOTION_GRAPH_VERIFY: '1'
-

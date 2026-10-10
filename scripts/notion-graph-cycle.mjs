@@ -1,3 +1,4 @@
+import {candidateCycle} from './notion-scan-cycle.mjs';
 const {SUPABASE_PROJECT_REF:ref,SUPABASE_ACCESS_TOKEN:token}=process.env;
 if(!/^[a-z]{20}$/.test(ref||'')||!token)throw new Error('Deployment secrets missing');
 const r=await fetch('https://api.supabase.com/v1/projects/'+ref+'/api-keys?reveal=true',{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
@@ -25,17 +26,12 @@ console.log('Graph schema and authentication verified');
 for(const center of ['001','002']){
   if(process.env.NOTION_GRAPH_VERIFY==='1'){
     const result=await call('verify',{center});
-    if(!result.webToNotion||!result.notionToWeb||!result.stopDetailsPreserved||!result.nativeMentions||!result.concurrentStopEditsPreserved)throw new Error('Graph round trip failed');
+    if(!result.webToNotion||!result.notionToWeb||!result.stopDetailsPreserved||!result.nativeMentions||!result.concurrentStopEditsPreserved||!result.candidateDetection)throw new Error('Graph round trip failed');
     console.log('Center '+center+' actual relation round trip, stop restoration and native mentions verified; isolated fixtures removed');
   }
   for(const kind of ['companies','drivers','routes']){
-    let phase='web',cursor=null,done=false;const totals={processed:0,created:0,updated:0,unchanged:0,imported:0,conflicts:0};
-    for(let i=0;i<10000;i++){
-      const result=await call('sync',{center,kind,phase,cursor});
-      for(const k of Object.keys(totals))totals[k]+=result[k]||0;
-      if(!result.hasMore){done=true;break;}phase=result.phase;cursor=result.nextCursor;
-    }
-    if(!done)throw new Error('Graph cycle did not finish');console.log('Center '+center+' '+kind+' '+JSON.stringify(totals));
+    const totals=await candidateCycle(call,center,kind);
+    console.log('Center '+center+' '+kind+' '+JSON.stringify(totals));
   }
 }
 // Connect both centers before building the larger delivery-point previews.
@@ -49,4 +45,3 @@ for(const center of ['001','002']){
     if(!done)throw new Error('Graph previews did not finish');console.log('Center '+center+' '+kind+' previews '+JSON.stringify(totals));
   }
 }
-

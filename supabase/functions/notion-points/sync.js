@@ -1,6 +1,6 @@
 import {notionClient} from '../notion-health/notion-api.js';
 import {CENTERS,FIELDS,SOURCE,UUID,fail,plain,webValues,notionValues,merge,properties,rich,webPatch} from './model.js';
-import {hashPhotos,downloadPhotos,uploadPhotos} from './photos.js';
+import {hashPhotos,downloadPhotos,uploadPhotos,notionPhotoFingerprint} from './photos.js';
 export function pointsNotionClient(env,fetcher=fetch,wait) {
   const request=notionClient(env,fetcher,wait);
   return async(...args)=>{try{return await request(...args);}catch(error){
@@ -47,6 +47,12 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
   let hold=false;
   async function stateFor(id){return (await db('notion_points_state?select=*&center_code=eq.'+body.center+'&web_id=eq.'+id))[0];}
   async function saveState(id,values){await db('notion_points_state?on_conflict=center_code,web_id','POST',{center_code:body.center,web_id:id,...values});}
+  async function captureScan(row,page){
+    if(body.scan!==true)return;
+    const signature=await db('rpc/notion_points_photo_signature','POST',{p_center:body.center,p_id:row.id,p_photos:row.photos||[]});
+    const fp=await notionPhotoFingerprint(page);
+    await saveState(row.id,{...(signature?{web_photo_signature:signature}:{}),...(fp?{notion_photo_fingerprint:fp}:{})});
+  }
   async function markConflict(row,page) {
     if(page)await request('pages/'+page.id,'PATCH',{properties:{'동기화 상태':{select:{name:'충돌 확인'}}}});
     if(row)await saveState(row.id,{...(page?{notion_id:page.id}:{}),status:'충돌 확인'});
@@ -68,6 +74,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
         properties:{...properties(web),...metadata(body.center,row.id),'사진':{files}}});
       if(!UUID.test(page.id))throw fail('노션 저장 결과를 확인할 수 없습니다.',502,'uncertain_write');
       await saveState(row.id,{notion_id:page.id,baseline:web,photo_hash:webHash,status:'정상',synced_at:new Date().toISOString()});
+      await captureScan(row,page);
       result.created++;return;
     }
     if(page.archived||page.is_archived||page.in_trash||page.properties?.['센터']?.select?.name!==CENTERS[body.center]||
@@ -85,7 +92,7 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     if(state?.status==='정상'&&page.properties?.['동기화 상태']?.select?.name==='정상'&&
       Object.keys(FIELDS).every(k=>web[k]===desired[k]&&remote[k]===desired[k]&&state.baseline?.[k]===desired[k])&&
       photoHash===webHash&&photoHash===remoteHash&&photoHash===state.photo_hash) {
-      result.unchanged++;return;
+      await captureScan(row,page);result.unchanged++;return;
     }
     // Recheck Notion before writes; patch only changed properties, preserving other users' fields.
     const fresh=await request('pages/'+page.id);
@@ -102,11 +109,12 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     const target=properties(desired),changed={};
     for(const [k,[name]] of Object.entries(FIELDS))if(remote[k]!==desired[k])changed[name]=target[name];
     if(photoHash!==remoteHash)changed['사진']={files:await uploadPhotos(photos,request,env,fetcher)};
-    await request('pages/'+page.id,'PATCH',{properties:{...changed,...metadata(body.center,row.id)}});
+    const savedPage=await request('pages/'+page.id,'PATCH',{properties:{...changed,...metadata(body.center,row.id)}});
     // A concurrent browser edit after the SQL write must not become the next baseline.
     const verify=(await db('delivery_points?select=*&center_code=eq.'+body.center+'&id=eq.'+row.id))[0];
     if(!verify || JSON.stringify(webValues(verify))!==JSON.stringify(desired) || await hashPhotos(verify.photos||[])!==photoHash){await markConflict(row,page);return;}
     await saveState(row.id,{notion_id:page.id,baseline:desired,photo_hash:photoHash,status:'정상',synced_at:new Date().toISOString()});
+    await captureScan(verify,savedPage);
     result.updated++;
   }
   async function importPage(page) {
