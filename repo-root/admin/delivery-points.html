@@ -55,6 +55,7 @@
               <tr>
                 <th>코드</th>
                 <th>이름</th>
+                <th>코스 배정</th>
                 <th>지역</th>
                 <th>납품방식</th>
                 <th>마감</th>
@@ -287,7 +288,7 @@
       $('loading-indicator').classList.remove('hidden');
       try {
         const { data, error } = await scopeByCenter(
-          supabase.from('delivery_points').select('*')
+          supabase.from('delivery_points').select('*,route_stops(route_id)')
         );
         if (error) throw error;
         state.rows = data || [];
@@ -341,6 +342,7 @@
           tr.innerHTML = `
             <td>${escapeHtml(r.code || '')}</td>
             <td>${escapeHtml(r.name || '')}</td>
+            <td>${r.route_stops.length ? '배정' : '미지정'}</td>
             <td>${escapeHtml(r.region || '')}</td>
             <td>${escapeHtml(r.delivery_method || '')}</td>
             <td class="biz-time">${escapeHtml(bizMinToDisplay(r.deadline_business_min))}</td>

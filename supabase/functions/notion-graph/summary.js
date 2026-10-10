@@ -33,9 +33,10 @@ export function summaryTree(kind,row,c){
     children=c.stops.filter(s=>s.route_id===row.id).sort((a,b)=>(a.stop_order??0)-(b.stop_order??0)).map(s=>bullet([
       ...text((s.stop_order??'')+'. 납품처 '),...mention('points',s.delivery_point_id,c),...text(s.arrival_text?' · 도착 '+s.arrival_text:'')],[companyBranch(row,c)]));
   }else if(kind==='drivers'){
-    rt.push(...text((row.phone?'연락처 '+row.phone+'\n':'')+'운수사 '),...mention('companies',row.company_id,c),...text(row.memo?'\n'+row.memo.slice(0,500):''));
+    rt.push(...text((row.phone?'연락처 '+row.phone+'\n':'')+'등록 운수사 '),...mention('companies',row.company_id,c),...text(row.memo?'\n'+row.memo.slice(0,500):''));
     children=[...c.rows.routes.values()].filter(r=>r.primary_driver_id===row.id||r.secondary_driver_id===row.id).map(r=>bullet([
-      ...text((r.primary_driver_id===row.id?'주기사 코스 ':'보조기사 코스 ')),...mention('routes',r.id,c)]));
+      ...text((r.primary_driver_id===row.id?'주기사 코스 ':'보조기사 코스 ')),...mention('routes',r.id,c),
+      ...text((r.car_number?' · '+r.car_number:'')+' · 코스 운수사 '),...mention('companies',r.company_id,c)]));
   }else{
     rt.push(...text(row.memo?.slice(0,500)||''));
     children=[...c.rows.drivers.values()].filter(d=>d.company_id===row.id).map(d=>bullet([
@@ -133,4 +134,3 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
   }catch(error){hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}
   finally{if(!hold&&!options.lockToken)await db('rpc/notion_points_release','POST',{p_token:token});}
 }
-

@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {summaryBatch,summaryTree,treeHash} from '../supabase/functions/notion-graph/summary.js';
 const id='00000000-0000-4000-8000-000000000001',page='00000000-0000-4000-8000-000000000002',block='00000000-0000-4000-8000-000000000003';
+test('one driver can serve courses owned by different companies without changing the registered company',()=>{
+  const driver={id,name:'Example',phone:'010',company_id:'registered',center_code:'001'};
+  const maps=Object.fromEntries(['companies','drivers','routes','points'].map(k=>[k,{forward:new Map(),reverse:new Map()}]));
+  maps.companies.forward=new Map([['registered','registered-page'],['owner-a','owner-a-page'],['owner-b','owner-b-page']]);
+  maps.routes.forward=new Map([['route-a','route-a-page'],['route-b','route-b-page']]);
+  const context={maps,stops:[],rows:{drivers:new Map([[id,driver]]),companies:new Map(),vehicles:new Map(),routes:new Map([
+    ['route-a',{id:'route-a',company_id:'owner-a',primary_driver_id:id,car_number:'12'}],
+    ['route-b',{id:'route-b',company_id:'owner-b',primary_driver_id:id,car_number:'27'}]
+  ])}};
+  const tree=summaryTree('drivers',driver,context);
+  assert.equal(tree.callout.children.length,2);
+  assert.equal(tree.callout.children[0].bulleted_list_item.rich_text.at(-1).mention.page.id,'owner-a-page');
+  assert.equal(tree.callout.children[1].bulleted_list_item.rich_text.at(-1).mention.page.id,'owner-b-page');
+  assert.equal(driver.company_id,'registered');
+});
 test('user edits inside managed preview and unrelated body content are never removed',async()=>{
   const row={id,center_code:'001',name:'운수사',memo:'old'},maps=Object.fromEntries(['companies','drivers','routes','points'].map(k=>[k,{forward:new Map(),reverse:new Map()}]));
   const original=summaryTree('companies',row,{maps,rows:{drivers:new Map()},stops:[]});
@@ -31,4 +46,3 @@ test('user edits inside managed preview and unrelated body content are never rem
   const result=await summaryBatch({SUPABASE_URL:'https://project.supabase.co',NOTION_API_TOKEN:'test'},'service',{kind:'companies',center:'001',id},fetcher,{wait:async()=>{}});
   assert.equal(result.conflicts,1);assert.equal(state.summary_status,'수동 확인');assert.equal(removed,0);assert.equal(bodyWrites,0);
 });
-

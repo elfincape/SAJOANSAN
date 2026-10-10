@@ -14,6 +14,8 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch){
   try{
     await db('delivery_points','POST',{id,center_code:center,name:name('points',id),code:'SYNCGRAPH-'+id,photos:[],memo:'graph-probe'});
     await pointBatch(env,key,{center,id},fetcher,opts);
+    assert((await request('pages/'+await state('points'))).properties['배정 상태']?.formula?.string==='미지정');
+    assert((await db('delivery_points?select=id,route_stops(route_id)&id=eq.'+id+scope))[0]?.route_stops?.length===0);
     await db('companies','POST',{id,center_code:center,name:name('companies',id),memo:'graph-probe'});await sync('companies');
     for(const n of ids.drivers){await db('drivers','POST',{id:n,center_code:center,name:name('drivers',n),company_id:id,memo:'graph-probe'});await sync('drivers',n);}
     await db('routes','POST',{id,center_code:center,name:name('routes',id),car_number:'SYNCGRAPH-'+id,active:true,closed_days:[],company_id:id,primary_driver_id:id});
@@ -24,6 +26,8 @@ export async function verifyRoundTrip(env,key,center,fetcher=fetch){
     assert((await db('route_stops?select=memo&route_id=eq.'+id))[0]?.memo==='graph-concurrent-probe');
     await db('route_stops?route_id=eq.'+id,'PATCH',{memo:'graph-stop-probe'});
     const routePage=await state('routes'),pointPage=await state('points'),a=await state('drivers'),b=await state('drivers',driver2);
+    assert((await request('pages/'+pointPage)).properties['배정 상태']?.formula?.string==='배정');
+    assert((await db('delivery_points?select=id,route_stops(route_id)&id=eq.'+id+scope))[0]?.route_stops?.length===1);
     await request('pages/'+routePage,'PATCH',{properties:{'주기사':{relation:[{id:b}]}}});
     await verifyCandidate(env,key,center,'routes','notion',id,fetcher);await sync('routes');
     assert((await db('routes?select=primary_driver_id&id=eq.'+id+scope))[0]?.primary_driver_id===driver2);
