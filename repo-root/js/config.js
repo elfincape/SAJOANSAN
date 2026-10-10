@@ -16,7 +16,10 @@ const DEV = {
   url: '',
   anonKey: ''
 };
-const STAGING = { url: '', anonKey: '' };
+const STAGING = {
+  "url": "https://yvdialfqlbpjbbmcetev.supabase.co",
+  "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2ZGlhbGZxbGJwamJibWNldGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2NDA5MzEsImV4cCI6MjEwNzIxNjkzMX0.V88uxsJLCpjT6wRVJDU-wuftRzLHiOdblppDpNrOVRE"
+};
 // ▲▲▲ 사용자 입력 필요 ▲▲▲
 
 function resolveConfig(hostname, environments) {

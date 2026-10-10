@@ -13,8 +13,13 @@ function load(hostname) {
 const production = load('sajoansan.vercel.app');
 assert.equal(vm.runInContext('ENV', production), 'prod');
 assert.equal(vm.runInContext('SUPABASE_URL', production), 'https://vvrppotrnpwrwpwqaiet.supabase.co');
-for (const host of ['localhost', '127.0.0.1', '[::1]', 'preview.vercel.app', 'sajoansan.vercel.app.example.com', '']) {
+for (const host of ['localhost', '127.0.0.1', '[::1]']) {
   assert.throws(() => load(host), /별도 Supabase 연결 설정/);
+}
+for (const host of ['preview.vercel.app', 'sajoansan.vercel.app.example.com', '']) {
+  const preview = load(host);
+  assert.equal(vm.runInContext('ENV', preview), 'staging');
+  assert.equal(vm.runInContext('SUPABASE_URL', preview), 'https://yvdialfqlbpjbbmcetev.supabase.co');
 }
 production.environments = {
   prod: { url: 'https://prod.supabase.co', anonKey: 'public' },
