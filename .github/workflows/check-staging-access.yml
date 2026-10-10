@@ -1,0 +1,31 @@
+name: Verify isolated staging access
+on:
+  push:
+    branches: [codex/operations-staging]
+    paths:
+      - '.github/workflows/check-staging-access.yml'
+      - 'scripts/check-staging-access.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/codex/operations-staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: staging
+    env:
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tests/deployment-environments.test.mjs
+      - run: node scripts/check-staging-access.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-public-config
+          path: staging-output/public-config.json
+          retention-days: 1
