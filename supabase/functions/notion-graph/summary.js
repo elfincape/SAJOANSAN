@@ -44,10 +44,31 @@ export function summaryTree(kind,row,c){
   }
   return {object:'block',type:'callout',callout:{icon:{type:'emoji',emoji:'🔗'},rich_text:rt,...(children.length?{children}:{})}};
 }
-function normalizeRT(list){return (list||[]).map(r=>({value:r.type==='mention'?['page',cleanID(r.mention?.page?.id)]:['text',r.text?.content||'',r.text?.link?.url||''],
+function legacyRT(list){return (list||[]).map(r=>({value:r.type==='mention'?['page',cleanID(r.mention?.page?.id)]:['text',r.text?.content||'',r.text?.link?.url||''],
   annotations:{bold:false,italic:false,strikethrough:false,underline:false,code:false,color:'default',...r.annotations}}));}
-export function normalizedTree(block){const p=block[block.type]||{};return {type:block.type,icon:p.icon?.emoji||'',rt:normalizeRT(p.rich_text),children:(p.children||[]).map(normalizedTree)};}
-export async function treeHash(block){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(normalizedTree(block))));return [...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');}
+function normalizeRT(list){
+  const out=[];
+  for(const r of legacyRT(list)){
+    const previous=out.at(-1);
+    // Notion combines adjacent text fragments when saving a block.
+    if(previous?.value[0]==='text'&&r.value[0]==='text'&&previous.value[2]===r.value[2]&&JSON.stringify(previous.annotations)===JSON.stringify(r.annotations))previous.value[1]+=r.value[1];
+    else out.push(r);
+  }
+  return out;
+}
+function normalized(block,rt){const p=block[block.type]||{};return {type:block.type,icon:p.icon?.emoji||'',rt:rt(p.rich_text),children:(p.children||[]).map(b=>normalized(b,rt))};}
+export const normalizedTree=block=>normalized(block,normalizeRT);
+async function hash(value){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)));return [...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');}
+export const treeHash=block=>hash(normalizedTree(block));
+export const legacyTreeHash=block=>hash(normalized(block,legacyRT));
+function previousDriverTree(row,c){
+  const tree=summaryTree('drivers',row,c);
+  tree.callout.rich_text=[...text(LABEL+'\n'+row.name+' · '+CENTERS[row.center_code]+'\n'),
+    ...text((row.phone?'연락처 '+row.phone+'\n':'')+'운수사 '),...mention('companies',row.company_id,c),...text(row.memo?'\n'+row.memo.slice(0,500):'')];
+  const list=[...c.rows.routes.values()].filter(r=>r.primary_driver_id===row.id||r.secondary_driver_id===row.id);
+  tree.callout.children=list.map(r=>bullet([...text(r.primary_driver_id===row.id?'주기사 코스 ':'보조기사 코스 '),...mention('routes',r.id,c)]));
+  if(!list.length)delete tree.callout.children;return tree;
+}
 async function children(request,id){const list=[];let cursor=null;do{
   const r=await request('blocks/'+id+'/children?page_size=100'+(cursor?'&start_cursor='+encodeURIComponent(cursor):''));list.push(...r.results);cursor=r.has_more?r.next_cursor:null;
 }while(cursor);return list;}
@@ -83,9 +104,9 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
   try{
     const maps=await loadMaps(db,body.center),c=await loadContext(db,body.center,maps);
     const ids=[...c.rows[kind].keys()].sort().filter(id=>body.id?id===body.id:!body.cursor||id>body.cursor).slice(0,13),started=Date.now();
-    const stateRows=ids.length?await db(table+'?select=web_id,notion_id,summary_block_id,summary_hash,summary_status&center_code=eq.'+body.center+
+    const stateRows=ids.length?await db(table+'?select=web_id,notion_id,status,summary_block_id,summary_hash,summary_status&center_code=eq.'+body.center+
       '&web_id=in.('+ids.slice(0,12).join(',')+')'+(kind==='points'?'':'&kind=eq.'+kind)):[];
-    const states=new Map(stateRows.map(state=>[state.web_id,state]));
+    const states=new Map(stateRows.map(state=>[state.web_id,state])),migrations=[];
     for(const id of ids.slice(0,12)){
       if(result.processed&&Date.now()-started>25000)break;
       try{
@@ -93,10 +114,15 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
       if(!pageID){result.conflicts++;result.processed++;result.nextCursor=id;continue;}
       const desired=summaryTree(kind,c.rows[kind].get(id),c),hash=await treeHash(desired);
       if(state.summary_hash===hash&&state.summary_status==='정상'){result.unchanged++;result.processed++;result.nextCursor=id;continue;}
+      // Upgrade an unchanged, proven old baseline in one scoped DB write per batch.
+      if(state.summary_status==='정상'&&state.summary_hash===await legacyTreeHash(desired)){
+        migrations.push({...(kind==='points'?{}:{kind}),center_code:body.center,web_id:id,summary_hash:hash});
+        result.unchanged++;result.processed++;result.nextCursor=id;continue;
+      }
       const page=await request('pages/'+pageID),identity=kind==='points'?'웹 납품처 ID':'웹 ID';
       const idText=(page.properties?.[identity]?.rich_text||[]).map(x=>x.plain_text??x.text?.content??'').join('');
       if(page.in_trash||page.is_archived||page.properties?.['센터']?.select?.name!==CENTERS[body.center]||idText!==id){result.conflicts++;result.processed++;result.nextCursor=id;continue;}
-      let blockID=state.summary_block_id,current=null;
+      let blockID=state.summary_block_id,current=null,restoreSummaryFlag=false;
       if(!blockID&&state.summary_status==='생성 중'){
         const list=await children(request,pageID),bot=await request('users/me');
         const found=list.filter(b=>b.type==='callout'&&b.created_by?.id===bot.id&&b.callout?.rich_text?.[0]?.text?.content?.startsWith(LABEL+'\n'));
@@ -108,7 +134,10 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
         const actual=await treeHash(current);
         if(actual===hash){await save(id,{summary_block_id:blockID,summary_hash:hash,summary_status:'정상'});result.unchanged++;result.processed++;result.nextCursor=id;continue;}
         const recovering=['생성 중','갱신 중'].includes(state.summary_status);
-        if(actual!==state.summary_hash&&!(recovering&&onlyBot(current,current.created_by.id))){
+        const previous=kind==='drivers'?previousDriverTree(c.rows[kind].get(id),c):desired;
+        const provenLegacy=state.summary_hash===await legacyTreeHash(previous)&&actual===await treeHash(previous);
+        restoreSummaryFlag=provenLegacy&&state.status==='정상'&&page.properties?.['동기화 상태']?.select?.name==='충돌 확인';
+        if(actual!==state.summary_hash&&!provenLegacy&&!(recovering&&onlyBot(current,current.created_by.id))){
           await save(id,{summary_status:'수동 확인'});
           await request('pages/'+pageID,'PATCH',{properties:{'동기화 상태':{select:{name:'충돌 확인'}}}});
           result.conflicts++;result.processed++;result.nextCursor=id;continue;
@@ -124,12 +153,14 @@ export async function summaryBatch(env,key,body,fetcher=fetch,options={}){
       }
       for(let offset=0;offset<(desired.callout.children?.length||0);offset+=100)
         await request('blocks/'+blockID+'/children','PATCH',{children:desired.callout.children.slice(offset,offset+100)});
+      if(restoreSummaryFlag)await request('pages/'+pageID,'PATCH',{properties:{'동기화 상태':{select:{name:'정상'}}}});
       await save(id,{summary_block_id:blockID,summary_hash:hash,summary_status:'정상'});result.updated++;result.processed++;result.nextCursor=id;
       }catch(error){
         if(error.code!=='summary_manual')throw error;
         await save(id,{summary_status:'수동 확인'});result.conflicts++;result.processed++;result.nextCursor=id;
       }
     }
+    if(migrations.length)await db(table+'?on_conflict='+(kind==='points'?'center_code,web_id':'kind,center_code,web_id'),'POST',migrations);
     result.hasMore=!body.id&&ids.length>result.processed;if(!result.hasMore)result.nextCursor=null;return result;
   }catch(error){hold=!!error.extra?.uncertainWrite||error.code==='uncertain_write';error.summary=result;throw error;}
   finally{if(!hold&&!options.lockToken)await db('rpc/notion_points_release','POST',{p_token:token});}
