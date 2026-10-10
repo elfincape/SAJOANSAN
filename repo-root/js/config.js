@@ -11,24 +11,36 @@ const PROD = {
   anonKey: 'sb_publishable_VHVQaxth_p_o7pKFza0GtQ_6AeeaXwj'                     // ← 본인 anon public key로 교체
 };
 
-// 로컬/개발용을 별도 프로젝트로 운영할 경우 채워넣고 ENV를 'dev'로 변경
+// 별도 프로젝트가 연결되기 전에는 운영 환경으로 대체하지 않는다.
 const DEV = {
-  url:     'https://vvrppotrnpwrwpwqaiet.supabase.co',
-  anonKey: 'sb_publishable_VHVQaxth_p_o7pKFza0GtQ_6AeeaXwj'
+  url: '',
+  anonKey: ''
+};
+const STAGING = {
+  "url": "https://yvdialfqlbpjbbmcetev.supabase.co",
+  "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2ZGlhbGZxbGJwamJibWNldGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2NDA5MzEsImV4cCI6MjEwNzIxNjkzMX0.V88uxsJLCpjT6wRVJDU-wuftRzLHiOdblppDpNrOVRE"
 };
 // ▲▲▲ 사용자 입력 필요 ▲▲▲
 
-// 사용할 환경: 'prod' | 'dev'
-const ENV = 'prod';
-
-const cfg = ENV === 'dev' ? DEV : PROD;
-
-// 설정 누락 가드 (개발 중 빠르게 알아채기 위함)
-if (!cfg.url || !cfg.anonKey || cfg.url.includes('YOUR-')) {
-  // 페이지가 로드되자마자 콘솔에 명확히 표시
-  // (운영 배포 전에 반드시 채울 것)
-  console.error('[config] Supabase URL/anon key가 설정되지 않았습니다. js/config.js를 확인하세요.');
+function resolveConfig(hostname, environments) {
+  const host = String(hostname || '').toLowerCase();
+  const environment = host === 'sajoansan.vercel.app' ? 'prod'
+    : ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host) ? 'dev' : 'staging';
+  const config = environments[environment];
+  if (!config?.url || !config?.anonKey) {
+    throw new Error(`${environment} 환경의 별도 Supabase 연결 설정이 필요합니다.`);
+  }
+  const url = new URL(config.url);
+  if (environment !== 'prod' && url.origin === new URL(environments.prod.url).origin) {
+    throw new Error('개발·시험 환경에서는 운영 Supabase를 사용할 수 없습니다.');
+  }
+  if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+    throw new Error('Supabase 연결은 HTTPS를 사용해야 합니다.');
+  }
+  return { ...config, environment };
 }
 
+const cfg = resolveConfig(globalThis.location?.hostname, { prod: PROD, dev: DEV, staging: STAGING });
+export const ENV = cfg.environment;
 export const SUPABASE_URL      = cfg.url;
 export const SUPABASE_ANON_KEY = cfg.anonKey;

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {koreaDate,dateRange,filterOperations,exportRows} from '../repo-root/js/operations-view.js';
+assert.equal(koreaDate(new Date('2026-10-10T23:00:00Z')),'2026-10-11');
+assert.deepEqual(dateRange('week','2026-10-11'),{from:'2026-10-05',through:'2026-10-11'});
+assert.deepEqual(dateRange('month','2026-10-11'),{from:'2026-10-01',through:'2026-10-11'});
+assert.throws(()=>dateRange('week','2026-02-30'));
+const data=[{id:1,title:'대차 배차 진행',status:'completed',inputs:{'기사명':'손성준','정산방식':'월대공제'}},{id:2,title:'임시 배차',inputs:{'대차기사명':'대차기사','정산방식':'기사직접'}},{id:3,title:'일반업무',inputs:{}}];
+assert.deepEqual(filterOperations(data,{kind:'replacement',settlement:'월대공제'}).map(r=>r.id),[1]);
+assert.deepEqual(filterOperations(data,{kind:'replacement',settlement:'기사직접'}).map(r=>r.id),[2]);
+assert.equal(exportRows(filterOperations(data,{settlement:'월대공제'}),'tasks')[0]['기사명'],'손성준');
+assert.equal(exportRows([{...data[0],action:'support_action',action_note:'운수사 연락'}],'daily')[0]['실제 조치'],'운수사 연락');
+const incident=exportRows([{title:'차량 문제',kind:'차량문제',status:'open',support_state:'done',inputs:{'발생내용':'차량 확인 중'},created_at:'2026-10-11T00:00:00Z'}],'incidents')[0];
+assert.equal(incident['상태'],'미해결');assert.equal(incident['HQ 지원'],'지원완료');assert.equal(incident['발생내용'],'차량 확인 중');
+console.log('PASS: KST daily/weekly/monthly boundaries, replacement/settlement filtering, exported original inputs and action notes');

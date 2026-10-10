@@ -125,11 +125,6 @@
   <script>
   'use strict';
   const TEMPLATE_URL = '/templates/sazocoupang.xlsx';
-  const TIME_ROW_START = 6;
-  const TIME_ROW_END = 23;
-  const TIME_COL = 7;
-  const FIRST_CENTER_COL = 9;
-  const LAST_CENTER_COL = 22;
   const PROMPT = `이미지의 쿠팡 시간표 표를 읽어라.
 각 행에서 센터명, 예약시간, 물량, 냉장, 냉동 값을 추출해라.
 센터명이 있지만 예약시간이 비어 있는 행도 누락하지 말고 reservationTime을 null로 넣어라.
@@ -199,24 +194,6 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
   }
-  function applyEntryDate(workbook, ws) {
-    const label = formatEntryDateLabel(state.selectedDate);
-    if (!label) return;
-    ws.getCell('G3').value = label;
-    const uniqueName = uniqueWorksheetName(workbook, label, ws);
-    if (uniqueName) ws.name = uniqueName;
-  }
-  function uniqueWorksheetName(workbook, baseName, currentWs) {
-    const safeBase = String(baseName || '').replace(/[\/?*:[\]]/g, '').slice(0, 31) || '입문확인';
-    let name = safeBase;
-    let index = 2;
-    while (workbook.worksheets.some(sheet => sheet !== currentWs && sheet.name === name)) {
-      const suffix = `_${index++}`;
-      name = `${safeBase.slice(0, 31 - suffix.length)}${suffix}`;
-    }
-    return name;
-  }
-
   async function loadDefaultTemplate(showToast) {
     try {
       $('template-info').textContent = '저장된 템플릿을 불러오는 중...';
@@ -491,109 +468,24 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
 
   async function downloadWorkbook() {
     if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
-    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
-    const ws = workbook.getWorksheet(state.worksheetName) || workbook.worksheets[0];
-    applyEntryDate(workbook, ws);
-    await insertUploadedImage(workbook, ws);
-    const errors = writeMatchesToWorksheet(ws); if (errors.length) toast(`일부 미입력: ${errors.join(', ')}`, 'error');
-    const out = await sanitizeWorkbookBuffer(await workbook.xlsx.writeBuffer());
-    saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), buildFilename());
+    if (state.exporting) return;
+    const snapshot = { templateBuffer: state.templateBuffer.slice(0), worksheetName: state.worksheetName,
+      date: state.selectedDate, matches: JSON.parse(JSON.stringify(state.matches)), imageFile: state.imageFile,
+      imageType: state.imageMediaType || state.imageFile?.type || 'image/png', imageSize: { ...state.imageSize } };
+    state.exporting = true; updateButtons();
+    try {
+      const { buildCoupangWorkbook } = await import('/js/coupang-workbook.js');
+      const result = await buildCoupangWorkbook({ ExcelJS, JSZip: window.JSZip,
+        templateBuffer: snapshot.templateBuffer, worksheetName: snapshot.worksheetName,
+        date: snapshot.date, matches: snapshot.matches, strict: false,
+        image: snapshot.imageFile ? { base64: await fileToBase64(snapshot.imageFile),
+          mediaType: snapshot.imageType, width: snapshot.imageSize.width, height: snapshot.imageSize.height } : null });
+      if (result.errors.length) toast(`일부 미입력: ${result.errors.join(', ')}`, 'error');
+      saveBlob(new Blob([result.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), result.filename);
+    } catch (error) { toast(error.message || '엑셀을 생성하지 못했습니다.', 'error'); }
+    finally { state.exporting = false; updateButtons(); }
   }
-  function writeMatchesToWorksheet(ws) {
-    const errors = [];
-    detachWritableCellStyles(ws);
-    state.matches.filter(m => m.include && m.match.matchedDispatch && m.schedule.reservationTime).forEach(m => {
-      const rowNumber = findTimeRow(ws, m.schedule.reservationTime); if (!rowNumber) { errors.push(`${m.schedule.centerRaw} 시간 없음`); return; }
-      const col = findNextPairCol(ws, rowNumber); if (!col) { errors.push(`${m.schedule.reservationTime} 자리 없음`); return; }
-      const row = ws.getRow(rowNumber);
-      const centerCell = row.getCell(col);
-      const driverCell = row.getCell(col + 1);
-      centerCell.value = compactCenterLabel(m.schedule.centerRaw);
-      driverCell.value = m.match.matchedDispatch.driver || '';
-      centerCell.numFmt = '@';
-      driverCell.numFmt = '@';
-      applyGroupFill(centerCell, driverCell, m.match.matchedDispatch);
-    });
-    return errors;
-  }
-  async function sanitizeWorkbookBuffer(buffer) {
-    if (!window.JSZip) return buffer;
-    const zip = await window.JSZip.loadAsync(buffer);
-    const workbookPath = 'xl/workbook.xml';
-    const workbookFile = zip.file(workbookPath);
-    if (workbookFile) {
-      const xml = await workbookFile.async('string');
-      zip.file(workbookPath, xml.replace(/\sfilterPrivacy="1"/g, '').replace(/\sfilterPrivacy="true"/g, ''));
-    }
-    const worksheetFiles = Object.keys(zip.files).filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
-    await Promise.all(worksheetFiles.map(async name => {
-      const xml = await zip.file(name).async('string');
-      zip.file(name, xml
-        .replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, ''));
-    }));
-    return zip.generateAsync({ type: 'arraybuffer' });
-  }
-
-  async function insertUploadedImage(workbook, ws) {
-    if (!state.imageFile) return;
-    const base64 = await getImageBase64();
-    if (!base64) return;
-    const extension = imageExtension(state.imageFile);
-    const imageId = workbook.addImage({ base64: `data:${state.imageMediaType || state.imageFile.type || 'image/png'};base64,${base64}`, extension });
-    const width = columnsPixelWidth(ws, 1, 5);
-    const ratio = state.imageSize?.width && state.imageSize?.height ? state.imageSize.height / state.imageSize.width : 0.62;
-    const height = Math.max(80, Math.round(width * ratio));
-    const rowSpan = Math.max(4, height / 20);
-    ws.addImage(imageId, { tl: { col: 0, row: 1 }, br: { col: 5, row: 1 + rowSpan }, editAs: 'oneCell' });
-  }
-  async function getImageBase64() { if (!state.imageFile) return ''; if (!state.imageBase64) state.imageBase64 = await fileToBase64(state.imageFile); return state.imageBase64; }
-  function imageExtension(file) { const type = String(file?.type || '').toLowerCase(); if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg'; if (type.includes('gif')) return 'gif'; return 'png'; }
-  function columnsPixelWidth(ws, start, end) { let width = 0; for (let c = start; c <= end; c++) width += Math.round(((ws.getColumn(c).width || 8.43) * 7) + 5); return width; }
-  function detachWritableCellStyles(ws) {
-    for (let r = 5; r <= TIME_ROW_END; r++) {
-      const row = ws.getRow(r);
-      for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c++) {
-        const cell = row.getCell(c);
-        cell.style = cloneCellStyle(cell.style);
-      }
-    }
-  }
-  function cloneCellStyle(style) {
-    if (!style) return {};
-    try { return JSON.parse(JSON.stringify(style)); }
-    catch (_) { return { ...style }; }
-  }
-  function applyGroupFill(centerCell, driverCell, dispatch) {
-    if (!dispatch?.groupFill) return;
-    [centerCell, driverCell].forEach(cell => {
-      cell.style = cloneCellStyle(cell.style);
-      cell.style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
-    });
-  }
-  function findTimeRow(ws, timeText) {
-    const target = normalizeTime(timeText);
-    if (!target) return null;
-
-    // 1순위: 명세상 납품시간인 G열을 먼저 확인한다.
-    for (let r = TIME_ROW_START; r <= TIME_ROW_END; r++) {
-      if (timeCandidates(ws.getRow(r).getCell(TIME_COL)).includes(target)) return r;
-    }
-
-    // 2순위: H열 확인시간이 납품시간으로 오인되는 문제를 막기 위해 G열 실패 시 고정 시간표 행으로만 추정한다.
-    const fallback = fallbackTimeRowByHalfHour(target);
-    if (fallback) {
-      console.warn('[coupang-entry] 시간 셀 직접 매칭 실패, 08:00 기준 30분 간격 fallback 사용:', { target, fallback });
-      return fallback;
-    }
-
-    console.warn('[coupang-entry] 시간 행을 찾지 못함:', { target, rows: debugTimeRows(ws) });
-    return null;
-  }
-  function debugTimeRows(ws) { return Array.from({ length: TIME_ROW_END - TIME_ROW_START + 1 }, (_, i) => { const row = TIME_ROW_START + i; return { row, cells: Array.from({ length: LAST_CENTER_COL - 1 }, (_, j) => { const col = j + 2; const cell = ws.getRow(row).getCell(col); return { col, value: cell.value, text: cellText(cell), candidates: timeCandidates(cell) }; }) }; }); }
   function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }
-  function fallbackTimeRowByHalfHour(timeText) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = h * 60 + m; const start = 8 * 60; const diff = total - start; if (diff < 0 || diff % 30 !== 0) return null; const row = TIME_ROW_START + diff / 30; return row >= TIME_ROW_START && row <= TIME_ROW_END ? row : null; }
-  function findNextPairCol(ws, rowNumber) { const row = ws.getRow(rowNumber); for (let c = FIRST_CENTER_COL; c <= LAST_CENTER_COL; c += 2) if (!cellText(row.getCell(c)) && !cellText(row.getCell(c + 1))) return c; return null; }
-  function compactCenterLabel(value) { return normalizeCenterName(value).replace(/\s+/g, '').replace(/B2B/g, 'b2b'); }
 
   function roundToNearestHalfHour(timeText) {
     const t = normalizeTime(timeText);
@@ -616,27 +508,6 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     if (m[1] === '오전' && hour === 12) hour = 0;
     return `${String(hour).padStart(2,'0')}:${String(Number(m[3] || 0)).padStart(2,'0')}`;
   }
-  function timeCandidates(cell) {
-    const values = [];
-    const raw = cell?.value;
-    if (raw && typeof raw === 'object' && !(raw instanceof Date)) {
-      if ('result' in raw) values.push(raw.result);
-      if ('text' in raw) values.push(raw.text);
-      if (Array.isArray(raw.richText)) values.push(raw.richText.map(p => p.text || '').join(''));
-      if ('formula' in raw) values.push(raw.formula);
-    } else {
-      values.push(raw);
-    }
-    values.push(cellText(cell));
-    const out = [];
-    values.forEach(value => {
-      const direct = normalizeTime(value);
-      if (direct) out.push(direct);
-      String(value ?? '').replace(/(오전|오후)?\s*\d{1,2}\s*[:시]\s*\d{0,2}/g, token => { const parsed = normalizeTime(token); if (parsed) out.push(parsed); return token; });
-    });
-    return [...new Set(out)];
-  }
-  function cellText(cell) { const v = cell?.value; if (v == null) return ''; if (v instanceof Date) return normalizeTime(v); if (typeof v === 'object') { if (typeof v.result === 'number') return normalizeTime(v.result) || ''; return String(v.text || v.result || (v.richText || []).map(p => p.text || '').join('') || '').trim(); } return String(v).trim(); }
   function normalizeCenterName(value) {
     return String(value || '')
       .replace(/군지암|ㄱㅈㅇ/g, '곤지암')
@@ -684,7 +555,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
   }
   async function fileToBase64(file) { const buf = await file.arrayBuffer(); let binary = ''; new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); }); return btoa(binary); }
   function renderScheduleCount() { $('match-count').textContent = state.scheduleRows.length ? `시간표 ${state.scheduleRows.length}행` : ''; }
-  function updateButtons() { $('download-btn').disabled = !state.workbook || !state.matches.some(m => m.include && m.match.matchedDispatch); }
+  function updateButtons() { $('download-btn').disabled = !!state.exporting || !state.workbook || !state.matches.some(m => m.include && m.match.matchedDispatch); }
   function buildFilename() { return `쿠팡 입문확인_${state.selectedDate.replace(/-/g, '')}.xlsx`; }
   function saveBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
   let toastTimer = null; function toast(message, type = 'info') { const el = $('toast'); el.textContent = message; el.className = 'fixed left-1/2 bottom-6 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-xl pointer-events-none show'; el.className += ` ${type === 'error' ? 'bg-rose-950/95 border border-rose-700 text-rose-100' : type === 'success' ? 'bg-emerald-950/95 border border-emerald-700 text-emerald-100' : 'bg-zinc-800 border border-zinc-700 text-zinc-100'}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
