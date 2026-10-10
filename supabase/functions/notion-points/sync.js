@@ -114,7 +114,9 @@ export async function batch(env,key,body,fetcher=fetch,options={}) {
     const verify=(await db('delivery_points?select=*&center_code=eq.'+body.center+'&id=eq.'+row.id))[0];
     if(!verify || JSON.stringify(webValues(verify))!==JSON.stringify(desired) || await hashPhotos(verify.photos||[])!==photoHash){await markConflict(row,page);return;}
     await saveState(row.id,{notion_id:page.id,baseline:desired,photo_hash:photoHash,status:'정상',synced_at:new Date().toISOString()});
-    await captureScan(verify,savedPage);
+    // A metadata PATCH can return a photo edited after our verified read.
+    // Acknowledge only the photos we verified or explicitly uploaded ourselves.
+    await captureScan(verify,Object.hasOwn(changed,'사진')?savedPage:page);
     result.updated++;
   }
   async function importPage(page) {

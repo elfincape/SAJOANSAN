@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {batch} from '../supabase/functions/notion-points/sync.js';
 import {CENTERS,FIELDS,properties,webValues,plain} from '../supabase/functions/notion-points/model.js';
+import {notionPhotoFingerprint} from '../supabase/functions/notion-points/photos.js';
 const ID='00000000-0000-4000-8000-000000000001';
 const PAGE='00000000-0000-4000-8000-000000000002';
 function fixture() {
@@ -48,6 +49,27 @@ function fixture() {
 }
 const env={NOTION_API_TOKEN:'token',SUPABASE_URL:'https://project.supabase.co'};
 const options={wait:async()=>{}};
+
+test('candidate acknowledgement does not hide a concurrent Notion photo edit returned by a metadata PATCH',async()=>{
+  const f=fixture();await batch(env,'service',{center:'001',id:ID},f.fetcher,options);
+  const verifiedFingerprint=await notionPhotoFingerprint(f.page);f.rows[0].address='web change';
+  const wrapped=async(url,opts={})=>{
+    if(url.endsWith('/rpc/notion_points_photo_signature'))return Response.json('verified-web-signature');
+    if(url.includes('/pages/')&&opts.method==='PATCH')f.page.properties['사진']={files:[{name:'new photo',type:'file',file:{url:'https://prod-files-secure.s3.us-west-2.amazonaws.com/new-photo'}}]};
+    return f.fetcher(url,opts);
+  };
+  assert.equal((await batch(env,'service',{center:'001',id:ID,scan:true},wrapped,options)).updated,1);
+  assert.equal(f.states[0].notion_photo_fingerprint,verifiedFingerprint);
+  assert.notEqual(f.states[0].notion_photo_fingerprint,await notionPhotoFingerprint(f.page));
+});
+
+test('failed web photo compare-and-swap never acknowledges a newer browser photo',async()=>{
+  const f=fixture();await batch(env,'service',{center:'001',id:ID},f.fetcher,options);
+  f.states[0].web_photo_signature='previous-signature';f.rows[0].address='web change';
+  const wrapped=async(url,opts={})=>url.endsWith('/rpc/notion_points_photo_signature')?Response.json(null):f.fetcher(url,opts);
+  assert.equal((await batch(env,'service',{center:'001',id:ID,scan:true},wrapped,options)).updated,1);
+  assert.equal(f.states[0].web_photo_signature,'previous-signature');
+});
 
 test('legacy deadline instructions copy faithfully and unrelated edits preserve the existing numeric index',async()=>{
   const f=fixture();Object.assign(f.rows[0],{deadline_text:'오전 검수 전까지',deadline_business_min:540});
