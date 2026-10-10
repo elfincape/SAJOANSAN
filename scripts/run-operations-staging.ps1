@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('bootstrap','migrate','test','workflow','test-workflow','templates','test-templates','http','notion-config')]
+  [ValidateSet('bootstrap','migrate','test','workflow','test-workflow','templates','test-templates','http','notion-config','notion','test-notion')]
   [string]$Action='test'
 )
 $ErrorActionPreference='Stop'
