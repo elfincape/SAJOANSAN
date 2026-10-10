@@ -9,7 +9,7 @@
 <body>
   <header><a href="/admin/">← 관리허브</a><strong>운영 업무</strong><span id="user"></span></header>
   <main>
-    <div class="heading"><div><h1>업무와 특이사항</h1><p>센터별 진행 상황과 실제 처리 기록을 확인하세요.</p></div><button id="refresh">새로고침</button></div>
+    <div class="heading"><div><h1>업무와 특이사항</h1><p>센터별 진행 상황과 실제 처리 기록을 확인하세요.</p></div><div><button id="sync" hidden>업무 노션 동기화</button> <button id="refresh">새로고침</button></div></div>
     <nav aria-label="조회 화면"><button data-view="tasks" aria-pressed="true">업무 현황</button><button data-view="daily" aria-pressed="false">일일·주간 기록</button><button data-view="incidents" aria-pressed="false">특이사항</button></nav>
     <form id="filters" class="filters">
       <label>센터<select name="center"><option value="001">안산</option><option value="002">평택</option></select></label>

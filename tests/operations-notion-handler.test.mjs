@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {makeHandler} from '../supabase/functions/operations-notion/handler.js';
+const env={SUPABASE_URL:'https://yvdialfqlbpjbbmcetev.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-service',OPERATIONS_NOTION_TOKEN:'test-notion',OPERATIONS_ENVIRONMENT:'staging'};
+let calls=0;const handler=makeHandler(env,async()=>{calls++;throw Error('Unexpected privileged call');});
+assert.equal((await handler(new Request('https://test',{method:'POST'}))).status,401);
+assert.equal((await handler(new Request('https://test',{method:'GET'}))).status,405);
+assert.equal((await handler(new Request('https://test',{method:'POST',headers:{Origin:'https://sajoansan.vercel.app',Authorization:'Bearer test-service'}}))).status,403);
+assert.equal((await handler(new Request('https://test',{method:'OPTIONS',headers:{Origin:'https://sajoansan-git-codex-operations-staging-elfincapes-projects.vercel.app'}}))).status,204);
+assert.equal(calls,0);
+assert.equal((await makeHandler({...env,OPERATIONS_ENVIRONMENT:'production'})(new Request('https://test',{method:'POST'}))).status,503);
+const staff=makeHandler(env,async url=>url.includes('operations_notion_identities')?Response.json({message:'denied'},{status:403}):Response.json(url.endsWith('/auth/v1/user')?{id:'test-user'}:[{role:'editor',active:true}]));
+assert.equal((await staff(new Request('https://test',{method:'POST',headers:{Authorization:'Bearer test-staff'}}))).status,403);
+console.log('PASS: server-only staging scope, missing login, method, production origin and non-HQ invocation refusal');

@@ -17,6 +17,8 @@ export function filterOperations(rows,{kind='',settlement=''}={}){
  });
 }
 export function exportRows(rows,view){
+ if(view==='incidents')return rows.map(row=>({'발생일':row.created_at,'특이사항':row.title,'종류':row.kind,'상태':statusLabels[row.status]??row.status,
+  'HQ 지원':{none:'없음',requested:'요청',supporting:'지원중',done:'지원완료'}[row.support_state]??row.support_state,'발생내용':row.inputs?.['발생내용']??'','해결시각':row.resolved_at??''}));
  return rows.map(row=>({'업무일':row.work_date??row.report_date??'','업무':row.title,'상태':statusLabels[row.status]??row.status,'처리':view==='daily'?(actionLabels[row.action]??row.action):'',
  '기사명':row.inputs?.['기사명']??'','차량번호':row.inputs?.['차량번호']??'','코스·납품처':row.inputs?.['코스·납품처']??'',
  '톤수':row.inputs?.['톤수']??'','사유':row.inputs?.['사유']??'','대차기사명':row.inputs?.['대차기사명']??'',

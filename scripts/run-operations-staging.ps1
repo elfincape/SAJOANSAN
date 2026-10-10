@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('bootstrap','migrate','test','workflow','test-workflow','templates','test-templates','http','notion-config','notion','test-notion','notion-create','notion-sync','notion-http','notion-schema','sync-lock')]
+  [ValidateSet('bootstrap','migrate','test','workflow','test-workflow','templates','test-templates','http','http-edge','notion-config','notion','test-notion','notion-create','notion-sync','notion-http','notion-edge-http','notion-schema','sync-lock','notion-deploy')]
   [string]$Action='test'
 )
 $ErrorActionPreference='Stop'
@@ -14,14 +14,19 @@ function Read-TaskCredential([string]$Name) {
 try {
   $env:SUPABASE_PROJECT_REF='yvdialfqlbpjbbmcetev'
   $env:SUPABASE_ACCESS_TOKEN=Read-TaskCredential 'supabase'
-  if($Action -in @('notion-config','notion-sync','notion-http','notion-schema')) {
+  if($Action -in @('notion-config','notion-sync','notion-http','notion-edge-http','notion-schema')) {
     $env:OPERATIONS_NOTION_TOKEN=Read-TaskCredential 'notion'
     if($Action -eq 'notion-config') { & node (Join-Path $PSScriptRoot 'configure-operations-notion.mjs') }
     elseif($Action -eq 'notion-sync') { & node (Join-Path $PSScriptRoot 'operations-notion-cycle.mjs') }
     elseif($Action -eq 'notion-schema') { & node (Join-Path $PSScriptRoot 'operations-notion-cycle.mjs') '--schema' }
+    elseif($Action -eq 'notion-edge-http') { & node (Join-Path $taskRoot 'tests/operations-notion-http.integration.mjs') '--edge' }
     else { & node (Join-Path $taskRoot 'tests/operations-notion-http.integration.mjs') }
+  } elseif($Action -eq 'notion-deploy') {
+    & node (Join-Path $PSScriptRoot 'deploy-operations-notion.mjs')
   } elseif($Action -eq 'http') {
     & node (Join-Path $taskRoot 'tests/operations-http.integration.mjs')
+  } elseif($Action -eq 'http-edge') {
+    & node (Join-Path $taskRoot 'tests/operations-http.integration.mjs') '--edge'
   } else {
     & node (Join-Path $PSScriptRoot 'operations-staging.mjs') $Action
   }

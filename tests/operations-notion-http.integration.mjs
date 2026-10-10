@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {rest,notion,management,runCycle} from '../scripts/operations-notion-cycle.mjs';
+import {rest,notion,management,runCycle as runLocalCycle} from '../scripts/operations-notion-cycle.mjs';
 import {taskProperties} from '../supabase/functions/operations-notion/model.js';
 const actor=randomUUID(),notionActor=(await notion('users/me')).id,source='910d7f0f-7ca6-496a-90a0-1ef44b4dc262';
 const pages=new Set();let setup=false;
 const sql=query=>management('database/query',{query});
+let runCycle=runLocalCycle;
+if(process.argv.includes('--edge')){
+ const keys=await management('api-keys?reveal=true'),key=keys.find(k=>k.name==='service_role')?.api_key;
+ const endpoint='https://yvdialfqlbpjbbmcetev.supabase.co/functions/v1/operations-notion';
+ assert.equal((await fetch(endpoint,{method:'POST'})).status,401);
+ runCycle=async()=>{const r=await fetch(endpoint,{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(120000)});const result=await r.json();if(result.error)throw Error(result.error);return result;};
+}
 try{
  await sql(`begin;
  insert into auth.users(id,email) values('${actor}','notion-http-${actor}@example.invalid');

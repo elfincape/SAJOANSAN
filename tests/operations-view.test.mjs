@@ -9,4 +9,6 @@ assert.deepEqual(filterOperations(data,{kind:'replacement',settlement:'월대공
 assert.deepEqual(filterOperations(data,{kind:'replacement',settlement:'기사직접'}).map(r=>r.id),[2]);
 assert.equal(exportRows(filterOperations(data,{settlement:'월대공제'}),'tasks')[0]['기사명'],'손성준');
 assert.equal(exportRows([{...data[0],action:'support_action',action_note:'운수사 연락'}],'daily')[0]['실제 조치'],'운수사 연락');
+const incident=exportRows([{title:'차량 문제',kind:'차량문제',status:'open',support_state:'done',inputs:{'발생내용':'차량 확인 중'},created_at:'2026-10-11T00:00:00Z'}],'incidents')[0];
+assert.equal(incident['상태'],'미해결');assert.equal(incident['HQ 지원'],'지원완료');assert.equal(incident['발생내용'],'차량 확인 중');
 console.log('PASS: KST daily/weekly/monthly boundaries, replacement/settlement filtering, exported original inputs and action notes');

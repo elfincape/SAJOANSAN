@@ -2,10 +2,14 @@ import {taskValues,pageTaskValues,taskProperties,taskPatch,merge} from './model.
 import {equal} from '../notion-graph/model.js';
 const source='910d7f0f-7ca6-496a-90a0-1ef44b4dc262';
 const root='3f5b98bf-5f20-8174-aea9-e2967e4d678d';
+export async function editRequestId(page,values,version){
+ const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({page:page.id,time:page.last_edited_time,actor:page.last_edited_by?.id,values,version})))).slice(0,16);
+ bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+ const hex=[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+}
 export function createTaskSync({rest,notion,guard=async()=>{}}){
  async function list(table,key='id'){const rows=[];for(let offset=0;;offset+=200){const page=await rest(`${table}?select=*&order=${key}&limit=200&offset=${offset}`);rows.push(...page);if(page.length<200)return rows;}}
  async function saveLink(link){await rest('operations_notion_links?on_conflict=page_id','POST',link,{'Prefer':'resolution=merge-duplicates,return=minimal'});}
- async function requestId(page){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(page.id+':'+page.last_edited_time));const hex=[...new Uint8Array(bytes)].slice(0,16).map(n=>n.toString(16).padStart(2,'0')).join('');return `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;}
  return async function sync(){
   await notion('pages/'+root);
   const forbidden=await notion('pages/3f4b98bf-5f20-81c2-992e-fecda52668d7','GET',undefined,true);
@@ -34,7 +38,7 @@ export function createTaskSync({rest,notion,guard=async()=>{}}){
    if(!equal(web,merged.values)){
     if(task.status==='completed'||task.status==='not_applicable')throw Error('확정된 업무는 변경할 수 없습니다.');
     const values=taskPatch(task,merged.values);
-    task=await rest('rpc/operations_import_notion_task','POST',{p_notion_actor:page.last_edited_by?.id,p_request_id:await requestId(page),p_task_id:task.id,p_expected_version:task.version,p_center:values.center_code,p_title:values.title,p_work_date:values.work_date,p_inputs:values.inputs,p_status:values.status});result.pulled++;
+    task=await rest('rpc/operations_import_notion_task','POST',{p_notion_actor:page.last_edited_by?.id,p_request_id:await editRequestId(page,values,task.version),p_task_id:task.id,p_expected_version:task.version,p_center:values.center_code,p_title:values.title,p_work_date:values.work_date,p_inputs:values.inputs,p_status:values.status});result.pulled++;
    }
    if(!equal(remote,taskValues(task))||page.properties?.['수정 버전']?.number!==task.version){
     // Re-read before writing: a concurrent native edit must not be overwritten.

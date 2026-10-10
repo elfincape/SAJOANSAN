@@ -39,6 +39,15 @@ try {
     users[users.length - 1] = user;
   }
   const [ansan, pyeongtaek, nextOwner, hq] = users;
+  if(process.argv.includes('--edge')){
+    const denied=await http('/functions/v1/operations-notion',{method:'POST',jwt:ansan.jwt,body:{}});
+    assert.equal(denied.status,403,'Staff cannot run privileged sync');
+    const allowed=await http('/functions/v1/operations-notion',{method:'POST',jwt:hq.jwt,body:{}});
+    assert.equal(allowed.status,200,'Real HQ login can run sync');
+    const preflight=await fetch(root+'/functions/v1/operations-notion',{method:'OPTIONS',headers:{Origin:'https://sajoansan-git-codex-operations-staging-elfincapes-projects.vercel.app','Access-Control-Request-Headers':'authorization,apikey,content-type'}});
+    assert.equal(preflight.status,204);assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'https://sajoansan-git-codex-operations-staging-elfincapes-projects.vercel.app');
+    console.log('PASS: deployed sync with actual staff denial/HQ password login and preview CORS');
+  }
   const request = { p_request_id: randomUUID(), p_task_id: null, p_expected_version: null,
     p_center: '001', p_title: 'HTTP 시험 업무', p_work_date: '2026-10-11', p_inputs: {}, p_status: 'pending' };
   const create = await http('/rest/v1/rpc/operations_save_task', { method: 'POST', jwt: ansan.jwt, body: request });
