@@ -3,6 +3,7 @@ import {supabase} from './supabase.js';
 import {createOperationsApi} from './operations-api.js';
 import {operationsFiles} from './onedrive-api.js';
 import {portalAi} from './portal-ai.js';
+import {createPortalSearch} from './portal-search.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
@@ -15,6 +16,11 @@ function canWrite(code){return state.context.writable_centers.includes(code);}
 function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
 function button(text,handler,parent,className){const el=node('button',text,className);el.type='button';el.onclick=handler;parent.append(el);return el;}
+const renderSearch=createPortalSearch({supabase,node,button,centerName,message,openRecord:async(type,id)=>{
+ try{const table={task:'operations_tasks',incident:'operations_incidents',survey:'operations_surveys'}[type];
+  const {data,error}=await supabase.from(table).select('*').eq('id',id).single();if(error)throw error;choose(type,data);
+ }catch(error){message(error.message||'원본 기록을 불러오지 못했습니다.',true);}
+}});
 function field(form,label,name,value='',type='text'){const wrap=node('label',label),el=node(type==='textarea'?'textarea':'input');if(type!=='textarea')el.type=type;el.name=name;if(type==='checkbox')el.checked=value===true;else el.value=value??'';wrap.append(el);form.append(wrap);return el;}
 function setBusy(value){state.busy=value;document.querySelectorAll('button,input,select,textarea').forEach(el=>{if(value){el.dataset.wasDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.wasDisabled!==undefined){el.disabled=el.dataset.wasDisabled==='true';delete el.dataset.wasDisabled;}});}
 async function mutate(key,operation,success){
@@ -26,6 +32,7 @@ async function mutate(key,operation,success){
  finally{setBusy(false);}
 }
 async function loadData(){
+ if(state.view==='search')return;
  const center=$('center').value,day=koreaDate();
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:day,through:day,includeCompleted:$('completed').checked}),
@@ -48,6 +55,10 @@ function render(){
  document.querySelectorAll('nav button').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.view===state.view)));
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();
+ if(state.view==='search'){
+  $('portal-title').textContent='통합 검색';$('portal-description').textContent='업무와 운영 마스터, 과거 특이사항을 유형별로 찾으세요.';
+  $('center').disabled=true;renderSearch(state.context.centers);return;
+ }
  if(state.view==='briefing'){renderBriefing(actions);return;}
  if(state.view==='center'&&canWrite(center)){
   const templates=currentTemplates(state.templates);
