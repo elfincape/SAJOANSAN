@@ -5,6 +5,7 @@ import {operationsFiles} from './onedrive-api.js';
 import {portalAi} from './portal-ai.js';
 import {createPortalSearch} from './portal-search.js';
 import {createPortalBackups} from './portal-backups.js';
+import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
@@ -24,7 +25,7 @@ const renderSearch=createPortalSearch({supabase,node,button,centerName,message,o
  }catch(error){message(error.message||'원본 기록을 불러오지 못했습니다.',true);}
 }});
 function field(form,label,name,value='',type='text'){const wrap=node('label',label),el=node(type==='textarea'?'textarea':'input');if(type!=='textarea')el.type=type;el.name=name;if(type==='checkbox')el.checked=value===true;else el.value=value??'';wrap.append(el);form.append(wrap);return el;}
-function setBusy(value){state.busy=value;document.querySelectorAll('button,input,select,textarea').forEach(el=>{if(value){el.dataset.wasDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.wasDisabled!==undefined){el.disabled=el.dataset.wasDisabled==='true';delete el.dataset.wasDisabled;}});}
+function setBusy(value){state.busy=value;document.querySelectorAll('button:not([data-navigation-toggle]),input,select,textarea').forEach(el=>{if(value){el.dataset.wasDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.wasDisabled!==undefined){el.disabled=el.dataset.wasDisabled==='true';delete el.dataset.wasDisabled;}});}
 async function mutate(key,operation,success){
  if(state.busy)return;
  if(state.retry?.key!==key)state.retry={key,requestId:crypto.randomUUID()};
@@ -297,10 +298,12 @@ async function checkNotifications(){
  finally{checkingNotifications=false;}
 }
 async function start(){
+ setupPortalSidebar();
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
  document.querySelector('[data-view=hq]').hidden=!isHq();document.querySelector('[data-view=access]').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq())state.view='hq';
  document.querySelector('[data-view=backups]').hidden=!isHq();
+ $('hq-navigation').hidden=!isHq();
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
  document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.selected=null;refresh();});await refresh();
