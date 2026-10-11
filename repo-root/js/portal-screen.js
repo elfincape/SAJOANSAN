@@ -7,6 +7,7 @@ import {createPortalSearch} from './portal-search.js';
 import {createPortalBackups} from './portal-backups.js';
 import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
 import {periodBounds,shiftPeriod,calendarDates,taskState,taskStateLabels} from './portal-task-views.js';
+import {setupDialogDismiss} from './portal-dialog.js';
 import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
@@ -41,7 +42,7 @@ async function loadData(){
  if(['search','backups'].includes(state.view))return;
  const center=$('center').value,period=periodBounds($('task-date').value||koreaDate(),state.unit);
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
- api.tasks({center:state.view==='hq'?undefined:center,from:period.from,through:period.through,includeCompleted:true}),
+ api.tasks({center:['hq','trash'].includes(state.view)?undefined:center,trash:state.view==='trash',from:period.from,through:period.through,includeCompleted:true}),
  api.incidents({center:['hq','briefing','incidents'].includes(state.view)?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
  const parents=await api.parentTasks(incidents.map(i=>i.task_id));
  Object.assign(state,{tasks,incidents,templates,surveys,notifications,staff,briefing,parents});
@@ -57,7 +58,7 @@ function addRow(row,type,parent,extra=''){
 }
 function render(){
  const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':centerName(center)+' 업무목록';
+ $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':state.view==='trash'?'휴지통':centerName(center)+' 업무목록';
  $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':state.view==='incidents'?'센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
  document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
  document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
@@ -91,7 +92,8 @@ function render(){
   if(overdue.length){items.append(node('h3','이전 기간 미완료 · '+overdue.length+'건'));overdue.forEach(t=>addTaskWithChildren(t,items));}
   items.append(node('h3',period.from+(period.from===period.through?'':' ~ '+period.through)));
   if(state.layout==='calendar')renderTaskCalendar(inPeriod,items);else inPeriod.forEach(t=>addTaskWithChildren(t,items));
-  }else if(state.view==='incidents'){
+  }else if(state.view==='trash'){count=tasks.length;tasks.forEach(t=>addRow(t,'task',items,centerName(t.center_code)+' · 휴지통 이동 '+stamp(t.deleted_at)));
+ }else if(state.view==='incidents'){
   const linked=state.incidents.filter(i=>i.task_id);count=linked.length;renderIncidentGroups(linked,items);const legacy=state.incidents.filter(i=>!i.task_id);if(legacy.length){const archive=node('details');archive.append(node('summary','기존 업무 미연결 기록 · '+legacy.length+'건'));legacy.forEach(i=>addRow(i,'incident',archive,stamp(i.created_at)));items.append(archive);}
   }else if(state.view==='surveys'){const templates=currentTemplates(state.templates);count=templates.length;for(const t of templates){const entry=node('div',undefined,'task-row');entry.append(node('strong',t.title),node('small',(cadenceLabels[t.spec.ui_cadence]??'기존 업무')+' · 입력 '+t.spec.fields.length+'개 · 버전 '+t.version));if(canWrite(center))button('양식 커스터마이징',()=>customizeTask(t),entry);items.append(entry);}if(state.surveys.length){const archive=node('details');archive.append(node('summary','기존 업무조사 기록 · '+state.surveys.length+'건'));state.surveys.forEach(s=>addRow(s,'survey',archive,centerName(s.center_code)));items.append(archive);}}
  
@@ -104,7 +106,7 @@ function render(){
   for(const n of state.notifications)button(`${n.read_at?'':'● '}${n.title} · ${stamp(n.created_at)}`,()=>openNotification(n),items,'task-row');
  }
  if(!count&&!hq)items.append(node('p','표시할 항목이 없습니다.'));
- $('count').textContent=count+'건';$('list-title').textContent={center:'업무목록',hq:'업무와 지원 요청',incidents:'특이사항',surveys:'센터 업무 양식',notifications:'내 알림',access:'활성 직원'}[state.view];
+ $('count').textContent=count+'건';$('list-title').textContent={center:'업무목록',trash:'휴지통의 업무',hq:'업무와 지원 요청',incidents:'특이사항',surveys:'센터 업무 양식',notifications:'내 알림',access:'활성 직원'}[state.view];
  renderDetail();
 }
 function customizeTask(template){openTaskDesigner({template,center:$('center').value,name:centerName($('center').value),node,button,field,save:async data=>{await api.publishCustom(data);await loadData();render();message('업무 양식을 저장했습니다. 센터 업무에서 버튼을 눌러 티켓을 발행하세요.');}});}
@@ -183,6 +185,8 @@ function taskCreate(){
 }
 const taskDrafts=new Map();
 function taskDetail(task,panel,readOnly=false){
+ if(task.deleted_at){panel.append(node('p','휴지통에 보관 중 · '+stamp(task.deleted_at)),node('p',centerName(task.center_code)+' · '+task.work_date),node('p',task.inputs?.work_note??''));const values=node('dl');for(const f of task.template_snapshot?.spec?.fields??[])values.append(node('dt',f.label),node('dd',String(task.inputs?.[f.key]??'')));panel.append(values);if(!readOnly&&canWrite(task.center_code))button('업무 복원',()=>moveTaskTrash(task,true),panel,'primary');history(task,panel,'task');return;}
+ if(!readOnly&&canWrite(task.center_code))button('삭제 · 휴지통으로 이동',()=>moveTaskTrash(task,false),panel,'trash-button');
  const draft=taskDrafts.get(task.id);const values=!readOnly&&draft?.version===task.version?draft.inputs:task.inputs;
  const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${task.work_date} · ${taskStateLabels[taskState(task)]}`));
  if(task.template_snapshot?.spec?.completion_condition)panel.append(node('p','완료 전 확인 · '+task.template_snapshot.spec.completion_condition));
@@ -206,6 +210,7 @@ function taskDetail(task,panel,readOnly=false){
  const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){panel.append(node('h3','이 업무의 특이사항'));children.forEach(i=>addRow(i,'incident',panel,stamp(i.created_at)));}
  history(task,panel,'task');
 }
+function moveTaskTrash(task,restore){return mutate(JSON.stringify(['trash',task.id,task.version,restore]),requestId=>api.trashTask({requestId,task,restore}),()=>{taskDrafts.delete(task.id);state.selected=null;if($('task-ticket-dialog').open)$('task-ticket-dialog').close();});}
 function saveTask(task,form,status,step){
  try{const inputs=collectInputs(task,form);if(step){inputs.steps={...inputs.steps,[step.step]:step.status};}const data={task,center:task.center_code,title:task.title,date:task.work_date,inputs,status};mutate(JSON.stringify(['save',data]),id=>api.save({requestId:id,...data}),row=>{if(row.status!==status||(finished(row)&&(!row.completed_at||!row.completed_by)))throw Error('완료 저장 결과를 확인하지 못했습니다. 새로고침해 주세요.');taskDrafts.delete(task.id);state.selected={type:'task',row};});}catch(error){message(error.message,true);}
 }
@@ -330,7 +335,7 @@ function buildCenterNavigation(){
  document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();for(const center of centers){const el=node('button',centerName(center.code));el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(nav.dataset.centerView==='center'){const incidents=node('button','특이사항');incidents.type='button';incidents.dataset.view='incidents';nav.append(incidents);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
 }
 async function start(){
- setupPortalSidebar();$('task-date').value=koreaDate();
+ setupPortalSidebar();for(const id of ['task-ticket-dialog','parent-task-dialog'])setupDialogDismiss($(id));$('task-date').value=koreaDate();
  $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;$('issue-task').onclick=issueTaskPicker;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
  $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
  $('user').textContent=profile.display_name??profile.email??'';

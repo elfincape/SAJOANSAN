@@ -36,6 +36,7 @@ export function createOperationsApi(client) {
       return allPages(() => client.from('operations_task_events').select('id,action,occurred_at,actor_id,request_body,after_value')
         .eq(taskId ? 'task_id' : 'incident_id', taskId ?? incidentId).order('occurred_at').order('id'));
     },
+    trashTask({requestId,task,restore=false}) { return unwrap(client.rpc('operations_task_trash',{p_request_id:requestId,p_task_id:task.id,p_expected_version:task.version,p_restore:restore})); },
     reopen({ requestId, task }) {
       return unwrap(client.rpc('operations_reopen_task', { p_request_id: requestId, p_task_id: task.id, p_expected_version: task.version }));
     },
@@ -98,7 +99,7 @@ export function createOperationsApi(client) {
         return query;
       });
     },
-    tasks({ center, from, through, includeCompleted = false }) {
+    tasks({ center, from, through, includeCompleted = false, trash = false }) {
       if (includeCompleted && ![from, through].every(v => /^\d{4}-\d{2}-\d{2}$/.test(v))) {
         throw new Error('조회 기간을 확인해 주세요.');
       }
@@ -106,8 +107,9 @@ export function createOperationsApi(client) {
         let query = client.from('operations_tasks').select('*')
           .order('work_date').order('created_at').order('id');
         if (center) query = query.eq('center_code', center);
+        query = trash ? query.not('deleted_at','is',null) : query.is('deleted_at',null);
         // Older incomplete tasks stay visible when the reporting period changes.
-        query = includeCompleted ? query.or(`status.in.(pending,in_progress),and(work_date.gte.${from},work_date.lte.${through})`)
+        query = trash ? query : includeCompleted ? query.or(`status.in.(pending,in_progress),and(work_date.gte.${from},work_date.lte.${through})`)
           : query.in('status', ['pending', 'in_progress']);
         return query;
       });

@@ -63,3 +63,5 @@
 @media(max-width:760px){.heading{align-items:flex-start;flex-wrap:wrap;gap:14px}.heading-actions{width:100%;justify-content:flex-end}.task-launcher{padding:16px;margin-bottom:20px}.task-launch-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.task-launch-button{font-size:13px;min-height:68px;padding:10px}.toolbar-top{gap:12px}.toolbar-period{width:100%;gap:10px}.toolbar-bottom{gap:12px}.view-buttons button{padding:7px 10px;min-width:42px}.date-navigation{flex-wrap:wrap}}
 
 .calendar-week .calendar-cell{min-height:max(620px,calc(100dvh - 310px))}.calendar-week .calendar-cell h4{padding:8px 4px 12px;border-bottom:1px solid var(--border);margin-bottom:12px}.issue-template-list{display:grid;gap:12px}.issue-template-list button{min-height:56px;text-align:left}.heading-actions{flex-wrap:wrap}@media(max-width:760px){.calendar-week .calendar-cell{min-height:640px}}
+
+.trash-button{color:#ffaaa3;border-color:#80504d;background:transparent;margin-bottom:16px}.trash-button:hover{background:#412628}

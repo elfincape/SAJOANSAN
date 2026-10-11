@@ -1,7 +1,8 @@
+import {setupDialogDismiss} from './portal-dialog.js';
 import {koreaDate} from './operations-view.js';
 export const cadenceLabels={none:'필요할 때마다',daily:'일일업무',weekly:'주간업무',monthly:'월간업무'};
 export function openTaskDesigner({template,center,name,node,button,field,save}){
- const dialog=document.createElement('dialog');dialog.className='task-designer';dialog.setAttribute('aria-label','센터 업무 커스터마이징');document.body.append(dialog);
+ const dialog=document.createElement('dialog');dialog.className='task-designer';dialog.setAttribute('aria-label','센터 업무 커스터마이징');document.body.append(dialog);setupDialogDismiss(dialog);
  const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2',name+' · '+(template?'업무 양식 수정':'센터 업무등록')));button('닫기',()=>dialog.close(),header);dialog.append(header);
  const form=node('form',undefined,'portal-form');dialog.append(form);const spec=template?.spec??{};
  const title=field(form,'업무명','title',template?.title??'');title.required=true;title.maxLength=200;
