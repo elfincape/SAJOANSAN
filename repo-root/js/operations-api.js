@@ -29,6 +29,8 @@ export function createOperationsApi(client) {
       return allPages(() => client.from('operations_templates').select('*').eq('center_code', center)
         .order('version', { ascending: false }).order('id'));
     },
+    publishCustom({requestId,center,title,spec,familyId=null}) { return unwrap(client.rpc('operations_publish_custom_template',{p_request_id:requestId,p_center:center,p_title:title,p_spec:spec,p_family_id:familyId})); },
+    issueCustom({requestId,templateId,date}) { return unwrap(client.rpc('operations_issue_custom_task',{p_request_id:requestId,p_template_id:templateId,p_work_date:date})); },
     people(center) { return unwrap(client.rpc('operations_handoff_people', { p_center: center })); },
     events({ taskId, incidentId }) {
       return allPages(() => client.from('operations_task_events').select('id,action,occurred_at,actor_id,request_body,after_value')

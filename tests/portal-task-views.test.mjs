@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {periodBounds,shiftPeriod,calendarDates,taskState} from '../repo-root/js/portal-task-views.js';
+assert.deepEqual(periodBounds('2026-10-11','week'),{from:'2026-10-05',through:'2026-10-11'});
+assert.deepEqual(periodBounds('2027-01-01','week'),{from:'2026-12-28',through:'2027-01-03'});
+assert.deepEqual(periodBounds('2028-02-29','month'),{from:'2028-02-01',through:'2028-02-29'});
+assert.equal(shiftPeriod('2026-01-31','month',1),'2026-02-01');
+assert.equal(shiftPeriod('2026-12-31','month',1),'2027-01-01');
+assert.throws(()=>periodBounds('2026-02-30','day'));
+const days=calendarDates('2026-10-11','month');assert.equal(days.length,35);assert.equal(days[0],'2026-09-28');assert.equal(days.at(-1),'2026-11-01');
+const now=new Date('2026-10-10T15:01:00Z');
+assert.equal(taskState({status:'pending',work_date:'2026-10-10'},now),'delayed');
+assert.equal(taskState({status:'pending',work_date:'2026-10-11'},now),'active');
+assert.equal(taskState({status:'in_progress',work_date:'2026-10-11',due_at:'2026-10-10T15:00:00Z'},now),'delayed');
+assert.equal(taskState({status:'completed',work_date:'2026-10-01',due_at:'2026-10-01T00:00:00Z'},now),'completed');
+assert.equal(taskState({status:'not_applicable',work_date:'2026-10-01'},now),'completed');
+console.log('PASS: KST status, completion precedence, Monday weeks, leap months, period navigation, calendar coverage.');
