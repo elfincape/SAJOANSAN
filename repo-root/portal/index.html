@@ -1,21 +1,22 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>업무 포털 · SAJOANSAN</title><link rel="stylesheet" href="/css/operations.css"><link rel="stylesheet" href="/css/portal.css"></head>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>업무 포털 · 이안물류</title><link rel="stylesheet" href="/css/operations.css"><link rel="stylesheet" href="/css/portal.css"></head>
 <body class="portal-shell">
 <a class="skip-link" href="#portal-main">본문으로 이동</a>
 <div id="portal-sidebar" class="portal-sidebar" aria-label="업무 포털 메뉴">
- <div class="sidebar-brand"><a href="/portal/">SAJOANSAN<span>통합 업무 포털</span></a><button data-navigation-toggle data-navigation-toggle id="sidebar-close" class="sidebar-close" type="button" aria-label="메뉴 닫기">닫기</button></div>
+ <div class="sidebar-brand"><a href="/portal/">이안물류<span>통합 업무 포털</span></a><button data-navigation-toggle id="sidebar-close" class="sidebar-close" type="button" aria-label="메뉴 닫기">닫기</button></div>
  <div class="sidebar-content">
-  <p class="sidebar-label">업무</p>
-  <nav aria-label="포털 업무"><button data-view="center" aria-pressed="true">센터 업무</button><button data-view="hq" hidden>HQ 업무</button><button data-view="incidents">특이사항</button><button data-view="surveys">우리 센터 업무 등록</button></nav>
-  <p class="sidebar-label">조회·알림</p>
-  <nav aria-label="조회와 알림"><button data-view="search">통합 검색</button><button data-view="notifications">알림함 <span id="unread"></span></button><a href="/admin/operations.html">처리 기록</a></nav>
-  <section id="hq-navigation" hidden><p class="sidebar-label">HQ 관리</p><nav aria-label="HQ 관리"><button data-view="access" hidden>센터 담당자 배정</button><button data-view="briefing" hidden>HQ AI 브리핑</button><button data-view="backups" hidden>운영 원본 보관</button><a href="/admin/audit-log.html">운영정보 변경 이력</a></nav></section>
+  <details class="sidebar-group" open><summary>센터 업무</summary><nav id="center-navigation" data-center-view="center" aria-label="센터별 업무"></nav></details>
+  <details class="sidebar-group"><summary>특이사항</summary><nav data-center-view="incidents" aria-label="센터별 특이사항"></nav></details>
+  <details class="sidebar-group"><summary>업무 등록·조사</summary><nav data-center-view="surveys" aria-label="센터별 업무 등록"></nav></details>
+  <section id="hq-navigation" hidden><details class="sidebar-group" open><summary>배송팀</summary><nav aria-label="배송팀 업무"><button data-view="hq" hidden>전체 업무·지원 요청</button><button data-view="briefing" hidden>AI 브리핑</button><button data-view="access" hidden>센터 담당자 배정</button></nav></details></section>
+  <details class="sidebar-group" open><summary>조회·알림</summary><nav aria-label="조회와 알림"><button data-view="search">통합 검색</button><button data-view="notifications">알림함 <span id="unread"></span></button></nav></details>
+  <details class="sidebar-group"><summary>운영 관리</summary><nav aria-label="운영 기록"><a href="/admin/operations.html">처리 기록</a><button data-view="backups" hidden>운영 원본 보관</button><a id="audit-navigation" href="/admin/audit-log.html" hidden>운영정보 변경 이력</a></nav></details>
  </div>
  <div class="sidebar-footer"><a href="/admin/">운영관리 열기 <span aria-hidden="true">↗</span></a><a href="/">대시보드</a></div>
 </div>
 <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
-<div id="portal-content"><header class="portal-header"><button data-navigation-toggle data-navigation-toggle id="sidebar-toggle" type="button" aria-controls="portal-sidebar" aria-expanded="false" aria-label="업무 메뉴 열기">메뉴</button><strong>업무 포털</strong><span id="user"></span></header>
-<main id="portal-main" tabindex="-1"><div class="heading"><div><h1 id="portal-title" tabindex="-1" tabindex="-1">오늘의 업무</h1><p id="portal-description">해야 할 업무를 확인하고 바로 처리하세요.</p></div><button id="refresh">새로고침</button></div>
-<div class="filters"><label>센터<select id="center"></select></label><label class="check"><input id="mine" type="checkbox">내 업무만</label><label class="check"><input id="completed" type="checkbox">오늘 완료 업무 포함</label></div>
+<div id="portal-content"><header class="portal-header"><button data-navigation-toggle id="sidebar-toggle" type="button" aria-controls="portal-sidebar" aria-expanded="false" aria-label="업무 메뉴 열기">메뉴</button><strong>업무 포털</strong><span id="user"></span></header>
+<main id="portal-main" tabindex="-1"><div class="heading"><div><h1 id="portal-title" tabindex="-1">오늘의 업무</h1><p id="portal-description">해야 할 업무를 확인하고 바로 처리하세요.</p></div><button id="refresh">새로고침</button></div>
+<div class="filters"><select id="center" hidden aria-label="선택한 센터"></select><label class="check"><input id="mine" type="checkbox">내 업무만</label><label class="check"><input id="completed" type="checkbox">오늘 완료 업무 포함</label></div>
 <div id="message" role="status" aria-live="polite"></div><section id="quick-actions" class="quick-actions" aria-label="업무 등록"></section>
 <div class="workspace"><section class="list"><div class="list-heading"><strong id="list-title">미완료 업무</strong><span id="count"></span></div><div id="items" class="portal-items"></div></section><aside id="detail" aria-label="업무 처리"><p>업무를 선택하세요.</p></aside></div></main></div><script type="module" src="/js/portal-screen.js"></script></body></html>

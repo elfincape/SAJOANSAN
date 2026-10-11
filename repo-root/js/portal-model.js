@@ -3,7 +3,7 @@ export const finished = task => ['completed','not_applicable'].includes(task.sta
 export function dispatchWarning(task, now = new Date()) {
  if (finished(task) || !task.cj_share_due_at || task.inputs?.cj_shared === true) return '';
  const remaining = new Date(task.cj_share_due_at) - now;
- return remaining < 0 ? '공유 마감 지연' : remaining <= 3600000 ? '공유 마감 1시간 이내 · HQ 지원 필요' : remaining <= 10800000 ? '공유 마감 3시간 이내' : '';
+ return remaining < 0 ? '공유 마감 지연' : remaining <= 3600000 ? '공유 마감 1시간 이내 · 배송팀 지원 필요' : remaining <= 10800000 ? '공유 마감 3시간 이내' : '';
 }
 export function orderTasks(tasks, {userId, today=koreaDate(), now=new Date(), handedOff=new Set()} = {}) {
  const rank = task => {

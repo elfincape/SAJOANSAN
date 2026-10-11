@@ -46,3 +46,5 @@
  .portal-shell #user{max-width:45%}
 }
 @media(prefers-reduced-motion:reduce){.portal-sidebar{transition:none}}
+
+.sidebar-group{margin:10px 0}.sidebar-group>summary{cursor:pointer;list-style:none;padding:12px 14px;color:#d6e1e7;font-size:14px;font-weight:650;display:flex;justify-content:space-between;border-radius:8px}.sidebar-group>summary::-webkit-details-marker{display:none}.sidebar-group>summary::after{content:'›';transform:rotate(0deg)}.sidebar-group[open]>summary::after{transform:rotate(90deg)}.sidebar-group>summary:hover{background:#202b31}.portal-sidebar .sidebar-group nav{margin-left:13px;padding-left:8px;border-left:1px solid #34434b}.portal-sidebar .sidebar-group nav button,.portal-sidebar .sidebar-group nav a{font-size:13px;padding:10px 12px}.sidebar-group summary:focus-visible{outline:2px solid #93e3bf;outline-offset:2px}

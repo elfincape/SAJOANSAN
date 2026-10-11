@@ -12,7 +12,7 @@ export function setupPortalSidebar(){
  document.addEventListener('keydown',event=>{
   if(!opened)return;if(event.key==='Escape'){event.preventDefault();setOpen(false,true);return;}
   if(event.key!=='Tab')return;
-  const controls=[...sidebar.querySelectorAll('a[href],button:not(:disabled)')].filter(el=>el.getClientRects().length),first=controls[0],last=controls.at(-1);
+  const controls=[...sidebar.querySelectorAll('a[href],button:not(:disabled),summary')].filter(el=>el.getClientRects().length),first=controls[0],last=controls.at(-1);
   if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
  });
  mobile.addEventListener('change',()=>setOpen(false));setOpen(false);
