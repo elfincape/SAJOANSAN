@@ -62,6 +62,12 @@ export const operationsFiles = {
     form.set('requestId',requestId);form.set('file',file);return call('operations-upload',form);
   }
 };
+export const operationsBackups={
+ list:async()=> (await call('backups-list')).backups,
+ compare:id=>call('backups-compare',{id}),
+ retry:id=>call('backups-retry',{id}),
+ download:id=>call('backups-download',{id},true)
+};
 export async function connectOneDrive() {
   const result=await call('start');
   const target=new URL(result.authorizationUrl);

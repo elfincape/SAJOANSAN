@@ -1,3 +1,4 @@
+import {createOneDriveStorage} from './storage.js';
 const LIMIT=10*1024*1024,enc=encodeURIComponent;
 const uuid=value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value||'');
 const metadata='id,task_id,incident_id,survey_id,center_code,uploaded_by,request_id,original_name,file_name,mime_type,byte_size,ordinal,status,last_error,created_at,verified_at';
@@ -26,27 +27,7 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
   if(write&&!await db('rpc/operations_can_write',{method:'POST',token:user.token,body:{p_center:row.center_code}}))throw fail('이 센터에 파일을 첨부할 권한이 없습니다.',403);
   return row;
  }
- async function environment(){
-  const config=await settings(),connection=await connected();
-  const drive=await(await graph('/me/drive?$select=id',connection.accessToken)).json();
-  if(!drive.id||String(drive.id).toLowerCase()!==String(config.expected_drive_id).toLowerCase())throw fail('지정한 OneDrive 계정 연결을 확인해 주세요.',409);
-  return {driveId:drive.id,access:connection.accessToken};
- }
- async function folder(drive,parent,name,access){
-  const base='/drives/'+enc(drive)+'/items/'+enc(parent),path=base+':/'+enc(name);
-  let response=await graph(path+'?$select=id,folder,parentReference',access,{allowMissing:true});
-  if(!response)response=await graph(base+'/children',access,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,folder:{},'@microsoft.graph.conflictBehavior':'fail'})});
-  const item=await response.json();
-  if(!item.folder||!item.id||String(item.parentReference?.driveId).toLowerCase()!==String(drive).toLowerCase())throw fail('업무자료 폴더 이름이 기존 파일과 충돌합니다.',409);
-  return item.id;
- }
- async function verify(file,item,access){
-  if(!item?.id||!item.file||item.size!==file.byte_size||item.name!==file.file_name||String(item.parentReference?.driveId).toLowerCase()!==String(file.drive_id).toLowerCase()||item.parentReference?.id!==file.folder_id)throw fail('OneDrive 저장 결과가 첨부 요청과 다릅니다.',409);
-  const response=await graph('/drives/'+enc(file.drive_id)+'/items/'+enc(item.id)+'/content',access);
-  const bytes=new Uint8Array(await response.arrayBuffer());
-  if(bytes.length!==file.byte_size||await hash(bytes)!==file.content_hash)throw fail('첨부 파일 내용 검증에 실패했습니다. 원본 파일은 유지됩니다.',409);
-  return bytes;
- }
+ const {environment,folder,verify,save}=createOneDriveStorage({settings,connected,graph,fetcher,hash,fail});
  if(action==='operations-health'){
   if(user.role!=='admin')throw fail('OneDrive 운영 연결 점검은 HQ만 가능합니다.',403);
   return withLock(async()=>{const env=await environment();const response=await graph('/drives/'+enc(env.driveId)+'/root?$select=id,folder',env.access);const root=await response.json();if(!root.id||!root.folder)throw fail('OneDrive 업무자료 저장 위치에 접근할 수 없습니다.',409);return json({connected:true,driveMatches:true,rootAccessible:true});});
@@ -93,26 +74,10 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
     file={...file,drive_id:env.driveId,folder_id:destination};
    }
    if(String(file.drive_id).toLowerCase()!==String(env.driveId).toLowerCase())throw fail('첨부 예약 당시의 OneDrive 계정으로 다시 연결해 주세요.',409);
-   const path='/drives/'+enc(file.drive_id)+'/items/'+enc(file.folder_id)+':/'+enc(file.file_name),marker='SAJOANSAN operations file '+file.id;
-   const existing=await graph(path+'?$select=id,name,size,file,parentReference,description',env.access,{allowMissing:true});
-   let item;
-   if(existing){
-    item=await existing.json();
-    if(item.id!==file.item_id&&item.description!==marker)throw fail('같은 이름의 기존 파일이 있어 저장을 중단했습니다. 기존 파일은 유지됩니다.',409);
-   }else{
-    const session=await(await graph(path+':/createUploadSession',env.access,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'fail',name:file.file_name,description:marker,fileSize:bytes.length}})})).json();
-    const uploadUrl=new URL(session.uploadUrl);
-    if(uploadUrl.protocol!=='https:'||!(uploadUrl.hostname.endsWith('.1drv.com')||uploadUrl.hostname.endsWith('.onedrive.com')||uploadUrl.hostname.endsWith('.sharepoint.com')))throw fail('OneDrive 업로드 주소를 확인하지 못했습니다.',502);
-    const response=await fetcher(uploadUrl.href,{method:'PUT',headers:{'Content-Type':'application/octet-stream','Content-Length':String(bytes.length),'Content-Range':`bytes 0-${bytes.length-1}/${bytes.length}`},body:bytes,signal:AbortSignal.timeout(45000)});
-    if(![200,201].includes(response.status))throw fail('OneDrive 파일 저장을 완료하지 못했습니다. 같은 파일로 다시 시도해 주세요.',response.status===429?429:502);
-    item=await response.json();
-   }
-   if(!item?.id)throw fail('OneDrive 저장 파일을 확인하지 못했습니다.',502);
-   await db('operations_files?id=eq.'+enc(file.id),{method:'PATCH',body:{item_id:item.id}});
-   const current=await(await graph('/drives/'+enc(file.drive_id)+'/items/'+enc(item.id)+'?$select=id,name,size,file,parentReference',env.access)).json();
-   await verify(file,current,env.access);
+   const marker='SAJOANSAN operations file '+file.id;
+   const savedItem=await save(file,bytes,marker,env.access,item_id=>db('operations_files?id=eq.'+enc(file.id),{method:'PATCH',body:{item_id}}));
    await subject(kind,subjectId,true);
-   await db('rpc/operations_commit_file',{method:'POST',body:{p_id:file.id,p_actor:user.id,p_drive:file.drive_id,p_item:item.id}});
+   await db('rpc/operations_commit_file',{method:'POST',body:{p_id:file.id,p_actor:user.id,p_drive:file.drive_id,p_item:savedItem}});
    return json({id:file.id,saved:true});
   });
  }catch(error){
@@ -120,3 +85,5 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
   throw error;
  }
 }
+
+

@@ -4,6 +4,7 @@ import {createOperationsApi} from './operations-api.js';
 import {operationsFiles} from './onedrive-api.js';
 import {portalAi} from './portal-ai.js';
 import {createPortalSearch} from './portal-search.js';
+import {createPortalBackups} from './portal-backups.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
@@ -16,6 +17,7 @@ function canWrite(code){return state.context.writable_centers.includes(code);}
 function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
 function button(text,handler,parent,className){const el=node('button',text,className);el.type='button';el.onclick=handler;parent.append(el);return el;}
+const renderBackups=createPortalBackups({node,button,message,stamp});
 const renderSearch=createPortalSearch({supabase,node,button,centerName,message,openRecord:async(type,id)=>{
  try{const table={task:'operations_tasks',incident:'operations_incidents',survey:'operations_surveys'}[type];
   const {data,error}=await supabase.from(table).select('*').eq('id',id).single();if(error)throw error;choose(type,data);
@@ -32,7 +34,7 @@ async function mutate(key,operation,success){
  finally{setBusy(false);}
 }
 async function loadData(){
- if(state.view==='search')return;
+ if(['search','backups'].includes(state.view))return;
  const center=$('center').value,day=koreaDate();
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:day,through:day,includeCompleted:$('completed').checked}),
@@ -55,6 +57,10 @@ function render(){
  document.querySelectorAll('nav button').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.view===state.view)));
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();
+ if(state.view==='backups'){
+  $('portal-title').textContent='운영 원본 보관';$('portal-description').textContent='월말 전체 원본과 OneDrive 저장 상태를 확인하세요.';
+  $('center').disabled=true;renderBackups();return;
+ }
  if(state.view==='search'){
   $('portal-title').textContent='통합 검색';$('portal-description').textContent='업무와 운영 마스터, 과거 특이사항을 유형별로 찾으세요.';
   $('center').disabled=true;renderSearch(state.context.centers);return;
@@ -278,7 +284,7 @@ async function templateForm(survey,panel,draft=null){
 }
 function surveyAction(survey,action,data){return mutate(JSON.stringify(['survey',survey.id,survey.version,action,data]),id=>api.surveyAction({requestId:id,survey,action,data}));}
 async function openTask(id){const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',id).single();if(error){message(error.message,true);return;}choose('task',data);}
-async function openNotification(n){try{await api.readNotification(n.id);if(n.task_id)await openTask(n.task_id);else{const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
+async function openNotification(n){try{await api.readNotification(n.id);if(n.reason_key?.startsWith('backup:')){state.view='backups';state.selected=null;await refresh();}else if(n.task_id)await openTask(n.task_id);else if(n.incident_id){const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
 let notificationTimer,checkingNotifications=false;
 async function checkNotifications(){
  if(state.busy||checkingNotifications||document.visibilityState==='hidden')return;
@@ -294,6 +300,7 @@ async function start(){
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
  document.querySelector('[data-view=hq]').hidden=!isHq();document.querySelector('[data-view=access]').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq())state.view='hq';
+ document.querySelector('[data-view=backups]').hidden=!isHq();
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
  document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.selected=null;refresh();});await refresh();

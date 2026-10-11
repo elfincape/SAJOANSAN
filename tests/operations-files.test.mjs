@@ -30,7 +30,7 @@ async function graph(path,access,options={}){
  if(path.startsWith('/me/drive'))return json({id:'drive'});
  if(path.includes('/root?'))return json({id:'root'});
  if(path.endsWith('/content'))return new Response(corrupt?new Uint8Array([1,2,3]):bytes);
- if(path.includes('/createUploadSession')){assert.equal(JSON.parse(options.body).item['@microsoft.graph.conflictBehavior'],'fail');return json({uploadUrl:'https://sn.up.1drv.com/upload'});}
+ if(path.includes('/createUploadSession')){assert.equal(options.body,undefined);return json({uploadUrl:'https://sn.up.1drv.com/upload'});}
  if(options.method==='POST'&&path.endsWith('/children')){
   const parent=path.match(/\/items\/([^/]+)/)[1],name=JSON.parse(options.body).name;
   const folder={id:'folder'+(++folderSequence),folder:{},parentReference:{driveId:'drive',id:parent}};
@@ -64,3 +64,4 @@ corrupt=true;await assert.rejects(handleOperations('operations-download',downloa
 journal=null;item=null;corrupt=false;uploads=0;commits=0;await upload();journal.status='failed';journal.item_id=null;item.description='unrelated file';
 await assert.rejects(upload(),/기존 파일/);assert.equal(uploads,1,'unrelated files must never be replaced');
 console.log('PASS: file validation, center permission, content verification, DB-failure recovery, idempotency, safe download and no-overwrite collisions');
+

@@ -1,5 +1,6 @@
 import { handleCharter } from './charter.js';
 import { handleOperations } from './operations.js';
+import { handleBackups } from './backups.js';
 export const FOLDER_KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 export const LABELS = {food_transport:'식품운반업_앞',food_transport_back:'식품운반업_뒤',livestock_transport:'축산물운반업_앞',livestock_transport_back:'축산물운반업_뒤',freight_license:'화물운송사자격증',vehicle_registration:'차량등록증',identity:'신분증',health_certificate:'보건증'};
 export const KINDS = Object.keys(LABELS);
@@ -37,7 +38,7 @@ export function shareToken(url) {
   if(u.protocol!=='https:'||!['1drv.ms','onedrive.live.com'].includes(u.hostname)) throw fail('저장 폴더 설정이 올바르지 않습니다.',503);
   return 'u!'+base64url(new TextEncoder().encode(url));
 }
-export function makeHandler(env, fetcher=fetch, buildPdf=null) {
+export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null) {
   const root=env.SUPABASE_URL, service=env.SUPABASE_SERVICE_ROLE_KEY, anon=env.SUPABASE_ANON_KEY;
   const redirect=root+'/functions/v1/onedrive-auth/callback';
   const cors={'Access-Control-Allow-Origin':SITE,'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store','Vary':'Origin'};
@@ -105,7 +106,11 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
     if(!res.ok){
       if(res.status===404&&options.allowMissing)return null;
       if(res.status===429)throw fail('OneDrive 요청이 많습니다. 잠시 후 다시 시도해 주세요.',429);
-      throw fail('OneDrive 처리에 실패했습니다. 연결과 폴더 권한을 확인해 주세요.',502);
+      const detail=await res.json().catch(()=>({})),code=detail.error?.code;
+      const diagnostic=typeof code==='string'&&/^[a-z0-9_.-]{1,80}$/i.test(code)?' · '+code:'';
+      const classifications=[[/name.*(path|body).*match/i,'경로와 파일명 불일치'],[/description/i,'설명 속성 거부'],[/fileSize/i,'파일 크기 속성 거부'],[/(property|parameter).*(invalid|unsupported|not supported)/i,'지원되지 않는 요청 속성']];
+      const reason=classifications.find(([pattern])=>pattern.test(detail.error?.message??''))?.[1];
+      throw fail('OneDrive 처리 실패 (HTTP '+res.status+diagnostic+(reason?' · '+reason:'')+'). 연결과 폴더 권한을 확인해 주세요.',502);
     }
     return res;
   }
@@ -164,7 +169,14 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
+      if(action==='backups-scheduled'){
+        const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+        if(!token)throw fail('서버 인증이 필요합니다.',401);
+        if(token!==service&&!await db('rpc/operations_ai_scheduler_authorized',{method:'POST',token,body:{}}))throw fail('서버 예약 실행 권한이 필요합니다.',403);
+        return await handleBackups(action,req,{role:'service_role',token},{db,graph,connected,settings,withLock,json,fail,hash,fetcher,buildBackup});
+      }
       const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action),['operations-list','operations-download'].includes(action));
+      if(action.startsWith('backups-'))return await handleBackups(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,fetcher,buildBackup});
       if(action.startsWith('operations-')) return await handleOperations(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,filePart,fetcher});
       if(action.startsWith('charter-')) return await handleCharter(action,req,user,{db,graph,connected,settings,withLock,json,fail,shareToken,hash});
       if(action==='start'){
