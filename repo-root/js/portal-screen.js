@@ -11,7 +11,7 @@ import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
-const state={view:'center',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
+const state={view:'center',unit:'day',layout:'list',status:'all',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
 const incidentKinds=['차량 대차','차량 섭외 지연','납품처 문제','기사 문제','차량 문제','기타 특이사항'];
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text).replaceAll('HQ','배송팀');if(className)el.className=className;return el;}
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
@@ -39,7 +39,7 @@ async function mutate(key,operation,success){
 }
 async function loadData(){
  if(['search','backups'].includes(state.view))return;
- const center=$('center').value,period=periodBounds($('task-date').value||koreaDate(),$('task-unit').value);
+ const center=$('center').value,period=periodBounds($('task-date').value||koreaDate(),state.unit);
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:period.from,through:period.through,includeCompleted:true}),
  api.incidents({center:['hq','briefing','incidents'].includes(state.view)?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
@@ -49,7 +49,7 @@ async function loadData(){
  if(state.selected){const collection=state.selected.type==='task'?tasks:state.selected.type==='incident'?incidents:surveys;const row=collection.find(r=>r.id===state.selected.row.id);if(row)state.selected={...state.selected,row};else if(state.selected.type==='task'){const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',state.selected.row.id).single();if(error)throw error;state.selected={type:'task',row:data};}else state.selected=null;}
 }
 async function refresh(){if(state.busy)return;setBusy(true);message('업무를 불러오는 중입니다…');try{await loadData();render();message('');}catch(error){message(error.message||'업무를 불러오지 못했습니다.',true);}finally{setBusy(false);}}
-function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog').close();if(type!=='task'&&$('task-ticket-dialog').open)$('task-ticket-dialog').close();state.selected={type,row};if(type==='task'&&!$('task-ticket-dialog').open){$('task-ticket-dialog').showModal();}renderDetail();}
+function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog').close();if(type!=='task'&&$('task-ticket-dialog').open)$('task-ticket-dialog').close();state.selected={type,row};if((type==='task'||state.view==='center')&&!$('task-ticket-dialog').open){$('task-ticket-dialog').showModal();}renderDetail();}
 function addRow(row,type,parent,extra=''){
  const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span');if(type==='incident')content.append(node('span',centerName(incidentCenterCode(row)),'center-property'));content.append(document.createTextNode(row.title),node('small',extra));
  
@@ -57,12 +57,12 @@ function addRow(row,type,parent,extra=''){
 }
 function render(){
  const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':centerName(center)+' 업무';
+ $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':centerName(center)+' 업무목록';
  $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':state.view==='incidents'?'센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
- document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&$('task-layout').value==='calendar');
+ document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
  document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
- const actions=$('quick-actions');actions.replaceChildren();
+ const actions=$('quick-actions');actions.replaceChildren();actions.classList.toggle('task-launcher',state.view==='center');
  if(state.view==='backups'){
   $('portal-title').textContent='운영 원본 보관';$('portal-description').textContent='월말 전체 원본과 OneDrive 저장 상태를 확인하세요.';
   $('center').disabled=true;renderBackups();return;
@@ -73,11 +73,10 @@ function render(){
  }
  if(state.view==='briefing'){renderBriefing(actions);return;}
  if(state.view==='center'&&canWrite(center)){
-  const templates=currentTemplates(state.templates);
-  for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>mutate('template:'+t.id+':'+$('task-date').value,id=>t.spec.manual_issue===true?api.issueCustom({requestId:id,templateId:t.id,date:$('task-date').value}):api.fromTemplate({requestId:id,templateId:t.id,date:$('task-date').value,recurring:false,ownerId:t.spec.owner_ids?.[0]??null}),row=>{state.selected={type:'task',row};if(!$('task-ticket-dialog').open)$('task-ticket-dialog').showModal();}),actions,'primary');
+  const templates=currentTemplates(state.templates);actions.append(node('h2','업무 실행'));const launchGrid=node('div',undefined,'task-launch-grid');actions.append(launchGrid);
+  for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>mutate('template:'+t.id+':'+$('task-date').value,id=>t.spec.manual_issue===true?api.issueCustom({requestId:id,templateId:t.id,date:$('task-date').value}):api.fromTemplate({requestId:id,templateId:t.id,date:$('task-date').value,recurring:false,ownerId:t.spec.owner_ids?.[0]??null}),row=>{state.selected={type:'task',row};if(!$('task-ticket-dialog').open)$('task-ticket-dialog').showModal();}),launchGrid,'task-launch-button');
   if(!templates.length)actions.append(node('p','업무 등록·조사에서 이 센터의 업무 양식을 등록하면 여기에 업무 버튼이 생깁니다.'));
-  actions.append(node('small','선택한 기준일로 티켓을 발행합니다. 주간·월간 업무는 같은 기간에 다시 누르면 기존 티켓을 엽니다.'));
-   button('일회성 업무 등록',()=>taskCreate(),actions);
+  actions.append(node('p','기준일에 맞춰 티켓을 발행합니다. 같은 주·월의 업무는 기존 티켓을 엽니다.','task-launch-hint'));
  }
 
  if(state.view==='surveys'&&canWrite(center))button('센터 업무등록',()=>customizeTask(),actions,'primary');
@@ -93,12 +92,12 @@ function render(){
   items.append(node('h3','배송팀 지원 요청'));
   state.incidents.filter(i=>i.status==='open'&&['requested','supporting'].includes(i.support_state)).forEach(i=>{addRow(i,'incident',items,centerName(i.center_code));count++;});
  }else if(state.view==='center'){
-  const period=periodBounds($('task-date').value,$('task-unit').value);
-  const visible=tasks.filter(t=>(!$('mine').checked||t.owner_id===profile.id)&&($('task-status').value==='all'||taskState(t)===$('task-status').value));
+  const period=periodBounds($('task-date').value,state.unit);
+  const visible=tasks.filter(t=>(!$('mine').checked||t.owner_id===profile.id)&&(state.status==='all'||taskState(t)===state.status));
   const inPeriod=visible.filter(t=>t.work_date>=period.from&&t.work_date<=period.through),overdue=visible.filter(t=>t.work_date<period.from&&!finished(t));count=inPeriod.length+overdue.length;
   if(overdue.length){items.append(node('h3','이전 기간 미완료 · '+overdue.length+'건'));overdue.forEach(t=>addTaskWithChildren(t,items));}
   items.append(node('h3',period.from+(period.from===period.through?'':' ~ '+period.through)));
-  if($('task-layout').value==='calendar')renderTaskCalendar(inPeriod,items);else inPeriod.forEach(t=>addTaskWithChildren(t,items));
+  if(state.layout==='calendar')renderTaskCalendar(inPeriod,items);else inPeriod.forEach(t=>addTaskWithChildren(t,items));
   }else if(state.view==='incidents'){
   const linked=state.incidents.filter(i=>i.task_id);count=linked.length;renderIncidentGroups(linked,items);const legacy=state.incidents.filter(i=>!i.task_id);if(legacy.length){const archive=node('details');archive.append(node('summary','기존 업무 미연결 기록 · '+legacy.length+'건'));legacy.forEach(i=>addRow(i,'incident',archive,stamp(i.created_at)));items.append(archive);}
   }else if(state.view==='surveys'){const templates=currentTemplates(state.templates);count=templates.length;for(const t of templates){const entry=node('div',undefined,'task-row');entry.append(node('strong',t.title),node('small',(cadenceLabels[t.spec.ui_cadence]??'기존 업무')+' · 입력 '+t.spec.fields.length+'개 · 버전 '+t.version));if(canWrite(center))button('양식 커스터마이징',()=>customizeTask(t),entry);items.append(entry);}if(state.surveys.length){const archive=node('details');archive.append(node('summary','기존 업무조사 기록 · '+state.surveys.length+'건'));state.surveys.forEach(s=>addRow(s,'survey',archive,centerName(s.center_code)));items.append(archive);}}
@@ -117,7 +116,7 @@ function render(){
 }
 function customizeTask(template){openTaskDesigner({template,center:$('center').value,name:centerName($('center').value),node,button,field,save:async data=>{await api.publishCustom(data);await loadData();render();message('업무 양식을 저장했습니다. 센터 업무에서 버튼을 눌러 티켓을 발행하세요.');}});}
  function addTaskWithChildren(task,parent){addRow(task,'task',parent,task.work_date+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'업무'));const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));parent.append(group);}}
- function renderTaskCalendar(tasks,parent){const unit=$('task-unit').value,grid=node('div',undefined,'task-calendar '+(unit==='day'?'calendar-day':''));for(const date of calendarDates($('task-date').value,unit)){const cell=node('section',undefined,'calendar-cell');cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');for(const task of tasks.filter(t=>t.work_date===date))addRow(task,'task',cell);grid.append(cell);}parent.append(grid);}
+ function renderTaskCalendar(tasks,parent){const unit=state.unit,grid=node('div',undefined,'task-calendar '+(unit==='day'?'calendar-day':''));for(const date of calendarDates($('task-date').value,unit)){const cell=node('section',undefined,'calendar-cell');cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');for(const task of tasks.filter(t=>t.work_date===date))addRow(task,'task',cell);grid.append(cell);}parent.append(grid);}
  function renderBriefing(actions){
  button('브리핑 생성·새로고침',async()=>{if(state.busy)return;setBusy(true);message('실제 운영 기록으로 브리핑을 만드는 중입니다…');try{const result=await portalAi.briefing(true);state.briefing=await portalAi.cachedBriefing();await loadData();render();message(result.pending?result.message:result.cached?'저장된 결과를 표시했습니다. 새 생성 요청은 1분 간격으로 처리합니다.':'브리핑을 생성했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},actions,'primary');
  const items=$('items'),panel=$('detail'),entry=state.briefing,body=entry?.body;items.replaceChildren();panel.replaceChildren();$('list-title').textContent='확인할 운영 기록';$('count').textContent='특이사항 '+state.incidents.filter(i=>i.task_id).length+'건 · AI 요약 '+(body?.items?.length??0)+'건';
@@ -147,7 +146,7 @@ function membershipForm(person){
   button(assigned?'배정 해제':'배정',()=>mutate(JSON.stringify(['membership',person.id,center.code,assigned]),requestId=>api.setMembership({requestId,userId:person.id,center:center.code,expected:assigned,enabled:!assigned})),line);form.append(line);
  }panel.append(form);
 }
-function renderDetail(){const selectedTask=state.selected?.type==='task';const popup=$('task-ticket-dialog');const panel=selectedTask&&popup.open?popup:$('detail');if(panel===popup){panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','업무 티켓'));button('닫기',()=>popup.close(),header);panel.append(header);}else panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);attachments(type,row,panel);}
+function renderDetail(){const selectedTask=state.selected&&(state.selected.type==='task'||state.view==='center');const popup=$('task-ticket-dialog');const panel=selectedTask&&popup.open?popup:$('detail');if(panel===popup){panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','업무 티켓'));button('닫기',()=>popup.close(),header);panel.append(header);}else panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);attachments(type,row,panel);}
 function attachments(kind,row,panel){
  const section=node('section',undefined,'attachments'),list=node('div'),form=node('form',undefined,'portal-form'),hint=node('p');
  section.append(node('h3','첨부 파일'),node('p','기존 OneDrive에 저장하며 원본과 일치하는지 확인합니다. 파일당 최대 10MB입니다.'),list);panel.append(section);
@@ -180,7 +179,7 @@ function attachments(kind,row,panel){
  load();
 }
 function taskCreate(){
- const panel=$('detail');panel.replaceChildren(node('h2','일회성 업무 등록'));const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;field(form,'업무일','date',koreaDate(),'date').required=true;field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
+ const panel=$('task-ticket-dialog');panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','일회성 업무등록'));button('닫기',()=>panel.close(),header);panel.append(header);if(!panel.open)panel.showModal();const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;field(form,'업무일','date',$('task-date').value||koreaDate(),'date').required=true;field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const data={center:$('center').value,title:title.value,date:form.elements.date.value,inputs:{work_note:form.elements.note.value}};mutate(JSON.stringify(['create',data]),id=>api.save({requestId:id,...data}),row=>state.selected={type:'task',row});};
 }
 const taskDrafts=new Map();
@@ -234,9 +233,9 @@ function renderIncidentGroups(rows,parent){
 }
 function incidentCreate(kind,task){
  if(!task){message('하던 업무의 특이사항 발생 버튼으로 등록해 주세요.',true);return;}
- const panel=$('detail');panel.replaceChildren(node('h2','특이사항 발생'),node('p','상위 업무 · '+task.title));const form=node('form',undefined,'portal-form');const label=node('label','유형'),select=node('select');select.name='kind';for(const item of incidentKinds){const option=node('option',item);option.value=item;select.append(option);}label.append(select);form.append(label);
+ const panel=$('task-ticket-dialog')??$('detail');if(panel.tagName==='DIALOG'&&!panel.open)panel.showModal();panel.replaceChildren(node('h2','특이사항 발생'),node('p','상위 업무 · '+task.title));const form=node('form',undefined,'portal-form');const label=node('label','유형'),select=node('select');select.name='kind';for(const item of incidentKinds){const option=node('option',item);option.value=item;select.append(option);}label.append(select);form.append(label);
  field(form,'제목','title',kind??'').required=true;field(form,'발생 내용','note','','textarea').required=true;form.append(node('button','처리중으로 등록','primary'));panel.append(form);
- form.onsubmit=e=>{e.preventDefault();const data={task_id:task.id,title:form.elements.title.value,kind:select.value,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>{state.view='incidents';$('center').value=task.center_code;state.selected={type:'incident',row};});};
+ form.onsubmit=e=>{e.preventDefault();const data={task_id:task.id,title:form.elements.title.value,kind:select.value,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>{if($('task-ticket-dialog')?.open)$('task-ticket-dialog').close();state.view='incidents';$('center').value=task.center_code;state.selected={type:'incident',row};});};
 }
 function incidentDetail(row,panel){
  panel.append(node('p',centerName(incidentCenterCode(row))+' · '+row.kind+' · '+incidentStatus(row)),node('p','발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):'')));
@@ -333,8 +332,8 @@ function buildCenterNavigation(){
 }
 async function start(){
  setupPortalSidebar();$('task-date').value=koreaDate();
- for(const id of ['task-unit','task-date'])$(id).onchange=refresh;for(const id of ['task-layout','task-status'])$(id).onchange=render;
- $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,$('task-unit').value,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,$('task-unit').value,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
+ $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
+ $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
  document.querySelector('[data-view=hq]').hidden=!isHq();document.querySelector('[data-view=access]').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq()&&!requested)state.view='hq';
