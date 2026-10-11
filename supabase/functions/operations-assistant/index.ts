@@ -1,11 +1,15 @@
 import {normalizeCenter} from './tools.ts';
 import {expandResultPlan} from './result-plan.js';
+import {makePortalAiHandler} from './portal.js';
+import {callHaiku} from '../_shared/haiku.js';
 
 const CORS={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
-const MODEL='claude-haiku-4-5-20251001',AI_URL='https://aiapiflow.com/v1/messages',REST_PAGE_SIZE=1000;
+const REST_PAGE_SIZE=1000;
+const portalAi=makePortalAiHandler(Deno.env.toObject());
 const rate=new Map<string,{minute:number;minuteCount:number;day:string;dayCount:number}>();
 
 Deno.serve(async req=>{
+  if(['portal-briefing','portal-survey-draft','scheduled-briefing'].includes(new URL(req.url).pathname.split('/').filter(Boolean).at(-1)||''))return portalAi(req);
   const requestId=crypto.randomUUID();if(req.method==='OPTIONS')return json({ok:true});if(req.method!=='POST')return fail('INVALID_INPUT','POST 요청만 지원합니다.',405,requestId);
   try{
     const token=bearer(req);if(!token)return fail('UNAUTHENTICATED','로그인이 필요합니다.',401,requestId);
@@ -66,9 +70,7 @@ async function answerFromSnapshot(question:string,snapshot:Snapshot,key:string,c
 센터:${centerCode}
 질문:${JSON.stringify(question)}
 스냅샷:${JSON.stringify(snapshot)}`;
-  const response=await fetch(AI_URL,{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:MODEL,max_tokens:64000,messages:[{role:'user',content:prompt}]}),signal:AbortSignal.timeout(120000)});
-  if(!response.ok)throw coded(response.status===429?'RATE_LIMITED':'MODEL_FAILED',response.status===429?429:502);
-  const data=await response.json(),text=(data.content||[]).map((item:any)=>item.text||'').join('\n').trim(),parsed=parseJsonObject(text);
+  const data=await callHaiku({key,prompt,maxTokens:64000,timeoutMs:120000}),text=(data.content||[]).map((item:any)=>item.text||'').join('\n').trim(),parsed=parseJsonObject(text);
   return normalizeAssistantResult(parsed,snapshot,centerCode,requestId);
 }
 function parseJsonObject(text:string){const raw=text.match(/\{[\s\S]*\}/)?.[0]||text;try{return JSON.parse(raw)}catch{throw coded('MODEL_FAILED',502)}}
