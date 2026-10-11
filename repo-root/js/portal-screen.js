@@ -67,7 +67,7 @@ function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog
 function addRow(row,type,parent,extra=''){
  const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span');if(type==='incident'||state.view==='hq')content.append(node('span',centerName(type==='incident'?incidentCenterCode(row):row.center_code),'center-property'));if(state.view==='hq')content.append(node('span',type==='incident'?'특이사항':'업무','record-property'));content.append(document.createTextNode(row.title),node('small',extra));
  
- el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):taskStateLabels[taskState(row)],'badge status-'+(type==='task'?taskState(row):'other')));if(state.selected?.row.id===row.id)el.classList.add('selected');
+ el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):taskStateLabels[taskState(row)],'badge status-'+(type==='task'?taskState(row):type==='incident'?'incident-'+(row.status==='resolved'?'resolved':'open'):'other')));if(state.selected?.row.id===row.id)el.classList.add('selected');
 }
 function render(){
  document.body.classList.toggle('permissions-workspace',state.view==='permissions');const hq=state.view==='hq',center=$('center').value;
@@ -113,7 +113,7 @@ function render(){
   if(state.layout==='calendar')renderTaskCalendar(inPeriod,items);else inPeriod.forEach(t=>addTaskWithChildren(t,items));
   }else if(state.view==='trash'){count=tasks.length;tasks.forEach(t=>addRow(t,'task',items,centerName(t.center_code)+' · 휴지통 이동 '+stamp(t.deleted_at)));
  }else if(state.view==='incidents'){
-  const linked=state.incidents.filter(i=>i.task_id);count=linked.length;renderIncidentGroups(linked,items);const legacy=state.incidents.filter(i=>!i.task_id);if(legacy.length){const archive=node('details');archive.append(node('summary','기존 업무 미연결 기록 · '+legacy.length+'건'));legacy.forEach(i=>addRow(i,'incident',archive,stamp(i.created_at)));items.append(archive);}
+  count=state.incidents.length;renderIncidentList(state.incidents,items);
   }else if(state.view==='surveys'){const templates=currentTemplates(state.templates);count=templates.length;for(const t of templates){const entry=node('div',undefined,'task-row');entry.append(node('strong',t.title),node('small',(cadenceLabels[t.spec.ui_cadence]??'기존 업무')+' · 입력 '+t.spec.fields.length+'개 · 버전 '+t.version));if(canWrite(center,'forms')){const title=entry.querySelector('strong');const edit=button(t.title,()=>customizeTask(t),document.createDocumentFragment(),'registered-task-title');title.replaceWith(edit);}if(canWrite(center,'forms'))button('삭제',()=>{if(confirm('등록 업무를 삭제할까요? 이미 발행한 티켓과 기록은 유지됩니다.'))mutate('retire:'+t.id,id=>api.retireCustom({requestId:id,template:t}));},entry);items.append(entry);}if(state.surveys.length){count+=state.surveys.length;const archive=node('details');archive.open=true;archive.append(node('summary','업무조사 · '+state.surveys.length+'건'));state.surveys.forEach(s=>addRow(s,'survey',archive,centerName(s.center_code)));items.append(archive);}}
  
  else if(state.view==='access'){
@@ -147,7 +147,7 @@ function customizeTask(template){openTaskDesigner({template,center:$('center').v
  if(entry?.last_error)panel.append(node('p',entry.last_error,'error'));
  if(entry?.dispatch_error)panel.append(node('p',entry.dispatch_error,'error'));
  if(entry?.status==='running')panel.append(node('p','새 브리핑을 생성 중입니다. 잠시 후 새로고침하세요.'));
- items.append(node('h3','센터 업무 특이사항 · 현재 상태'));renderIncidentGroups(state.incidents.filter(i=>i.task_id),items);panel.append(node('p','특이사항 처리중·처리완료는 현재 원본 기준입니다. 아래 AI 요약은 생성 시점 기준입니다.'));
+ items.append(node('h3','센터 업무 특이사항 · 현재 상태'));renderIncidentList(state.incidents,items);panel.append(node('p','특이사항 처리중·처리완료는 현재 원본 기준입니다. 아래 AI 요약은 생성 시점 기준입니다.'));
  if(!body){items.append(node('p','오늘 저장된 AI 요약이 없습니다.'));return;}
  panel.append(node('p','기준일 '+body.date+' · 생성 '+stamp(entry.generated_at)));
  for(const [key,label] of Object.entries({pending_tasks:'미완료 업무',open_incidents:'생성 당시 처리중 특이사항',yesterday_events:'전일 처리 기록',master_changes:'전일 차량·기사·코스 변경'}))panel.append(node('p',label+' · '+(body.counts?.[key]??0)+'건'));
@@ -257,8 +257,8 @@ function addIncidentRow(row,parent){
  const line=node('div',undefined,'incident-record');addRow(row,'incident',line,row.kind+' · 발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):''));
  if(row.task_id)button('↳ 상위 업무 · '+parentTitle(row.task_id),()=>openParentTask(row.task_id),line,'parent-mention');parent.append(line);
 }
-function renderIncidentGroups(rows,parent){
- for(const status of ['open','resolved']){const group=rows.filter(i=>i.status===status);parent.append(node('h3',(status==='open'?'처리중':'처리완료')+' · '+group.length+'건'));group.forEach(i=>addIncidentRow(i,parent));}
+function renderIncidentList(rows,parent){
+ [...rows].sort((a,b)=>Number(a.status==='resolved')-Number(b.status==='resolved')||String(b.created_at??'').localeCompare(String(a.created_at??''))||String(a.id).localeCompare(String(b.id))).forEach(row=>addIncidentRow(row,parent));
 }
 function incidentCreate(kind,task){
  if(!task){message('하던 업무의 특이사항 발생 버튼으로 등록해 주세요.',true);return;}
