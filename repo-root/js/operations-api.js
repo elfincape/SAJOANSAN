@@ -124,8 +124,9 @@ export function createOperationsApi(client) {
     },
     dailyLog({ center, from, through, settlement }) {
       return allPages(() => {
-        let query = client.from('operations_daily_log').select('*').eq('center_code', center)
+        let query = client.from('operations_daily_log').select('*')
           .gte('report_date', from).lte('report_date', through).order('occurred_at').order('id');
+        if (center) query = query.eq('center_code', center);
         if (settlement) query = query.eq('inputs->>정산방식', settlement);
         return query;
       });
