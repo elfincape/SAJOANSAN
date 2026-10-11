@@ -11,7 +11,7 @@ import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
-const state={view:'center',unit:'day',layout:'list',status:'all',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
+const state={view:'center',unit:'week',layout:'calendar',status:'all',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
 const incidentKinds=['차량 대차','차량 섭외 지연','납품처 문제','기사 문제','차량 문제','기타 특이사항'];
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text).replaceAll('HQ','배송팀');if(className)el.className=className;return el;}
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
@@ -62,7 +62,7 @@ function render(){
  document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
  document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
- const actions=$('quick-actions');actions.replaceChildren();actions.classList.toggle('task-launcher',state.view==='center');
+ const actions=$('quick-actions');actions.replaceChildren();$('issue-task').hidden=state.view!=='center'||!canWrite(center);
  if(state.view==='backups'){
   $('portal-title').textContent='운영 원본 보관';$('portal-description').textContent='월말 전체 원본과 OneDrive 저장 상태를 확인하세요.';
   $('center').disabled=true;renderBackups();return;
@@ -72,13 +72,6 @@ function render(){
   $('center').disabled=true;renderSearch(state.context.centers);return;
  }
  if(state.view==='briefing'){renderBriefing(actions);return;}
- if(state.view==='center'&&canWrite(center)){
-  const templates=currentTemplates(state.templates);actions.append(node('h2','업무 실행'));const launchGrid=node('div',undefined,'task-launch-grid');actions.append(launchGrid);
-  for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>mutate('template:'+t.id+':'+$('task-date').value,id=>t.spec.manual_issue===true?api.issueCustom({requestId:id,templateId:t.id,date:$('task-date').value}):api.fromTemplate({requestId:id,templateId:t.id,date:$('task-date').value,recurring:false,ownerId:t.spec.owner_ids?.[0]??null}),row=>{state.selected={type:'task',row};if(!$('task-ticket-dialog').open)$('task-ticket-dialog').showModal();}),launchGrid,'task-launch-button');
-  if(!templates.length)actions.append(node('p','업무 등록·조사에서 이 센터의 업무 양식을 등록하면 여기에 업무 버튼이 생깁니다.'));
-  actions.append(node('p','기준일에 맞춰 티켓을 발행합니다. 같은 주·월의 업무는 기존 티켓을 엽니다.','task-launch-hint'));
- }
-
  if(state.view==='surveys'&&canWrite(center))button('센터 업무등록',()=>customizeTask(),actions,'primary');
  const items=$('items');items.replaceChildren();let count=0;
  const handedOff=new Set(state.notifications.filter(n=>n.task_id).map(n=>n.task_id));
@@ -116,7 +109,7 @@ function render(){
 }
 function customizeTask(template){openTaskDesigner({template,center:$('center').value,name:centerName($('center').value),node,button,field,save:async data=>{await api.publishCustom(data);await loadData();render();message('업무 양식을 저장했습니다. 센터 업무에서 버튼을 눌러 티켓을 발행하세요.');}});}
  function addTaskWithChildren(task,parent){addRow(task,'task',parent,task.work_date+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'업무'));const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));parent.append(group);}}
- function renderTaskCalendar(tasks,parent){const unit=state.unit,grid=node('div',undefined,'task-calendar '+(unit==='day'?'calendar-day':''));for(const date of calendarDates($('task-date').value,unit)){const cell=node('section',undefined,'calendar-cell');cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');for(const task of tasks.filter(t=>t.work_date===date))addRow(task,'task',cell);grid.append(cell);}parent.append(grid);}
+ function renderTaskCalendar(tasks,parent){const unit=state.unit,grid=node('div',undefined,'task-calendar '+(unit==='day'?'calendar-day':unit==='week'?'calendar-week':'calendar-month'));for(const date of calendarDates($('task-date').value,unit)){const cell=node('section',undefined,'calendar-cell');cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');for(const task of tasks.filter(t=>t.work_date===date))addRow(task,'task',cell);grid.append(cell);}parent.append(grid);}
  function renderBriefing(actions){
  button('브리핑 생성·새로고침',async()=>{if(state.busy)return;setBusy(true);message('실제 운영 기록으로 브리핑을 만드는 중입니다…');try{const result=await portalAi.briefing(true);state.briefing=await portalAi.cachedBriefing();await loadData();render();message(result.pending?result.message:result.cached?'저장된 결과를 표시했습니다. 새 생성 요청은 1분 간격으로 처리합니다.':'브리핑을 생성했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},actions,'primary');
  const items=$('items'),panel=$('detail'),entry=state.briefing,body=entry?.body;items.replaceChildren();panel.replaceChildren();$('list-title').textContent='확인할 운영 기록';$('count').textContent='특이사항 '+state.incidents.filter(i=>i.task_id).length+'건 · AI 요약 '+(body?.items?.length??0)+'건';
@@ -177,6 +170,12 @@ function attachments(kind,row,panel){
   finally{setBusy(false);}
  };
  load();
+}
+function issueTaskPicker(){
+ const dialog=$('task-ticket-dialog');dialog.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','업무 발행'));button('닫기',()=>dialog.close(),header);dialog.append(header);
+ const templates=currentTemplates(state.templates),grid=node('div',undefined,'issue-template-list');dialog.append(grid);
+ for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>mutate('template:'+t.id+':'+$('task-date').value,id=>t.spec.manual_issue===true?api.issueCustom({requestId:id,templateId:t.id,date:$('task-date').value}):api.fromTemplate({requestId:id,templateId:t.id,date:$('task-date').value,recurring:false,ownerId:t.spec.owner_ids?.[0]??null}),row=>{state.selected={type:'task',row};}),grid,'primary');
+ if(!templates.length)dialog.append(node('p','업무 등록·조사에서 센터 업무 양식을 먼저 등록하세요.'));if(!dialog.open)dialog.showModal();
 }
 function taskCreate(){
  const panel=$('task-ticket-dialog');panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','일회성 업무등록'));button('닫기',()=>panel.close(),header);panel.append(header);if(!panel.open)panel.showModal();const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;field(form,'업무일','date',$('task-date').value||koreaDate(),'date').required=true;field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
@@ -332,7 +331,7 @@ function buildCenterNavigation(){
 }
 async function start(){
  setupPortalSidebar();$('task-date').value=koreaDate();
- $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
+ $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;$('issue-task').onclick=issueTaskPicker;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
  $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
