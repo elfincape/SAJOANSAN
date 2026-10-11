@@ -21,7 +21,7 @@ const [schema]=await query(`select to_regclass('public.centers') is not null as 
  to_regclass('public.operations_master_backups') is not null as backups,
  to_regprocedure('public.operations_master_dispatch()') is not null as backup_scheduler,
  to_regprocedure('public.operations_backup_no_delete()') is not null as backup_recovery,
- coalesce(position('linked_task is null' in pg_get_functiondef(to_regprocedure('public.operations_incident_action(uuid,uuid,integer,text,jsonb)')))>0,false) as incident_parent;`);
+ coalesce(position('linked_task is null' in pg_get_functiondef(to_regprocedure('public.operations_incident_action(uuid,uuid,integer,text,jsonb)')))>0,false) and exists(select 1 from pg_constraint where conrelid=to_regclass('public.operations_incidents') and conname='operations_incidents_parent_center_relation' and convalidated) as incident_parent;`);
 if(!schema.centers||!schema.profiles)throw Error('기존 센터·사용자 인증 구조를 먼저 확인해야 합니다. 새 인증 DB는 만들지 않습니다.');
 const plan=Object.entries(schema).filter(([name,exists])=>!exists&&!['centers','profiles'].includes(name)).map(([name])=>name);
 console.log('DB 반영 대상:',plan.join(', ')||'추가 없음');

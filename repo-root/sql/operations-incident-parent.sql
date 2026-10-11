@@ -1,4 +1,10 @@
 begin;
+create unique index if not exists operations_tasks_id_center_relation on public.operations_tasks(id,center_code);
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.operations_incidents'::regclass and conname='operations_incidents_parent_center_relation') then
+  alter table public.operations_incidents add constraint operations_incidents_parent_center_relation foreign key(task_id,center_code) references public.operations_tasks(id,center_code);
+ end if;
+end $$;
 create or replace function public.operations_incident_action(p_request_id uuid,p_incident_id uuid,p_expected_version integer,
  p_action text,p_data jsonb) returns public.operations_incidents
 language plpgsql security definer set search_path=public,pg_temp as $$
@@ -21,12 +27,13 @@ begin
  end if;
  select exists(select 1 from public.user_profiles where id=auth.uid() and active and role='admin') into is_hq;
  if p_action='create' then
-   center:=p_data->>'center_code'; linked_task:=(p_data->>'task_id')::uuid;
+   linked_task:=(p_data->>'task_id')::uuid;
+   if linked_task is null then raise exception '하던 업무에서 특이사항을 등록해 주세요' using errcode='22023'; end if;
+   select center_code into center from public.operations_tasks where id=linked_task for share;
+   if not found then raise exception '상위 업무를 찾을 수 없습니다' using errcode='22023'; end if;
+   if p_data ? 'center_code' and (p_data->>'center_code') is distinct from center then raise exception '센터 속성은 상위 업무에서 가져옵니다' using errcode='22023'; end if;
    if p_incident_id is not null or p_expected_version is not null or not public.operations_can_write(center) then
      raise exception '해당 센터 특이사항 등록 권한이 없습니다' using errcode='42501'; end if;
-   if linked_task is null then raise exception '하던 업무에서 특이사항을 등록해 주세요' using errcode='22023'; end if;
-   perform 1 from public.operations_tasks where id=linked_task and center_code=center for share;
-   if not found then raise exception '관련 업무의 센터가 일치하지 않습니다' using errcode='22023'; end if;
    insert into public.operations_incidents(center_code,task_id,title,kind,inputs,created_by)
      values(center,linked_task,trim(p_data->>'title'),trim(p_data->>'kind'),coalesce(p_data->'inputs','{}'),auth.uid())
      returning * into i;

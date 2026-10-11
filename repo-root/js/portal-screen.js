@@ -9,11 +9,12 @@ import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
-const state={view:'center',incidentScope:'center',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
+const state={view:'center',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
 const incidentKinds=['차량 대차','차량 섭외 지연','납품처 문제','기사 문제','차량 문제','기타 특이사항'];
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text).replaceAll('HQ','배송팀');if(className)el.className=className;return el;}
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
-function centerName(code){return state.context.centers.find(c=>c.code===code)?.name??code;}
+const centerLabels={'001':'사조안산','002':'사조평택',gimhae:'김해센터',yangsan:'양산공장'};
+function centerName(code){return centerLabels[code]??state.context.centers.find(c=>c.code===code)?.name??code;}
 function canWrite(code){return state.context.writable_centers.includes(code);}
 function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
@@ -39,7 +40,7 @@ async function loadData(){
  const center=$('center').value,day=koreaDate();
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:day,through:day,includeCompleted:$('completed').checked}),
- api.incidents({center:['hq','briefing'].includes(state.view)||(state.view==='incidents'&&state.incidentScope==='all')?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
+ api.incidents({center:['hq','briefing','incidents'].includes(state.view)?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
  const parents=await api.parentTasks(incidents.map(i=>i.task_id));
  Object.assign(state,{tasks,incidents,templates,surveys,notifications,staff,briefing,parents});
  $('unread').textContent=notifications.filter(n=>!n.read_at).length||'';
@@ -48,15 +49,16 @@ async function loadData(){
 async function refresh(){if(state.busy)return;setBusy(true);message('업무를 불러오는 중입니다…');try{await loadData();render();message('');}catch(error){message(error.message||'업무를 불러오지 못했습니다.',true);}finally{setBusy(false);}}
 function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog').close();state.selected={type,row};renderDetail();}
 function addRow(row,type,parent,extra=''){
- const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span',row.title);content.append(node('small',extra));
+ const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span');if(type==='incident')content.append(node('span',centerName(incidentCenterCode(row)),'center-property'));content.append(document.createTextNode(row.title),node('small',extra));
  if(type==='task'){const warning=dispatchWarning(row);if(warning)content.append(node('small',warning,'warning'));}
  el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):statusLabels[row.status],'badge'));if(state.selected?.row.id===row.id)el.classList.add('selected');
 }
 function render(){
  const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?(state.incidentScope==='all'?'전체 센터 특이사항':centerName(center)+' 특이사항'):centerName(center)+' 업무';
- $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
- document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(el.dataset.allCenters?state.incidentScope==='all':(!el.dataset.center||el.dataset.center===center)&&(state.view!=='incidents'||state.incidentScope!=='all'));el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
+ $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':centerName(center)+' 업무';
+ $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':state.view==='incidents'?'센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
+ document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);
+ document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();
  if(state.view==='backups'){
@@ -216,6 +218,7 @@ function deadlines(task,panel){
  const form=node('form',undefined,'portal-form');field(form,'배송 마감 (한국시간)','due',localTime(task.due_at),'datetime-local');field(form,'CJ 배차정보 공유 마감 (한국시간)','cj',localTime(task.cj_share_due_at),'datetime-local');field(form,'기존 마감 변경 사유','reason');form.append(node('button','마감시간 저장'));panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const value=name=>form.elements[name].value?new Date(form.elements[name].value+':00+09:00').toISOString():null;const data={due_at:value('due'),cj_share_due_at:value('cj'),reason:form.elements.reason.value};mutate(JSON.stringify(['deadline',task.id,task.version,data]),id=>api.taskAction({requestId:id,task,action:'deadline',data}));};
 }
+function incidentCenterCode(row){return state.parents.find(t=>t.id===row.task_id)?.center_code??row.center_code;}
 function incidentStatus(row){return row.status==='resolved'?'처리완료':'처리중';}
 function parentTitle(id){return state.parents.find(t=>t.id===id)?.title??state.tasks.find(t=>t.id===id)?.title??'상위 업무 확인';}
 function addIncidentRow(row,parent){
@@ -229,10 +232,10 @@ function incidentCreate(kind,task){
  if(!task){message('하던 업무의 특이사항 발생 버튼으로 등록해 주세요.',true);return;}
  const panel=$('detail');panel.replaceChildren(node('h2','특이사항 발생'),node('p','상위 업무 · '+task.title));const form=node('form',undefined,'portal-form');const label=node('label','유형'),select=node('select');select.name='kind';for(const item of incidentKinds){const option=node('option',item);option.value=item;select.append(option);}label.append(select);form.append(label);
  field(form,'제목','title',kind??'').required=true;field(form,'발생 내용','note','','textarea').required=true;form.append(node('button','처리중으로 등록','primary'));panel.append(form);
- form.onsubmit=e=>{e.preventDefault();const data={center_code:task.center_code,task_id:task.id,title:form.elements.title.value,kind:select.value,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>{state.view='incidents';state.incidentScope='center';$('center').value=task.center_code;state.selected={type:'incident',row};});};
+ form.onsubmit=e=>{e.preventDefault();const data={task_id:task.id,title:form.elements.title.value,kind:select.value,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>{state.view='incidents';$('center').value=task.center_code;state.selected={type:'incident',row};});};
 }
 function incidentDetail(row,panel){
- panel.append(node('p',centerName(row.center_code)+' · '+row.kind+' · '+incidentStatus(row)),node('p','발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):'')));
+ panel.append(node('p',centerName(incidentCenterCode(row))+' · '+row.kind+' · '+incidentStatus(row)),node('p','발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):'')));
  if(row.task_id)button('상위 업무 · '+parentTitle(row.task_id),()=>openParentTask(row.task_id),panel,'parent-mention');
  const writable=canWrite(row.center_code);
  if(row.status==='open'&&writable){const form=node('form',undefined,'portal-form');field(form,'특이사항 제목','title',row.title).required=true;field(form,'발생 내용','note',row.inputs?.발생내용??'','textarea').required=true;field(form,'처리 내용','progress',row.inputs?.처리내용??'','textarea');const actions=node('div',undefined,'actions');const inputs=()=>({...row.inputs,발생내용:form.elements.note.value,처리내용:form.elements.progress.value});button('내용 저장',()=>{if(form.reportValidity())incidentAction(row,'edit',{title:form.elements.title.value,inputs:inputs()});},actions);button('처리완료',()=>{if(!form.reportValidity())return;const data={title:form.elements.title.value,inputs:inputs()};incidentAction(row,'resolve',{...data,note:form.elements.progress.value});},actions,'primary');form.append(actions);form.onsubmit=e=>e.preventDefault();panel.append(form);
@@ -321,9 +324,8 @@ async function checkNotifications(){
  finally{checkingNotifications=false;}
 }
 function buildCenterNavigation(){
- const order=['안산','평택','김해','양산'];
- const centers=[...state.context.centers].sort((a,b)=>{const rank=c=>{const i=order.findIndex(name=>c.name.includes(name));return i<0?99:i;};return rank(a)-rank(b);});
- document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();if(nav.dataset.centerView==='incidents'){const all=node('button','전체 센터');all.type='button';all.dataset.view='incidents';all.dataset.allCenters='true';nav.append(all);}for(const center of centers){const el=node('button',center.name.replace(/센터$/,'').trim());el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
+ const order=['001','002','gimhae','yangsan'];const centers=[...state.context.centers].sort((a,b)=>{const rank=c=>{const i=order.indexOf(c.code);return i<0?99:i;};return rank(a)-rank(b);});
+ document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();for(const center of centers){const el=node('button',centerName(center.code));el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(nav.dataset.centerView==='center'){const incidents=node('button','특이사항');incidents.type='button';incidents.dataset.view='incidents';nav.append(incidents);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
 }
 async function start(){
  setupPortalSidebar();
@@ -335,7 +337,7 @@ async function start(){
  buildCenterNavigation();
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
- document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.incidentScope=el.dataset.allCenters?'all':'center';if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;refresh();});await refresh();
+ document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;refresh();});await refresh();
  notificationTimer=setInterval(checkNotifications,30000);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNotifications();});
  addEventListener('pagehide',()=>clearInterval(notificationTimer),{once:true});
