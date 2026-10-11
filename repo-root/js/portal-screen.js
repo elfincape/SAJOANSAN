@@ -77,7 +77,7 @@ function render(){
   button('일회성 업무 등록',()=>taskCreate(),actions);
  }
 
- if(state.view==='surveys'&&canWrite(center))button('우리 센터 업무 등록',()=>surveyForm(),actions,'primary');
+ if(state.view==='surveys'&&canWrite(center))button('센터 업무등록',()=>surveyForm(),actions,'primary');
  const items=$('items');items.replaceChildren();let count=0;
  const handedOff=new Set(state.notifications.filter(n=>n.task_id).map(n=>n.task_id));
  const tasks=orderTasks(state.tasks,{userId:profile.id,handedOff});
@@ -251,7 +251,7 @@ async function history(row,panel,type){
  catch{details.append(node('p','처리 기록을 불러오지 못했습니다.'));}
 }
 function surveyForm(survey=null){
- const panel=$('detail');panel.replaceChildren(node('h2',survey?'업무조사 수정':'우리 센터 업무 등록'));const form=node('form',undefined,'portal-form');field(form,'업무명','title',survey?.title).required=true;
+ const panel=$('detail');panel.replaceChildren(node('h2',survey?'업무조사 수정':'센터 업무등록'));const form=node('form',undefined,'portal-form');field(form,'업무명','title',survey?.title).required=true;
  for(const [key,label] of surveyFields)field(form,label,key,survey?.details?.[key]??'',key==='sequence'||key==='problems'?'textarea':'text');form.append(node('button','조사 내용 저장','primary'));panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const data={center_code:survey?.center_code??$('center').value,title:form.elements.title.value,details:Object.fromEntries(surveyFields.map(([key])=>[key,form.elements[key].value]))};mutate(JSON.stringify(['survey',survey?.id,survey?.version,data]),id=>api.surveyAction({requestId:id,survey,action:survey?'edit':'submit',data}),row=>state.selected={type:'survey',row});};
 }
