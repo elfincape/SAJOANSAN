@@ -20,6 +20,10 @@ export function createOperationsApi(client) {
       return unwrap(client.rpc('operations_record_cj_share', { p_request_id: requestId, p_task_id: task.id,
         p_expected_version: task.version, p_shared: shared, p_note: note }));
     },
+    members() { return unwrap(client.rpc('operations_members')); },
+    updateMember({requestId,person,name,role,centers}) { return unwrap(client.rpc('operations_update_member',{p_request_id:requestId,p_user_id:person.id,p_expected:{display_name:person.display_name,role:person.role,centers:person.centers},p_name:name,p_role:role,p_centers:centers})); },
+    participantOptions(center) { return unwrap(client.rpc('operations_participant_options',{p_center:center})); },
+    setParticipants({requestId,task,handler,from=null,to=null,memo=''}) { return unwrap(client.rpc('operations_set_task_participants',{p_request_id:requestId,p_task_id:task.id,p_expected_version:task.version,p_handler:handler,p_from:from,p_to:to,p_memo:memo})); },
     staffAccess() { return unwrap(client.rpc('operations_staff_access')); },
     setMembership({ requestId, userId, center, expected, enabled }) {
       return unwrap(client.rpc('operations_set_membership', { p_request_id: requestId, p_user_id: userId,

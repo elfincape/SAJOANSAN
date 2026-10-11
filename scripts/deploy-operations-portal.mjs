@@ -23,16 +23,18 @@ const [schema]=await query(`select to_regclass('public.centers') is not null as 
  to_regprocedure('public.operations_backup_no_delete()') is not null as backup_recovery,
  coalesce(position('linked_task is null' in pg_get_functiondef(to_regprocedure('public.operations_incident_action(uuid,uuid,integer,text,jsonb)')))>0,false) and exists(select 1 from pg_constraint where conrelid=to_regclass('public.operations_incidents') and conname='operations_incidents_parent_center_relation' and convalidated) as incident_parent,
  to_regprocedure('public.operations_publish_custom_template(uuid,text,text,jsonb,uuid)') is not null and to_regprocedure('public.operations_issue_custom_task(uuid,uuid,date)') is not null as custom_tasks,
- to_regprocedure('public.operations_task_trash(uuid,uuid,integer,boolean)') is not null as trash;`);
+ to_regprocedure('public.operations_task_trash(uuid,uuid,integer,boolean)') is not null as trash,
+ to_regprocedure('public.operations_members()') is not null and to_regprocedure('public.operations_set_task_participants(uuid,uuid,integer,uuid,uuid,uuid,text)') is not null as members_participants;`);
 if(!schema.centers||!schema.profiles)throw Error('기존 센터·사용자 인증 구조를 먼저 확인해야 합니다. 새 인증 DB는 만들지 않습니다.');
 const plan=Object.entries(schema).filter(([name,exists])=>!exists&&!['centers','profiles'].includes(name)).map(([name])=>name);
 console.log('DB 반영 대상:',plan.join(', ')||'추가 없음');
 if(!apply)console.log('조회만 수행했습니다. 반영은 --apply로 실행합니다.');
 if(apply&&plan.length){
-const files={core:'operations-core.sql',workflow:'operations-workflow.sql',templates:'operations-templates.sql',portal:'operations-portal.sql',scheduler:'operations-scheduler.sql',access:'operations-access.sql',dispatch:'operations-dispatch.sql',files:'operations-files.sql',ai:'operations-ai.sql',ai_scheduler:'operations-ai-scheduler.sql',ai_auth:'operations-ai-auth.sql',search:'operations-search.sql',backups:'operations-backups.sql',backup_scheduler:'operations-backup-scheduler.sql',backup_recovery:'operations-backup-recovery.sql',incident_parent:'operations-incident-parent.sql',custom_tasks:'operations-custom-tasks.sql',trash:'operations-trash.sql'};
+const files={core:'operations-core.sql',workflow:'operations-workflow.sql',templates:'operations-templates.sql',portal:'operations-portal.sql',scheduler:'operations-scheduler.sql',access:'operations-access.sql',dispatch:'operations-dispatch.sql',files:'operations-files.sql',ai:'operations-ai.sql',ai_scheduler:'operations-ai-scheduler.sql',ai_auth:'operations-ai-auth.sql',search:'operations-search.sql',backups:'operations-backups.sql',backup_scheduler:'operations-backup-scheduler.sql',backup_recovery:'operations-backup-recovery.sql',incident_parent:'operations-incident-parent.sql',custom_tasks:'operations-custom-tasks.sql',trash:'operations-trash.sql',members_participants:'operations-members-participants.sql'};
 const sources=[];
 for(const name of plan){const sql=await readFile(new URL('../repo-root/sql/'+files[name],import.meta.url),'utf8');sources.push(sql.replace(/^\s*begin;\s*$/gmi,'').replace(/^\s*commit;\s*$/gmi,''));}
 await query('begin;\n'+sources.join('\n')+'\ncommit;');
 console.log('업무 포털 DB 반영 완료. 기존 운영 마스터와 계정은 보존했습니다.');
 }
+
 
