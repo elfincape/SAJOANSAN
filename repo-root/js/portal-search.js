@@ -6,7 +6,7 @@ export function searchTarget(kind,row){
  return page?{href:'/admin/'+page+'.html?'+new URLSearchParams({id:row.id,...(row.center_code?{center:row.center_code}:{})})}:null;
 }
 export function createPortalSearch({supabase,node,button,centerName,openRecord,message}){
- const saved={term:'',center:'',page:0};let generation=0;
+ const saved={term:'',center:'',page:0};let generation=0,detailGeneration=0;
  return function renderSearch(centers){
   const ticket=++generation,actions=document.getElementById('quick-actions'),items=document.getElementById('items'),detail=document.getElementById('detail');
   actions.replaceChildren();items.replaceChildren();detail.replaceChildren(node('h2','통합 검색'),node('p','완료 업무와 해결된 특이사항도 검색합니다. 차량번호로 과거 특이사항을 찾을 때는 당시 입력한 번호를 사용하세요.'));
@@ -19,15 +19,28 @@ export function createPortalSearch({supabase,node,button,centerName,openRecord,m
   async function search(page=0){
    const term=input.value.trim();if(term.length<2||term.length>100){message('검색어를 2~100자로 입력하세요.',true);return;}
    Object.assign(saved,{term,center:scope.value,page});const query={p_query:term,p_center:scope.value||null,p_page:page};
-   const request=++generation;form.querySelector('button').disabled=true;message('검색 중입니다…');
+   const request=++generation;++detailGeneration;form.querySelector('button').disabled=true;message('검색 중입니다…');
    try{
     const {data,error}=await supabase.rpc('operations_search',query);if(error)throw error;
     if(generation!==request||!form.isConnected)return;items.replaceChildren();
     const total=data.groups.reduce((sum,g)=>sum+g.total,0);document.getElementById('count').textContent=total+'건';
     for(const group of data.groups){items.append(node('h3',(searchLabels[group.kind]??group.kind)+' · '+group.total+'건'));
      for(const row of group.items){const line=node('div',undefined,'history-entry');line.append(node('p',row.title),node('small',[row.center_code?centerName(row.center_code):'공통',row.work_date].filter(Boolean).join(' · ')));
-      const target=searchTarget(group.kind,row);if(target?.href){const link=node('a','관리 화면 열기');link.href=target.href;line.append(link);}
-      else if(target)button(group.kind==='file'?'첨부된 원본 기록 열기':'원본 기록 열기',()=>openRecord(target.type,target.id),line);
+      const target=searchTarget(group.kind,row);if(target?.href){
+       button('현재 원본 정보 보기',async()=>{
+        const selected=++detailGeneration;message('원본 정보를 불러오는 중입니다…');
+        try{const {data,error}=await supabase.from(group.kind).select('*').eq('id',row.id).single();if(error)throw error;
+         if(selected!==detailGeneration||!form.isConnected)return;
+         detail.replaceChildren(node('h2',row.title),node('p',searchLabels[group.kind]+' · '+(data.center_code?centerName(data.center_code):'공통')));
+         for(const [key,label] of Object.entries({name:'이름',plate_number:'차량번호',car_number:'차량번호',code:'코드',phone:'연락처',address:'주소',region:'지역',tonnage:'톤수',memo:'메모'}))
+          if(data[key]!==null&&data[key]!==undefined&&data[key]!=='')detail.append(node('h4',label),node('p',String(data[key])));
+         const link=node('a','관리 화면 열기');link.href=target.href;detail.append(link);
+         if(group.kind==='vehicles'&&data.plate_number)button('차량번호로 과거 업무·특이사항 찾기',()=>{input.value=data.plate_number;scope.value='';search();},detail);
+         message('');
+        }catch(error){if(selected===detailGeneration&&form.isConnected)message(error.message||'원본 정보를 불러오지 못했습니다.',true);}
+       },line);
+      }
+      else if(target)button(group.kind==='file'?'첨부된 원본 기록 열기':'원본 기록 열기',()=>{++detailGeneration;openRecord(target.type,target.id);},line);
       items.append(line);
      }
     }
