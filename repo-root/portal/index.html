@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>업무 포털 · SAJOANSAN</title><link rel="stylesheet" href="/css/operations.css"><link rel="stylesheet" href="/css/portal.css"></head>
+<body><header><strong>SAJOANSAN 업무 포털</strong><a href="/admin/">운영관리</a><span id="user"></span></header>
+<main><div class="heading"><div><h1 id="portal-title">오늘의 업무</h1><p id="portal-description">해야 할 업무를 확인하고 바로 처리하세요.</p></div><button id="refresh">새로고침</button></div>
+<nav aria-label="포털 화면"><button data-view="center" aria-pressed="true">센터 업무</button><button data-view="hq" hidden>HQ 업무</button><button data-view="incidents">특이사항</button><button data-view="surveys">우리 센터 업무 등록</button><button data-view="notifications">알림함 <span id="unread"></span></button><a href="/admin/operations.html">처리 기록</a></nav>
+<div class="filters"><label>센터<select id="center"></select></label><label class="check"><input id="mine" type="checkbox">내 업무만</label><label class="check"><input id="completed" type="checkbox">오늘 완료 업무 포함</label></div>
+<div id="message" role="status" aria-live="polite"></div><section id="quick-actions" class="quick-actions" aria-label="업무 등록"></section>
+<div class="workspace"><section class="list"><div class="list-heading"><strong id="list-title">미완료 업무</strong><span id="count"></span></div><div id="items" class="portal-items"></div></section><aside id="detail" aria-label="업무 처리"><p>업무를 선택하세요.</p></aside></div></main><script type="module" src="/js/portal-screen.js"></script></body></html>

@@ -17,7 +17,7 @@ let _profilePromise = null;   // 동시 호출 시 단일 fetch 보장
 async function getSessionOrRedirect() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
-    redirectTo('/login.html');
+    redirectTo(location.pathname.startsWith('/portal/') ? '/login.html?next=' + encodeURIComponent(location.pathname + location.search) : '/login.html');
     return null;
   }
   return session;

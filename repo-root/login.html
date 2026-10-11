@@ -106,7 +106,7 @@
             .maybeSingle();
 
           if (profile && profile.active) {
-            location.replace('/?selectCenter=1');
+             location.replace(loginDestination());
             return;
           }
           // 비활성 또는 프로필 없음 → 세션 정리하고 로그인 폼 표시
@@ -199,7 +199,7 @@
         toast('로그인되었습니다.', 'success');
         // 토스트가 잠깐 보이도록 살짝 지연
         clearSelectedCenter();
-        setTimeout(() => location.replace('/?selectCenter=1'), 250);
+        setTimeout(() => location.replace(loginDestination()), 250);
 
       } catch (err) {
         showError('알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
@@ -212,6 +212,14 @@
     // -------------------------------------------------------------------------
     // 헬퍼
     // -------------------------------------------------------------------------
+    function loginDestination() {
+      const next = new URLSearchParams(location.search).get('next');
+      if (next && next.startsWith('/portal/') && !next.includes('\\')) {
+        const target = new URL(next, location.origin);
+        if (target.origin === location.origin) return target.pathname + target.search;
+      }
+      return '/?selectCenter=1';
+    }
     function setLoading(on) {
       submitBtn.disabled = on;
       emailEl.disabled = on;
