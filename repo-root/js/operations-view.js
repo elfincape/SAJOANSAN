@@ -1,4 +1,4 @@
-export const statusLabels={pending:'미완료',in_progress:'진행중',completed:'완료',not_applicable:'해당없음',open:'미해결',resolved:'해결'};
+export const statusLabels={pending:'미완료',in_progress:'진행중',completed:'완료',not_applicable:'해당없음',open:'처리중',resolved:'처리완료'};
 export const actionLabels={created:'업무 등록',updated:'업무 수정',completed:'완료',not_applicable:'해당없음',handoff:'인계',deadline:'기한 변경',deadline_changed:'기한 변경',task_reopened:'업무 재개',incident_created:'특이사항 등록',incident_updated:'내용 수정',support_requested:'HQ 지원 요청',support_action:'HQ 실제 조치',resolved:'해결',reopened:'재개',file_uploaded:'첨부 파일 저장',cj_shared:'CJ 공유 완료 기록',cj_share_retracted:'CJ 공유 기록 정정'};
 export function koreaDate(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 export function dateRange(period,through=koreaDate()) {

@@ -9,7 +9,7 @@ import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
-const state={view:'center',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],selected:null,busy:false,retry:null};
+const state={view:'center',incidentScope:'center',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
 const incidentKinds=['차량 대차','차량 섭외 지연','납품처 문제','기사 문제','차량 문제','기타 특이사항'];
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text).replaceAll('HQ','배송팀');if(className)el.className=className;return el;}
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
@@ -39,23 +39,24 @@ async function loadData(){
  const center=$('center').value,day=koreaDate();
  const [tasks,incidents,templates,surveys,notifications,staff,briefing]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:day,through:day,includeCompleted:$('completed').checked}),
- api.incidents({center:state.view==='hq'?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
- Object.assign(state,{tasks,incidents,templates,surveys,notifications,staff,briefing});
+ api.incidents({center:['hq','briefing'].includes(state.view)||(state.view==='incidents'&&state.incidentScope==='all')?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[],state.view==='briefing'?portalAi.cachedBriefing():null]);
+ const parents=await api.parentTasks(incidents.map(i=>i.task_id));
+ Object.assign(state,{tasks,incidents,templates,surveys,notifications,staff,briefing,parents});
  $('unread').textContent=notifications.filter(n=>!n.read_at).length||'';
  if(state.selected){const collection=state.selected.type==='task'?tasks:state.selected.type==='incident'?incidents:surveys;const row=collection.find(r=>r.id===state.selected.row.id);state.selected=row?{...state.selected,row}:null;}
 }
 async function refresh(){if(state.busy)return;setBusy(true);message('업무를 불러오는 중입니다…');try{await loadData();render();message('');}catch(error){message(error.message||'업무를 불러오지 못했습니다.',true);}finally{setBusy(false);}}
-function choose(type,row){state.selected={type,row};renderDetail();}
+function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog').close();state.selected={type,row};renderDetail();}
 function addRow(row,type,parent,extra=''){
  const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span',row.title);content.append(node('small',extra));
  if(type==='task'){const warning=dispatchWarning(row);if(warning)content.append(node('small',warning,'warning'));}
- el.append(content,node('span',type==='survey'?surveyStages[row.stage]:statusLabels[row.status],'badge'));if(state.selected?.row.id===row.id)el.classList.add('selected');
+ el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):statusLabels[row.status],'badge'));if(state.selected?.row.id===row.id)el.classList.add('selected');
 }
 function render(){
  const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?centerName(center)+' 특이사항':centerName(center)+' 업무';
+ $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?(state.incidentScope==='all'?'전체 센터 특이사항':centerName(center)+' 특이사항'):centerName(center)+' 업무';
  $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
- document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
+ document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(el.dataset.allCenters?state.incidentScope==='all':(!el.dataset.center||el.dataset.center===center)&&(state.view!=='incidents'||state.incidentScope!=='all'));el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();
  if(state.view==='backups'){
@@ -73,7 +74,7 @@ function render(){
   if(!templates.length)actions.append(node('p','승인된 업무 양식이 없습니다. 실제 업무를 조사해 배송팀 검토 후 업무 버튼으로 연결합니다.'));
   button('일회성 업무 등록',()=>taskCreate(),actions);
  }
- if(['center','incidents'].includes(state.view)&&canWrite(center))for(const kind of incidentKinds)button(kind,()=>incidentCreate(kind),actions);
+
  if(state.view==='surveys'&&canWrite(center))button('우리 센터 업무 등록',()=>surveyForm(),actions,'primary');
  const items=$('items');items.replaceChildren();let count=0;
  const handedOff=new Set(state.notifications.filter(n=>n.task_id).map(n=>n.task_id));
@@ -87,9 +88,9 @@ function render(){
   items.append(node('h3','배송팀 지원 요청'));
   state.incidents.filter(i=>i.status==='open'&&['requested','supporting'].includes(i.support_state)).forEach(i=>{addRow(i,'incident',items,centerName(i.center_code));count++;});
  }else if(state.view==='center'){
-  const visible=tasks.filter(t=>!$('mine').checked||t.owner_id===profile.id);count=visible.length;visible.forEach(t=>addRow(t,'task',items,`${t.work_date} · ${t.owner_id===profile.id?'내 업무':'센터 업무'}`));
+  const visible=tasks.filter(t=>!$('mine').checked||t.owner_id===profile.id);count=visible.length;visible.forEach(t=>{addRow(t,'task',items,`${t.work_date} · ${t.owner_id===profile.id?'내 업무':'센터 업무'}`);const children=state.incidents.filter(i=>i.task_id===t.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));items.append(group);}});
  }else if(state.view==='incidents'){
-  const incidents=[...state.incidents].sort((a,b)=>(a.status==='resolved')-(b.status==='resolved'));count=incidents.length;incidents.forEach(i=>addRow(i,'incident',items,`${i.kind} · ${{none:'지원 요청 없음',requested:'배송팀 지원 요청',supporting:'배송팀 지원 중',done:'배송팀 지원 완료'}[i.support_state]}`));
+  const linked=state.incidents.filter(i=>i.task_id);count=linked.length;renderIncidentGroups(linked,items);const legacy=state.incidents.filter(i=>!i.task_id);if(legacy.length){const archive=node('details');archive.append(node('summary','기존 업무 미연결 기록 · '+legacy.length+'건'));legacy.forEach(i=>addRow(i,'incident',archive,stamp(i.created_at)));items.append(archive);}
  }else if(state.view==='surveys'){count=state.surveys.length;state.surveys.forEach(s=>addRow(s,'survey',items,centerName(s.center_code)));}
  else if(state.view==='access'){
   count=state.staff.length;
@@ -104,17 +105,18 @@ function render(){
  renderDetail();
 }
 function renderBriefing(actions){
- button('브리핑 생성·새로고침',async()=>{if(state.busy)return;setBusy(true);message('실제 운영 기록으로 브리핑을 만드는 중입니다…');try{const result=await portalAi.briefing(true);state.briefing=await portalAi.cachedBriefing();render();message(result.pending?result.message:result.cached?'저장된 결과를 표시했습니다. 새 생성 요청은 1분 간격으로 처리합니다.':'브리핑을 생성했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},actions,'primary');
- const items=$('items'),panel=$('detail'),entry=state.briefing,body=entry?.body;items.replaceChildren();panel.replaceChildren();$('list-title').textContent='확인할 운영 기록';$('count').textContent=(body?.items?.length??0)+'건';
+ button('브리핑 생성·새로고침',async()=>{if(state.busy)return;setBusy(true);message('실제 운영 기록으로 브리핑을 만드는 중입니다…');try{const result=await portalAi.briefing(true);state.briefing=await portalAi.cachedBriefing();await loadData();render();message(result.pending?result.message:result.cached?'저장된 결과를 표시했습니다. 새 생성 요청은 1분 간격으로 처리합니다.':'브리핑을 생성했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},actions,'primary');
+ const items=$('items'),panel=$('detail'),entry=state.briefing,body=entry?.body;items.replaceChildren();panel.replaceChildren();$('list-title').textContent='확인할 운영 기록';$('count').textContent='특이사항 '+state.incidents.filter(i=>i.task_id).length+'건 · AI 요약 '+(body?.items?.length??0)+'건';
  panel.append(node('h2','오늘의 운영 브리핑'),node('p','매일 오전 08:00에 생성합니다. 각 항목에서 실제 업무 기록을 확인하세요.'));
  if(entry?.last_error)panel.append(node('p',entry.last_error,'error'));
  if(entry?.dispatch_error)panel.append(node('p',entry.dispatch_error,'error'));
  if(entry?.status==='running')panel.append(node('p','새 브리핑을 생성 중입니다. 잠시 후 새로고침하세요.'));
- if(!body){items.append(node('p','오늘 저장된 브리핑이 없습니다.'));return;}
+ items.append(node('h3','센터 업무 특이사항 · 현재 상태'));renderIncidentGroups(state.incidents.filter(i=>i.task_id),items);panel.append(node('p','특이사항 처리중·처리완료는 현재 원본 기준입니다. 아래 AI 요약은 생성 시점 기준입니다.'));
+ if(!body){items.append(node('p','오늘 저장된 AI 요약이 없습니다.'));return;}
  panel.append(node('p','기준일 '+body.date+' · 생성 '+stamp(entry.generated_at)));
- for(const [key,label] of Object.entries({pending_tasks:'미완료 업무',open_incidents:'미해결 특이사항',yesterday_events:'전일 처리 기록',master_changes:'전일 차량·기사·코스 변경'}))panel.append(node('p',label+' · '+(body.counts?.[key]??0)+'건'));
+ for(const [key,label] of Object.entries({pending_tasks:'미완료 업무',open_incidents:'생성 당시 처리중 특이사항',yesterday_events:'전일 처리 기록',master_changes:'전일 차량·기사·코스 변경'}))panel.append(node('p',label+' · '+(body.counts?.[key]??0)+'건'));
  if(body.limited)panel.append(node('p','주요 기록 일부를 요약했습니다. 전체 내용은 센터 업무와 처리 기록에서 확인하세요.'));
- for(const item of body.items??[]){const line=node('div',undefined,'history-entry');line.append(node('p',item.title),node('small',(body.centers.find(center=>center.code===item.center)?.name??item.center??'센터 확인 필요')+' · '+(item.reason_label??'운영 기록')+(item.action?' · '+(actionLabels[item.action]??item.action):'')));
+ for(const item of body.items??[]){const line=node('div',undefined,'history-entry');const current=item.kind==='incident'?state.incidents.find(i=>i.id===item.id):null;line.append(node('p',item.title+(current?' · '+incidentStatus(current):'')),node('small',(body.centers.find(center=>center.code===item.center)?.name??item.center??'센터 확인 필요')+' · '+(item.reason_label??'운영 기록')+(item.action?' · '+(actionLabels[item.action]??item.action):'')));
   if(item.kind==='task')button('업무 열기',()=>openTask(item.id),line);
   else if(item.kind==='incident')button('특이사항 열기',async()=>{const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',item.id).single();if(error)message(error.message,true);else choose('incident',data);},line);
   else{const pages={drivers:'drivers.html',vehicles:'vehicles.html',routes:'route-edit.html'};const link=node('a','원본 운영정보 열기');link.href='/admin/'+pages[item.kind]+'?id='+encodeURIComponent(item.id)+(item.center?'&center='+encodeURIComponent(item.center):'');line.append(link);}
@@ -167,15 +169,17 @@ function taskCreate(){
  const panel=$('detail');panel.replaceChildren(node('h2','일회성 업무 등록'));const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;field(form,'업무일','date',koreaDate(),'date').required=true;field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const data={center:$('center').value,title:title.value,date:form.elements.date.value,inputs:{work_note:form.elements.note.value}};mutate(JSON.stringify(['create',data]),id=>api.save({requestId:id,...data}),row=>state.selected={type:'task',row});};
 }
-function taskDetail(task,panel){
- const writable=canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${task.work_date} · ${statusLabels[task.status]}`));
+const taskDrafts=new Map();
+function taskDetail(task,panel,readOnly=false){
+ const draft=taskDrafts.get(task.id);const values=!readOnly&&draft?.version===task.version?draft.inputs:task.inputs;
+ const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${task.work_date} · ${statusLabels[task.status]}`));
  if(task.template_snapshot?.spec?.completion_condition)panel.append(node('p','완료 전 확인 · '+task.template_snapshot.spec.completion_condition));
  if(task.due_at)panel.append(node('p','배송 마감 · '+stamp(task.due_at)));
  if(task.cj_share_due_at)panel.append(node('p','CJ 공유 마감 · '+stamp(task.cj_share_due_at)));
  if(task.inputs?.cj_shared===true)panel.append(node('p','CJ 공유 완료 · '+stamp(task.inputs.cj_shared_at)),node('p',task.inputs.cj_share_note??''));
  const fields=task.template_snapshot?.spec?.fields??[];
- for(const f of fields){const el=field(form,f.label,'field_'+f.key,task.inputs?.[f.key],f.type==='boolean'?'checkbox':f.type==='number'?'number':'text');if(f.type==='number')el.step='any';}
- field(form,'업무 내용','work_note',task.inputs?.work_note??'','textarea');
+ for(const f of fields){const el=field(form,f.label,'field_'+f.key,values?.[f.key],f.type==='boolean'?'checkbox':f.type==='number'?'number':'text');if(f.type==='number')el.step='any';}
+ field(form,'업무 내용','work_note',values?.work_note??'','textarea');
  const steps=task.template_snapshot?.spec?.steps??[];
  for(const step of steps){const status=task.inputs?.steps?.[step.key];const wrap=node(status==='completed'||status==='not_applicable'?'details':'fieldset');wrap.append(node(wrap.tagName==='DETAILS'?'summary':'legend',step.label+' · '+(statusLabels[status]??'')));
   if(!finished(task)&&writable){button('처리 완료',()=>saveTask(task,form,task.status,{step:step.key,status:'completed'}),wrap);button('해당 없음',()=>saveTask(task,form,task.status,{step:step.key,status:'not_applicable'}),wrap);}form.append(wrap);
@@ -186,12 +190,13 @@ function taskDetail(task,panel){
  if(writable){const actions=node('div',undefined,'quick-actions');if(finished(task))button('업무 다시 열기',()=>mutate('reopen:'+task.id+':'+task.version,id=>api.reopen({requestId:id,task})),actions);else{
   button('다른 직원에게 인계',()=>handoff(task,panel),actions);button('마감시간',()=>deadlines(task,panel),actions);
   button(task.inputs?.cj_shared===true?'CJ 공유 기록 정정':'CJ 공유 완료 기록',()=>cjShare(task,panel),actions);
-  for(const kind of incidentKinds)button(kind,()=>incidentCreate(kind,task),actions);
+  button('특이사항 발생',()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});incidentCreate(null,task);},actions,'primary');
  }panel.append(actions);}
+ const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){panel.append(node('h3','이 업무의 특이사항'));children.forEach(i=>addRow(i,'incident',panel,stamp(i.created_at)));}
  history(task,panel,'task');
 }
 function saveTask(task,form,status,step){
- try{const inputs=collectInputs(task,form);if(step){inputs.steps={...inputs.steps,[step.step]:step.status};}const data={task,center:task.center_code,title:task.title,date:task.work_date,inputs,status};mutate(JSON.stringify(['save',data]),id=>api.save({requestId:id,...data}));}catch(error){message(error.message,true);}
+ try{const inputs=collectInputs(task,form);if(step){inputs.steps={...inputs.steps,[step.step]:step.status};}const data={task,center:task.center_code,title:task.title,date:task.work_date,inputs,status};mutate(JSON.stringify(['save',data]),id=>api.save({requestId:id,...data}),()=>taskDrafts.delete(task.id));}catch(error){message(error.message,true);}
 }
 async function handoff(task,panel){
  if(state.busy)return;setBusy(true);
@@ -211,17 +216,29 @@ function deadlines(task,panel){
  const form=node('form',undefined,'portal-form');field(form,'배송 마감 (한국시간)','due',localTime(task.due_at),'datetime-local');field(form,'CJ 배차정보 공유 마감 (한국시간)','cj',localTime(task.cj_share_due_at),'datetime-local');field(form,'기존 마감 변경 사유','reason');form.append(node('button','마감시간 저장'));panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const value=name=>form.elements[name].value?new Date(form.elements[name].value+':00+09:00').toISOString():null;const data={due_at:value('due'),cj_share_due_at:value('cj'),reason:form.elements.reason.value};mutate(JSON.stringify(['deadline',task.id,task.version,data]),id=>api.taskAction({requestId:id,task,action:'deadline',data}));};
 }
-function incidentCreate(kind,task=null){
- const existing=task&&state.incidents.find(i=>i.task_id===task.id&&i.kind===kind&&i.status==='open');if(existing){choose('incident',existing);message('진행 중인 동일 유형의 특이사항을 열었습니다.');return;}
- const panel=$('detail');panel.replaceChildren(node('h2',kind+' 등록'));const form=node('form',undefined,'portal-form');field(form,'제목','title',kind).required=true;field(form,'발생 내용','note','','textarea').required=true;form.append(node('button','등록','primary'));panel.append(form);
- form.onsubmit=e=>{e.preventDefault();const data={center_code:task?.center_code??$('center').value,task_id:task?.id??null,title:form.elements.title.value,kind,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>state.selected={type:'incident',row});};
+function incidentStatus(row){return row.status==='resolved'?'처리완료':'처리중';}
+function parentTitle(id){return state.parents.find(t=>t.id===id)?.title??state.tasks.find(t=>t.id===id)?.title??'상위 업무 확인';}
+function addIncidentRow(row,parent){
+ const line=node('div',undefined,'incident-record');addRow(row,'incident',line,row.kind+' · 발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):''));
+ if(row.task_id)button('↳ 상위 업무 · '+parentTitle(row.task_id),()=>openParentTask(row.task_id),line,'parent-mention');parent.append(line);
+}
+function renderIncidentGroups(rows,parent){
+ for(const status of ['open','resolved']){const group=rows.filter(i=>i.status===status);parent.append(node('h3',(status==='open'?'처리중':'처리완료')+' · '+group.length+'건'));group.forEach(i=>addIncidentRow(i,parent));}
+}
+function incidentCreate(kind,task){
+ if(!task){message('하던 업무의 특이사항 발생 버튼으로 등록해 주세요.',true);return;}
+ const panel=$('detail');panel.replaceChildren(node('h2','특이사항 발생'),node('p','상위 업무 · '+task.title));const form=node('form',undefined,'portal-form');const label=node('label','유형'),select=node('select');select.name='kind';for(const item of incidentKinds){const option=node('option',item);option.value=item;select.append(option);}label.append(select);form.append(label);
+ field(form,'제목','title',kind??'').required=true;field(form,'발생 내용','note','','textarea').required=true;form.append(node('button','처리중으로 등록','primary'));panel.append(form);
+ form.onsubmit=e=>{e.preventDefault();const data={center_code:task.center_code,task_id:task.id,title:form.elements.title.value,kind:select.value,inputs:{발생내용:form.elements.note.value}};mutate(JSON.stringify(['incident',data]),id=>api.incidentAction({requestId:id,action:'create',data}),row=>{state.view='incidents';state.incidentScope='center';$('center').value=task.center_code;state.selected={type:'incident',row};});};
 }
 function incidentDetail(row,panel){
- panel.append(node('p',`${centerName(row.center_code)} · ${row.kind} · ${statusLabels[row.status]}`),node('p',row.inputs?.발생내용??''));
- if(row.task_id)button('관련 업무 열기',()=>openTask(row.task_id),panel);
- const actions=node('div',undefined,'quick-actions');button(row.status==='open'?'해결 처리':'다시 열기',()=>incidentAction(row,row.status==='open'?'resolve':'reopen'),actions);
- if(canWrite(row.center_code)&&row.status==='open')button('배송팀 지원 요청',()=>incidentAction(row,'request_support'),actions);panel.append(actions);
- if(isHq()&&row.status==='open'){const form=node('form',undefined,'portal-form');field(form,'실제로 수행한 배송팀 조치','note','','textarea').required=true;field(form,'배송팀 지원 완료','done',false,'checkbox');form.append(node('button','조치 기록','primary'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'support',{note:form.elements.note.value.trim(),done:form.elements.done.checked});};panel.append(form,node('p','배송팀 지원 완료와 사건 해결은 별도로 기록됩니다.'));}
+ panel.append(node('p',centerName(row.center_code)+' · '+row.kind+' · '+incidentStatus(row)),node('p','발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):'')));
+ if(row.task_id)button('상위 업무 · '+parentTitle(row.task_id),()=>openParentTask(row.task_id),panel,'parent-mention');
+ const writable=canWrite(row.center_code);
+ if(row.status==='open'&&writable){const form=node('form',undefined,'portal-form');field(form,'특이사항 제목','title',row.title).required=true;field(form,'발생 내용','note',row.inputs?.발생내용??'','textarea').required=true;field(form,'처리 내용','progress',row.inputs?.처리내용??'','textarea');const actions=node('div',undefined,'actions');const inputs=()=>({...row.inputs,발생내용:form.elements.note.value,처리내용:form.elements.progress.value});button('내용 저장',()=>{if(form.reportValidity())incidentAction(row,'edit',{title:form.elements.title.value,inputs:inputs()});},actions);button('처리완료',()=>{if(!form.reportValidity())return;const data={title:form.elements.title.value,inputs:inputs()};incidentAction(row,'resolve',{...data,note:form.elements.progress.value});},actions,'primary');form.append(actions);form.onsubmit=e=>e.preventDefault();panel.append(form);
+ }else{panel.append(node('h3','발생 내용'),node('p',row.inputs?.발생내용??''),node('h3','처리 내용'),node('p',row.inputs?.처리내용??'처리 내용 기록 없음'));if(row.status==='resolved')button('다시 처리중으로 열기',()=>incidentAction(row,'reopen'),panel);else{const form=node('form',undefined,'portal-form');field(form,'처리 내용','note',row.inputs?.처리내용??'','textarea');form.append(node('button','처리완료','primary'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'resolve',{note:form.elements.note.value});};panel.append(form);}}
+ if(writable&&row.status==='open')button('배송팀 지원 요청',()=>incidentAction(row,'request_support'),panel);
+ if(isHq()&&row.status==='open'){const form=node('form',undefined,'portal-form');field(form,'배송팀 조치 내용','note','','textarea').required=true;form.append(node('button','조치 기록'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'support',{note:form.elements.note.value.trim(),done:false});};panel.append(form);}
  history(row,panel,'incident');
 }
 function incidentAction(incident,action,data={}){return mutate(JSON.stringify([incident.id,incident.version,action,data]),id=>api.incidentAction({requestId:id,incident,action,data}));}
@@ -284,6 +301,12 @@ async function templateForm(survey,panel,draft=null){
  try{for(const person of await api.people(survey.center_code)){const option=node('option',person.name);option.value=person.id;owner.append(option);}}catch(error){message(error.message,true);}
 }
 function surveyAction(survey,action,data){return mutate(JSON.stringify(['survey',survey.id,survey.version,action,data]),id=>api.surveyAction({requestId:id,survey,action,data}));}
+let parentRequest=0;
+async function openParentTask(id){
+ const dialog=$('parent-task-dialog'),request=++parentRequest;dialog.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','상위 업무'));const close=button('닫기',()=>dialog.close(),header);close.dataset.navigationToggle='';dialog.append(header,node('p','원래 업무를 불러오는 중입니다…'));if(!dialog.open)dialog.showModal();
+ const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',id).single();if(!dialog.open||request!==parentRequest)return;
+ dialog.replaceChildren(header);if(error){dialog.append(node('p','상위 업무를 불러오지 못했습니다. 다시 시도해 주세요.','error'));return;}dialog.append(node('h2',data.title));taskDetail(data,dialog,true);
+}
 async function openTask(id){const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',id).single();if(error){message(error.message,true);return;}choose('task',data);}
 async function openNotification(n){try{await api.readNotification(n.id);if(n.reason_key?.startsWith('backup:')){state.view='backups';state.selected=null;await refresh();}else if(n.task_id)await openTask(n.task_id);else if(n.incident_id){const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
 let notificationTimer,checkingNotifications=false;
@@ -300,7 +323,7 @@ async function checkNotifications(){
 function buildCenterNavigation(){
  const order=['안산','평택','김해','양산'];
  const centers=[...state.context.centers].sort((a,b)=>{const rank=c=>{const i=order.findIndex(name=>c.name.includes(name));return i<0?99:i;};return rank(a)-rank(b);});
- document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();for(const center of centers){const el=node('button',center.name.replace(/센터$/,'').trim());el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
+ document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();if(nav.dataset.centerView==='incidents'){const all=node('button','전체 센터');all.type='button';all.dataset.view='incidents';all.dataset.allCenters='true';nav.append(all);}for(const center of centers){const el=node('button',center.name.replace(/센터$/,'').trim());el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
 }
 async function start(){
  setupPortalSidebar();
@@ -312,7 +335,7 @@ async function start(){
  buildCenterNavigation();
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
- document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;refresh();});await refresh();
+ document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.incidentScope=el.dataset.allCenters?'all':'center';if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;refresh();});await refresh();
  notificationTimer=setInterval(checkNotifications,30000);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNotifications();});
  addEventListener('pagehide',()=>clearInterval(notificationTimer),{once:true});

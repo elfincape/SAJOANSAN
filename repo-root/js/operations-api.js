@@ -82,6 +82,11 @@ export function createOperationsApi(client) {
         p_template_id: templateId, p_work_date: date, p_inputs: inputs,
         p_owner_id: ownerId, p_recurring: recurring }));
     },
+    async parentTasks(ids) {
+      const rows=[];const unique=[...new Set(ids.filter(Boolean))];
+      for(let offset=0;offset<unique.length;offset+=100)rows.push(...await unwrap(client.from('operations_tasks').select('id,title,center_code,status,work_date').in('id',unique.slice(offset,offset+100))));
+      return rows;
+    },
     incidents({ center, hqSupport = false, includeResolved = false }) {
       return allPages(() => {
         let query = client.from('operations_incidents').select('*').order('created_at', { ascending: false }).order('id');
