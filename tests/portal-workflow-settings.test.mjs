@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import {taskRunsOnDate,taskScheduleLabel} from '../repo-root/js/portal-task-views.js';
+import {parseCaptureRange} from '../repo-root/js/coupang-capture.js';
+const template={spec:{ui_cadence:'daily',repeat:{kind:'weekdays',days:[1,2,3,4,5,7]}}};
+assert.equal(taskRunsOnDate(template,'2026-10-17'),false);assert.equal(taskRunsOnDate(template,'2026-10-18'),true);assert.equal(taskRunsOnDate(template,'2026-10-12'),true);assert.equal(taskRunsOnDate(template,''),false);assert.equal(taskRunsOnDate({spec:{ui_cadence:'weekly'}},'2026-10-17'),true);assert.equal(taskScheduleLabel(template),' · 월·화·수·목·금·일');assert.deepEqual(parseCaptureRange('A1:E20'),{left:1,top:1,right:5,bottom:20});assert.deepEqual(parseCaptureRange('AA2:AC10'),{left:27,top:2,right:29,bottom:10});for(const value of ['A0:E20','E20:A1','A1:ZZ9999','A1'])assert.throws(()=>parseCaptureRange(value));console.log('PASS: excluded Saturday, included Sunday, weekly compatibility and bounded configurable capture range.');

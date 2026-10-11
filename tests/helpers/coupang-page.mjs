@@ -19,7 +19,7 @@ export function loadCoupangPage(overrides = {}) {
   for (const [, id] of source.matchAll(/\bid="([^"]+)"/g)) document.getElementById(id);
   const script = [...source.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
   const context = vm.createContext({
-    document, window: {}, console: { log() {}, warn() {}, error() {} },
+    document, window: {}, URLSearchParams, location:{search:''}, console: { log() {}, warn() {}, error() {} },
     fetch: () => new Promise(() => {}), setTimeout() {}, clearTimeout() {},
     URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} }, ...overrides
   });

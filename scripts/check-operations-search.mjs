@@ -13,4 +13,4 @@ const sql=match[0].replace('into result from groups','from groups').replace(/\bp
 await query('begin; set local role authenticated; explain (format json) '+sql+' rollback;');
 console.log('실제 검색 쿼리: authenticated 읽기 권한으로 실행 계획 생성 성공 (자료 조회·수정 없음).');
 try{await query(`begin; set local role authenticated; select public.operations_search('운영'); rollback;`);throw Error('미로그인 검색이 차단되지 않았습니다.');}
-catch(error){if(!error.message.includes('활성 계정으로 로그인'))throw error;console.log('로그인 없는 authenticated 요청: 차단 확인.');}
+catch(error){if(!/활성 계정으로 로그인|통합 검색 열람 권한이 없습니다/.test(error.message))throw error;console.log('로그인 없는 authenticated 요청: 차단 확인.');}

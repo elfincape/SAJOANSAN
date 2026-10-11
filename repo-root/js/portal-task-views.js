@@ -31,3 +31,6 @@ export function calendarDates(value,unit){
  if(unit==='month'){start=periodBounds(start,'week').from;end=periodBounds(end,'week').through;}
  const dates=[];for(let day=start;day<=end;day=addDays(day,1))dates.push(day);return dates;
 }
+
+export function taskRunsOnDate(template,value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const date=new Date(value+'T00:00:00Z');if(!Number.isFinite(+date)||date.toISOString().slice(0,10)!==value)return false;const spec=template.spec??template.template_snapshot?.spec??{};const day=date.getUTCDay()||7;return spec.ui_cadence!=='daily'||spec.repeat?.kind!=='weekdays'||(spec.repeat.days??[]).includes(day);}
+export function taskScheduleLabel(template){const spec=template.spec??{};return spec.ui_cadence==='daily'&&spec.repeat?.kind==='weekdays'?' · '+(spec.repeat.days??[]).map(d=>['','월','화','수','목','금','토','일'][d]).join('·'):'';}

@@ -1,0 +1,5 @@
+import {readFile} from 'node:fs/promises';
+const ref=process.env.SUPABASE_PROJECT_REF,token=process.env.SUPABASE_ACCESS_TOKEN;if(ref!=='vvrppotrnpwrwpwqaiet'||!token)throw Error('운영 인증 필요');
+async function query(query){const r=await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({query}),signal:AbortSignal.timeout(60000)});if(!r.ok)throw Error(await r.text());return r.json();}
+const apply=process.argv.includes('--apply');if(apply){await query(await readFile('repo-root/sql/operations-workflow-settings.sql','utf8'));console.log('업무 요일·연동 설정 및 완료 방어 반영');}
+console.log(JSON.stringify(await query(`select (select count(*) from public.user_profiles where active and role='admin') as active_admins,exists(select 1 from public.operations_templates where center_code='001' and title='쿠팡 배차' and status='approved') as registered,exists(select 1 from pg_trigger where tgname='operations_workflow_task') as workflow_guard;`)));
