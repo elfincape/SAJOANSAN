@@ -34,6 +34,7 @@ export function createOperationsApi(client) {
         .order('version', { ascending: false }).order('id'));
     },
     publishCustom({requestId,center,title,spec,familyId=null}) { return unwrap(client.rpc('operations_publish_custom_template',{p_request_id:requestId,p_center:center,p_title:title,p_spec:spec,p_family_id:familyId})); },
+    issuePeriod({requestId,templateId,date,endDate}) { return unwrap(client.rpc('operations_issue_task_period',{p_request_id:requestId,p_template_id:templateId,p_work_date:date,p_end_date:endDate})); },
     issueCustom({requestId,templateId,date}) { return unwrap(client.rpc('operations_issue_custom_task',{p_request_id:requestId,p_template_id:templateId,p_work_date:date})); },
     people(center) { return unwrap(client.rpc('operations_handoff_people', { p_center: center })); },
     events({ taskId, incidentId }) {
@@ -63,12 +64,12 @@ export function createOperationsApi(client) {
       return unwrap(client.rpc('operations_survey_action', { p_request_id: requestId, p_id: survey?.id ?? null,
         p_expected_version: survey?.version ?? null, p_action: action, p_data: data }));
     },
-    save({ requestId, task, center, title, date, inputs = {}, status = 'pending' }) {
+    save({ requestId, task, center, title, date, endDate, inputs = {}, status = 'pending' }) {
       if (!requestId) throw new Error('재시도에도 같은 요청 번호를 사용해야 합니다.');
-      return unwrap(client.rpc('operations_save_task', {
+      return unwrap(client.rpc('operations_save_task_period', {
         p_request_id: requestId, p_task_id: task?.id ?? null,
         p_expected_version: task?.version ?? null, p_center: center,
-        p_title: title, p_work_date: date, p_inputs: inputs, p_status: status
+        p_title: title, p_work_date: date, p_end_date: endDate??task?.work_end_date??date, p_inputs: inputs, p_status: status
       }));
     },
     taskAction({ requestId, task, action, data }) {
@@ -113,7 +114,7 @@ export function createOperationsApi(client) {
         if (center) query = query.eq('center_code', center);
         query = trash ? query.not('deleted_at','is',null) : query.is('deleted_at',null);
         // Older incomplete tasks stay visible when the reporting period changes.
-        query = trash ? query : includeCompleted ? query.or(`status.in.(pending,in_progress),and(work_date.gte.${from},work_date.lte.${through})`)
+        query = trash ? query : includeCompleted ? query.or(`status.in.(pending,in_progress),and(work_date.lte.${through},work_end_date.gte.${from}),and(work_end_date.is.null,work_date.gte.${from},work_date.lte.${through})`)
           : query.in('status', ['pending', 'in_progress']);
         return query;
       });

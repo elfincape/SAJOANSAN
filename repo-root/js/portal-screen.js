@@ -8,7 +8,7 @@ import {portalAi} from './portal-ai.js';
 import {createPortalSearch} from './portal-search.js';
 import {createPortalBackups} from './portal-backups.js';
 import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
-import {periodBounds,shiftPeriod,calendarDates,taskState,taskStateLabels} from './portal-task-views.js';
+import {periodBounds,shiftPeriod,calendarDates,calendarSegments,taskEnd,taskPeriod,overlapsPeriod,taskState,taskStateLabels} from './portal-task-views.js';
 import {setupDialogDismiss} from './portal-dialog.js';
 import {setupPortalSidebar} from './portal-sidebar.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
@@ -91,7 +91,7 @@ function render(){
  }else if(state.view==='center'){
   const period=periodBounds($('task-date').value,state.unit);
   const visible=tasks.filter(t=>(!$('mine').checked||assignedToMe(t))&&(state.status==='all'||taskState(t)===state.status));
-  const inPeriod=visible.filter(t=>t.work_date>=period.from&&t.work_date<=period.through),overdue=visible.filter(t=>t.work_date<period.from&&!finished(t));count=inPeriod.length+overdue.length;
+  const inPeriod=visible.filter(t=>overlapsPeriod(t,period.from,period.through)),overdue=visible.filter(t=>taskEnd(t)<period.from&&!finished(t));count=inPeriod.length+overdue.length;
   if(overdue.length){items.append(node('h3','이전 기간 미완료 · '+overdue.length+'건'));overdue.forEach(t=>addTaskWithChildren(t,items));}
   items.append(node('h3',period.from+(period.from===period.through?'':' ~ '+period.through)));
   if(state.layout==='calendar')renderTaskCalendar(inPeriod,items);else inPeriod.forEach(t=>addTaskWithChildren(t,items));
@@ -114,8 +114,16 @@ function render(){
 }
 function assignedToMe(task){if(task.owner_id===profile.id)return true;const subject=state.participants?.find(s=>s.id===task.handler_subject_id),person=state.participants?.find(s=>s.user_id===profile.id);return subject?.kind==='role'&&subject.role_key==='delivery_team'&&profile.role==='admin'||subject?.kind==='center'&&(person?.centers??[]).includes(subject.center_code);}
 function customizeTask(template){openTaskDesigner({template,center:$('center').value,name:centerName($('center').value),node,button,field,save:async data=>{await api.publishCustom(data);await loadData();render();message('업무 양식을 저장했습니다. 센터 업무에서 버튼을 눌러 티켓을 발행하세요.');}});}
- function addTaskWithChildren(task,parent){addRow(task,'task',parent,task.work_date+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'업무'));const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));parent.append(group);}}
- function renderTaskCalendar(tasks,parent){const unit=state.unit,grid=node('div',undefined,'task-calendar '+(unit==='day'?'calendar-day':unit==='week'?'calendar-week':'calendar-month'));for(const date of calendarDates($('task-date').value,unit)){const cell=node('section',undefined,'calendar-cell');cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');for(const task of tasks.filter(t=>t.work_date===date))addRow(task,'task',cell);grid.append(cell);}parent.append(grid);}
+ function addTaskWithChildren(task,parent){addRow(task,'task',parent,taskPeriod(task)+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'업무'));const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));parent.append(group);}}
+ function renderTaskCalendar(tasks,parent){
+ const unit=state.unit,dates=calendarDates($('task-date').value,unit),grid=node('div',undefined,'task-calendar calendar-spans calendar-'+unit),width=unit==='day'?1:7;
+ for(let i=0;i<dates.length;i+=width){const days=dates.slice(i,i+width),week=node('div',undefined,'calendar-span-week');week.style.setProperty('--days',days.length);
+  for(const date of days){const cell=node('section',undefined,'calendar-cell');cell.style.gridColumn=days.indexOf(date)+1;cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');week.append(cell);}
+  const bars=node('div',undefined,'calendar-bars');for(const segment of calendarSegments(tasks,days)){const {task,start,end,lane,continuesBefore,continuesAfter}=segment;
+   addRow(task,'task',bars,taskPeriod(task));const bar=bars.lastElementChild;bar.classList.add('calendar-task-bar');bar.style.gridColumn=(start+1)+' / '+(end+2);bar.style.gridRow=lane+1;bar.title=task.title+' · '+taskPeriod(task);bar.classList.toggle('continues-before',continuesBefore);bar.classList.toggle('continues-after',continuesAfter);
+  }week.append(bars);grid.append(week);
+ }parent.append(grid);
+}
  function renderBriefing(actions){
  button('브리핑 생성·새로고침',async()=>{if(state.busy)return;setBusy(true);message('실제 운영 기록으로 브리핑을 만드는 중입니다…');try{const result=await portalAi.briefing(true);state.briefing=await portalAi.cachedBriefing();await loadData();render();message(result.pending?result.message:result.cached?'저장된 결과를 표시했습니다. 새 생성 요청은 1분 간격으로 처리합니다.':'브리핑을 생성했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},actions,'primary');
  const items=$('items'),panel=$('detail'),entry=state.briefing,body=entry?.body;items.replaceChildren();panel.replaceChildren();$('list-title').textContent='확인할 운영 기록';$('count').textContent='특이사항 '+state.incidents.filter(i=>i.task_id).length+'건 · AI 요약 '+(body?.items?.length??0)+'건';
@@ -179,20 +187,23 @@ function attachments(kind,row,panel){
 }
 function issueTaskPicker(){
  const dialog=$('task-ticket-dialog');dialog.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','업무 발행'));button('닫기',()=>dialog.close(),header);dialog.append(header);
- const templates=currentTemplates(state.templates),grid=node('div',undefined,'issue-template-list');dialog.append(grid);
- for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>mutate('template:'+t.id+':'+$('task-date').value,id=>t.spec.manual_issue===true?api.issueCustom({requestId:id,templateId:t.id,date:$('task-date').value}):api.fromTemplate({requestId:id,templateId:t.id,date:$('task-date').value,recurring:false,ownerId:t.spec.owner_ids?.[0]??null}),row=>{state.selected={type:'task',row};}),grid,'primary');
+ const periodForm=node('form',undefined,'portal-form');periodFields(periodForm);dialog.append(periodForm);const templates=currentTemplates(state.templates),grid=node('div',undefined,'issue-template-list');dialog.append(grid);
+ for(const t of templates)button(t.title+' · '+(cadenceLabels[t.spec.ui_cadence]??'업무'),()=>{if(!periodForm.reportValidity())return;const date=periodForm.elements.date.value,endDate=periodForm.elements.endDate.value;mutate(JSON.stringify(['template',t.id,date,endDate]),id=>api.issuePeriod({requestId:id,templateId:t.id,date,endDate}),row=>{state.selected={type:'task',row};});},grid,'primary');
  if(!templates.length)dialog.append(node('p','업무 등록·조사에서 센터 업무 양식을 먼저 등록하세요.'));if(!dialog.open)dialog.showModal();
 }
+function periodFields(form){
+ const start=field(form,'시작일','date',koreaDate(),'date'),end=field(form,'종료일','endDate',koreaDate(),'date');start.required=end.required=true;end.min=start.value;start.onchange=()=>{end.min=start.value;if(end.value<start.value)end.value=start.value;};
+}
 function taskCreate(){
- const panel=$('task-ticket-dialog');panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','일회성 업무등록'));button('닫기',()=>panel.close(),header);panel.append(header);if(!panel.open)panel.showModal();const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;field(form,'업무일','date',$('task-date').value||koreaDate(),'date').required=true;field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
- form.onsubmit=e=>{e.preventDefault();const data={center:$('center').value,title:title.value,date:form.elements.date.value,inputs:{work_note:form.elements.note.value}};mutate(JSON.stringify(['create',data]),id=>api.save({requestId:id,...data}),row=>state.selected={type:'task',row});};
+ const panel=$('task-ticket-dialog');panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('h2','일회성 업무등록'));button('닫기',()=>panel.close(),header);panel.append(header);if(!panel.open)panel.showModal();const form=node('form',undefined,'portal-form');const title=field(form,'업무명','title');title.required=true;title.maxLength=200;periodFields(form);field(form,'필요한 내용','note','','textarea');const submit=node('button','등록','primary');form.append(submit);panel.append(form);
+ form.onsubmit=e=>{e.preventDefault();const data={center:$('center').value,title:title.value,date:form.elements.date.value,endDate:form.elements.endDate.value,inputs:{work_note:form.elements.note.value}};mutate(JSON.stringify(['create',data]),id=>api.save({requestId:id,...data}),row=>state.selected={type:'task',row});};
 }
 const taskDrafts=new Map();
 function taskDetail(task,panel,readOnly=false){
  if(task.deleted_at){renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:false});panel.append(node('p','휴지통에 보관 중 · '+stamp(task.deleted_at)),node('p',centerName(task.center_code)+' · '+task.work_date),node('p',task.inputs?.work_note??''));const values=node('dl');for(const f of task.template_snapshot?.spec?.fields??[])values.append(node('dt',f.label),node('dd',String(task.inputs?.[f.key]??'')));panel.append(values);if(!readOnly&&canWrite(task.center_code))button('업무 복원',()=>moveTaskTrash(task,true),panel,'primary');history(task,panel,'task');return;}
  if(!readOnly&&canWrite(task.center_code))button('삭제 · 휴지통으로 이동',()=>moveTaskTrash(task,false),panel,'trash-button');
  const draft=taskDrafts.get(task.id);const values=!readOnly&&draft?.version===task.version?draft.inputs:task.inputs;
- const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${task.work_date} · ${taskStateLabels[taskState(task)]}`));
+ const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${taskPeriod(task)} · ${taskStateLabels[taskState(task)]}`));
  renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:writable&&!finished(task),loadOptions:code=>api.participantOptions(code),stash:()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});},save:data=>mutate(JSON.stringify(['participants',task.id,task.version,data]),requestId=>api.setParticipants({requestId,task,...data}),row=>{const draft=taskDrafts.get(task.id);if(draft)taskDrafts.set(task.id,{...draft,version:row.version});state.selected={type:'task',row};})});
  if(task.template_snapshot?.spec?.completion_condition)panel.append(node('p','완료 전 확인 · '+task.template_snapshot.spec.completion_condition));
  if(task.due_at)panel.append(node('p','업무 마감 · '+stamp(task.due_at)));
@@ -217,7 +228,7 @@ function taskDetail(task,panel,readOnly=false){
 }
 function moveTaskTrash(task,restore){return mutate(JSON.stringify(['trash',task.id,task.version,restore]),requestId=>api.trashTask({requestId,task,restore}),()=>{taskDrafts.delete(task.id);state.selected=null;if($('task-ticket-dialog').open)$('task-ticket-dialog').close();});}
 function saveTask(task,form,status,step){
- try{const inputs=collectInputs(task,form);if(step){inputs.steps={...inputs.steps,[step.step]:step.status};}const data={task,center:task.center_code,title:task.title,date:task.work_date,inputs,status};mutate(JSON.stringify(['save',data]),id=>api.save({requestId:id,...data}),row=>{if(row.status!==status||(finished(row)&&(!row.completed_at||!row.completed_by)))throw Error('완료 저장 결과를 확인하지 못했습니다. 새로고침해 주세요.');taskDrafts.delete(task.id);state.selected={type:'task',row};});}catch(error){message(error.message,true);}
+ try{const inputs=collectInputs(task,form);if(step){inputs.steps={...inputs.steps,[step.step]:step.status};}const data={task,center:task.center_code,title:task.title,date:task.work_date,endDate:taskEnd(task),inputs,status};mutate(JSON.stringify(['save',data]),id=>api.save({requestId:id,...data}),row=>{if(row.status!==status||(finished(row)&&(!row.completed_at||!row.completed_by)))throw Error('완료 저장 결과를 확인하지 못했습니다. 새로고침해 주세요.');taskDrafts.delete(task.id);state.selected={type:'task',row};});}catch(error){message(error.message,true);}
 }
 function localTime(value){if(!value)return '';const date=new Date(new Date(value).valueOf()+9*3600000);return date.toISOString().slice(0,16);}
 function deadlines(task,panel){

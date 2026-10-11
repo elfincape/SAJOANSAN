@@ -14,7 +14,16 @@ export function shiftPeriod(value,unit,direction){
 }
 export function taskState(task,now=new Date()){
  if(['completed','not_applicable'].includes(task.status))return 'completed';
- return (task.due_at?new Date(task.due_at)<now:task.work_date<koreaDate(now))?'delayed':'active';
+ return (task.due_at?new Date(task.due_at)<now:taskEnd(task)<koreaDate(now))?'delayed':'active';
+}
+export const taskEnd=task=>task.work_end_date||task.work_date;
+export const taskPeriod=task=>task.work_date+(taskEnd(task)===task.work_date?'':' ~ '+taskEnd(task));
+export const overlapsPeriod=(task,from,through)=>task.work_date<=through&&taskEnd(task)>=from;
+export function calendarSegments(tasks,dates){
+ const lanes=[];return tasks.filter(t=>overlapsPeriod(t,dates[0],dates.at(-1))).sort((a,b)=>a.work_date.localeCompare(b.work_date)||taskEnd(b).localeCompare(taskEnd(a))||String(a.id).localeCompare(String(b.id))).map(task=>{
+  const start=dates.findIndex(d=>d>=task.work_date),end=dates.findLastIndex(d=>d<=taskEnd(task));let lane=lanes.findIndex(last=>last<start);if(lane<0)lane=lanes.length;lanes[lane]=end;
+  return {task,start,end,lane,continuesBefore:task.work_date<dates[0],continuesAfter:taskEnd(task)>dates.at(-1)};
+ });
 }
 export const taskStateLabels={active:'진행중',completed:'완료',delayed:'지연'};
 export function calendarDates(value,unit){
