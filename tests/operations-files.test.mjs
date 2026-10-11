@@ -32,7 +32,7 @@ async function graph(path,access,options={}){
  if(path.endsWith('/content'))return new Response(corrupt?new Uint8Array([1,2,3]):bytes);
  if(path.includes('/createUploadSession')){assert.equal(options.body,undefined);return json({uploadUrl:'https://sn.up.1drv.com/upload'});}
  if(options.method==='POST'&&path.endsWith('/children')){
-  const parent=path.match(/\/items\/([^/]+)/)[1],name=JSON.parse(options.body).name;
+  const parent=path.match(/\/items\/([^/]+)/)[1],name=JSON.parse(options.body).name;if(folderSequence===0)assert.equal(parent,'configured-parent','new uploads must use the configured shared folder');
   const folder={id:'folder'+(++folderSequence),folder:{},parentReference:{driveId:'drive',id:parent}};
   folders.set('/drives/drive/items/'+parent+':/'+encodeURIComponent(name),folder);return json(folder);
  }
@@ -42,7 +42,7 @@ async function graph(path,access,options={}){
  if(options.allowMissing)return null;
  throw Error('Unexpected Graph '+path);
 }
-const helpers={db,graph,connected:async()=>({accessToken:'access'}),settings:async()=>({expected_drive_id:'drive'}),withLock:fn=>fn(),json,fail,hash,filePart,
+const helpers={db,graph,connected:async()=>({accessToken:'access'}),settings:async()=>({expected_drive_id:'drive',folders:{operations:{driveId:'drive',folderId:'configured-parent'}}}),withLock:fn=>fn(),json,fail,hash,filePart,
  fetcher:async(url,options)=>{
   assert.equal(url,'https://sn.up.1drv.com/upload');assert.equal(options.headers.Authorization,undefined,'preauthenticated uploads must not expose bearer credentials');
   assert.equal(options.headers['Content-Range'],`bytes 0-${bytes.length-1}/${bytes.length}`);uploads++;

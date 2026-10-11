@@ -55,6 +55,8 @@ export const companyDocuments = {
 };
 export const operationsFiles = {
   health:()=>call('operations-health'),
+  settings:()=>call('operations-settings'),
+  configure:url=>call('operations-config',{url}),
   list:async(kind,subjectId)=>(await call('operations-list',{kind,subjectId})).files,
   download:fileId=>call('operations-download',{fileId},true),
   upload:({kind,subjectId,requestId,file})=>{
@@ -69,7 +71,7 @@ export const operationsBackups={
  download:id=>call('backups-download',{id},true)
 };
 export async function connectOneDrive() {
-  const result=await call('start');
+  const result=await call('start',{returnPath:location.pathname+location.search});
   const target=new URL(result.authorizationUrl);
   if(target.origin!=='https://login.microsoftonline.com')throw new Error('로그인 주소가 올바르지 않습니다.');
   sessionStorage.setItem('onedrive-proof',JSON.stringify({state:result.state,proof:result.proof,returnPath:location.pathname+location.search}));
@@ -83,6 +85,6 @@ export async function finishOneDrive() {
   await call('finish',{state,proof:saved.proof});
   sessionStorage.removeItem('onedrive-proof');
   const path=String(saved.returnPath||'/admin/drivers.html');
-  history.replaceState(null,'',path.startsWith('/admin/drivers.html')?path:'/admin/drivers.html');
+  history.replaceState(null,'',path.startsWith('/portal/')||path.startsWith('/admin/drivers.html')?path:'/admin/drivers.html');
   return true;
 }

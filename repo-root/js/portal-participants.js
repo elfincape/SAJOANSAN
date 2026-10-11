@@ -5,7 +5,7 @@ export function subjectLabel(subject,centerName){
  const properties=[...(subject.centers??[]).map(centerName),...(subject.role==='admin'?['배송팀']:[])];return subject.name+(properties.length?' · '+properties.join(', '):'');
 }
 export function renderParticipants({task,panel,options,node,button,field,centerName,writable,loadOptions,save,stash}){
- const section=node('section',undefined,'task-participants'),dl=node('dl');section.append(node('h3','업무 관계'),dl);panel.append(section);
+ const section=node('details',undefined,'task-participants'),dl=node('dl');section.append(node('summary','업무 관계'),dl);panel.append(section);
  const person=id=>options.find(s=>s.user_id===id),subject=id=>options.find(s=>s.id===id),label=s=>subjectLabel(s,centerName);
  for(const [name,s] of [['발행자',person(task.created_by)],['처리 담당',subject(task.handler_subject_id)??person(task.owner_id)]])dl.append(node('dt',name),node('dd',label(s)));
  if(task.completed_by)dl.append(node('dt','완료 처리자'),node('dd',label(person(task.completed_by))));

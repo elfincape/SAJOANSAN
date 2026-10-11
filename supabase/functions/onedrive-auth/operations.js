@@ -30,7 +30,7 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
  const {environment,folder,verify,save}=createOneDriveStorage({settings,connected,graph,fetcher,hash,fail});
  if(action==='operations-health'){
   if(user.role!=='admin')throw fail('OneDrive 운영 연결 점검은 HQ만 가능합니다.',403);
-  return withLock(async()=>{const env=await environment();const response=await graph('/drives/'+enc(env.driveId)+'/root?$select=id,folder',env.access);const root=await response.json();if(!root.id||!root.folder)throw fail('OneDrive 업무자료 저장 위치에 접근할 수 없습니다.',409);return json({connected:true,driveMatches:true,rootAccessible:true});});
+  return withLock(async()=>{const env=await environment(),config=await settings(),target=config.folders?.operations;const response=await graph('/drives/'+enc(target?.driveId??env.driveId)+(target?.folderId?'/items/'+enc(target.folderId):'/root')+'?$select=id,folder',env.access);const root=await response.json();if(!root.id||!root.folder)throw fail('OneDrive 업무자료 저장 위치에 접근할 수 없습니다.',409);return json({connected:true,driveMatches:true,rootAccessible:true});});
  }
  if(action==='operations-list'){
   const body=await req.json();await subject(body.kind,body.subjectId);
@@ -67,7 +67,9 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
    if(!file.folder_id){
     const root=await(await graph('/drives/'+enc(env.driveId)+'/root?$select=id',env.access)).json();
     const center=(await db('centers?select=name&code=eq.'+enc(target.center_code),{token:user.token}))[0];
-    const home=await folder(env.driveId,root.id,'SAJOANSAN 업무자료',env.access);
+    const config=await settings(),targetFolder=config.folders?.operations;
+    if(targetFolder&&String(targetFolder.driveId).toLowerCase()!==String(env.driveId).toLowerCase())throw fail('업무자료 저장 계정이 연결 계정과 다릅니다.',409);
+    const home=targetFolder?.folderId??await folder(env.driveId,root.id,'SAJOANSAN 업무자료',env.access);
     const centerFolder=await folder(env.driveId,home,filePart(center?.name,target.center_code),env.access);
     const destination=await folder(env.driveId,centerFolder,kind+'_'+subjectId,env.access);
     await db('operations_files?id=eq.'+enc(file.id),{method:'PATCH',body:{drive_id:env.driveId,folder_id:destination}});

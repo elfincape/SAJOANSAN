@@ -136,7 +136,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
     const stateHash=await hash(state);
     const pending=(await db('onedrive_oauth?state_hash=eq.'+enc(stateHash)+'&stage=eq.started&expires_at=gt.'+enc(new Date().toISOString()),{method:'PATCH',body:{stage:'exchanging'},prefer:'return=representation'}))[0];
     if(!pending||url.searchParams.has('error'))throw fail('로그인이 취소되었거나 만료되었습니다. 기사관리에서 다시 연결해 주세요.');
-    const {verifier}=await open(pending.encrypted_data);
+    const {verifier,returnPath}=await open(pending.encrypted_data);
     const code=url.searchParams.get('code');if(!code)throw fail('인증 코드가 없습니다.');
     const tokens=await grant({grant_type:'authorization_code',code,code_verifier:verifier});
     const config=await settings();
@@ -152,7 +152,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
     const payload={accessToken:tokens.access_token,refreshToken:tokens.refresh_token,expiresAt:Date.now()+tokens.expires_in*1000,folders};
     await db('onedrive_oauth?state_hash=eq.'+enc(stateHash),{method:'PATCH',body:{encrypted_data:await seal(payload),stage:'ready'}});
     // No tokens in URLs. The initiating browser must still prove possession.
-    return Response.redirect(SITE+'/admin/drivers.html?onedrive_state='+enc(state),303);
+    const target=new URL(returnPath?.startsWith('/portal/')?returnPath:'/admin/drivers.html',SITE);target.searchParams.set('onedrive_state',state);return Response.redirect(target.href,303);
   }
   return async req=>{
     const url=new URL(req.url),requestedAction=url.pathname.split('/').filter(Boolean).at(-1);
@@ -179,14 +179,22 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
       const permissionResource=action.startsWith('operations-')?null:action.startsWith('backups-')?'backups':action.startsWith('charter-')?'charter':companyMode?'companies':action==='replace-company'?'drivers':['start','finish','archive-config','pdf-config','company-config'].includes(action)?'connections':['status','list'].includes(action)?null:'drivers';
       if(permissionResource&&!await db('rpc/operations_resource_allowed',{method:'POST',token:user.token,body:{p_resource:permissionResource,p_action:['download','list','status'].includes(action)||action.endsWith('-list')||action.endsWith('-download')||action.endsWith('-status')||action.endsWith('-read')?'read':'edit',p_center:null}}))throw fail('이 목록에 접근할 권한이 없습니다.',403);
       if(action.startsWith('backups-'))return await handleBackups(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,fetcher,buildBackup});
+      if(['operations-settings','operations-config'].includes(action)){
+        if(user.role!=='admin')throw fail('OneDrive 관리 권한이 필요합니다.',403);
+        const config=await settings();
+        if(action==='operations-settings')return json({folderUrl:config.folders.operations?.url??config.folders.operations_requested?.url??'',folderConfigured:!!config.folders.operations?.folderId,connected:!!(await db('onedrive_connection?select=id&id=eq.true'))[0]});
+        const body=await req.json();if(typeof body.url!=='string'||body.url.length>2048)throw fail('폴더 공유 링크를 입력해 주세요.');
+        return withLock(async()=>{const connection=await connected();const folder=await(await graph('/shares/'+enc(shareToken(body.url))+'/driveItem',connection.accessToken)).json();const driveId=folder.parentReference?.driveId;if(!folder.folder||!driveId||String(driveId).toLowerCase()!==config.expected_drive_id.toLowerCase())throw fail('연결한 계정의 폴더를 선택해 주세요.',409);await db('onedrive_settings?id=eq.true',{method:'PATCH',body:{folders:{...config.folders,operations:{url:body.url,driveId,folderId:folder.id}}}});return json({configured:true});});
+      }
       if(action.startsWith('operations-')) return await handleOperations(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,filePart,fetcher});
       if(action.startsWith('charter-')) return await handleCharter(action,req,user,{db,graph,connected,settings,withLock,json,fail,shareToken,hash});
       if(action==='start'){
         await settings();
         if(env.ONEDRIVE_CLIENT_ID!==CLIENT_ID||!env.ONEDRIVE_CLIENT_SECRET)throw fail('OneDrive 앱 설정이 필요합니다.',503);
+        const requestBody=await req.json().catch(()=>({})),returnPath=typeof requestBody.returnPath==='string'&&requestBody.returnPath.startsWith('/portal/')?requestBody.returnPath:'/admin/drivers.html';
         const state=base64url(crypto.getRandomValues(new Uint8Array(32))),proof=base64url(crypto.getRandomValues(new Uint8Array(32))),verifier=base64url(crypto.getRandomValues(new Uint8Array(32)));
         await db('onedrive_oauth?expires_at=lt.'+enc(new Date().toISOString()),{method:'DELETE'});
-        await db('onedrive_oauth',{method:'POST',body:{state_hash:await hash(state),proof_hash:await hash(proof),user_id:user.id,stage:'started',encrypted_data:await seal({verifier}),expires_at:new Date(Date.now()+600000).toISOString()}});
+        await db('onedrive_oauth',{method:'POST',body:{state_hash:await hash(state),proof_hash:await hash(proof),user_id:user.id,stage:'started',encrypted_data:await seal({verifier,returnPath}),expires_at:new Date(Date.now()+600000).toISOString()}});
         const query=new URLSearchParams({client_id:CLIENT_ID,response_type:'code',redirect_uri:redirect,response_mode:'query',scope:'offline_access Files.ReadWrite',state,code_challenge:await hash(verifier),code_challenge_method:'S256',prompt:'select_account'});
         return json({state,proof,authorizationUrl:'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?'+query});
       }

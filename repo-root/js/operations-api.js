@@ -35,6 +35,7 @@ export function createOperationsApi(client) {
       return allPages(() => client.from('operations_templates').select('*').eq('center_code', center)
         .order('version', { ascending: false }).order('id'));
     },
+    retireCustom({requestId,template}) {return unwrap(client.rpc('operations_retire_custom_template',{p_request_id:requestId,p_template_id:template.id}));},
     publishCustom({requestId,center,title,spec,familyId=null}) { return unwrap(client.rpc('operations_publish_custom_template',{p_request_id:requestId,p_center:center,p_title:title,p_spec:spec,p_family_id:familyId})); },
     issuePeriod({requestId,templateId,date,endDate}) { return unwrap(client.rpc('operations_issue_task_period',{p_request_id:requestId,p_template_id:templateId,p_work_date:date,p_end_date:endDate})); },
     issueCustom({requestId,templateId,date}) { return unwrap(client.rpc('operations_issue_custom_task',{p_request_id:requestId,p_template_id:templateId,p_work_date:date})); },
