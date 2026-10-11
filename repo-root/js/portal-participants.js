@@ -10,9 +10,10 @@ export function renderParticipants({task,panel,options,node,button,field,centerN
  for(const [name,s] of [['발행자',person(task.created_by)],['처리 담당',subject(task.handler_subject_id)??person(task.owner_id)]])dl.append(node('dt',name),node('dd',label(s)));
  if(task.completed_by)dl.append(node('dt','완료 처리자'),node('dd',label(person(task.completed_by))));
  if(task.handoff_from_subject_id){dl.append(node('dt','인계자'),node('dd',label(subject(task.handoff_from_subject_id))),node('dt','인계받는 담당'),node('dd',label(subject(task.handoff_to_subject_id))),node('dt','인계 기록자'),node('dd',label(person(task.handoff_actor_id))));}
- if(!writable)return;const actions=node('div',undefined,'participant-actions');button('처리 담당 지정',()=>edit(false),actions);button('인계',()=>edit(true),actions);section.append(actions);
+ if(!writable)return ()=>{};const actions=node('div',undefined,'participant-actions');button('처리 담당 지정',()=>edit(false),actions);button('인계',()=>edit(true),actions);section.append(actions);
+ return ()=>edit(Boolean(task.handler_subject_id||task.owner_id));
  async function edit(handoff){
-  stash();section.querySelector('.participant-editor')?.remove();const form=node('form',undefined,'portal-form participant-editor');section.append(form);form.append(node('p','대상을 불러오는 중입니다…'));
+  section.open=true;stash();section.querySelector('.participant-editor')?.remove();const form=node('form',undefined,'portal-form participant-editor');section.append(form);form.append(node('p','대상을 불러오는 중입니다…'));section.scrollIntoView({block:'nearest',behavior:'smooth'});
   try{
    const choices=await loadOptions(task.center_code);if(!form.isConnected)return;form.replaceChildren();
    function choose(name,title,selected){const group=node('fieldset');group.append(node('legend',title));const tabs=node('div',undefined,'view-buttons'),list=node('div',undefined,'subject-options');group.append(tabs,list);let kind=choices.find(s=>s.id===selected)?.kind??'person';let value=selected??null;
