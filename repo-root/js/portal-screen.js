@@ -25,10 +25,10 @@ async function mutate(key,operation,success){
 }
 async function loadData(){
  const center=$('center').value,day=koreaDate();
- const [tasks,incidents,templates,surveys,notifications]=await Promise.all([
+ const [tasks,incidents,templates,surveys,notifications,staff]=await Promise.all([
  api.tasks({center:state.view==='hq'?undefined:center,from:day,through:day,includeCompleted:$('completed').checked}),
- api.incidents({center:state.view==='hq'?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications()]);
- Object.assign(state,{tasks,incidents,templates,surveys,notifications});
+ api.incidents({center:state.view==='hq'?undefined:center,includeResolved:true}),api.templates(center),api.surveys(state.view==='hq'?undefined:center),api.notifications(),state.view==='access'?api.staffAccess():[]]);
+ Object.assign(state,{tasks,incidents,templates,surveys,notifications,staff});
  $('unread').textContent=notifications.filter(n=>!n.read_at).length||'';
  if(state.selected){const collection=state.selected.type==='task'?tasks:state.selected.type==='incident'?incidents:surveys;const row=collection.find(r=>r.id===state.selected.row.id);state.selected=row?{...state.selected,row}:null;}
 }
@@ -41,10 +41,10 @@ function addRow(row,type,parent,extra=''){
 }
 function render(){
  const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'HQ 업무':state.view==='notifications'?'알림함':state.view==='surveys'?'우리 센터 업무 등록':centerName(center)+' 업무';
+ $('portal-title').textContent=hq?'HQ 업무':state.view==='access'?'센터 담당자 배정':state.view==='notifications'?'알림함':state.view==='surveys'?'우리 센터 업무 등록':centerName(center)+' 업무';
  $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
  document.querySelectorAll('nav button').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.view===state.view)));
- $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications'].includes(state.view);
+ $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();
  if(state.view==='center'&&canWrite(center)){
   const templates=currentTemplates(state.templates);
@@ -70,13 +70,26 @@ function render(){
  }else if(state.view==='incidents'){
   const incidents=[...state.incidents].sort((a,b)=>(a.status==='resolved')-(b.status==='resolved'));count=incidents.length;incidents.forEach(i=>addRow(i,'incident',items,`${i.kind} · ${{none:'지원 요청 없음',requested:'HQ 지원 요청',supporting:'HQ 지원 중',done:'HQ 지원 완료'}[i.support_state]}`));
  }else if(state.view==='surveys'){count=state.surveys.length;state.surveys.forEach(s=>addRow(s,'survey',items,centerName(s.center_code)));}
+ else if(state.view==='access'){
+  count=state.staff.length;
+  for(const person of state.staff)button(person.name+' · '+(person.role==='admin'?'HQ (모든 센터)':person.centers.map(centerName).join(', ')||'센터 미배정'),()=>membershipForm(person),items,'task-row');
+ }
  else{
   count=state.notifications.length;
   for(const n of state.notifications)button(`${n.read_at?'':'● '}${n.title} · ${stamp(n.created_at)}`,()=>openNotification(n),items,'task-row');
  }
  if(!count&&!hq)items.append(node('p','표시할 항목이 없습니다.'));
- $('count').textContent=count+'건';$('list-title').textContent={center:'지금 할 일',hq:'업무와 지원 요청',incidents:'특이사항',surveys:'센터별 업무조사',notifications:'내 알림'}[state.view];
+ $('count').textContent=count+'건';$('list-title').textContent={center:'지금 할 일',hq:'업무와 지원 요청',incidents:'특이사항',surveys:'센터별 업무조사',notifications:'내 알림',access:'활성 직원'}[state.view];
  renderDetail();
+}
+function membershipForm(person){
+ const panel=$('detail');panel.replaceChildren(node('h2',person.name));
+ if(person.role==='admin'){panel.append(node('p','HQ는 모든 센터 업무를 처리할 수 있습니다.'));return;}
+ panel.append(node('p','실제 소속 센터를 배정하세요. 다른 센터 자료는 조회할 수 있으며, 배정된 센터 업무만 수정할 수 있습니다.'));
+ const form=node('div',undefined,'portal-form');
+ for(const center of state.context.centers){const assigned=person.centers.includes(center.code);const line=node('div',undefined,'actions');line.append(node('span',center.name+' · '+(assigned?'배정됨':'미배정')));
+  button(assigned?'배정 해제':'배정',()=>mutate(JSON.stringify(['membership',person.id,center.code,assigned]),requestId=>api.setMembership({requestId,userId:person.id,center:center.code,expected:assigned,enabled:!assigned})),line);form.append(line);
+ }panel.append(form);
 }
 function renderDetail(){const panel=$('detail');panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);}
 function taskCreate(){
@@ -97,6 +110,7 @@ function taskDetail(task,panel){
  panel.append(form);form.onsubmit=e=>{e.preventDefault();if(writable&&!finished(task))saveTask(task,form,'in_progress');};
  if(writable){const actions=node('div',undefined,'quick-actions');if(finished(task))button('업무 다시 열기',()=>mutate('reopen:'+task.id+':'+task.version,id=>api.reopen({requestId:id,task})),actions);else{
   button('다른 직원에게 인계',()=>handoff(task,panel),actions);button('마감시간',()=>deadlines(task,panel),actions);
+  button(task.inputs?.cj_shared===true?'CJ 공유 기록 정정':'CJ 공유 완료 기록',()=>cjShare(task,panel),actions);
   for(const kind of incidentKinds)button(kind,()=>incidentCreate(kind,task),actions);
  }panel.append(actions);}
  history(task,panel,'task');
@@ -109,6 +123,13 @@ async function handoff(task,panel){
  try{const people=await api.people(task.center_code);const form=node('form',undefined,'portal-form');const label=node('label','다음 담당자'),select=node('select');select.name='owner';select.required=true;for(const p of people.filter(p=>p.id!==task.owner_id)){const option=node('option',p.name);option.value=p.id;select.append(option);}label.append(select);form.append(label);field(form,'인계 메모 (선택)','memo','','textarea');const submit=node('button','인계');submit.disabled=!select.options.length;form.append(submit);panel.append(form);
  form.onsubmit=e=>{e.preventDefault();const data={owner_id:select.value,memo:form.elements.memo.value};mutate(JSON.stringify(['handoff',task.id,task.version,data]),id=>api.taskAction({requestId:id,task,action:'handoff',data}));};
  }catch(error){message(error.message,true);}finally{setBusy(false);}
+}
+function cjShare(task,panel){
+ const shared=task.inputs?.cj_shared!==true,form=node('form',undefined,'portal-form');
+ form.append(node('p',shared?'CJ에 실제로 전달한 배차정보의 전달 방법과 내용을 기록하세요.':'기존 공유 완료 기록을 취소할 사유를 입력하세요.'));
+ field(form,shared?'실제 공유 내용':'정정 사유','note','','textarea').required=true;
+ form.append(node('button',shared?'공유 완료 기록 저장':'공유 기록 취소','primary'));panel.append(form);
+ form.onsubmit=e=>{e.preventDefault();const note=form.elements.note.value.trim();mutate(JSON.stringify(['cj-share',task.id,task.version,shared,note]),id=>api.recordCjShare({requestId:id,task,shared,note}));};
 }
 function localTime(value){if(!value)return '';const date=new Date(new Date(value).valueOf()+9*3600000);return date.toISOString().slice(0,16);}
 function deadlines(task,panel){
@@ -176,7 +197,7 @@ async function openNotification(n){try{await api.readNotification(n.id);if(n.tas
 async function start(){
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
- document.querySelector('[data-view=hq]').hidden=!isHq();if(isHq())state.view='hq';
+ document.querySelector('[data-view=hq]').hidden=!isHq();document.querySelector('[data-view=access]').hidden=!isHq();if(isHq())state.view='hq';
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
  document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.selected=null;refresh();});await refresh();

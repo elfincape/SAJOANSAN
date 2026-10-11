@@ -16,6 +16,15 @@ export function createOperationsApi(client) {
   }
   return {
     context() { return unwrap(client.rpc('operations_portal_context')); },
+    recordCjShare({ requestId, task, shared, note }) {
+      return unwrap(client.rpc('operations_record_cj_share', { p_request_id: requestId, p_task_id: task.id,
+        p_expected_version: task.version, p_shared: shared, p_note: note }));
+    },
+    staffAccess() { return unwrap(client.rpc('operations_staff_access')); },
+    setMembership({ requestId, userId, center, expected, enabled }) {
+      return unwrap(client.rpc('operations_set_membership', { p_request_id: requestId, p_user_id: userId,
+        p_center: center, p_expected: expected, p_enabled: enabled }));
+    },
     templates(center) {
       return allPages(() => client.from('operations_templates').select('*').eq('center_code', center)
         .order('version', { ascending: false }).order('id'));

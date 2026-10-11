@@ -41,7 +41,7 @@ create function public.operations_run_scheduler() returns jsonb
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare template public.operations_templates; owner jsonb; today date:=(now() at time zone 'Asia/Seoul')::date;
  old_sub text:=current_setting('request.jwt.claim.sub',true);old_claims text:=current_setting('request.jwt.claims',true);
- total integer:=0; failed integer:=0; t public.operations_tasks; name_key text;
+ total integer:=0; failed integer:=0; generated_task public.operations_tasks; name_key text;
 begin
  perform pg_advisory_xact_lock(hashtextextended('operations-scheduler',0));
  for template in select x.* from (select distinct on(family_id) * from public.operations_templates where status in ('approved','retired')
@@ -56,7 +56,7 @@ begin
    perform set_config('request.jwt.claim.sub',template.approved_by::text,true);
    perform set_config('request.jwt.claims',jsonb_build_object('sub',template.approved_by)::text,true);
    for owner in select value from jsonb_array_elements(template.spec->'owner_ids') loop
-    t:=public.operations_task_from_template(gen_random_uuid(),template.id,today,'{}',(owner#>>'{}')::uuid,true);total:=total+1;
+    generated_task:=public.operations_task_from_template(gen_random_uuid(),template.id,today,'{}',(owner#>>'{}')::uuid,true);total:=total+1;
    end loop;
    insert into public.operations_automation_state(name,last_success_at,attempts) values(name_key,now(),1)
     on conflict(name) do update set last_attempt_at=now(),last_success_at=now(),last_error=null,attempts=operations_automation_state.attempts+1;
@@ -81,3 +81,4 @@ create extension if not exists pg_cron with schema pg_catalog;
 select cron.schedule('operations-recurring-and-deadlines','* * * * *','select public.operations_run_scheduler();');
 notify pgrst,'reload schema';
 commit;
+
