@@ -52,6 +52,7 @@ function request(data=bytes){const form=new FormData();form.set('kind','task');f
 async function upload(data){return handleOperations('operations-upload',request(data),user,helpers);}
 assert.equal(operationsFileType('원본.pdf',bytes,fail).mime,'application/pdf');
 assert.throws(()=>operationsFileType('bad.xlsx',bytes,fail));assert.throws(()=>operationsFileType('run.exe',bytes,fail));
+const configuredSettings=helpers.settings;helpers.settings=async()=>({expected_drive_id:'drive',folders:{operations_requested:{url:'https://1drv.ms/example'}}});await assert.rejects(upload(),error=>error.status===409);assert.equal(uploads,0);assert.equal(journal,null,'pending folder configuration must not reserve or upload files');helpers.settings=configuredSettings;
 canWrite=false;await assert.rejects(upload(),error=>error.status===403);assert.equal(uploads,0);canWrite=true;
 corrupt=true;await assert.rejects(upload(),/검증/);assert.equal(journal.status,'failed');assert.equal(commits,0);assert.equal(uploads,1);
 corrupt=false;commitFails=true;await assert.rejects(upload(),/최종/);assert.equal(uploads,1,'DB failure retries reuse existing OneDrive bytes');assert.equal(journal.status,'failed');

@@ -56,6 +56,8 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
  const form=await req.formData(),kind=form.get('kind'),subjectId=form.get('subjectId'),requestId=form.get('requestId'),upload=form.get('file');
  if(!uuid(requestId)||!(upload instanceof File)||upload.size<1||upload.size>LIMIT||upload.name.length>255)throw fail('10MB 이하의 첨부 파일을 선택해 주세요.');
  const target=await subject(kind,subjectId,true),bytes=new Uint8Array(await upload.arrayBuffer()),type=operationsFileType(upload.name,bytes,fail),fingerprint=await hash(bytes);
+ const uploadConfig=await settings();
+ if(uploadConfig.folders?.operations_requested&&!uploadConfig.folders?.operations?.folderId)throw fail('운영관리 · OneDrive 관리에서 지정한 업무자료 폴더의 설정을 먼저 저장해 주세요.',409);
  let file=await db('rpc/operations_reserve_file',{method:'POST',body:{p_request:requestId,p_actor:user.id,p_kind:kind,p_subject:subjectId,p_hash:fingerprint,p_bytes:bytes.length,p_mime:type.mime,p_original:upload.name,p_extension:type.extension}});
  if(file.status==='saved')return json({id:file.id,saved:true});
  try{
