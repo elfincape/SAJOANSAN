@@ -98,6 +98,9 @@ function taskCreate(){
 }
 function taskDetail(task,panel){
  const writable=canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${task.work_date} · ${statusLabels[task.status]}`));
+ if(task.due_at)panel.append(node('p','배송 마감 · '+stamp(task.due_at)));
+ if(task.cj_share_due_at)panel.append(node('p','CJ 공유 마감 · '+stamp(task.cj_share_due_at)));
+ if(task.inputs?.cj_shared===true)panel.append(node('p','CJ 공유 완료 · '+stamp(task.inputs.cj_shared_at)),node('p',task.inputs.cj_share_note??''));
  const fields=task.template_snapshot?.spec?.fields??[];
  for(const f of fields){const el=field(form,f.label,'field_'+f.key,task.inputs?.[f.key],f.type==='boolean'?'checkbox':f.type==='number'?'number':'text');if(f.type==='number')el.step='any';}
  field(form,'업무 내용','work_note',task.inputs?.work_note??'','textarea');
@@ -194,6 +197,17 @@ async function templateForm(survey,panel){
 function surveyAction(survey,action,data){return mutate(JSON.stringify(['survey',survey.id,survey.version,action,data]),id=>api.surveyAction({requestId:id,survey,action,data}));}
 async function openTask(id){const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',id).single();if(error){message(error.message,true);return;}choose('task',data);}
 async function openNotification(n){try{await api.readNotification(n.id);if(n.task_id)await openTask(n.task_id);else{const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
+let notificationTimer,checkingNotifications=false;
+async function checkNotifications(){
+ if(state.busy||checkingNotifications||document.visibilityState==='hidden')return;
+ checkingNotifications=true;
+ try{
+  const unread=await api.unreadCount();
+  if(state.busy)return;
+  $('unread').textContent=unread||'';
+ }catch{/* Keep existing messages and editing inputs during temporary network failures. */}
+ finally{checkingNotifications=false;}
+}
 async function start(){
  $('user').textContent=profile.display_name??profile.email??'';
  try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
@@ -201,6 +215,10 @@ async function start(){
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
  document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;state.selected=null;refresh();});await refresh();
+ notificationTimer=setInterval(checkNotifications,30000);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNotifications();});
+ addEventListener('pagehide',()=>clearInterval(notificationTimer),{once:true});
+ addEventListener('pageshow',event=>{if(event.persisted){clearInterval(notificationTimer);notificationTimer=setInterval(checkNotifications,30000);checkNotifications();}});
  }catch(error){message(['PGRST202','42P01'].includes(error.code)?'업무 포털 서버 구성이 아직 적용되지 않았습니다. 관리자에게 서버 반영을 요청해 주세요.':error.message,true);setBusy(true);}
 }
 function historyReplace(url){globalThis.history.replaceState(null,'',url.pathname+url.search);}

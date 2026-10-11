@@ -40,6 +40,11 @@ export function createOperationsApi(client) {
     notifications() {
       return allPages(() => client.from('operations_notifications').select('*').order('created_at', { ascending: false }).order('id'));
     },
+    async unreadCount() {
+      const { count, error } = await client.from('operations_notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+      if (error) throw error;
+      return count;
+    },
     readNotification(id) { return unwrap(client.rpc('operations_read_notification', { p_id: id })); },
     surveys(center) {
       return allPages(() => {
