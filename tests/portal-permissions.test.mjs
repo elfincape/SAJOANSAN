@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {permissionAllowed} from '../repo-root/js/portal-permissions.js';
+const context={access:{tasks:{read:true,edit:false,read_centers:['001'],edit_centers:[]},forms:{read:true,edit:true,read_centers:['001','002'],edit_centers:['002']}}};
+assert.equal(permissionAllowed(context,'tasks','read','001'),true);
+assert.equal(permissionAllowed(context,'tasks','read','002'),false);
+assert.equal(permissionAllowed(context,'tasks','edit','001'),false);
+assert.equal(permissionAllowed(context,'forms','edit','001'),false);
+assert.equal(permissionAllowed(context,'forms','edit','002'),true);
+assert.equal(permissionAllowed(context,'members'),false);
+assert.equal(permissionAllowed(null,'tasks'),false);
+console.log('PASS: separate read/edit, no global fallback across centers, unknown/missing permissions deny access');

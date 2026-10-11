@@ -1,4 +1,6 @@
 import './file-drop.js';
+import {menuPermissions,resourceForPath,currentPermissionCenter,installMenuPermissions} from './menu-permissions.js';
+import {permissionAllowed} from './portal-permissions.js';
 // 인증 / 권한 가드
 // =============================================================================
 // 모든 페이지는 진입 시 requireAuth() 또는 requireRole(minRole)을 호출해야 한다.
@@ -65,6 +67,14 @@ export async function requireAuth() {
     redirectTo('/login.html?reason=inactive');
     return null;
   }
+  if(location.pathname.startsWith('/admin/')){
+    const permissions=await menuPermissions(),resource=resourceForPath(location.pathname);
+    if(resource&&!permissionAllowed(permissions,resource,'read',currentPermissionCenter())){
+      await confirmDialog('이 목록의 열람 권한이 없습니다.',{okOnly:true,okText:'확인'});
+      redirectTo('/portal/');return null;
+    }
+    installMenuPermissions(permissions,profile);
+  }
   return profile;
 }
 
@@ -73,6 +83,8 @@ export async function requireRole(minRole) {
   const profile = await requireAuth();
   if (!profile) return null;
 
+  if(resourceForPath(location.pathname))return profile;
+  if(['/admin/','/admin/index.html'].includes(location.pathname)){const permissions=await menuPermissions();if(Object.entries(permissions.access).some(([key,access])=>access.read&&!['tasks','incidents','forms','search','notifications','hq','history','trash'].includes(key)))return profile;}
   const need = ROLE_RANK[minRole] || 0;
   const have = ROLE_RANK[profile.role] || 0;
 

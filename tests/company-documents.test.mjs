@@ -17,6 +17,7 @@ const fetcher=async(input,options={})=>{
  if(p==='/auth/v1/user')return response({id:user});
  if(p.startsWith('/rest/v1/')){
   const table=p.slice(9);
+  if(table==='rpc/operations_resource_allowed')return response(true);
   if(table==='user_profiles')return response([{active:true,role}]);
   if(table==='drivers')return response([{id:driver,name:'기사',company_id:company,center_code:'001'}]);
   if(table==='companies')return response(visible?[{id:company,name:'운수사',center_code:'001'}]:[]);

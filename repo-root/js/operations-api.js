@@ -15,6 +15,8 @@ export function createOperationsApi(client) {
     }
   }
   return {
+    permissions() { return unwrap(client.rpc('operations_permissions_context')); },
+    updatePermission({requestId,config,read,write}) { return unwrap(client.rpc('operations_update_permission',{p_request_id:requestId,p_resource:config.resource,p_expected_version:config.version,p_read:read,p_write:write})); },
     context() { return unwrap(client.rpc('operations_portal_context')); },
     recordCjShare({ requestId, task, shared, note }) {
       return unwrap(client.rpc('operations_record_cj_share', { p_request_id: requestId, p_task_id: task.id,

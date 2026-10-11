@@ -14,6 +14,7 @@ const fetcher=async(input,options={})=>{
  if(p==='/auth/v1/user')return response({id:user});
  if(p.startsWith('/rest/v1/')){
   const table=p.slice(9);
+  if(table==='rpc/operations_resource_allowed')return response(true);
   if(table==='user_profiles')return response([{id:user,role,active:true}]);
   if(table==='drivers')return response(visible?[{id:driver}]:[]);
   if(table==='driver_documents'){

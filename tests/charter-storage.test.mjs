@@ -6,6 +6,7 @@ const fail=(message,status=400)=>Object.assign(new Error(message),{status});
 const hash=async bytes=>JSON.stringify([...bytes]);
 const connection={accessToken:'test',folders:{}},config={expected_drive_id:'drive',folders:{charter_002:{driveId:'drive',folderId:'folder'}}};
 const api={fail,json,hash,shareToken:()=> 'test',settings:async()=>config,connected:async()=>connection,withLock:async fn=>fn(),db:async(path,options={})=>{
+ if(path==='rpc/operations_resource_allowed')return true;
  if(path.startsWith('charter_trips'))return rows;
  if(path==='charter_archives'&&options.method==='POST'){inserted=options.body;return null;}
  if(path.startsWith('charter_archives?'))return inserted?[inserted]:[];
@@ -29,4 +30,5 @@ storedBytes=new TextEncoder().encode('edited');
 await assert.rejects(()=>handleCharter('charter-read',request({centerCode:'002',archiveId:inserted.id}),user,api),/변경/);
 await assert.rejects(()=>handleCharter('charter-config',request({centerCode:'002',url:'x'}),{...user,role:'editor'},api),/관리자/);
 rows=[];await assert.rejects(()=>handleCharter('charter-archive',request({centerCode:'002',month:'2026-10'}),user,api),/없습니다/);
+const denied={...api,db:async(path,options)=>path==='rpc/operations_resource_allowed'?false:api.db(path,options)};await assert.rejects(()=>handleCharter('charter-read',request({centerCode:'002',archiveId:inserted.id}),{...user,role:'editor'},denied),/접근할 권한/);
 console.log('PASS: authenticated OneDrive monthly snapshot, read-back verification, archive restoration, corrupted-file rejection, empty-month and admin checks');

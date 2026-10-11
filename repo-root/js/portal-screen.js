@@ -1,3 +1,4 @@
+import {renderPermissions,permissionAllowed} from './portal-permissions.js';
 import {renderMembers} from './portal-members.js';
 import {renderParticipants,subjectLabel} from './portal-participants.js';
 import {requireAuth} from './auth.js';
@@ -20,7 +21,11 @@ function node(tag,text,className){const el=document.createElement(tag);if(text!=
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
 const centerLabels={'001':'사조안산','002':'사조평택',gimhae:'김해센터',yangsan:'양산공장'};
 function centerName(code){return centerLabels[code]??state.context.centers.find(c=>c.code===code)?.name??code;}
-function canWrite(code){return state.context.writable_centers.includes(code);}
+const viewResource=view=>({center:'tasks',surveys:'forms',briefing:'briefing',access:'members'})[view]??view;
+function allowed(resource,action='read',center){return permissionAllowed(state.permissions,resource,action,center);}
+function canWrite(code,resource='tasks'){return state.context.writable_centers.includes(code)&&allowed(resource,'edit',code)&&(!['hq','search','notifications','trash'].includes(state.view)||allowed(viewResource(state.view),'edit',code));}
+function updateNavigation(){for(const el of document.querySelectorAll('nav button[data-view]'))el.hidden=!allowed(viewResource(el.dataset.view),'read',el.dataset.center);$('hq-navigation').hidden=!allowed('hq')&&!allowed('briefing');$('audit-navigation').hidden=!allowed('audit');document.querySelector('a[href="/admin/operations.html"]').hidden=!allowed('history');}
+
 function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
 function button(text,handler,parent,className){const el=node('button',text,className);el.type='button';el.onclick=handler;parent.append(el);return el;}
@@ -41,6 +46,8 @@ async function mutate(key,operation,success){
  finally{setBusy(false);}
 }
 async function loadData(){
+ state.permissions=await api.permissions();updateNavigation();
+ if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){Object.assign(state,{tasks:[],incidents:[],templates:[],surveys:[],notifications:[],selected:null});return;}
  if(['search','backups'].includes(state.view))return;
  const center=$('center').value,period=periodBounds($('task-date').value||koreaDate(),state.unit);
  const [tasks,incidents,templates,surveys,notifications,staff,briefing,members,participants]=await Promise.all([
@@ -59,8 +66,11 @@ function addRow(row,type,parent,extra=''){
  el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):taskStateLabels[taskState(row)],'badge status-'+(type==='task'?taskState(row):'other')));if(state.selected?.row.id===row.id)el.classList.add('selected');
 }
 function render(){
- const hq=state.view==='hq',center=$('center').value;
- $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='members'?'멤버 목록':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':state.view==='trash'?'휴지통':centerName(center)+' 업무목록';
+ document.body.classList.toggle('permissions-workspace',state.view==='permissions');const hq=state.view==='hq',center=$('center').value;
+ if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?center:undefined)){$('portal-title').textContent='열람 권한 없음';$('portal-description').textContent='관리자에게 이 목록의 열람 권한을 요청하세요.';$('items').replaceChildren();$('detail').replaceChildren();$('quick-actions').replaceChildren();$('new-task').hidden=$('issue-task').hidden=true;document.querySelector('.filters').hidden=true;return;}
+ if(state.view==='permissions'){$('portal-title').textContent='목록별 권한';$('portal-description').textContent='멤버의 역할·센터 속성으로 열람과 수정 조건을 설정하세요.';document.body.classList.remove('center-workspace','calendar-view');document.querySelector('.filters').hidden=true;$('new-task').hidden=$('issue-task').hidden=true;$('quick-actions').replaceChildren();$('count').textContent=state.permissions.rules.length+'개 목록';$('list-title').textContent='운영관리·포털 목록';renderPermissions({context:state.permissions,centers:state.context.centers,node,button,field,items:$('items'),panel:$('detail'),centerName,save:(config,data)=>mutate(JSON.stringify(['permission',config.resource,config.version,data]),requestId=>api.updatePermission({requestId,config,...data}))});return;}
+
+ $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='permissions'?'목록별 권한':state.view==='members'?'멤버 목록':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':state.view==='trash'?'휴지통':centerName(center)+' 업무목록';
  $('portal-description').textContent=hq?'내 업무와 센터 현황, 지원 요청을 함께 확인하세요.':state.view==='incidents'?'센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
  document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
  document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
@@ -76,7 +86,7 @@ function render(){
  }
  if(state.view==='members'){renderMembers({members:state.members,centers:state.context.centers,node,button,field,centerName,items:$('items'),panel:$('detail'),save:async(person,data)=>{let saved=false;await mutate(JSON.stringify(['member',person.id,data]),requestId=>api.updateMember({requestId,person,...data}),()=>{saved=true;if(person.id===profile.id){profile.display_name=data.name.trim();$('user').textContent=profile.display_name;}});if(saved&&person.id===profile.id&&data.role!==profile.role)location.reload();}});$('count').textContent=state.members.length+'명';$('list-title').textContent='멤버 목록';return;}
  if(state.view==='briefing'){renderBriefing(actions);return;}
- if(state.view==='surveys'&&canWrite(center))button('센터 업무등록',()=>customizeTask(),actions,'primary');
+ if(state.view==='surveys'&&canWrite(center,'forms'))button('센터 업무등록',()=>customizeTask(),actions,'primary');
  const items=$('items');items.replaceChildren();let count=0;
  const handedOff=new Set(state.notifications.filter(n=>n.task_id).map(n=>n.task_id));
  const tasks=orderTasks(state.tasks,{userId:profile.id,handedOff});
@@ -98,7 +108,7 @@ function render(){
   }else if(state.view==='trash'){count=tasks.length;tasks.forEach(t=>addRow(t,'task',items,centerName(t.center_code)+' · 휴지통 이동 '+stamp(t.deleted_at)));
  }else if(state.view==='incidents'){
   const linked=state.incidents.filter(i=>i.task_id);count=linked.length;renderIncidentGroups(linked,items);const legacy=state.incidents.filter(i=>!i.task_id);if(legacy.length){const archive=node('details');archive.append(node('summary','기존 업무 미연결 기록 · '+legacy.length+'건'));legacy.forEach(i=>addRow(i,'incident',archive,stamp(i.created_at)));items.append(archive);}
-  }else if(state.view==='surveys'){const templates=currentTemplates(state.templates);count=templates.length;for(const t of templates){const entry=node('div',undefined,'task-row');entry.append(node('strong',t.title),node('small',(cadenceLabels[t.spec.ui_cadence]??'기존 업무')+' · 입력 '+t.spec.fields.length+'개 · 버전 '+t.version));if(canWrite(center))button('양식 커스터마이징',()=>customizeTask(t),entry);items.append(entry);}if(state.surveys.length){const archive=node('details');archive.append(node('summary','기존 업무조사 기록 · '+state.surveys.length+'건'));state.surveys.forEach(s=>addRow(s,'survey',archive,centerName(s.center_code)));items.append(archive);}}
+  }else if(state.view==='surveys'){const templates=currentTemplates(state.templates);count=templates.length;for(const t of templates){const entry=node('div',undefined,'task-row');entry.append(node('strong',t.title),node('small',(cadenceLabels[t.spec.ui_cadence]??'기존 업무')+' · 입력 '+t.spec.fields.length+'개 · 버전 '+t.version));if(canWrite(center,'forms'))button('양식 커스터마이징',()=>customizeTask(t),entry);items.append(entry);}if(state.surveys.length){const archive=node('details');archive.append(node('summary','기존 업무조사 기록 · '+state.surveys.length+'건'));state.surveys.forEach(s=>addRow(s,'survey',archive,centerName(s.center_code)));items.append(archive);}}
  
  else if(state.view==='access'){
   count=state.staff.length;
@@ -161,14 +171,14 @@ function attachments(kind,row,panel){
  let pending=null;
  const input=field(form,'파일 선택','file','','file');input.required=true;input.accept='.xlsx,.xls,.pdf,.docx,.doc,.pptx,.csv,.txt,.jpg,.jpeg,.png,.webp';
  input.onchange=()=>{if(pending?.expectedRow)pending.file=input.files[0];else pending=null;};
- form.append(hint,node('button','첨부 파일 저장','primary'));if(canWrite(row.center_code))section.append(form);
+ form.append(hint,node('button','첨부 파일 저장','primary'));if(canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))section.append(form);
  async function load(){
   try{const files=await operationsFiles.list(kind,row.id);if(!section.isConnected)return;list.replaceChildren();
    if(!files.length)list.append(node('p','첨부된 파일이 없습니다.'));
    for(const file of files){const line=node('div',undefined,'history-entry');line.append(node('p',file.file_name),node('small',file.original_name+' · '+(file.byte_size/1024).toFixed(1)+'KB · '+stamp(file.created_at)));
     if(file.status==='saved')button('다운로드',async()=>{if(state.busy)return;setBusy(true);try{const blob=await operationsFiles.download(file.id),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=file.file_name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);message('검증한 파일을 다운로드했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},line);
     else {line.append(node('p',file.status==='failed'?'저장 실패 · '+(file.last_error??'다시 시도해 주세요.'):'저장 확인 중'));
-     if(file.uploaded_by===profile.id&&canWrite(row.center_code))button('같은 파일로 재시도',()=>{pending={requestId:file.request_id,file:null,expectedRow:file};input.value='';hint.textContent=file.original_name+' 원본을 다시 선택하세요. 같은 저장 요청을 이어서 처리합니다.';input.focus();},line);
+     if(file.uploaded_by===profile.id&&canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))button('같은 파일로 재시도',()=>{pending={requestId:file.request_id,file:null,expectedRow:file};input.value='';hint.textContent=file.original_name+' 원본을 다시 선택하세요. 같은 저장 요청을 이어서 처리합니다.';input.focus();},line);
     }list.append(line);
    }
   }catch(error){if(section.isConnected)list.replaceChildren(node('p',error.message,'error'));}
@@ -200,8 +210,8 @@ function taskCreate(){
 }
 const taskDrafts=new Map();
 function taskDetail(task,panel,readOnly=false){
- if(task.deleted_at){renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:false});panel.append(node('p','휴지통에 보관 중 · '+stamp(task.deleted_at)),node('p',centerName(task.center_code)+' · '+task.work_date),node('p',task.inputs?.work_note??''));const values=node('dl');for(const f of task.template_snapshot?.spec?.fields??[])values.append(node('dt',f.label),node('dd',String(task.inputs?.[f.key]??'')));panel.append(values);if(!readOnly&&canWrite(task.center_code))button('업무 복원',()=>moveTaskTrash(task,true),panel,'primary');history(task,panel,'task');return;}
- if(!readOnly&&canWrite(task.center_code))button('삭제 · 휴지통으로 이동',()=>moveTaskTrash(task,false),panel,'trash-button');
+ if(task.deleted_at){renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:false});panel.append(node('p','휴지통에 보관 중 · '+stamp(task.deleted_at)),node('p',centerName(task.center_code)+' · '+task.work_date),node('p',task.inputs?.work_note??''));const values=node('dl');for(const f of task.template_snapshot?.spec?.fields??[])values.append(node('dt',f.label),node('dd',String(task.inputs?.[f.key]??'')));panel.append(values);if(!readOnly&&canWrite(task.center_code,'trash')&&canWrite(task.center_code))button('업무 복원',()=>moveTaskTrash(task,true),panel,'primary');history(task,panel,'task');return;}
+ if(!readOnly&&canWrite(task.center_code,'trash')&&canWrite(task.center_code))button('삭제 · 휴지통으로 이동',()=>moveTaskTrash(task,false),panel,'trash-button');
  const draft=taskDrafts.get(task.id);const values=!readOnly&&draft?.version===task.version?draft.inputs:task.inputs;
  const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');panel.append(node('p',`${centerName(task.center_code)} · ${taskPeriod(task)} · ${taskStateLabels[taskState(task)]}`));
  renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:writable&&!finished(task),loadOptions:code=>api.participantOptions(code),stash:()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});},save:data=>mutate(JSON.stringify(['participants',task.id,task.version,data]),requestId=>api.setParticipants({requestId,task,...data}),row=>{const draft=taskDrafts.get(task.id);if(draft)taskDrafts.set(task.id,{...draft,version:row.version});state.selected={type:'task',row};})});
@@ -221,7 +231,7 @@ function taskDetail(task,panel,readOnly=false){
  panel.append(form);form.onsubmit=e=>{e.preventDefault();if(writable&&!finished(task))saveTask(task,form,'in_progress');};
  if(writable){const actions=node('div',undefined,'quick-actions');if(finished(task))button('업무 다시 열기',()=>mutate('reopen:'+task.id+':'+task.version,id=>api.reopen({requestId:id,task})),actions);else{
   button('마감시간',()=>deadlines(task,panel),actions);
-  button('특이사항 발생',()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});if($('task-ticket-dialog').open)$('task-ticket-dialog').close();incidentCreate(null,task);},actions,'primary');
+  allowed('incidents','edit',task.center_code)&&button('특이사항 발생',()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});if($('task-ticket-dialog').open)$('task-ticket-dialog').close();incidentCreate(null,task);},actions,'primary');
  }panel.append(actions);}
  const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){panel.append(node('h3','이 업무의 특이사항'));children.forEach(i=>addRow(i,'incident',panel,stamp(i.created_at)));}
  history(task,panel,'task');
@@ -254,11 +264,11 @@ function incidentCreate(kind,task){
 function incidentDetail(row,panel){
  panel.append(node('p',centerName(incidentCenterCode(row))+' · '+row.kind+' · '+incidentStatus(row)),node('p','발생 '+stamp(row.created_at)+(row.resolved_at?' · 처리완료 '+stamp(row.resolved_at):'')));
  if(row.task_id)button('상위 업무 · '+parentTitle(row.task_id),()=>openParentTask(row.task_id),panel,'parent-mention');
- const writable=canWrite(row.center_code);
+ const writable=canWrite(row.center_code,'incidents');
  if(row.status==='open'&&writable){const form=node('form',undefined,'portal-form');field(form,'특이사항 제목','title',row.title).required=true;field(form,'발생 내용','note',row.inputs?.발생내용??'','textarea').required=true;field(form,'처리 내용','progress',row.inputs?.처리내용??'','textarea');const actions=node('div',undefined,'actions');const inputs=()=>({...row.inputs,발생내용:form.elements.note.value,처리내용:form.elements.progress.value});button('내용 저장',()=>{if(form.reportValidity())incidentAction(row,'edit',{title:form.elements.title.value,inputs:inputs()});},actions);button('처리완료',()=>{if(!form.reportValidity())return;const data={title:form.elements.title.value,inputs:inputs()};incidentAction(row,'resolve',{...data,note:form.elements.progress.value});},actions,'primary');form.append(actions);form.onsubmit=e=>e.preventDefault();panel.append(form);
- }else{panel.append(node('h3','발생 내용'),node('p',row.inputs?.발생내용??''),node('h3','처리 내용'),node('p',row.inputs?.처리내용??'처리 내용 기록 없음'));if(row.status==='resolved')button('다시 처리중으로 열기',()=>incidentAction(row,'reopen'),panel);else{const form=node('form',undefined,'portal-form');field(form,'처리 내용','note',row.inputs?.처리내용??'','textarea');form.append(node('button','처리완료','primary'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'resolve',{note:form.elements.note.value});};panel.append(form);}}
+ }else{panel.append(node('h3','발생 내용'),node('p',row.inputs?.발생내용??''),node('h3','처리 내용'),node('p',row.inputs?.처리내용??'처리 내용 기록 없음'));if(row.status==='resolved'&&allowed('incidents','edit',row.center_code))button('다시 처리중으로 열기',()=>incidentAction(row,'reopen'),panel);else if(row.status==='open'&&allowed('incidents','edit',row.center_code)){const form=node('form',undefined,'portal-form');field(form,'처리 내용','note',row.inputs?.처리내용??'','textarea');form.append(node('button','처리완료','primary'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'resolve',{note:form.elements.note.value});};panel.append(form);}}
  if(writable&&row.status==='open')button('배송팀 지원 요청',()=>incidentAction(row,'request_support'),panel);
- if(isHq()&&row.status==='open'){const form=node('form',undefined,'portal-form');field(form,'배송팀 조치 내용','note','','textarea').required=true;form.append(node('button','조치 기록'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'support',{note:form.elements.note.value.trim(),done:false});};panel.append(form);}
+ if(isHq()&&allowed('incidents','edit',row.center_code)&&row.status==='open'){const form=node('form',undefined,'portal-form');field(form,'배송팀 조치 내용','note','','textarea').required=true;form.append(node('button','조치 기록'));form.onsubmit=e=>{e.preventDefault();incidentAction(row,'support',{note:form.elements.note.value.trim(),done:false});};panel.append(form);}
  history(row,panel,'incident');
 }
 function incidentAction(incident,action,data={}){return mutate(JSON.stringify([incident.id,incident.version,action,data]),id=>api.incidentAction({requestId:id,incident,action,data}));}
@@ -274,7 +284,7 @@ function surveyForm(survey=null){
 }
 function surveyDetail(row,panel){
  panel.append(node('p',centerName(row.center_code)+' · '+surveyStages[row.stage]));const dl=node('dl');for(const [key,label] of surveyFields)if(row.details[key])dl.append(node('dt',label),node('dd',row.details[key]));panel.append(dl);
- if(canWrite(row.center_code)&&!row.template_id)button('조사 수정',()=>surveyForm(row),panel);
+ if(canWrite(row.center_code,'forms')&&!row.template_id)button('조사 수정',()=>surveyForm(row),panel);
  if(isHq()){
   button('AI 양식 초안 생성',()=>surveyDraft(row,panel),panel);
   const stages=Object.keys(surveyStages),next=stages[stages.indexOf(row.stage)+1];if(next)button(surveyStages[next]+' 기록',()=>surveyAction(row,'stage',{stage:next}),panel);
@@ -328,7 +338,7 @@ async function openParentTask(id){
  dialog.replaceChildren(header);if(error){dialog.append(node('p','상위 업무를 불러오지 못했습니다. 다시 시도해 주세요.','error'));return;}dialog.append(node('h2',data.title));taskDetail(data,dialog,true);
 }
 async function openTask(id){const {data,error}=await supabase.from('operations_tasks').select('*').eq('id',id).single();if(error){message(error.message,true);return;}choose('task',data);}
-async function openNotification(n){try{await api.readNotification(n.id);if(n.reason_key?.startsWith('backup:')){state.view='backups';state.selected=null;await refresh();}else if(n.task_id)await openTask(n.task_id);else if(n.incident_id){const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
+async function openNotification(n){try{if(allowed('notifications','edit'))await api.readNotification(n.id);if(n.reason_key?.startsWith('backup:')){state.view='backups';state.selected=null;await refresh();}else if(n.task_id)await openTask(n.task_id);else if(n.incident_id){const {data,error}=await supabase.from('operations_incidents').select('*').eq('id',n.incident_id).single();if(error)throw error;choose('incident',data);}if(allowed('notifications','edit'))n.read_at=new Date().toISOString();$('unread').textContent=state.notifications.filter(n=>!n.read_at).length||'';}catch(error){message(error.message,true);}}
 let notificationTimer,checkingNotifications=false;
 async function checkNotifications(){
  if(state.busy||checkingNotifications||document.visibilityState==='hidden')return;
@@ -349,11 +359,13 @@ async function start(){
  $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;$('issue-task').onclick=issueTaskPicker;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
  $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
  $('user').textContent=profile.display_name??profile.email??'';
- try{state.context=await api.context();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
- document.querySelector('[data-view=hq]').hidden=!isHq();$('members-navigation').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq()&&!requested)state.view='hq';
+ try{state.context=await api.context();state.permissions=await api.permissions();for(const center of state.context.centers){const option=node('option',center.name);option.value=center.code;$('center').append(option);}const requested=new URLSearchParams(location.search).get('center');$('center').value=state.context.centers.some(c=>c.code===requested)?requested:state.context.writable_centers[0]??state.context.centers[0]?.code;
+ document.querySelector('[data-view=hq]').hidden=!isHq();$('members-navigation').hidden=!isHq();$('permissions-navigation').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq()&&!requested)state.view='hq';
  document.querySelector('[data-view=backups]').hidden=!isHq();
  $('hq-navigation').hidden=!isHq();$('audit-navigation').hidden=!isHq();
- buildCenterNavigation();
+ buildCenterNavigation();updateNavigation();const requestedView=new URLSearchParams(location.search).get('view');if(requestedView&&allowed(viewResource(requestedView)))state.view=requestedView;
+ if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){const first=[...document.querySelectorAll('nav button[data-view]')].find(el=>!el.hidden);if(first){state.view=first.dataset.view;if(first.dataset.center)$('center').value=first.dataset.center;}}
+
  $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
  document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;if($('task-ticket-dialog').open)$('task-ticket-dialog').close();refresh();});await refresh();

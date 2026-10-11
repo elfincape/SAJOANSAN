@@ -3,7 +3,7 @@ import {makeHandler,validDate,imageType,shareToken,hash,documentFilename,folderK
 const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-service',SUPABASE_ANON_KEY:'test-anon',ONEDRIVE_CLIENT_ID:'56899a37-25c3-43e2-b006-6e001d538185',ONEDRIVE_CLIENT_SECRET:'test-secret'};
 const id='00000000-0000-4000-8000-000000000001',uid='00000000-0000-4000-8000-000000000002';
 const kinds=['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
-let role='admin',active=true,visible=true,oauth,connection,journal,document,commits=0,puts=0,locked=false,dbFail=false,graphFail=false;
+let permissionGranted=true,deniedCenter=null;let role='admin',active=true,visible=true,oauth,connection,journal,document,commits=0,puts=0,locked=false,dbFail=false,graphFail=false;
 const graphFiles=new Map(),graphFolders=new Map();
 const result=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json'}});
 async function fake(input,options={}){
@@ -11,6 +11,7 @@ async function fake(input,options={}){
  if(p==='/auth/v1/user')return result(options.headers.Authorization==='Bearer user'?{id:uid}:{},options.headers.Authorization==='Bearer user'?200:401);
  if(p.startsWith('/rest/v1/')){
    const table=p.slice('/rest/v1/'.length),method=options.method||'GET';
+  if(table==='rpc/operations_resource_allowed')return result(permissionGranted&&b.p_center!==deniedCenter||permissionGranted&&deniedCenter===null);
    if(table==='user_profiles')return result([{id:uid,role,active}]);
    if(table==='drivers')return result(visible?[{id,name:'홍길동',company_id:'company',center_code:'002'}]:[]);
    if(table==='driver_documents'&&options.headers.Authorization==='Bearer user')return result(document?[document]:[]);
@@ -145,4 +146,8 @@ assert(validDate('2028-02-29'));assert(!validDate('2026-02-29'));
 assert.throws(()=>imageType(new TextEncoder().encode('<svg>')));
 assert.throws(()=>shareToken('https://attacker.example/path'));
 assert.equal(await hash('abc'),'ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0');
+role='editor';permissionGranted=false;const previousWrites=puts,previousCommits=commits;
+assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000009'))).status,403);
+assert.equal((await handler(request('download',{driverId:id,kind:'health_certificate'}))).status,403);
+permissionGranted=true;deniedCenter='002';assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000010'))).status,403);assert.equal(puts,previousWrites);assert.equal(commits,previousCommits);
 console.log('OneDrive auth, CSRF/browser proof, roles, encrypted tokens, upload validation, retry and DB failure tests passed');

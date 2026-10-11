@@ -24,7 +24,7 @@ export async function handleOperations(action,req,user,{db,graph,connected,setti
   if(!table||!uuid(id))throw fail('첨부 대상 업무를 선택해 주세요.');
   const row=(await db(table+'?select=id,center_code,title&id=eq.'+enc(id),{token:user.token}))[0];
   if(!row)throw fail('첨부 대상에 접근할 수 없습니다.',403);
-  if(write&&!await db('rpc/operations_can_write',{method:'POST',token:user.token,body:{p_center:row.center_code}}))throw fail('이 센터에 파일을 첨부할 권한이 없습니다.',403);
+  if(write&&!await db('rpc/operations_can_edit_resource',{method:'POST',token:user.token,body:{p_resource:{task:'tasks',incident:'incidents',survey:'forms'}[kind],p_center:row.center_code}}))throw fail('이 센터에 파일을 첨부할 권한이 없습니다.',403);
   return row;
  }
  const {environment,folder,verify,save}=createOneDriveStorage({settings,connected,graph,fetcher,hash,fail});

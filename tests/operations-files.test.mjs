@@ -8,7 +8,7 @@ const folders=new Map(),json=body=>new Response(JSON.stringify(body),{headers:{'
 const copy=value=>structuredClone(value);
 async function db(path,options={}){
  if(path.startsWith('operations_tasks?')){assert.equal(options.token,user.token);return [{id:subjectId,center_code:'001',title:'배송 배차'}];}
- if(path==='rpc/operations_can_write')return canWrite;
+ if(path==='rpc/operations_can_edit_resource'){assert.equal(options.body.p_resource,'tasks');assert.equal(options.body.p_center,'001');return canWrite;}
  if(path.startsWith('centers?'))return [{name:'사조안산센터'}];
  if(path==='rpc/operations_reserve_file'){
   const b=options.body;if(!canWrite)throw fail('센터 권한 없음',403);

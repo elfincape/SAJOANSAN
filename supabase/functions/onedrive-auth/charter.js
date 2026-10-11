@@ -2,6 +2,7 @@ export async function handleCharter(action,req,user,{db,graph,connected,settings
  const enc=encodeURIComponent;
  const body=await req.json();
  const center=body.centerCode;
+ const permissionAction=['charter-status','charter-list','charter-download','charter-read'].includes(action)?'read':'edit';if(!await db('rpc/operations_resource_allowed',{method:'POST',token:user.token,body:{p_resource:'charter',p_action:permissionAction,p_center:center??null}}))throw fail('이 센터 용차 자료에 접근할 권한이 없습니다.',403);
  if(action!=='charter-status'&&!['001','002'].includes(center))throw fail('센터를 확인해 주세요.');
  if(action==='charter-status'){
   const config=await settings();

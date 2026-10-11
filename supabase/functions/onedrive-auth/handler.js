@@ -159,7 +159,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
     const companyMode=['company-list','company-upload','company-download','company-remove'].includes(requestedAction);
     const action=companyMode?requestedAction.slice(8):requestedAction;
     const table=companyMode?'company_documents':'driver_documents',owner=companyMode?'company_id':'driver_id';
-    const subject=companyMode?company:driver;
+    const subject=async(user,id)=>{const row=await (companyMode?company:driver)(user,id);const mode=['list','download','status'].includes(action)?'read':'edit';if(!await db('rpc/operations_resource_allowed',{method:'POST',token:user.token,body:{p_resource:companyMode?'companies':'drivers',p_action:mode,p_center:row.center_code}}))throw fail('이 센터 자료에 접근할 권한이 없습니다.',403);return row;};
     const permittedKinds=companyMode?KINDS.slice(0,4):KINDS;
     const pageFilter=b=>b.documentId?'&id=eq.'+enc(b.documentId):'';
     const origin=req.headers.get('origin');
@@ -175,7 +175,9 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
         if(token!==service&&!await db('rpc/operations_ai_scheduler_authorized',{method:'POST',token,body:{}}))throw fail('서버 예약 실행 권한이 필요합니다.',403);
         return await handleBackups(action,req,{role:'service_role',token},{db,graph,connected,settings,withLock,json,fail,hash,fetcher,buildBackup});
       }
-      const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action),['operations-list','operations-download'].includes(action));
+      const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action),['operations-list','operations-download','download'].includes(action));
+      const permissionResource=action.startsWith('operations-')?null:action.startsWith('backups-')?'backups':action.startsWith('charter-')?'charter':companyMode?'companies':action==='replace-company'?'drivers':['start','finish','archive-config','pdf-config','company-config'].includes(action)?'connections':['status','list'].includes(action)?null:'drivers';
+      if(permissionResource&&!await db('rpc/operations_resource_allowed',{method:'POST',token:user.token,body:{p_resource:permissionResource,p_action:['download','list','status'].includes(action)||action.endsWith('-list')||action.endsWith('-download')||action.endsWith('-status')||action.endsWith('-read')?'read':'edit',p_center:null}}))throw fail('이 목록에 접근할 권한이 없습니다.',403);
       if(action.startsWith('backups-'))return await handleBackups(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,fetcher,buildBackup});
       if(action.startsWith('operations-')) return await handleOperations(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,filePart,fetcher});
       if(action.startsWith('charter-')) return await handleCharter(action,req,user,{db,graph,connected,settings,withLock,json,fail,shareToken,hash});
@@ -220,7 +222,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
         });
       }
       if(action==='replace-company'){
-        const b=await req.json(),d=await driver(user,b.driverId);
+        const b=await req.json(),d=await subject(user,b.driverId);
         if(!['food_transport','livestock_transport'].includes(b.kind))throw fail('대체할 서류 종류가 올바르지 않습니다.');
         if(!d.company_id)throw fail('기사 기본 정보에 운수사를 먼저 저장해 주세요.');
         await company(user,d.company_id);
@@ -254,7 +256,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
             if(item.size!==bytes.length)throw fail('사진 복사 결과를 확인하지 못했습니다.',502);
             pages.push({document_type:doc.document_type,page_number:doc.page_number,drive_id:folder.driveId,item_id:item.id,file_name:filename,mime_type:mime,size_bytes:bytes.length,request_id:request});
           }
-          const latest=await driver(user,d.id);await company(user,d.company_id);
+          const latest=await subject(user,d.id);await company(user,d.company_id);
           if(latest.company_id!==d.company_id)throw fail('기사 운수사가 변경되었습니다. 다시 시도해 주세요.',409);
           await db('rpc/onedrive_replace_company_documents',{method:'POST',body:{p_user:user.id,p_driver:d.id,p_company:d.company_id,p_kind:b.kind,p_pages:pages,p_holder:holder}});
           return json({saved:true,count:pages.length});
