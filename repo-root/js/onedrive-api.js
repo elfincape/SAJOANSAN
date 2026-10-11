@@ -53,6 +53,15 @@ export const companyDocuments = {
     return call('company-upload',form);
   }
 };
+export const operationsFiles = {
+  health:()=>call('operations-health'),
+  list:async(kind,subjectId)=>(await call('operations-list',{kind,subjectId})).files,
+  download:fileId=>call('operations-download',{fileId},true),
+  upload:({kind,subjectId,requestId,file})=>{
+    const form=new FormData();form.set('kind',kind);form.set('subjectId',subjectId);
+    form.set('requestId',requestId);form.set('file',file);return call('operations-upload',form);
+  }
+};
 export async function connectOneDrive() {
   const result=await call('start');
   const target=new URL(result.authorizationUrl);

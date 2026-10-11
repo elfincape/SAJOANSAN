@@ -1,0 +1,7 @@
+const ref=process.env.SUPABASE_PROJECT_REF,token=process.env.SUPABASE_ACCESS_TOKEN;
+if(ref!=='vvrppotrnpwrwpwqaiet'||!token)throw Error('운영 점검 인증이 필요합니다.');
+const response=await fetch(`https://${ref}.supabase.co/functions/v1/onedrive-auth/operations-health`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(30000)});
+if(response.status!==401)throw Error('인증 없는 OneDrive 접근 거절 확인 실패 HTTP '+response.status);
+console.log('운영 OneDrive: 인증 없는 요청 거절 확인');
+const query=await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({query:`select jsonb_build_object('files_table',to_regclass('public.operations_files') is not null,'server_only_commit',not has_function_privilege('authenticated','public.operations_commit_file(uuid,uuid,text,text)','EXECUTE'),'server_only_reservation',not has_function_privilege('authenticated','public.operations_reserve_file(uuid,uuid,text,uuid,text,integer,text,text,text)','EXECUTE'),'client_cannot_write',not has_table_privilege('authenticated','public.operations_files','INSERT,UPDATE,DELETE'),'stored_files',(select count(*) from public.operations_files)) as state;`}),signal:AbortSignal.timeout(30000)});
+if(!query.ok)throw Error('운영 첨부 권한 점검 HTTP '+query.status);console.log('운영 첨부 DB:',JSON.stringify(await query.json()));

@@ -1,4 +1,5 @@
 import { handleCharter } from './charter.js';
+import { handleOperations } from './operations.js';
 export const FOLDER_KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 export const LABELS = {food_transport:'식품운반업_앞',food_transport_back:'식품운반업_뒤',livestock_transport:'축산물운반업_앞',livestock_transport_back:'축산물운반업_뒤',freight_license:'화물운송사자격증',vehicle_registration:'차량등록증',identity:'신분증',health_certificate:'보건증'};
 export const KINDS = Object.keys(LABELS);
@@ -57,14 +58,14 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
     if(!response.ok) throw fail('데이터베이스 처리에 실패했습니다. 설정 또는 접근 권한을 확인해 주세요.',502);
     const text=await response.text();return text?JSON.parse(text):null;
   }
-  async function caller(req,admin=false) {
+  async function caller(req,admin=false,reader=false) {
     const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
     if(!token) throw fail('로그인이 필요합니다.',401);
     const res=await fetcher(root+'/auth/v1/user',{headers:{apikey:anon,Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
     if(!res.ok) throw fail('다시 로그인해 주세요.',401);
     const user=await res.json();
     const p=(await db('user_profiles?select=id,role,active&id=eq.'+enc(user.id),{token}))[0];
-    if(!p?.active||!(admin?['admin']:['admin','editor']).includes(p.role)) throw fail('권한이 없습니다.',403);
+    if(!p?.active||!(admin?['admin']:reader?['admin','editor','viewer']:['admin','editor']).includes(p.role)) throw fail('권한이 없습니다.',403);
     return {id:user.id,token,role:p.role};
   }
   async function driver(user,id) {
@@ -163,7 +164,8 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null) {
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
-      const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action));
+      const user=await caller(req,['start','finish','archive-config','pdf-config','company-config'].includes(action),['operations-list','operations-download'].includes(action));
+      if(action.startsWith('operations-')) return await handleOperations(action,req,user,{db,graph,connected,settings,withLock,json,fail,hash,filePart,fetcher});
       if(action.startsWith('charter-')) return await handleCharter(action,req,user,{db,graph,connected,settings,withLock,json,fail,shareToken,hash});
       if(action==='start'){
         await settings();
