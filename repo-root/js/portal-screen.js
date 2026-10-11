@@ -283,8 +283,23 @@ async function history(row,panel,type){
 }
 function surveyForm(survey=null){
  const panel=$('detail');panel.replaceChildren(node('h2',survey?'업무조사 수정':'업무조사 등록'));const form=node('form',undefined,'portal-form');field(form,'업무명','title',survey?.title).required=true;
- for(const [key,label] of surveyFields)field(form,label,key,survey?.details?.[key]??'',key==='sequence'||key==='problems'?'textarea':'text');form.append(node('button','조사 내용 저장','primary'));panel.append(form);
- form.onsubmit=e=>{e.preventDefault();const data={center_code:survey?.center_code??$('center').value,title:form.elements.title.value,details:Object.fromEntries(surveyFields.map(([key])=>[key,form.elements[key].value]))};mutate(JSON.stringify(['survey',survey?.id,survey?.version,data]),id=>api.surveyAction({requestId:id,survey,action:survey?'edit':'submit',data}),row=>state.selected={type:'survey',row});};
+ for(const [key,label] of surveyFields)field(form,label,key,survey?.details?.[key]??'',key==='sequence'||key==='problems'?'textarea':'text');
+ const files=field(form,'첨부파일·사진 선택 (여러 개 가능)','survey_attachments','','file');files.multiple=true;files.accept='.xlsx,.xls,.pdf,.docx,.doc,.pptx,.csv,.txt,.jpg,.jpeg,.png,.webp';
+ const hint=node('p','실제 사용하는 파일이나 업무 사진을 첨부하세요. 파일당 최대 10MB입니다.');form.append(hint,node('button','조사 내용·첨부파일 저장','primary'));panel.append(form);
+ let savedSurvey=survey,pendingSave=null;const uploads=new Map();
+ form.onsubmit=async e=>{
+  e.preventDefault();if(state.busy||!form.reportValidity())return;const selected=[...files.files];if(selected.some(file=>file.size<1||file.size>10*1024*1024)){message('첨부파일은 각각 10MB 이하로 선택해 주세요.',true);return;}
+  const data={center_code:savedSurvey?.center_code??$('center').value,title:form.elements.title.value,details:Object.fromEntries(surveyFields.map(([key])=>[key,form.elements[key].value]))};
+  const key=JSON.stringify([savedSurvey?.id,savedSurvey?.version,data]);if(pendingSave?.key!==key)pendingSave={key,requestId:crypto.randomUUID()};
+  setBusy(true);message('조사 내용과 첨부파일을 저장하는 중입니다…');let contentSaved=false;
+  try{
+   savedSurvey=await api.surveyAction({requestId:pendingSave.requestId,survey:savedSurvey,action:savedSurvey?'edit':'submit',data});pendingSave=null;contentSaved=true;
+   for(const file of selected){let upload=uploads.get(file);if(!upload){upload={requestId:crypto.randomUUID(),saved:false};uploads.set(file,upload);}if(upload.saved)continue;hint.textContent=file.name+' 저장 중…';await operationsFiles.upload({kind:'survey',subjectId:savedSurvey.id,requestId:upload.requestId,file});upload.saved=true;}
+   state.selected={type:'survey',row:savedSurvey};let refreshFailed=false;try{await loadData();}catch{refreshFailed=true;}render();message('업무조사와 첨부파일을 저장했습니다.'+(refreshFailed?' 목록은 새로고침해 주세요.':''));
+  }catch(error){hint.textContent=contentSaved?'조사 내용은 저장되었습니다. 선택한 파일을 유지했으니 다시 저장하면 남은 첨부파일을 이어서 올립니다.':'입력과 선택한 파일을 유지했습니다.';message(error.message||'저장하지 못했습니다. 다시 시도해 주세요.',true);}
+  finally{setBusy(false);}
+ };
+ if(survey)attachments('survey',survey,panel);
 }
 function surveyDetail(row,panel){
  panel.append(node('p',centerName(row.center_code)+' · '+surveyStages[row.stage]));const dl=node('dl');for(const [key,label] of surveyFields)if(row.details[key])dl.append(node('dt',label),node('dd',row.details[key]));panel.append(dl);
