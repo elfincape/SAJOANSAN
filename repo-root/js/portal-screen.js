@@ -182,18 +182,18 @@ function membershipForm(person){
 function renderDetail(){const selectedTask=state.selected&&(state.selected.type==='task'||state.view==='center');const popup=$('task-ticket-dialog');const panel=selectedTask&&popup.open?popup:$('detail');if(panel===popup){panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','업무 티켓'));button('닫기',()=>popup.close(),header);panel.append(header);}else panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);if(type!=='task'||!isCoupangTask(row))attachments(type,row,panel);if(type==='task')panel.append(panel.querySelector(':scope > .task-participants'));}
 function attachments(kind,row,panel){
  const section=node('section',undefined,'attachments'),list=node('div'),form=node('form',undefined,'portal-form'),hint=node('p');
- section.append(node('h3','첨부 파일'),node('p','기존 OneDrive에 저장하며 원본과 일치하는지 확인합니다. 파일당 최대 10MB입니다.'),list);panel.append(section);
+ section.append(list);panel.append(section);
  let pending=null;
  const input=field(form,'파일 선택','file','','file');input.required=true;input.accept='.xlsx,.xls,.pdf,.docx,.doc,.pptx,.csv,.txt,.jpg,.jpeg,.png,.webp';
  input.onchange=()=>{if(pending?.expectedRow)pending.file=input.files[0];else pending=null;};
- form.append(hint,node('button','첨부 파일 저장','primary'));if(canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))section.append(form);
+ form.append(hint,node('button','파일 올리기','primary'));if(canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))section.append(form);
  async function load(){
   try{const files=await operationsFiles.list(kind,row.id);if(!section.isConnected)return;list.replaceChildren();
    if(!files.length)list.append(node('p','첨부된 파일이 없습니다.'));
    for(const file of files){const line=node('div',undefined,'history-entry');line.append(node('p',file.file_name),node('small',file.original_name+' · '+(file.byte_size/1024).toFixed(1)+'KB · '+stamp(file.created_at)));
-    if(file.status==='saved')button('다운로드',async()=>{if(state.busy)return;setBusy(true);try{const blob=await operationsFiles.download(file.id),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=file.file_name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);message('검증한 파일을 다운로드했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},line);
+    if(file.status==='saved')button('다운로드',async()=>{if(state.busy)return;setBusy(true);try{const blob=await operationsFiles.download(file.id),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=file.file_name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);message('파일을 다운로드했습니다.');}catch(error){message(error.message,true);}finally{setBusy(false);}},line);
     else {line.append(node('p',file.status==='failed'?'저장 실패 · '+(file.last_error??'다시 시도해 주세요.'):'저장 확인 중'));
-     if(file.uploaded_by===profile.id&&canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))button('같은 파일로 재시도',()=>{pending={requestId:file.request_id,file:null,expectedRow:file};input.value='';hint.textContent=file.original_name+' 원본을 다시 선택하세요. 같은 저장 요청을 이어서 처리합니다.';input.focus();},line);
+     if(file.uploaded_by===profile.id&&canWrite(row.center_code,{task:'tasks',incident:'incidents',survey:'forms'}[kind]))button('같은 파일로 재시도',()=>{pending={requestId:file.request_id,file:null,expectedRow:file};input.value='';hint.textContent=file.original_name+' 파일을 다시 선택하세요.';input.focus();},line);
     }list.append(line);
    }
   }catch(error){if(section.isConnected)list.replaceChildren(node('p',error.message,'error'));}
@@ -202,9 +202,9 @@ function attachments(kind,row,panel){
   event.preventDefault();if(state.busy)return;const file=input.files[0];if(!file)return;
   if(file.size<1||file.size>10*1024*1024){message('10MB 이하의 파일을 선택해 주세요.',true);return;}
   if(!pending||(!pending.expectedRow&&pending.file!==file))pending={file,requestId:crypto.randomUUID()};
-  if(pending.expectedRow&&(file.name!==pending.expectedRow.original_name||file.size!==pending.expectedRow.byte_size)){message('재시도할 원본과 파일명·크기가 다릅니다.',true);return;}
-  setBusy(true);message('OneDrive에 저장하고 파일 내용을 확인하는 중입니다…');
-  try{await operationsFiles.upload({kind,subjectId:row.id,requestId:pending.requestId,file});pending=null;input.value='';hint.textContent='';await load();message('첨부 파일 저장과 내용 검증을 완료했습니다.');}
+  if(pending.expectedRow&&(file.name!==pending.expectedRow.original_name||file.size!==pending.expectedRow.byte_size)){message('이전에 선택한 파일과 다릅니다. 같은 파일을 선택해 주세요.',true);return;}
+  setBusy(true);message('파일을 저장하는 중입니다…');
+  try{await operationsFiles.upload({kind,subjectId:row.id,requestId:pending.requestId,file});pending=null;input.value='';hint.textContent='';await load();message('파일을 저장했습니다.');}
   catch(error){await load();message(error.message||'첨부를 저장하지 못했습니다. 선택한 파일을 유지했습니다.',true);}
   finally{setBusy(false);}
  };
@@ -309,7 +309,7 @@ function surveyForm(survey=null){
  const panel=$('detail');panel.replaceChildren(node('h2',survey?'업무조사 수정':'업무조사 등록'));const form=node('form',undefined,'portal-form');field(form,'업무명','title',survey?.title).required=true;
  for(const [key,label] of surveyFields)field(form,label,key,survey?.details?.[key]??'',key==='sequence'||key==='problems'?'textarea':'text');
  const files=field(form,'첨부파일·사진 선택 (여러 개 가능)','survey_attachments','','file');files.multiple=true;files.accept='.xlsx,.xls,.pdf,.docx,.doc,.pptx,.csv,.txt,.jpg,.jpeg,.png,.webp';
- const hint=node('p','실제 사용하는 파일이나 업무 사진을 첨부하세요. 파일당 최대 10MB입니다.');form.append(hint,node('button','조사 내용·첨부파일 저장','primary'));panel.append(form);
+ const hint=node('p');form.append(hint,node('button','조사 내용·첨부파일 저장','primary'));panel.append(form);
  let savedSurvey=survey,pendingSave=null;const uploads=new Map();
  form.onsubmit=async e=>{
   e.preventDefault();if(state.busy||!form.reportValidity())return;const selected=[...files.files];if(selected.some(file=>file.size<1||file.size>10*1024*1024)){message('첨부파일은 각각 10MB 이하로 선택해 주세요.',true);return;}

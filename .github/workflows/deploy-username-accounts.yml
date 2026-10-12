@@ -1,0 +1,34 @@
+name: Deploy username accounts
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/username-auth/**'
+      - 'repo-root/sql/username-accounts.sql'
+      - 'scripts/apply-username-migration.mjs'
+      - 'repo-root/js/username-auth.js'
+      - 'repo-root/login.html'
+      - 'repo-root/admin/users.html'
+      - 'tests/username-auth.test.mjs'
+      - '.github/workflows/deploy-username-accounts.yml'
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test username authentication
+        run: node tests/username-auth.test.mjs
+      - name: Apply username schema
+        run: node scripts/apply-username-migration.mjs
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Deploy username authentication
+        run: supabase functions deploy username-auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

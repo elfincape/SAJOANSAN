@@ -23,30 +23,9 @@
 
   <main class="flex-1 max-w-[1300px] w-full mx-auto px-4 py-3 space-y-4">
 
-    <!-- 안내 박스 -->
-    <section class="border border-amber-700/50 bg-amber-900/10 rounded-lg p-4 text-sm text-amber-100">
-      <h2 class="font-semibold mb-2">🔐 사용자 추가 절차</h2>
-      <ol class="list-decimal list-inside space-y-1 text-amber-100/90">
-        <li>
-          Supabase 대시보드의 <strong>Authentication → Users</strong>에서
-          "Add user"로 이메일·비밀번호를 직접 발급합니다.
-        </li>
-        <li>
-          생성된 사용자의 <strong>user_id (UUID)</strong>를 복사합니다.
-        </li>
-        <li>
-          아래 "신규 프로필 생성" 폼에 붙여넣고 표시이름·역할을 지정해 저장하면
-          시스템 사용자로 등록됩니다.
-        </li>
-      </ol>
-      <p class="mt-2 text-xs text-amber-200/80">
-        ※ 이 화면은 <code class="px-1 rounded bg-zinc-800/60">user_profiles</code> 테이블만 관리합니다.
-        이메일·비밀번호 자체의 변경/재설정은 Supabase 대시보드에서 수행하세요.
-      </p>
-      <p class="mt-1 text-xs text-amber-200/80">
-        <strong>참고:</strong> 트리거가 설치되어 있으면(<code>handle_new_auth_user</code>) 1단계 직후
-        <code>user_profiles</code>에 빈 행이 자동 생성됩니다. 이 경우 신규 폼 대신 목록에서 바로 편집해 활성화하면 됩니다.
-      </p>
+    <section class="border border-zinc-700 rounded-lg p-4 text-sm">
+      <p>신규 계정은 아이디·비밀번호·표시이름·역할을 입력해 저장하세요. 이메일은 필요하지 않습니다.</p>
+      <p class="mt-2 text-xs text-zinc-400">기존 계정은 목록에서 선택해 아이디를 지정하세요. 기존 비밀번호와 이메일 로그인은 유지됩니다.</p>
     </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] gap-4">
@@ -54,7 +33,7 @@
       <!-- 좌측: 사용자 목록 -->
       <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="이메일/이름 검색"
+          <input id="search-input" type="search" placeholder="아이디/이메일/이름 검색"
                  class="app-input flex-1 min-w-[180px]">
           <select id="filter-role" class="app-select w-32">
             <option value="">역할(전체)</option>
@@ -72,7 +51,7 @@
           <table class="app-table">
             <thead>
               <tr>
-                <th>이메일</th>
+                <th>아이디</th><th>기존 이메일</th>
                 <th>표시이름</th>
                 <th>역할</th>
                 <th>상태</th>
@@ -95,7 +74,7 @@
       <!-- 우측: 폼 -->
       <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
-          <h2 id="form-title" class="text-sm font-semibold">신규 프로필 생성</h2>
+          <h2 id="form-title" class="text-sm font-semibold">신규 계정 생성</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
           <div class="flex-1"></div>
           <span id="form-meta" class="text-[11px] text-zinc-500"></span>
@@ -104,24 +83,17 @@
         <form id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-orig-id">
 
+          <input type="hidden" id="f-id">
+          <input type="hidden" id="f-email">
           <div>
-            <label class="app-label">user_id (UUID) *</label>
-            <input id="f-id" class="app-input font-mono text-xs"
-                   placeholder="00000000-0000-0000-0000-000000000000"
-                   spellcheck="false" autocomplete="off">
-            <p class="text-[10px] text-zinc-500 mt-1">
-              Supabase Authentication > Users에서 복사. 편집 모드에서는 변경할 수 없습니다.
-            </p>
+            <label class="app-label" for="f-username">로그인 아이디 *</label>
+            <input id="f-username" class="app-input" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="ansan01">
+            <p class="text-xs text-zinc-500 mt-1">3~32자, 영문·숫자·한글·밑줄·마침표·하이픈. 영문 대소문자를 구분하지 않습니다.</p>
           </div>
-
-          <div>
-            <label class="app-label">이메일</label>
-            <input id="f-email" class="app-input" placeholder="name@company.com">
-            <p class="text-[10px] text-zinc-500 mt-1">
-              auth.users의 이메일과 동일하게 적어주세요. 표시 용도이며, 인증에 영향을 주지 않습니다.
-            </p>
+          <div id="new-password-field">
+            <label class="app-label" for="f-password">비밀번호 *</label>
+            <input id="f-password" type="password" class="app-input" autocomplete="new-password" minlength="8" maxlength="256" placeholder="8자 이상">
           </div>
-
           <div>
             <label class="app-label">표시이름</label>
             <input id="f-name" class="app-input">
@@ -161,6 +133,7 @@
 
   <script type="module">
     import { supabase } from '/js/supabase.js';
+    import { accountRequest, normalizeUsername, validUsername } from '/js/username-auth.js';
     import { requireRole } from '/js/auth.js';
     import { toast, confirmDialog } from '/js/ui.js';
     import { decorateCenterLinks, forceCenterSelectionFromUrl, mountHeaderCenterSwitcher, requireSelectedCenter, withCenterParam } from '/js/center.js';
@@ -221,7 +194,7 @@
         if (f.active === 'active'   && !r.active) return false;
         if (f.active === 'inactive' &&  r.active) return false;
         if (q) {
-          const hay = [r.email, r.display_name].filter(Boolean).join(' ').toLowerCase();
+          const hay = [r.username, r.email, r.display_name].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -252,8 +225,9 @@
           tr.classList.add('cursor-pointer');
           const isMe = r.id === me.id;
           tr.innerHTML = `
+            <td class="font-mono text-xs">${escapeHtml(r.username || '-')}</td>
             <td class="font-mono text-xs">
-              ${escapeHtml(r.email || '-')}
+              ${escapeHtml(r.email?.endsWith('@accounts.sajoansan.vercel.app') ? '-' : (r.email || '-'))}
               ${isMe ? '<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-emerald-900/40 border border-emerald-700 text-emerald-200">나</span>' : ''}
             </td>
             <td>${escapeHtml(r.display_name || '')}</td>
@@ -324,6 +298,9 @@
       $('f-id').readOnly   = isEdit;
       $('f-id').classList.toggle('opacity-60', isEdit);
 
+      $('f-username').value = r?.username || '';
+      $('f-password').value = '';
+      $('new-password-field').classList.toggle('hidden', isEdit);
       $('f-email').value   = r?.email || '';
       $('f-email').readOnly = isEdit;
       $('f-email').classList.toggle('opacity-60', isEdit);
@@ -333,7 +310,7 @@
       $('f-active').checked = r ? !!r.active : true;
 
       $('form-title').textContent =
-        isEdit ? (r.display_name || r.email || '(이름 없음)') : '신규 프로필 생성';
+        isEdit ? (r.display_name || r.email || '(이름 없음)') : '신규 계정 생성';
       $('form-mode-badge').textContent = isEdit ? '편집' : '신규';
       $('form-meta').textContent = isEdit && r.updated_at
         ? `최종수정: ${new Date(r.updated_at).toLocaleString('ko-KR')}` : '';
@@ -422,16 +399,17 @@
       const name   = $('f-name').value.trim();
       const email  = $('f-email').value.trim();
 
-      if (!isEdit) {
-        if (!UUID_RE.test(id)) {
-          toast('user_id 형식이 올바르지 않습니다 (UUID).', 'warn');
-          $('f-id').focus();
-          return;
-        }
-        if (state.rows.some(r => r.id === id)) {
-          toast('이미 등록된 user_id입니다.', 'warn');
-          return;
-        }
+      const username = normalizeUsername($('f-username').value);
+      const password = $('f-password').value;
+      if (!validUsername(username)) {
+        toast('아이디는 3~32자의 영문, 숫자, 한글, _, ., -를 사용하세요.', 'warn');
+        $('f-username').focus(); return;
+      }
+      if (state.rows.some(r => normalizeUsername(r.username) === username && r.id !== id)) {
+        toast('이미 사용 중인 아이디입니다.', 'warn'); return;
+      }
+      if (!isEdit && password.length < 8) {
+        toast('비밀번호를 8자 이상 입력하세요.', 'warn'); $('f-password').focus(); return;
       }
 
       // 자기 자신 보호
@@ -463,6 +441,7 @@
       const payload = {
         id: targetId,
         email: emptyToNull(email),
+        username,
         display_name: emptyToNull(name),
         role,
         active
@@ -470,6 +449,12 @@
 
       $('btn-save').disabled = true;
       try {
+        if (!isEdit) {
+          const result = await accountRequest(supabase, { action: 'create', username, password, display_name: name, role, active });
+          $('f-password').value = '';
+          toast('계정이 생성되었습니다.', 'success');
+          await loadAll(); selectRow(result.profile.id); return;
+        }
         const q = isEdit
           ? supabase.from('user_profiles').update(payload).eq('id', targetId).select().single()
           : supabase.from('user_profiles').insert(payload).select().single();
@@ -480,7 +465,7 @@
           if (error.code === '23503') {
             toast('해당 user_id가 auth.users에 없습니다. Supabase 대시보드에서 먼저 사용자를 생성하세요.', 'error');
           } else if (error.code === '23505') {
-            toast('이미 존재하는 user_id입니다.', 'error');
+            toast('이미 사용 중인 아이디입니다.', 'error');
           } else {
             toast(`저장 실패: ${error.message}`, 'error');
           }
@@ -489,8 +474,8 @@
         toast(isEdit ? '수정되었습니다.' : '추가되었습니다.', 'success');
         await loadAll();
         selectRow(data.id);
-      } catch {
-        toast('저장 중 오류가 발생했습니다.', 'error');
+      } catch (error) {
+        toast(error.message || '저장 중 오류가 발생했습니다.', 'error');
       } finally {
         $('btn-save').disabled = false;
       }
