@@ -42,6 +42,6 @@ export function collectInputs(task, form) {
 }
 export const surveyFields = [
  ['sequence','업무 처리 순서'],['repeat','반복 주기'],['deadline','마감시간'],['owner','담당자'],['handoff','인계 대상'],
- ['files','사용하는 파일'],['systems','사용하는 시스템'],['completion','완료 조건'],['problems','자주 발생하는 문제'],['automation','자동화 가능성']
+ ['completion','완료 조건'],['problems','자주 발생하는 문제'],['automation','자동화 가능성']
 ];
 export const surveyStages={submitted:'제출됨',surveyed:'조사 완료',designed:'설계 완료',built:'구축 완료',verified:'운영 검증 완료'};
