@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {excelColor,themeColors,columnPixels,cellDisplayText,parseCaptureRange} from '../repo-root/js/coupang-capture.js';
+const xml='<a:clrScheme><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:accent1><a:srgbClr val="4472C4"/></a:accent1></a:clrScheme>';
+const theme=themeColors(xml);
+assert.equal(excelColor({theme:0,tint:-0.499984740745262},theme),'#808080','actual template gray must not become white');
+assert.equal(excelColor({theme:1},theme),'#000000');assert.equal(excelColor({argb:'FFFFFF00'},theme),'#ffff00');
+assert.equal(excelColor({argb:'FFFFC000'},theme),'#ffc000');
+assert.equal(cellDisplayText({value:new Date('1899-12-30T08:00:00Z'),numFmt:'h:mm'}),'8:00');
+assert.equal(cellDisplayText({value:new Date('1899-12-30T07:30:00Z'),numFmt:'h:mm'}),'7:30');
+assert.equal(cellDisplayText({value:{formula:'G6-1/48',result:.3125},numFmt:'h:mm'}),'7:30');
+assert.equal(cellDisplayText({value:.375,numFmt:'hh:mm'}),'09:00');
+assert.equal(cellDisplayText({value:1234.5,numFmt:'#,##0.00'}),'1,234.50');
+assert.equal(columnPixels(8.7109375,7),61,'Open XML column width example');
+assert.deepEqual(parseCaptureRange('G3:N21'),{left:7,top:3,right:14,bottom:21});
+console.log('PASS: actual template theme/tint colors, Excel time display, formula results, number formats and Open XML column widths');

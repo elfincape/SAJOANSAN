@@ -5,6 +5,8 @@ on:
     paths:
       - 'repo-root/js/portal-coupang.js'
       - 'repo-root/js/coupang-workbook.js'
+      - 'repo-root/js/coupang-capture.js'
+      - 'tests/coupang-capture.test.mjs'
       - 'repo-root/admin/coupang-entry.html'
       - 'tests/portal-coupang.test.mjs'
       - 'tests/coupang-auto.test.mjs'
@@ -20,4 +22,5 @@ jobs:
       - run: npm install --no-save --ignore-scripts jsdom@26 exceljs@4.4.0 jszip@3.10.1
       - run: node tests/portal-coupang.test.mjs
       - run: node tests/coupang-auto.test.mjs
+      - run: node tests/coupang-capture.test.mjs
       - run: node tests/coupang-state.test.mjs
