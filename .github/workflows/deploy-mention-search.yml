@@ -1,0 +1,26 @@
+name: Apply live mention search
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo-root/js/portal-mentions.js'
+      - 'repo-root/sql/operations-mention-search.sql'
+      - 'scripts/apply-mention-search.mjs'
+      - 'tests/portal-mentions.test.mjs'
+      - '.github/workflows/deploy-mention-search.yml'
+  workflow_dispatch:
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --ignore-scripts jsdom@26
+      - run: node tests/portal-mentions.test.mjs
+      - name: Enable one-character search with existing caller permissions
+        run: node scripts/apply-mention-search.mjs

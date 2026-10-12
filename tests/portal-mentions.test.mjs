@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {JSDOM} from 'jsdom';
+const source=readFileSync(new URL('../repo-root/js/portal-mentions.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'const setupDialogDismiss=()=>{};\n');
+const {setupPortalMentions}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const dom=new JSDOM('<body><form><label>업무 내용<textarea></textarea></label></form></body>',{url:'https://fixture.example/'});
+Object.assign(globalThis,{window:dom.window,document:dom.window.document,NodeFilter:dom.window.NodeFilter,MutationObserver:dom.window.MutationObserver,Event:dom.window.Event,getSelection:()=>dom.window.getSelection()});
+const rows=[{id:'11111111-1111-1111-1111-111111111111',title:'오포2',center_code:'001'},{id:'22222222-2222-2222-2222-222222222222',title:'오포22',center_code:'001'}];
+const calls=[];
+const supabase={rpc:async(name,args)=>{calls.push({name,q:args.p_query});await new Promise(resolve=>setTimeout(resolve,args.p_query==='오포2'?170:8));return {data:{groups:[{kind:'routes',items:rows.filter(row=>row.title.includes(args.p_query))}]}};}};
+setupPortalMentions({supabase,centerName:()=>'안산'});
+const editor=document.querySelector('.mention-editor'),input=document.querySelector('textarea');let list;
+editor.getBoundingClientRect=()=>({top:400,left:40,width:360});
+function type(value,composing=false,elementCaret=false){
+ editor.textContent=value;editor.focus();const caret=document.createRange();caret.setStart(elementCaret?editor:editor.firstChild,elementCaret?editor.childNodes.length:value.length);caret.collapse(true);getSelection().removeAllRanges();getSelection().addRange(caret);editor.dispatchEvent(new window.InputEvent('input',{bubbles:true,isComposing:composing}));
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+type('@오',true);list=document.querySelector('.mention-suggestions');Object.defineProperty(list,'scrollHeight',{get:()=>160});assert.equal(list.hidden,false);await wait(160);
+assert.equal(calls[0].q,'오');assert.equal(calls[0].name,'operations_mention_search');assert.equal(list.querySelectorAll('button').length,2);
+assert.ok(parseFloat(list.style.top)<400,'suggestions appear above editor');
+assert.equal(editor.previousElementSibling,list,'overlay is attached above editor, not as a separate block below');
+editor.dispatchEvent(new window.CompositionEvent('compositionstart',{bubbles:true}));
+type('@오포',true);assert.equal(list.hidden,false);assert.equal(list.querySelectorAll('button').length,2,'candidates stay visible during Korean composition');
+editor.dispatchEvent(new window.CompositionEvent('compositionend',{bubbles:true}));
+await wait(90);
+type('@오포2');await wait(70);type('@오포22');
+assert.equal(list.querySelectorAll('button').length,1,'cached prefix results filter immediately');
+await wait(230);assert.equal(list.querySelectorAll('button').length,1);assert.ok(list.textContent.includes('오포22'),'late shorter query cannot replace current results');
+const enter=new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});editor.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);
+assert.equal(editor.querySelector('.db-mention')?.dataset.id,rows[1].id);assert.ok(input.value.includes('@[오포22](routes:'+rows[1].id+')'));assert.equal(list.hidden,true);
+type('@오포2',false,true);await wait(260);assert.ok(list.querySelector('button'),'element-based caret also opens candidates');
+type('일반 업무 내용');assert.equal(list.hidden,true);
+type('@오');await wait(90);editor.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(list.hidden,true);
+dom.window.close();
+console.log('PASS: one-character Korean search, above-editor placement, stable IME suggestions, immediate cached filtering, stale-response rejection, keyboard selection and mention serialization');
