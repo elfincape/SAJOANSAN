@@ -22,7 +22,8 @@ const render=createPortalHistory({api,node,button,field,centerName:c=>c,stamp:x=
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
 render([{code:'001'},{code:'002'}]);await tick();
 assert.equal(document.querySelectorAll('.history-task').length,3);
-assert.equal(document.querySelector('.history-filters button'),null);
+assert(![...document.querySelectorAll('.history-filters button')].some(b=>b.textContent==='조회'));
+assert.equal(document.querySelector('.history-filters .view-buttons').children.length,3);
 const start=document.querySelector('[name="from"]'),end=document.querySelector('[name="through"]');
 start.value=day;start.dispatchEvent(new dom.window.Event('change'));await tick();assert.equal(queries.at(-1).from,day);
 end.value=day;end.dispatchEvent(new dom.window.Event('change'));await tick();assert.equal(queries.at(-1).through,day);

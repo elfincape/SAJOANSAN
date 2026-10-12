@@ -16,7 +16,7 @@ export function createPortalHistory({api,node,button,field,centerName,stamp,mess
   const from=field(form,'조회 시작일','from',saved.from,'date'),through=field(form,'조회 종료일','through',saved.through,'date');from.required=through.required=true;
   const status=node('select'),statusLabel=node('label','상태');status.setAttribute('aria-label','처리 기록 상태');const any=node('option','전체');any.value='';status.append(any);
   for(const [value,title] of Object.entries(historyStatuses)){const option=node('option',title);option.value=value;status.append(option);}status.value=saved.status;statusLabel.append(status);form.append(statusLabel);actions.append(form);
-  const periods=node('div',undefined,'view-buttons');for(const [unit,title] of [['day','일'],['week','주'],['month','월']])button(title,()=>{const range=periodBounds(koreaDate(),unit);from.value=range.from;through.value=range.through;load();},periods);actions.append(periods);
+  const periods=node('div',undefined,'view-buttons');for(const [unit,title] of [['day','일'],['week','주'],['month','월']])button(title,()=>{const range=periodBounds(koreaDate(),unit);from.value=range.from;through.value=range.through;load();},periods);form.append(periods);
   let request=0,loaded=null;
   function draw(){
    if(!loaded)return;
