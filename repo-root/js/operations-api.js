@@ -122,6 +122,34 @@ export function createOperationsApi(client) {
         return query;
       });
     },
+    async historyRecords({center,from,through}) {
+      if(![from,through].every(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)))throw new Error('조회 기간을 확인해 주세요.');
+      const start=from+'T00:00:00+09:00',end=new Date(through+'T00:00:00+09:00');
+      end.setUTCDate(end.getUTCDate()+1);
+      const [events,tasks,incidents]=await Promise.all([
+        this.dailyLog({center,from,through}),
+        this.tasks({center,from,through,includeCompleted:true}),
+        allPages(()=>{
+          let query=client.from('operations_incidents').select('*').or(`status.eq.open,and(created_at.gte.${start},created_at.lt.${end.toISOString()})`).order('created_at').order('id');
+          return center?query.eq('center_code',center):query;
+        })
+      ]);
+      const businessEvents=events.filter(e=>e.action!=='file_uploaded');
+      for(const [kind,rows,ids] of [
+        ['operations_tasks',tasks,businessEvents.filter(e=>!e.incident_id).map(e=>e.task_id)],
+        ['operations_incidents',incidents,businessEvents.map(e=>e.incident_id)]
+      ]) {
+        const present=new Set(rows.map(r=>r.id)),missing=[...new Set(ids.filter(id=>id&&!present.has(id)))];
+        for(let offset=0;offset<missing.length;offset+=100) {
+          const batch=missing.slice(offset,offset+100);
+          rows.push(...await allPages(()=>{
+            let query=client.from(kind).select('*').in('id',batch).order('id');
+            return center?query.eq('center_code',center):query;
+          }));
+        }
+      }
+      return {events:businessEvents,tasks,incidents};
+    },
     dailyLog({ center, from, through, settlement }) {
       return allPages(() => {
         let query = client.from('operations_daily_log').select('*')

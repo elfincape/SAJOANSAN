@@ -1,0 +1,24 @@
+name: Test grouped portal history
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo-root/js/portal-history*.js'
+      - 'repo-root/js/operations-api.js'
+      - 'repo-root/js/portal-task-views.js'
+      - 'repo-root/js/portal-screen.js'
+      - 'repo-root/css/portal.css'
+      - 'tests/portal-history*.mjs'
+      - '.github/workflows/test-portal-history.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false jsdom@26
+      - run: node tests/portal-history.test.mjs
+      - run: node tests/portal-history-ui.test.mjs
