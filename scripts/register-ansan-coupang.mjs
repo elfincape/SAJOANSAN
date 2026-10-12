@@ -3,7 +3,7 @@ const ref=process.env.SUPABASE_PROJECT_REF,token=process.env.SUPABASE_ACCESS_TOK
 const literal=value=>"'"+value.replaceAll("'","''")+"'";
 async function query(query){const r=await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({query}),signal:AbortSignal.timeout(60000)});if(!r.ok)throw Error(await r.text());return r.json();}
 if(process.argv.includes('--apply'))await query(`begin;do $$ declare creator uuid;t public.operations_templates;family uuid;previous public.operations_templates;desired jsonb:=${literal(JSON.stringify(spec))}::jsonb;begin
- select id into creator from public.user_profiles where active and role='admin' and display_name='최고관리자';if creator is null then raise exception '등록을 담당할 최고관리자 계정이 없습니다';end if;
+ select id into creator from public.user_profiles where active and role='admin' order by (lower(email)='elfincape@gmail.com') desc,(display_name='최고관리자') desc,id limit 1;if creator is null then raise exception '등록을 담당할 활성 관리자 계정이 없습니다';end if;
  perform pg_advisory_xact_lock(hashtextextended('register:001:쿠팡 배차',0));select * into previous from public.operations_templates where center_code='001' and title='쿠팡 배차' order by created_at desc,version desc limit 1;
  if previous.id is not null and previous.status='approved' and previous.spec- 'effective_from'=desired then return;end if;
  family:=coalesce(previous.family_id,gen_random_uuid());desired:=desired||jsonb_build_object('effective_from',(now() at time zone 'Asia/Seoul')::date);

@@ -6,6 +6,7 @@ on:
       - 'repo-root/sql/operations-coupang-simplify.sql'
       - 'configurations/ansan-coupang.json'
       - 'scripts/apply-coupang-simplify.mjs'
+      - 'scripts/register-ansan-coupang.mjs'
       - '.github/workflows/deploy-coupang-workflow.yml'
   workflow_dispatch:
 jobs:
