@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {JSDOM} from 'jsdom';
+const source=readFileSync(new URL('../repo-root/js/file-drop.js',import.meta.url),'utf8');
+const {installFilePastes,acceptsClipboardImages}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const dom=new JSDOM('<body><section data-file-dropzone id="photo"><input type="file" accept="image/png,image/jpeg"><textarea></textarea></section><section data-file-dropzone id="second"><input type="file" accept=".jpg,.png"></section><section data-file-dropzone id="sheet"><input type="file" accept=".xlsx"></section></body>',{url:'https://fixture.example/'});
+const doc=dom.window.document,win=dom.window;
+win.DataTransfer=class{constructor(){this.files=[];this.items={add:file=>this.files.push(file)};}};
+for(const input of doc.querySelectorAll('input'))Object.defineProperty(input,'files',{writable:true,value:[]});
+const photo=doc.querySelector('#photo'),input=photo.querySelector('input'),second=doc.querySelector('#second'),other=second.querySelector('input');
+assert.equal(acceptsClipboardImages(input),true);assert.equal(acceptsClipboardImages(doc.querySelector('#sheet input')),false);
+let uploaded=0;input.addEventListener('change',()=>uploaded++);
+installFilePastes(doc,win);
+assert.equal(doc.querySelectorAll('[data-file-paste-hint]').length,2);
+const image=new win.File(['image'],'image.png',{type:'image/png'});
+function paste(target,images=[image],text=''){
+ const event=new win.Event('paste',{bubbles:true,cancelable:true});
+ Object.defineProperty(event,'clipboardData',{value:{items:images.map(file=>({kind:'file',type:file.type,getAsFile:()=>file})),getData:()=>text}});
+ target.dispatchEvent(event);return event;
+}
+photo.click();assert.equal(doc.activeElement,photo);
+assert.equal(paste(photo).defaultPrevented,true);assert.equal(input.files[0],image);assert.equal(uploaded,1);assert.equal(other.files.length,0);
+assert.equal(paste(photo.querySelector('textarea')).defaultPrevented,false);assert.equal(uploaded,1,'text editor paste must not start upload');
+assert.equal(paste(photo,[],'배차정보').defaultPrevented,false);
+input.disabled=true;assert.equal(paste(photo).defaultPrevented,false);assert.equal(uploaded,1);input.disabled=false;
+paste(photo,[image,image]);assert.equal(uploaded,1);assert.match(photo.textContent,/한 개씩/);
+paste(doc.querySelector('#sheet'));assert.equal(doc.querySelector('#sheet input').files.length,0);
+const added=doc.createElement('section');added.setAttribute('data-file-dropzone','');added.innerHTML='<input type="file" accept="image/*">';doc.body.append(added);
+Object.defineProperty(added.querySelector('input'),'files',{writable:true,value:[]});await new Promise(resolve=>setTimeout(resolve,0));
+assert.ok(added.querySelector('[data-file-paste-hint]'),'dynamic task photo areas are enhanced');
+paste(added);assert.equal(added.querySelector('input').files.length,1);
+paste(doc.body);assert.equal(uploaded,1,'unfocused or ambiguous paste does not choose a random photo field');
+win.dispatchEvent(new win.Event('pagehide'));dom.window.close();
+console.log('PASS: image clipboard uploads, per-photo target, dynamic inputs, disabled/type/multiple validation, and preserved text paste');

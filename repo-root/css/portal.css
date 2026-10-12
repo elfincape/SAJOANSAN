@@ -102,3 +102,5 @@
 .portal-form textarea:not(.mention-source){field-sizing:fixed;height:160px;min-height:100px;max-height:320px;overflow-y:auto;resize:vertical;overscroll-behavior:contain;scrollbar-gutter:stable}
 
 .coupang-workflow input[type=file]{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+
+.file-paste-target:focus-visible{outline:2px dashed #34d399;outline-offset:3px}.file-paste-hint{font-size:12px;color:#94a3b8;margin:8px 0}.coupang-photo-input{padding:12px;border:1px dashed #52636a;border-radius:8px}

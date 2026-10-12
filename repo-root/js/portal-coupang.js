@@ -45,8 +45,9 @@ export function mountCoupangWorkflow({task,panel,form,node,button,files,collect,
  const observer=new MutationObserver(()=>{if(section.isConnected)return;disposed=true;if(receive)window.removeEventListener('message',receive);urls.forEach(url=>URL.revokeObjectURL(url));observer.disconnect();});observer.observe(panel,{childList:true});
  renderResults();
  if(!writable){status.textContent='저장된 입문확인 자료를 확인하고 다운로드하세요.';return;}
- const chooser=node('input');chooser.type='file';chooser.accept='image/png,image/jpeg,image/webp';chooser.setAttribute('aria-label','배차표 사진 등록');section.insertBefore(chooser,form);
- const preview=node('img');preview.alt='등록한 배차표';preview.className='coupang-source-preview';preview.hidden=true;section.insertBefore(preview,form);
+ const picker=node('div',undefined,'coupang-photo-input');picker.setAttribute('data-file-dropzone','');section.insertBefore(picker,form);picker.append(node('p','배차표 사진'));
+ const chooser=node('input');chooser.type='file';chooser.accept='image/png,image/jpeg,image/webp';chooser.setAttribute('aria-label','배차표 사진 등록');picker.append(chooser);
+ const preview=node('img');preview.alt='등록한 배차표';preview.className='coupang-source-preview';preview.hidden=true;picker.append(preview);
  function showSource(file){preview.src=blobUrl(file);preview.hidden=false;}
  async function initialize(){
   if(!initReady||!frame?.isConnected)return;

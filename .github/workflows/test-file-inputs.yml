@@ -1,0 +1,24 @@
+name: Test file input interactions
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo-root/js/file-drop.js'
+      - 'repo-root/js/portal-coupang.js'
+      - 'tests/file-drop.test.mjs'
+      - 'tests/file-paste.test.mjs'
+      - 'tests/portal-coupang.test.mjs'
+      - '.github/workflows/test-file-inputs.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --ignore-scripts jsdom@26
+      - run: node tests/file-drop.test.mjs
+      - run: node tests/file-paste.test.mjs
+      - run: node tests/portal-coupang.test.mjs

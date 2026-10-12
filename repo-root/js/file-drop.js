@@ -95,4 +95,54 @@ export function installFileDrops(doc,win){
     }catch(error){feedback(card,error.message||'파일을 선택 버튼으로 다시 선택해 주세요.');}
   },true);
 }
-if(typeof document!=='undefined'&&typeof window!=='undefined')installFileDrops(document,window);
+export function acceptsClipboardImages(input){
+ const accept=String(input.accept||'').toLowerCase();
+ return !accept||accept.split(',').some(type=>{type=type.trim();return type.startsWith('image/')||/\.(png|jpe?g|jfif|webp|gif|bmp|avif|hei[cf]|tiff?|svg)$/.test(type);});
+}
+export function installFilePastes(doc,win){
+ const enhanced=new WeakSet(),cards=new WeakSet();
+ const textEditor=target=>target?.closest?.('textarea,input:not([type=file]),[contenteditable=true],[role=textbox]');
+ function scan(){
+  for(const input of doc.querySelectorAll(FILE_INPUT)){
+   if(enhanced.has(input)||input.disabled||!acceptsClipboardImages(input))continue;
+   enhanced.add(input);
+   for(const card of uploadCards(input,doc)){
+    if(cards.has(card))continue;cards.add(card);
+    if(!card.hasAttribute('tabindex'))card.tabIndex=0;
+    card.classList.add('file-paste-target');
+    const hint=doc.createElement('p');hint.className='file-paste-hint';hint.textContent='사진 영역을 클릭하고 Ctrl+V로 붙여넣기';
+    hint.setAttribute('data-file-paste-hint','');card.append(hint);
+    card.addEventListener('click',event=>{if(event.target.closest?.('input,textarea,select,button,a,[contenteditable=true],[role=textbox]'))return;card.focus({preventScroll:true});});
+   }
+  }
+ }
+ const pasted=event=>{
+  if(event.defaultPrevented||textEditor(event.target))return;
+  const images=Array.from(event.clipboardData?.items||[]).filter(item=>item.kind==='file'&&String(item.type).startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+  if(!images.length)return;
+  const match=dropTarget(event.target,doc);
+  if(!match||!acceptsClipboardImages(match.input)||match.input.disabled||match.input.matches(':disabled'))return;
+  event.preventDefault();event.stopImmediatePropagation();
+  let feedback=match.card.querySelector('[data-file-paste-feedback]');
+  if(!feedback){feedback=doc.createElement('p');feedback.setAttribute('data-file-paste-feedback','');feedback.setAttribute('role','status');match.card.append(feedback);}
+  try{
+   const files=images.map((file,index)=>{
+    if(file.name&&/\.[a-z0-9]+$/i.test(file.name))return file;
+    const extension=(MIME_EXTENSIONS[file.type]??['png'])[0];
+    return new win.File([file],'clipboard-'+Date.now()+'-'+(index+1)+'.'+extension,{type:file.type});
+   });
+   validateDroppedFiles(files,match.input);
+   const transfer=new win.DataTransfer();for(const file of files)transfer.items.add(file);
+   match.input.files=transfer.files;feedback.textContent='';
+   match.input.dispatchEvent(new win.Event('change',{bubbles:true}));
+  }catch(error){feedback.textContent=error.message||'사진을 파일 선택으로 다시 넣어 주세요.';}
+ };
+ scan();
+ const observer=new win.MutationObserver(scan);
+ observer.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','accept']});
+ win.addEventListener('paste',pasted,true);
+ win.addEventListener('pagehide',()=>{observer.disconnect();win.removeEventListener('paste',pasted,true);},{once:true});
+}
+if(typeof document!=='undefined'&&typeof window!=='undefined'){
+ installFileDrops(document,window);installFilePastes(document,window);
+}

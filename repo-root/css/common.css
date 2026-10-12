@@ -504,3 +504,5 @@ table.app-table tbody tr.selected td {
 
 /* Default multiline inputs use internal scrolling, including long pasted dispatch text. */
 textarea:not(.mention-source){field-sizing:fixed;height:10rem;min-height:6rem;max-height:20rem;overflow-y:auto;overscroll-behavior:contain;resize:vertical;scrollbar-gutter:stable}
+
+.file-paste-target:focus-visible{outline:2px dashed #34d399;outline-offset:3px}.file-paste-hint{font-size:12px;color:#94a3b8;margin:8px 0}.coupang-photo-input{padding:12px;border:1px dashed #52636a;border-radius:8px}
