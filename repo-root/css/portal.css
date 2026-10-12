@@ -100,3 +100,5 @@
 .coupang-results{display:grid;gap:12px;margin-top:18px}.coupang-result{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:8px}.coupang-result img{display:block;max-width:100%;max-height:480px;object-fit:contain}.coupang-source-preview{display:block;max-width:100%;max-height:200px;object-fit:contain;margin-top:12px}.coupang-workflow iframe{height:min(850px,78vh);min-height:420px}.coupang-result button{justify-self:start}
 
 .portal-form textarea:not(.mention-source){field-sizing:fixed;height:160px;min-height:100px;max-height:320px;overflow-y:auto;resize:vertical;overscroll-behavior:contain;scrollbar-gutter:stable}
+
+.coupang-workflow input[type=file]{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box}

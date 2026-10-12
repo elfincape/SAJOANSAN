@@ -10,7 +10,7 @@ export function mountCoupangWorkflow({task,panel,form,node,button,files,collect,
  const section=node('section',undefined,'coupang-workflow');
  section.append(node('h3','배차표 · 입문확인 자료'));panel.append(section);
  const status=node('p',undefined,'coupang-progress');status.setAttribute('role','status');section.append(status);
- const results=node('div',undefined,'coupang-results');section.append(results);section.insertBefore(form,results);
+ const results=node('div',undefined,'coupang-results');section.append(results);section.insertBefore(form,results);const taskActions=form.querySelector(':scope > .actions');if(taskActions)section.append(taskActions);
  const urls=new Set();let frame=null,busy=false,initReady=false,disposed=false,receive=null;
  const session=sessions.get(task.id)??{file:null,source:null,pending:null};sessions.set(task.id,session);
  const held=new Map();
