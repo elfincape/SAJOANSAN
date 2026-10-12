@@ -1,0 +1,23 @@
+name: Test automatic Coupang generation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo-root/js/portal-coupang.js'
+      - 'repo-root/js/coupang-workbook.js'
+      - 'repo-root/admin/coupang-entry.html'
+      - 'tests/portal-coupang.test.mjs'
+      - 'tests/coupang-auto.test.mjs'
+      - '.github/workflows/test-coupang-auto.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --ignore-scripts jsdom@26 exceljs@4.4.0 jszip@3.10.1
+      - run: node tests/portal-coupang.test.mjs
+      - run: node tests/coupang-auto.test.mjs
+      - run: node tests/coupang-state.test.mjs

@@ -171,9 +171,38 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     });
   });
   setEntryDate(defaultEntryDate());
-  loadDefaultTemplate(false);
+  const portalTemplateReady=loadDefaultTemplate(false);
 
-  if(portalContext&&parent!==window){document.querySelector('header')?.remove();$('analyze-image-btn').disabled=!window.appSupabase;window.addEventListener('coupang-auth-ready',()=>$('analyze-image-btn').disabled=false);document.querySelector('main>section')?.setAttribute('hidden','');document.querySelector('[data-drop=template]')?.setAttribute('hidden','');$('dispatch-text').closest('section > div')?.setAttribute('hidden','');$('image-file').hidden=true;$('image-file').disabled=true;$('entry-date').disabled=true;$('coupang-vision-model').hidden=true;document.querySelector('label[for=coupang-vision-model]')?.setAttribute('hidden','');$('image-placeholder').textContent='업무 티켓에서 배차표 사진을 먼저 등록하세요.';$('image-paste-box').removeAttribute('role');$('image-paste-box').removeAttribute('tabindex');$('download-btn').textContent='엑셀·이미지 생성하고 업무에 첨부';window.addEventListener('message',async event=>{if(event.origin!==location.origin||event.source!==parent||event.data?.taskId!==portalContext)return;const data=event.data;if(data.type==='portal-coupang-init'){portalSettings=data.settings??{};setEntryDate(data.date);$('dispatch-text').value=data.dispatch??'';state.dispatchRows=[];invalidateMatches();if(data.file){let file=data.file;if(file.type==='image/webp'){const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('배차표 이미지 변환 실패');file=new File([blob],'배차표.png',{type:'image/png'});}handleImageFile(file);}$('schedule-json').value=data.schedule?.length?JSON.stringify(data.schedule,null,2):'';invalidateSchedule();if(data.schedule?.length)loadScheduleJson();portalInitialized=true;}if(data.type==='portal-coupang-dispatch'&&$('dispatch-text').value!==data.dispatch){$('dispatch-text').value=data.dispatch;state.dispatchRows=[];invalidateMatches();}if(data.type==='portal-coupang-saved')toast('업무 티켓에 첨부하고 분석·배차정보를 저장했습니다.','success');if(data.type==='portal-coupang-error')toast(data.message,'error');});parent.postMessage({type:'portal-coupang-ready',taskId:portalContext},location.origin);}
+  if(portalContext&&parent!==window){document.querySelector('header')?.remove();$('analyze-image-btn').disabled=!window.appSupabase;window.addEventListener('coupang-auth-ready',()=>$('analyze-image-btn').disabled=false);document.querySelector('main>section')?.setAttribute('hidden','');document.querySelector('[data-drop=template]')?.setAttribute('hidden','');$('dispatch-text').closest('section > div')?.setAttribute('hidden','');$('image-file').hidden=true;$('image-file').disabled=true;$('entry-date').disabled=true;$('coupang-vision-model').hidden=true;document.querySelector('label[for=coupang-vision-model]')?.setAttribute('hidden','');$('image-placeholder').textContent='업무 티켓에서 배차표 사진을 먼저 등록하세요.';$('image-paste-box').removeAttribute('role');$('image-paste-box').removeAttribute('tabindex');$('download-btn').textContent='엑셀·이미지 생성하고 업무에 첨부';window.addEventListener('message',async event=>{if(event.origin!==location.origin||event.source!==parent||event.data?.taskId!==portalContext)return;const data=event.data;if(data.type==='portal-coupang-run'){await runPortalAutomation(data);return;}if(data.type==='portal-coupang-init'){portalSettings=data.settings??{};setEntryDate(data.date);$('dispatch-text').value=data.dispatch??'';state.dispatchRows=[];invalidateMatches();if(data.file){let file=data.file;if(file.type==='image/webp'){const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('배차표 이미지 변환 실패');file=new File([blob],'배차표.png',{type:'image/png'});}handleImageFile(file);}$('schedule-json').value=data.schedule?.length?JSON.stringify(data.schedule,null,2):'';invalidateSchedule();if(data.schedule?.length)loadScheduleJson();portalInitialized=true;}if(data.type==='portal-coupang-dispatch'&&$('dispatch-text').value!==data.dispatch){$('dispatch-text').value=data.dispatch;state.dispatchRows=[];invalidateMatches();}if(data.type==='portal-coupang-saved')toast('업무 티켓에 첨부하고 분석·배차정보를 저장했습니다.','success');if(data.type==='portal-coupang-error')toast(data.message,'error');});parent.postMessage({type:'portal-coupang-ready',taskId:portalContext},location.origin);}
+
+  let portalAutoBusy=false;
+  async function runPortalAutomation(data){
+    if(portalAutoBusy){parent.postMessage({type:'portal-coupang-run-error',taskId:portalContext,jobId:data.jobId,message:'이전 분석이 진행 중입니다. 잠시 후 다시 시도하세요.'},location.origin);return;}portalAutoBusy=true;
+    const report=(type,extra)=>parent.postMessage({type,taskId:portalContext,jobId:data.jobId,...extra},location.origin);
+    try{
+      if(!data.file||typeof data.dispatch!=='string'||!data.dispatch.trim())throw Error('배차표 사진과 배차정보를 넣어 주세요.');
+      await portalTemplateReady;if(!state.templateBuffer)throw Error('입문확인 엑셀 양식을 불러오지 못했습니다. 다시 시도하세요.');
+      if(!window.appSupabase)await new Promise((resolve,reject)=>{const done=()=>{clearTimeout(timeout);resolve();};const timeout=setTimeout(()=>{window.removeEventListener('coupang-auth-ready',done);reject(Error('로그인 정보를 불러오지 못했습니다. 새로고침하세요.'));},20000);window.addEventListener('coupang-auth-ready',done,{once:true});});
+      portalSettings=data.settings??{};setEntryDate(data.date);$('dispatch-text').value=data.dispatch;
+      let file=data.file;
+      if(file.type==='image/webp'){const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('사진을 변환하지 못했습니다.');file=new File([blob],'배차표.png',{type:'image/png'});}
+      handleImageFile(file);const bitmap=await createImageBitmap(file);state.imageSize={width:bitmap.width,height:bitmap.height};bitmap.close();
+      report('portal-coupang-progress',{message:'1/4 · 사진 분석 중…'});
+      await analyzeImage({throwOnError:true});
+      if(!state.scheduleRows.length)throw Error('사진에서 시간표를 찾지 못했습니다. 사진을 확인해 주세요.');
+      report('portal-coupang-progress',{message:'2/4 · 분석값 정리 중…'});
+      $('schedule-json').value=JSON.stringify(state.scheduleRows);loadScheduleJson();
+      report('portal-coupang-progress',{message:'3/4 · 배차정보 매칭 중…'});
+      parseDispatchInput();if(!state.dispatchRows.length)throw Error('배차정보에서 기사·차량 정보를 찾지 못했습니다. 입력 형식을 확인해 주세요.');
+      runMatching();
+      const missing=state.matches.filter(item=>!item.match.matchedDispatch);
+      if(missing.length)throw Error('배차정보와 매칭되지 않은 센터: '+missing.map(item=>item.schedule.centerRaw).join(', '));
+      report('portal-coupang-progress',{message:'4/4 · 엑셀·이미지 생성 중…'});
+      await downloadWorkbook({portalJobId:data.jobId,throwOnError:true});
+    }catch(error){report('portal-coupang-run-error',{message:error.message||'자료를 생성하지 못했습니다. 다시 시도하세요.'});}
+    finally{portalAutoBusy=false;}
+  }
+
   function defaultEntryDate(now = new Date()) {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]));
     return `${parts.year}-${parts.month}-${parts.day}`;
@@ -254,7 +283,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     placeholder.classList.add('hidden');
   }
 
-  async function analyzeImage() {
+  async function analyzeImage({throwOnError=false}={}) {
     if (!state.imageFile) return toast('쿠팡 시간표 이미지를 선택하세요.', 'error');
     invalidateSchedule();
     const revision = state.scheduleRevision;
@@ -285,6 +314,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     } catch (err) {
       console.error('[coupang-entry] 이미지 분석 예외:', err);
       console.error('[coupang-entry] stack:', err?.stack || '(stack 없음)');
+      if(throwOnError)throw err;
       const msg = String(err.message || err);
       if (msg.includes('Failed to fetch')) {
         toast('이미지 분석 실패: 브라우저 직접 호출이 CORS/네트워크로 차단됐습니다. Supabase Edge Function coupang-vision 배포가 필요합니다.', 'error');
@@ -312,6 +342,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
         apikey: anonKey,
         authorization: `Bearer ${anonKey}`
       },
+      signal:AbortSignal.timeout(120000),
       body: JSON.stringify({ model, mediaType, imageBase64: base64, prompt: PROMPT })
     });
     const responseText = await res.text();
@@ -469,7 +500,7 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
     invalidateMatches();
   }
 
-  async function downloadWorkbook() {
+  async function downloadWorkbook({portalJobId=null,throwOnError=false}={}) {
     if (!state.templateBuffer) return toast('템플릿을 먼저 불러오세요.', 'error');
     if (state.exporting) return;
     const snapshot = { templateBuffer: state.templateBuffer.slice(0), worksheetName: state.worksheetName,
@@ -484,9 +515,9 @@ centerBase에는 B2B를 제거한 기본 센터명을 넣어라.
         image: snapshot.imageFile ? { base64: await fileToBase64(snapshot.imageFile),
           mediaType: snapshot.imageType, width: snapshot.imageSize.width, height: snapshot.imageSize.height } : null });
       if (result.errors.length) toast(`일부 미입력: ${result.errors.join(', ')}`, 'error');
-      if(portalContext&&parent!==window){let image=null,imageError=null;try{const {captureWorkbookRange}=await import('/js/coupang-capture.js');image=await captureWorkbookRange({ExcelJS,buffer:result.buffer,worksheetName:result.worksheetName,range:portalSettings.capture_range||'A1:E20'});if(image.size>10*1024*1024)throw Error('범위 이미지가 10MB를 초과하여 엑셀만 첨부합니다.');}catch(error){image=null;imageError=error.message;}parent.postMessage({type:'portal-coupang-generated',taskId:portalContext,jobId:crypto.randomUUID(),buffer:result.buffer,filename:result.filename,image,imageError,schedule:state.scheduleRows,dispatch:$('dispatch-text').value,matches:snapshot.matches},location.origin);return;}
+      if(portalContext&&parent!==window){let image=null,imageError=null;try{const {captureWorkbookRange}=await import('/js/coupang-capture.js');image=await captureWorkbookRange({ExcelJS,buffer:result.buffer,worksheetName:result.worksheetName,range:result.captureRange});if(image.size>10*1024*1024)throw Error('범위 이미지가 10MB를 초과하여 엑셀만 첨부합니다.');}catch(error){if(throwOnError)throw error;image=null;imageError=error.message;}parent.postMessage({type:'portal-coupang-generated',taskId:portalContext,jobId:portalJobId||crypto.randomUUID(),captureRange:result.captureRange,entryDate:snapshot.date,buffer:result.buffer,filename:result.filename,image,imageError,schedule:state.scheduleRows,dispatch:$('dispatch-text').value,matches:snapshot.matches},location.origin);return;}
       saveBlob(new Blob([result.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), result.filename);
-    } catch (error) { toast(error.message || '엑셀을 생성하지 못했습니다.', 'error'); }
+    } catch (error) { if(throwOnError)throw error;toast(error.message || '엑셀을 생성하지 못했습니다.', 'error'); }
     finally { state.exporting = false; updateButtons(); }
   }
   function addMinutes(timeText, minutes) { const t = normalizeTime(timeText); if (!t) return null; const [h, m] = t.split(':').map(Number); const total = (h * 60 + m + minutes + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; }

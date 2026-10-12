@@ -106,3 +106,5 @@
 .file-paste-target:focus-visible{outline:2px dashed #34d399;outline-offset:3px}.file-paste-hint{font-size:12px;color:#94a3b8;margin:8px 0}.coupang-photo-input{padding:12px;border:1px dashed #52636a;border-radius:8px}
 
 .mention-suggestions{position:fixed;z-index:1000;box-sizing:border-box;border-radius:8px;scrollbar-gutter:stable;overscroll-behavior:contain}.mention-suggestions button{flex:none;width:100%;border:0;padding:8px 10px}.mention-suggestions button[aria-selected=true]{background:#294d3e;border-color:#65dbad;color:#e9fff5}
+
+.coupang-workflow iframe[hidden]{display:none!important}.coupang-result img[role=button]{cursor:zoom-in}.coupang-image-dialog{width:min(1100px,94vw);max-width:94vw;max-height:92dvh;overflow:auto;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text)}.coupang-image-dialog::backdrop{background:#000b}.coupang-image-dialog>.actions{position:sticky;top:0;display:flex;gap:10px;align-items:center;background:var(--panel);padding:8px 0}.coupang-image-dialog img{display:block;max-width:100%;height:auto;margin:auto}.coupang-entry-date{color:var(--muted);font-size:13px}

@@ -73,7 +73,7 @@ export async function buildCoupangWorkbook({ ExcelJS, JSZip, templateBuffer, wor
     const span = Math.max(4, Math.max(80, Math.round(width * ratio)) / 20);
     sheet.addImage(id, { tl: { col: 0, row: 1 }, br: { col: 5, row: 1 + span }, editAs: 'oneCell' });
   }
-  const errors = []; let written = 0;
+  const errors = []; let written = 0, lastWrittenRow = 0, lastWrittenColumn = 0;
   if (strict && matches.some(m => m.include && (!m.schedule?.reservationTime
     || !String(m.schedule?.centerRaw || '').trim() || !String(m.match?.matchedDispatch?.driver || '').trim()))) {
     throw Error('선택한 배차정보의 센터·시간·기사명을 확인해 주세요.');
@@ -91,7 +91,7 @@ export async function buildCoupangWorkbook({ ExcelJS, JSZip, templateBuffer, wor
       cell.style = clone(cell.style);
       cell.style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: dispatch.groupFill } };
     }
-    written++;
+    written++;lastWrittenRow=Math.max(lastWrittenRow,row);lastWrittenColumn=Math.max(lastWrittenColumn,col+1);
   }
   if (strict && (!written || errors.length)) throw Error(errors.join(', ') || '입력할 배차정보가 없습니다.');
   const zip = await JSZip.loadAsync(await workbook.xlsx.writeBuffer());
@@ -101,5 +101,6 @@ export async function buildCoupangWorkbook({ ExcelJS, JSZip, templateBuffer, wor
     zip.file(path, (await zip.file(path).async('string')).replace(/<conditionalFormatting[\s\S]*?<\/conditionalFormatting>/g, ''));
   }
   return { buffer: await zip.generateAsync({ type: 'arraybuffer' }), errors, written,
+    captureRange: written ? 'G3:'+String.fromCharCode(64+lastWrittenColumn)+lastWrittenRow : null,
     worksheetName: sheet.name, filename: `쿠팡 입문확인_${date.replaceAll('-', '')}.xlsx` };
 }
