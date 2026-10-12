@@ -10,17 +10,23 @@ const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefi
 const button=(text,click,parent,cls)=>{const e=node('button',text,cls);e.onclick=click;parent.append(e);return e;};
 const field=(form,title,name,value,type)=>{const label=node('label',title),input=node('input');input.type=type;input.name=name;input.value=value;label.append(input);form.append(label);return input;};
 const day=koreaDate(),base={center_code:'001',work_date:day,created_at:day+'T00:00:00Z',title:'쿠팡 배차'};
+const queries=[];
 const api={
- historyRecords:async()=>({tasks:[{...base,id:'a',status:'in_progress'},{...base,id:'b',status:'completed'},{...base,id:'old',status:'pending',work_date:'2020-01-01'},{...base,id:'private',center_code:'002',status:'pending'}],incidents:[],events:[
+ historyRecords:async criteria=>{queries.push(criteria);return ({tasks:[{...base,id:'a',status:'in_progress'},{...base,id:'b',status:'completed'},{...base,id:'old',status:'pending',work_date:'2020-01-01'},{...base,id:'private',center_code:'002',status:'pending'}],incidents:[],events:[
  {id:1,task_id:'a',action:'created',occurred_at:day+'T00:00:00Z',report_date:day},
  {id:2,task_id:'a',action:'completed',occurred_at:day+'T01:00:00Z',report_date:day}
- ]}),
+ ]});},
  events:async()=>[{id:1,action:'created',occurred_at:day+'T00:00:00Z'},{id:2,action:'file_uploaded',occurred_at:day+'T00:30:00Z'},{id:3,action:'updated',occurred_at:day+'T01:00:00Z',request_body:{data:{note:'물량 수정'}}}]
 };
 const render=createPortalHistory({api,node,button,field,centerName:c=>c,stamp:x=>x,message:m=>{throw new Error(m);},allowed:(r,a,c)=>c==='001',openRecord:()=>{}});
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
 render([{code:'001'},{code:'002'}]);await tick();
 assert.equal(document.querySelectorAll('.history-task').length,3);
+assert.equal(document.querySelector('.history-filters button'),null);
+const start=document.querySelector('[name="from"]'),end=document.querySelector('[name="through"]');
+start.value=day;start.dispatchEvent(new dom.window.Event('change'));await tick();assert.equal(queries.at(-1).from,day);
+end.value=day;end.dispatchEvent(new dom.window.Event('change'));await tick();assert.equal(queries.at(-1).through,day);
+assert.equal(document.querySelector('.history-filters').getAttribute('aria-busy'),null);
 assert.equal(document.querySelectorAll('.history-record>.badge')[0].textContent,'처리중');
 assert(!document.querySelector('#items').textContent.includes('첨부 파일 저장'));
 const item=document.querySelector('.history-task');item.open=true;await tick();
@@ -32,4 +38,4 @@ let resolveEvents;api.events=()=>new Promise(r=>{resolveEvents=r;});
 filter.value='active';filter.dispatchEvent(new dom.window.Event('change'));const stale=document.querySelector('.history-task');stale.open=true;await tick();
 render([{code:'001'}]);await tick();resolveEvents([{id:9,action:'updated',occurred_at:day+'T05:00:00Z',request_body:{data:{note:'STALE_RESPONSE'}}}]);await tick();
 assert(!document.body.textContent.includes('STALE_RESPONSE'));
-console.log('History accordion, current status, filters, file event hiding, center permissions and stale response guards passed');
+console.log('History accordion, automatic date filters without a query button, current status, file event hiding, center permissions and stale response guards passed');
