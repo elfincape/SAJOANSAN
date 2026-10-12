@@ -13,13 +13,12 @@
     ]
   },
   "owner_ids": [],
-  "description": "배차표 사진과 운수사 배차정보를 확인하고 쿠팡 입문확인 자료를 생성합니다. 운수사에 전송한 뒤 완료 처리하세요.",
+  "description": "배차표 사진과 배차정보로 쿠팡 입문확인 엑셀·이미지를 생성합니다.",
   "external_process": [
     "배차표 수신",
     "운수사 배차표 공유",
     "운수사 배차정보 수신",
     "배차정보 CJ 공유",
-    "임시차 모니터링 작성",
     "쿠팡 입문확인표 사진(엑셀 캡처) 운수사 전송"
   ],
   "fields": [
@@ -29,51 +28,16 @@
       "type": "string",
       "control": "textarea",
       "required_on_complete": true
-    },
-    {
-      "key": "carrier_name",
-      "label": "전송 운수사·담당자",
-      "type": "string",
-      "control": "text",
-      "required_on_complete": true
-    },
-    {
-      "key": "monitoring_note",
-      "label": "임시차 모니터링 기록",
-      "type": "string",
-      "control": "textarea",
-      "required_on_complete": false
     }
   ],
-  "steps": [
-    {
-      "key": "photo_registered",
-      "label": "업무에 배차표 사진 등록"
-    },
-    {
-      "key": "dispatch_written",
-      "label": "배차정보 기재"
-    },
-    {
-      "key": "entry_generated",
-      "label": "쿠팡 입문 확인 자료 생성·첨부"
-    },
-    {
-      "key": "carrier_sent",
-      "label": "운수사에 입문확인요청 표 전송"
-    }
-  ],
-  "completion_condition": "배차표 사진·배차정보·생성 엑셀을 확인하고 운수사 전송을 완료한 뒤 업무 완료 버튼을 누르세요.",
+  "steps": [],
+  "completion_condition": "",
   "integration": {
     "kind": "coupang_entry",
     "dispatch_field": "dispatch_info",
     "capture_range": "A1:E20",
     "worksheet": "",
-    "step_keys": {
-      "photo": "photo_registered",
-      "dispatch": "dispatch_written",
-      "generated": "entry_generated"
-    }
+    "step_keys": {}
   },
   "configuration_source": "사용자 요청에 따른 운영 관리 API 등록"
 }

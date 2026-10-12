@@ -1,3 +1,4 @@
+import {mountCoupangWorkflow,isCoupangTask,coupangFields} from './portal-coupang.js';
 import {createPortalHistory} from './portal-history.js';
 import {setupPortalMentions} from './portal-mentions.js';
 import {renderPermissions,permissionAllowed} from './portal-permissions.js';
@@ -178,7 +179,7 @@ function membershipForm(person){
   button(assigned?'배정 해제':'배정',()=>mutate(JSON.stringify(['membership',person.id,center.code,assigned]),requestId=>api.setMembership({requestId,userId:person.id,center:center.code,expected:assigned,enabled:!assigned})),line);form.append(line);
  }panel.append(form);
 }
-function renderDetail(){const selectedTask=state.selected&&(state.selected.type==='task'||state.view==='center');const popup=$('task-ticket-dialog');const panel=selectedTask&&popup.open?popup:$('detail');if(panel===popup){panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','업무 티켓'));button('닫기',()=>popup.close(),header);panel.append(header);}else panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);attachments(type,row,panel);if(type==='task')panel.append(panel.querySelector(':scope > .task-participants'));}
+function renderDetail(){const selectedTask=state.selected&&(state.selected.type==='task'||state.view==='center');const popup=$('task-ticket-dialog');const panel=selectedTask&&popup.open?popup:$('detail');if(panel===popup){panel.replaceChildren();const header=node('div',undefined,'parent-dialog-heading');header.append(node('strong','업무 티켓'));button('닫기',()=>popup.close(),header);panel.append(header);}else panel.replaceChildren();const selected=state.selected;if(!selected){panel.append(node('p','목록에서 항목을 선택하세요.'));return;}const {row,type}=selected;panel.append(node('h2',row.title));if(type==='task')taskDetail(row,panel);else if(type==='incident')incidentDetail(row,panel);else surveyDetail(row,panel);if(type!=='task'||!isCoupangTask(row))attachments(type,row,panel);if(type==='task')panel.append(panel.querySelector(':scope > .task-participants'));}
 function attachments(kind,row,panel){
  const section=node('section',undefined,'attachments'),list=node('div'),form=node('form',undefined,'portal-form'),hint=node('p');
  section.append(node('h3','첨부 파일'),node('p','기존 OneDrive에 저장하며 원본과 일치하는지 확인합니다. 파일당 최대 10MB입니다.'),list);panel.append(section);
@@ -224,25 +225,37 @@ function taskCreate(){
 }
 const taskDrafts=new Map(),workflowSaveRequests=new Map();
 function taskDetail(task,panel,readOnly=false){
+ const coupang=isCoupangTask(task);
  if(task.deleted_at){panel.append(node('p','휴지통에 보관 중 · '+stamp(task.deleted_at)),node('p',centerName(task.center_code)+' · '+task.work_date),node('p',task.inputs?.work_note??''));const values=node('dl');for(const f of task.template_snapshot?.spec?.fields??[])values.append(node('dt',f.label),node('dd',String(task.inputs?.[f.key]??'')));panel.append(values);if(!readOnly&&canWrite(task.center_code,'trash')&&canWrite(task.center_code))button('업무 복원',()=>moveTaskTrash(task,true),panel,'primary');history(task,panel,'task');renderParticipants({task,panel,options:state.participants??[],node,button,field,centerName,writable:false});return;}
  if(!readOnly&&canWrite(task.center_code,'trash')&&canWrite(task.center_code))button('삭제 · 휴지통으로 이동',()=>moveTaskTrash(task,false),panel,'trash-button');
  const draft=taskDrafts.get(task.id);const values=!readOnly&&draft?.version===task.version?draft.inputs:task.inputs;
  let changeHandler=()=>{};const writable=!readOnly&&canWrite(task.center_code),form=node('form',undefined,'portal-form');const handler=state.participants?.find(s=>s.id===task.handler_subject_id)??state.participants?.find(s=>s.user_id===task.owner_id);panel.append(node('p',`${centerName(task.center_code)} · ${taskPeriod(task)} · ${taskStateLabels[taskState(task)]}`,'task-period-meta'),node('p','담당자 · '+subjectLabel(handler,centerName),'task-handler-meta'));
- if(task.template_snapshot?.spec?.external_process?.length){const process=node('details',undefined,'external-process');process.append(node('summary','외부 업무 프로세스'));const list=node('ol');task.template_snapshot.spec.external_process.forEach(step=>list.append(node('li',step)));process.append(list);panel.append(process);}
- if(task.template_snapshot?.spec?.completion_condition)panel.append(node('p','완료 전 확인 · '+task.template_snapshot.spec.completion_condition));
+ if(!coupang&&task.template_snapshot?.spec?.external_process?.length){const process=node('details',undefined,'external-process');process.append(node('summary','외부 업무 프로세스'));const list=node('ol');task.template_snapshot.spec.external_process.forEach(step=>list.append(node('li',step)));process.append(list);panel.append(process);}
+ if(!coupang&&task.template_snapshot?.spec?.completion_condition)panel.append(node('p','완료 전 확인 · '+task.template_snapshot.spec.completion_condition));
  if(task.due_at)panel.append(node('p','업무 마감 · '+stamp(task.due_at)));
- const fields=task.template_snapshot?.spec?.fields??[];
+ const fields=coupang?coupangFields(task):task.template_snapshot?.spec?.fields??[];
  for(const f of fields){let el;if(f.control==='select'){const label=node('label',f.label);el=node('select');el.name='field_'+f.key;const blank=node('option','선택하세요');blank.value='';el.append(blank);for(const value of f.options??[]){const option=node('option',value);option.value=value;el.append(option);}el.value=values?.[f.key]??'';label.append(el);form.append(label);}else el=field(form,f.label,'field_'+f.key,values?.[f.key],f.type==='boolean'?'checkbox':f.type==='number'?'number':f.control==='date'?'date':f.control==='textarea'?'textarea':'text');if(f.type==='number')el.step='any';}
- if(task.template_snapshot?.spec?.description)panel.append(node('p',task.template_snapshot.spec.description));
+ if(!coupang&&task.template_snapshot?.spec?.description)panel.append(node('p',task.template_snapshot.spec.description));
  if(finished(task))panel.append(node('p','완료 확정 · '+stamp(task.completed_at),'completion-confirmed'));
- field(form,'업무 내용','work_note',values?.work_note??'','textarea');
- const steps=task.template_snapshot?.spec?.steps??[];
+ if(!coupang)field(form,'업무 내용','work_note',values?.work_note??'','textarea');
+ const steps=coupang?[]:task.template_snapshot?.spec?.steps??[];
  for(const step of steps){const status=task.inputs?.steps?.[step.key];const wrap=node(status==='completed'||status==='not_applicable'?'details':'fieldset');wrap.append(node(wrap.tagName==='DETAILS'?'summary':'legend',step.label+' · '+(statusLabels[status]??'')));
   if(!finished(task)&&writable){button('처리 완료',()=>saveTask(task,form,task.status,{step:step.key,status:'completed'}),wrap);button('해당 없음',()=>saveTask(task,form,task.status,{step:step.key,status:'not_applicable'}),wrap);}form.append(wrap);
  }
- if(!finished(task)&&writable){const actions=node('div',undefined,'actions');button('저장',()=>saveTask(task,form,'in_progress'),actions);button('업무 완료',()=>saveTask(task,form,'completed'),actions,'primary');button('해당 없음',()=>saveTask(task,form,'not_applicable'),actions);button('담당자 변경',()=>changeHandler(),actions);form.append(actions);}
+ if(!finished(task)&&writable){const actions=node('div',undefined,'actions');button('저장',()=>saveTask(task,form,'in_progress'),actions);button('업무 완료',()=>saveTask(task,form,'completed'),actions,'primary');if(!coupang)button('해당 없음',()=>saveTask(task,form,'not_applicable'),actions);button('담당자 변경',()=>changeHandler(),actions);form.append(actions);}
  else form.querySelectorAll('input,textarea,select').forEach(el=>el.disabled=true);
  panel.append(form);form.onsubmit=e=>{e.preventDefault();if(writable&&!finished(task))saveTask(task,form,'in_progress');};
+ if(coupang)mountCoupangWorkflow({task,panel,form,node,button,files:operationsFiles,collect:()=>collectInputs(task,form),writable:writable&&!finished(task),persist:async inputs=>{
+  if(state.busy)throw Error('저장 중입니다. 잠시 후 다시 시도하세요.');
+  const key=JSON.stringify([task.id,task.version,inputs]);let request=workflowSaveRequests.get(task.id);
+  if(request?.key!==key){request={key,id:crypto.randomUUID()};workflowSaveRequests.set(task.id,request);}
+  setBusy(true);
+  try{
+   const row=await api.save({requestId:request.id,task,center:task.center_code,title:task.title,date:task.work_date,endDate:taskEnd(task),inputs,status:'in_progress'});
+   if(row?.id!==task.id||!Number.isInteger(row.version))throw Error('업무 저장 결과를 확인하지 못했습니다. 다시 시도하세요.');
+   Object.assign(task,row);if(state.selected?.row.id===task.id)state.selected={type:'task',row:task};taskDrafts.delete(task.id);workflowSaveRequests.delete(task.id);
+  }finally{setBusy(false);}
+ },refresh:async text=>{await refresh();message(text);}});
  if(writable){const actions=node('div',undefined,'quick-actions');if(finished(task))button('업무 다시 열기',()=>mutate('reopen:'+task.id+':'+task.version,id=>api.reopen({requestId:id,task})),actions);else{
   button('마감시간',()=>deadlines(task,panel),actions);
   allowed('incidents','edit',task.center_code)&&button('특이사항 발생',()=>{taskDrafts.set(task.id,{version:task.version,inputs:collectInputs(task,form)});if($('task-ticket-dialog').open)$('task-ticket-dialog').close();incidentCreate(null,task);},actions,'primary');

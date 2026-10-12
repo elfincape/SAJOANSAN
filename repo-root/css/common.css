@@ -501,3 +501,6 @@ table.app-table tbody tr.selected td {
   color: #fbbf24;
 }
 .file-drop-feedback[hidden] { display: none; }
+
+/* Default multiline inputs use internal scrolling, including long pasted dispatch text. */
+textarea:not(.mention-source){field-sizing:fixed;height:10rem;min-height:6rem;max-height:20rem;overflow-y:auto;overscroll-behavior:contain;resize:vertical;scrollbar-gutter:stable}
