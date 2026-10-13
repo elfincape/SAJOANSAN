@@ -6,7 +6,8 @@ export function efficiencyFor(tons,values=DEFAULT_EFFICIENCY){
 }
 export function originalStops(trip){
  const groups=new Map();
- for(const d of trip.deliveries??[]){
+ const deliveries=[...(trip.deliveries??[])].sort((a,b)=>Number(a.sourceRow??Infinity)-Number(b.sourceRow??Infinity));
+ for(const d of deliveries){
   const key=String(d.stopId||d.id||d.sourceRow),address=String(d.address??'').trim();
   if(!groups.has(key))groups.set(key,{names:[],address:''});
   const stop=groups.get(key);if(d.name&&!stop.names.includes(d.name))stop.names.push(String(d.name));
@@ -14,7 +15,7 @@ export function originalStops(trip){
  }
  return [...groups.values()].map(s=>({name:s.names.join(' / '),address:s.address}));
 }
-export function fuelResult(trip,route,{efficiencies,price}){
+export function fuelResult(trip,route,{efficiencies,price,origin=DEFAULT_ORIGIN}){
  const efficiency=efficiencyFor(trip.tons,efficiencies),rate=Number(price),stops=originalStops(trip);
  if(!efficiency||!Number.isFinite(rate)||rate<=0)throw Error('톤수별 연비와 리터당 유류단가를 확인해 주세요.');
  if(route.sections?.length!==stops.length)throw Error('착지 수와 거리 응답이 다릅니다.');
@@ -22,9 +23,9 @@ export function fuelResult(trip,route,{efficiencies,price}){
   const meters=route.sections[i].distanceMeters;
   if(!Number.isFinite(meters)||meters<0)throw Error('주행거리 값이 올바르지 않습니다.');
   const distance=meters/1000,liters=distance/efficiency;
-  return {tons:trip.tons,stopName:s.name,address:s.address,distanceKm:distance,efficiency,liters,fuelCost:liters*rate};
+  return {order:i+1,fromName:i?stops[i-1].name:'기준주소',fromAddress:i?stops[i-1].address:origin,tons:trip.tons,stopName:s.name,address:s.address,distanceKm:distance,efficiency,liters,fuelCost:liters*rate};
  });
- return {id:trip.id,tons:trip.tons,rows,distanceKm:rows.reduce((n,r)=>n+r.distanceKm,0),liters:rows.reduce((n,r)=>n+r.liters,0),fuelCost:rows.reduce((n,r)=>n+r.fuelCost,0),calculatedAt:route.calculatedAt};
+ return {id:trip.id,date:trip.date??'',origin,tons:trip.tons,rows,distanceKm:rows.reduce((n,r)=>n+r.distanceKm,0),liters:rows.reduce((n,r)=>n+r.liters,0),fuelCost:rows.reduce((n,r)=>n+r.fuelCost,0),calculatedAt:route.calculatedAt};
 }
 export function fuelSummary(results){
  const groups=new Map();
@@ -37,13 +38,15 @@ export function fuelSummary(results){
 }
 export const RESULT_HEADERS=['톤수','착지명','주소','착지당 주행거리(km)','연비(km/L)','사용량(L)','유류비(원)'];
 export function fuelRows(results){return results.flatMap(r=>r.rows.map(s=>[s.tons,s.stopName,s.address,Number(s.distanceKm.toFixed(3)),s.efficiency,Number(s.liters.toFixed(3)),Math.round(s.fuelCost)]));}
+export const GROUP_HEADERS=['묶음','일자','착지순서','톤수','구간 출발지 주소','착지명','주소','구간거리(km)','연비(km/L)','사용량(L)','유류비(원)'];
+export function groupedFuelRows(results){return results.flatMap((r,index)=>r.rows.map(s=>[index+1,r.date,s.order,s.tons,s.fromAddress,s.stopName,s.address,Number(s.distanceKm.toFixed(3)),s.efficiency,Number(s.liters.toFixed(3)),Math.round(s.fuelCost)]));}
 export async function loadFuelTrips(client,{from,through}){
  const rows=[];
  for(let offset=0;;offset+=500){
   let q=client.from('charter_trips').select('id,business_date,tons:payload->tons,deliveries:payload->deliveries').eq('center_code','002').order('business_date').order('id').range(offset,offset+499);
   if(from)q=q.gte('business_date',from);if(through)q=q.lte('business_date',through);
   const {data,error}=await q;if(error)throw Error('평택 DB 조회 실패: '+error.message);
-  rows.push(...data.map(r=>({id:r.id,tons:r.tons,deliveries:(r.deliveries??[]).map(d=>({id:d.id,stopId:d.stopId,sourceRow:d.sourceRow,name:d.name,address:d.address}))})));
+  rows.push(...data.map(r=>({id:r.id,date:r.business_date??'',tons:r.tons,deliveries:(r.deliveries??[]).map(d=>({id:d.id,stopId:d.stopId,sourceRow:d.sourceRow,name:d.name,address:d.address}))})));
   if(data.length<500)return rows;
  }
 }

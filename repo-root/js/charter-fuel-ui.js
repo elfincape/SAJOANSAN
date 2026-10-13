@@ -2,7 +2,7 @@ import {requireRole} from './auth.js';
 import {supabase} from './supabase.js';
 import {SUPABASE_URL,SUPABASE_ANON_KEY} from './config.js';
 import {koreaDate} from './operations-view.js';
-import {DEFAULT_ORIGIN,DEFAULT_EFFICIENCY,efficiencyFor,originalStops,fuelResult,fuelSummary,fuelRows,RESULT_HEADERS,loadFuelTrips} from './charter-fuel-model.js';
+import {DEFAULT_ORIGIN,DEFAULT_EFFICIENCY,efficiencyFor,originalStops,fuelResult,fuelSummary,groupedFuelRows,GROUP_HEADERS,loadFuelTrips} from './charter-fuel-model.js';
 const $=id=>document.getElementById(id);
 let source=[],results=[],issues=[],busy=false,stopped=false,storageKey='',resultPage=0,calculating=false;
 const PAGE=100;
@@ -12,7 +12,7 @@ function controls(){
  document.querySelectorAll('input,select,button').forEach(e=>e.disabled=busy);
  $('calculate').disabled=busy||!source.length;$('export').disabled=busy||!results.length;
  $('cancel').hidden=!busy||!calculating;$('cancel').disabled=false;
- const count=results.reduce((n,r)=>n+r.rows.length,0);$('results-prev').disabled=busy||resultPage===0;$('results-next').disabled=busy||(resultPage+1)*PAGE>=count;
+ $('results-prev').disabled=busy||resultPage===0;$('results-next').disabled=busy||(resultPage+1)*PAGE>=results.length;
 }
 function settings(){
  const efficiencies=Object.fromEntries([...document.querySelectorAll('[data-efficiency]')].map(e=>[e.dataset.efficiency,Number(e.value)]));
@@ -25,12 +25,17 @@ function settings(){
 function saveSettings(){
  try{localStorage.setItem(storageKey,JSON.stringify({origin:$('origin-address').value,price:$('fuel-price').value,priority:$('route-priority').value,efficiencies:Object.fromEntries([...document.querySelectorAll('[data-efficiency]')].map(e=>[e.dataset.efficiency,e.value]))}));}catch{}
 }
-function row(parent,values){const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value??'';tr.append(td);}parent.append(tr);}
+function row(parent,values){const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value??'';tr.append(td);}parent.append(tr);return tr;}
 function render(){
  const tbody=$('results').querySelector('tbody');tbody.replaceChildren();
- const details=fuelRows(results);resultPage=Math.min(resultPage,Math.max(0,Math.ceil(details.length/PAGE)-1));
- for(const value of details.slice(resultPage*PAGE,(resultPage+1)*PAGE))row(tbody,value.map((v,i)=>i>=3?fmt(v,i===6?0:3):v));
- $('results-page').textContent=details.length?(resultPage+1)+' / '+Math.ceil(details.length/PAGE)+' 페이지 · '+details.length+'착지':'측정 결과가 없습니다.';
+ resultPage=Math.min(resultPage,Math.max(0,Math.ceil(results.length/PAGE)-1));
+ for(const [index,result] of results.slice(resultPage*PAGE,(resultPage+1)*PAGE).entries()){
+  const heading=document.createElement('tr');heading.className='fuel-group';const cell=document.createElement('th');cell.colSpan=9;cell.scope='rowgroup';cell.textContent='묶음 '+(resultPage*PAGE+index+1)+' · '+result.date+' · '+result.tons+'톤 · '+result.rows.length+'착지';heading.append(cell);tbody.append(heading);
+  for(const s of result.rows)row(tbody,[s.order,s.tons,s.fromName+' · '+s.fromAddress,s.stopName,s.address,fmt(s.distanceKm,3),fmt(s.efficiency,3),fmt(s.liters,3),fmt(s.fuelCost)]).className='fuel-leg';
+  row(tbody,['묶음 합계','','','','',fmt(result.distanceKm,3),'',fmt(result.liters,3),fmt(result.fuelCost)]).className='fuel-total';
+ }
+ const count=results.reduce((n,r)=>n+r.rows.length,0);
+ $('results-page').textContent=results.length?(resultPage+1)+' / '+Math.ceil(results.length/PAGE)+' 페이지 · '+results.length+'묶음 · '+count+'착지':'측정 결과가 없습니다.';
  const averages=$('averages').querySelector('tbody');averages.replaceChildren();
  for(const s of fuelSummary(results))row(averages,[s.label,s.count,fmt(s.averageDistance,3),fmt(s.averageLiters,3),fmt(s.averageFuelCost)]);
  const totalCost=results.reduce((n,r)=>n+r.fuelCost,0),totalKm=results.reduce((n,r)=>n+r.distanceKm,0);
@@ -74,9 +79,10 @@ async function calculate(){
 async function run(action){if(busy)return;busy=true;controls();try{await action();}catch(e){message(e.message||'처리하지 못했습니다.',true);}finally{calculating=false;busy=false;controls();}}
 function download(){
  if(!globalThis.XLSX)throw Error('엑셀 기능을 불러오지 못했습니다.');
- const wb=XLSX.utils.book_new(),sheet=XLSX.utils.aoa_to_sheet([RESULT_HEADERS,...fuelRows(results)]);
- sheet['!cols']=[{wch:10},{wch:28},{wch:60},...Array(4).fill({wch:23})];
+ const wb=XLSX.utils.book_new(),sheet=XLSX.utils.aoa_to_sheet([GROUP_HEADERS,...groupedFuelRows(results)]);
+ sheet['!cols']=[{wch:10},{wch:14},{wch:12},{wch:10},{wch:60},{wch:28},{wch:60},...Array(4).fill({wch:23})];
  XLSX.utils.book_append_sheet(wb,sheet,'착지별 유류비');
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['묶음','일자','톤수','착지수','총 편도거리(km)','총 사용량(L)','총 유류비(원)'],...results.map((r,i)=>[i+1,r.date,r.tons,r.rows.length,Number(r.distanceKm.toFixed(3)),Number(r.liters.toFixed(3)),Math.round(r.fuelCost)])]),'묶음별 합계');
  const avg=fuelSummary(results);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['톤수','측정 운행수','평균 편도거리(km)','평균 사용량(L)','평균 유류비(원)'],...avg.map(s=>[s.label,s.count,Number(s.averageDistance.toFixed(3)),Number(s.averageLiters.toFixed(3)),Math.round(s.averageFuelCost)])]),'톤수별 평균');
  const values=settings();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['출발지','운행방식','유류단가(원/L)','경로기준'],[values.origin,'편도',values.price,values.priority],[],['톤수','연비(km/L)'],...Object.entries(values.efficiencies).map(([tons,value])=>[tons==='11'?'11톤 이상':tons+'톤',value])]),'계산 기준');
  XLSX.writeFile(wb,koreaDate()+'_임시차_평균유류비.xlsx',{compression:true});

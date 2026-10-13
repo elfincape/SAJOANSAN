@@ -8,6 +8,8 @@ assert.deepEqual(originalStops(trip),[{name:'착지 A / 착지 B',address:'주�
 const settings={efficiencies:DEFAULT_EFFICIENCY,price:1650};
 const r=fuelResult(trip,{sections:[{distanceMeters:30000},{distanceMeters:53000}]},settings);
 assert.equal(r.distanceKm,83);assert.equal(r.liters,10);assert(Math.abs(r.fuelCost-16500)<1e-8);assert(Math.abs(fuelSummary([r,{...r,id:'two'}])[0].averageFuelCost-16500)<1e-8);
+assert.equal(r.rows[0].fromAddress,DEFAULT_ORIGIN);assert.equal(r.rows[1].fromAddress,'주소 A');assert.equal(r.rows[1].order,2);
+assert.deepEqual(originalStops({deliveries:[{sourceRow:7,name:'후순위',address:'B'},{sourceRow:4,name:'선순위',address:'A'}]}).map(s=>s.address),['A','B']);
 assert(!JSON.stringify(fuelRows([r])).includes('PRIVATE'));assert.equal(RESULT_HEADERS.length,7);
 assert.throws(()=>fuelResult(trip,{sections:[]},settings));
 assert.throws(()=>originalStops({...trip,deliveries:[...trip.deliveries,{stopId:'H4',address:'주소 X'}]}));
