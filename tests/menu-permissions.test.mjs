@@ -39,3 +39,11 @@ const denied=mount(['/admin/drivers.html?center=ansan']);
 denied.install({access:{}});
 assert.equal(denied.links[0].hidden,true);
 console.log('PASS: existing hub menus, both center slugs, center codes, inherited center, denied/cross-center access and restored visibility');
+
+globalThis.location={origin:'https://sajoansan.vercel.app'};
+const {decorateCenterLinks}=await loadModule('../repo-root/js/center.js');
+const fixedLinks=[{dataset:{fixedCenter:'true'},href:'/admin/charter-fuel-estimator.html?center=pyeongtaek'},{dataset:{},href:'/admin/drivers.html'}].map(a=>Object.assign(a,{getAttribute(){return this.href;},setAttribute(key,value){this.href=value;}}));
+decorateCenterLinks({querySelectorAll:()=>fixedLinks},{slug:'ansan'});
+assert.equal(fixedLinks[0].href,'/admin/charter-fuel-estimator.html?center=pyeongtaek');
+assert.equal(fixedLinks[1].href,'/admin/drivers.html?center=ansan');
+console.log('PASS: fixed Pyeongtaek fuel link remains scoped to its DB while other center links still follow selection');

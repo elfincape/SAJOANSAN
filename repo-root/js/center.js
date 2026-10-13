@@ -81,6 +81,7 @@ export function withCenterParam(href, center = getRequiredCenter()) {
 
 export function decorateCenterLinks(root = document, center = getRequiredCenter()) {
   root.querySelectorAll('a[href]').forEach(a => {
+    if (a.dataset.fixedCenter === 'true') return;
     const href = a.getAttribute('href');
     if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('#')) return;
     if (href.startsWith('/admin') || href === '/' || href.startsWith('/?')) {
