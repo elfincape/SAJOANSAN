@@ -1,7 +1,7 @@
 import {currentTemplates} from './portal-model.js';
 import {cadenceLabels} from './portal-designer.js';
 import {taskScheduleLabel} from './portal-task-views.js';
-export function createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,retire,onTabChange}){
+export function createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,retire,deleteSurvey,onTabChange}){
  return function renderRegistration({tab='templates',center,templates=[],surveys=[],items,actions}){
   const registered=currentTemplates(templates),active=tab==='surveys'?'surveys':'templates';
   const choices=[['templates','등록된 업무',registered.length],['surveys','업무조사',surveys.length]],tabs=node('div',undefined,'registration-tabs');
@@ -20,7 +20,12 @@ export function createRegistrationView({node,button,canWrite,addRow,centerName,c
   const writable=canWrite(center,'forms');
   if(active==='surveys'){
    if(writable)button('업무조사 등록',()=>surveyForm(),actions,'primary');
-   surveys.forEach(s=>addRow(s,'survey',items,centerName(s.center_code)));
+   surveys.forEach(s=>{
+    const entry=node('div',undefined,'survey-list-row'),info=node('div',undefined,'survey-list-info');
+    addRow(s,'survey',info,centerName(s.center_code));entry.append(info);
+    if(writable){const remove=button('삭제',()=>deleteSurvey(s),entry,'registered-task-delete');remove.setAttribute('aria-label',s.title+' 업무조사 삭제');}
+    items.append(entry);
+   });
    if(!surveys.length)items.append(node('p','등록된 업무조사가 없습니다.'));
    return {count:surveys.length,title:'업무조사',description:'조사한 업무 내용과 검토 진행 상태를 확인하세요.'};
   }

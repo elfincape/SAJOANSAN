@@ -63,6 +63,7 @@ export function createOperationsApi(client) {
         return center ? query.eq('center_code', center) : query;
       });
     },
+    deleteSurvey({requestId,survey}) { return unwrap(client.rpc('operations_survey_delete',{p_request_id:requestId,p_id:survey.id,p_expected_version:survey.version})); },
     surveyAction({ requestId, survey, action, data }) {
       return unwrap(client.rpc('operations_survey_action', { p_request_id: requestId, p_id: survey?.id ?? null,
         p_expected_version: survey?.version ?? null, p_action: action, p_data: data }));

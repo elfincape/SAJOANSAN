@@ -5,6 +5,8 @@ on:
     paths:
       - 'repo-root/js/portal-history*.js'
       - 'repo-root/js/portal-registration.js'
+      - 'repo-root/js/portal-draft-access.js'
+      - 'supabase/functions/operations-assistant/portal.js'
       - 'repo-root/js/portal-survey-fields.js'
       - 'repo-root/js/portal-model.js'
       - 'repo-root/js/portal-designer.js'
@@ -14,6 +16,7 @@ on:
       - 'repo-root/css/portal.css'
       - 'tests/portal-history*.mjs'
       - 'tests/portal-registration.test.mjs'
+      - 'tests/portal-draft-access.test.mjs'
       - '.github/workflows/test-portal-history.yml'
   workflow_dispatch:
 jobs:
@@ -28,3 +31,4 @@ jobs:
       - run: node tests/portal-history.test.mjs
       - run: node tests/portal-history-ui.test.mjs
       - run: node tests/portal-registration.test.mjs
+      - run: node tests/portal-draft-access.test.mjs

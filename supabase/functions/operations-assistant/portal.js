@@ -16,7 +16,7 @@ export function makePortalAiHandler(env,fetcher=fetch){
   const response=await fetcher(url+'/auth/v1/user',{headers:{apikey:anon,Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw fail('다시 로그인해 주세요.',401);
   const user=await response.json(),profile=(await db('user_profiles?select=id,role,active&id=eq.'+enc(user.id),{token}))[0];
-  if(!profile?.active||profile.role!=='admin')throw fail('HQ 권한이 필요합니다.',403);return {id:user.id,token};
+  if(!profile?.active||profile.role!=='admin')throw fail('HQ 권한이 필요합니다.',403);return {id:user.id,token,email:user.email};
  }
  async function generate(kind,body,user){
   let snapshot,survey,promptData,candidates;
@@ -61,7 +61,9 @@ export function makePortalAiHandler(env,fetcher=fetch){
     const result=await generate('briefing',{force:body.force===true},null);return json({status:result.status,pending:!!result.pending,generated_at:result.generated_at,model_used:result.model_used});
    }
    if(!['portal-briefing','portal-survey-draft'].includes(action))throw fail('지원하지 않는 AI 작업입니다.',404);
-   const user=await hq(req);return json(await generate(action==='portal-briefing'?'briefing':'survey_draft',body,user));
+   const user=await hq(req);
+   if(action==='portal-survey-draft'&&String(user.email??'').trim().toLowerCase()!=='elfincape@gmail.com')throw fail('최고관리자만 AI 양식 초안을 생성할 수 있습니다.',403);
+   return json(await generate(action==='portal-briefing'?'briefing':'survey_draft',body,user));
   }catch(error){return json({error:{message:error.message||'AI 요청을 처리하지 못했습니다.'}},error.status??500);}
  };
 }

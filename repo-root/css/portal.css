@@ -116,3 +116,5 @@
 .registration-tabs{display:flex;gap:8px;flex-wrap:wrap;width:100%;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:4px}.registration-tabs>[role=tab]{min-width:155px;min-height:40px;background:transparent;border-color:transparent;color:var(--muted)}.registration-tabs>[role=tab][aria-selected=true]{background:#29443a;border-color:#3e6956;color:#b4f2d7;font-weight:600}.registration-tabs>[role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@media(max-width:400px){.registration-tabs>[role=tab]{flex:1;min-width:0}}
 
 .survey-files{display:grid;gap:10px}.survey-files>.attachments{margin:0}.survey-files h3{margin-bottom:0}
+
+.survey-list-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)}.survey-list-info{flex:1;min-width:0}.survey-list-info>.task-row{margin:0}.survey-list-row>.registered-task-delete{flex-shrink:0;padding:6px 10px;background:transparent;border-color:transparent;color:#e9a4a4}.survey-list-row>.registered-task-delete:hover{border-color:var(--border);background:#ffffff08}

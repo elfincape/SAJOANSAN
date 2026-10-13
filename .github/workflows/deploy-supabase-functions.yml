@@ -8,6 +8,8 @@ on:
       - 'supabase/functions/coupang-vision/**'
       - 'supabase/functions/operations-assistant/**'
       - 'supabase/functions/kakao-route-parser/**'
+      - 'repo-root/sql/operations-survey-delete.sql'
+      - 'scripts/apply-survey-delete-migration.mjs'
       - '.github/workflows/deploy-supabase-functions.yml'
   workflow_dispatch:
 
@@ -29,6 +31,16 @@ jobs:
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN secret"; exit 1; }
           test -n "$SUPABASE_PROJECT_REF" || { echo "Missing SUPABASE_PROJECT_REF secret"; exit 1; }
           test -n "$AIAPIFLOW_API_KEY" || { echo "Missing AIAPIFLOW_API_KEY secret"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test survey draft access restrictions
+        run: node tests/portal-draft-access.test.mjs
+
+      - name: Apply survey deletion schema
+        run: node scripts/apply-survey-delete-migration.mjs
 
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v3

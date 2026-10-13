@@ -1,4 +1,5 @@
 import {mountCoupangWorkflow,isCoupangTask,coupangFields} from './portal-coupang.js';
+import {canGenerateSurveyDraft} from './portal-draft-access.js';
 import {renderSurveyFields} from './portal-survey-fields.js';
 import {createRegistrationView} from './portal-registration.js';
 import {createPortalHistory} from './portal-history.js';
@@ -35,7 +36,7 @@ function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
 function button(text,handler,parent,className){const el=node('button',text,className);el.type='button';el.onclick=handler;parent.append(el);return el;}
 const renderPortalHistory=createPortalHistory({api,node,button,field,centerName,stamp,message,allowed,openRecord:async(type,id)=>{try{const {data,error}=await supabase.from(type==='task'?'operations_tasks':'operations_incidents').select('*').eq('id',id).single();if(error)throw error;choose(type,data);}catch(error){message(error.message||'원본을 불러올 수 없습니다.',true);}}});
-const renderRegistrationView=createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,retire:template=>{if(confirm('등록 업무를 삭제할까요? 이미 발행한 티켓과 기록은 유지됩니다.'))mutate('retire:'+template.id,id=>api.retireCustom({requestId:id,template}));},onTabChange:tab=>{if(state.busy)return;state.registrationTab=tab;state.selected=null;render();}});
+const renderRegistrationView=createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,deleteSurvey:survey=>{if(confirm('이 업무조사를 삭제할까요?'))mutate('survey-delete:'+survey.id,requestId=>api.deleteSurvey({requestId,survey}),()=>{if(state.selected?.type==='survey'&&state.selected.row.id===survey.id)state.selected=null;});},retire:template=>{if(confirm('등록 업무를 삭제할까요? 이미 발행한 티켓과 기록은 유지됩니다.'))mutate('retire:'+template.id,id=>api.retireCustom({requestId:id,template}));},onTabChange:tab=>{if(state.busy)return;state.registrationTab=tab;state.selected=null;render();}});
 const renderBackups=createPortalBackups({node,button,message,stamp});
 const renderSearch=createPortalSearch({supabase,node,button,centerName,message,openRecord:async(type,id)=>{
  try{const table={task:'operations_tasks',incident:'operations_incidents',survey:'operations_surveys'}[type];
@@ -333,14 +334,15 @@ function surveyForm(survey=null){
 function surveyDetail(row,panel){
  panel.append(node('p',centerName(row.center_code)+' · '+surveyStages[row.stage]));const dl=node('dl');for(const [key,label] of surveyFields)if(row.details[key])dl.append(node('dt',label),node('dd',row.details[key]));panel.append(dl);
  if(canWrite(row.center_code,'forms')&&!row.template_id)button('조사 수정',()=>surveyForm(row),panel);
+ if(canGenerateSurveyDraft(profile))button('AI 양식 초안 생성',()=>surveyDraft(row,panel),panel);
  if(isHq()){
-  button('AI 양식 초안 생성',()=>surveyDraft(row,panel),panel);
   const stages=Object.keys(surveyStages),next=stages[stages.indexOf(row.stage)+1];if(next)button(surveyStages[next]+' 기록',()=>surveyAction(row,'stage',{stage:next}),panel);
   if(row.stage==='designed'&&!row.template_id)templateForm(row,panel);
  }
  if(row.template_id)panel.append(node('p','승인 양식이 연결되었습니다. 구축·운영 검증 단계는 실제 확인 후 기록하세요.'));
 }
 async function surveyDraft(survey,panel){
+ if(!canGenerateSurveyDraft(profile))return;
  if(state.busy)return;setBusy(true);message('조사 원문으로 배송팀 검토 초안을 만드는 중입니다…');
  try{const draft=await portalAi.draft(survey.id);if(draft.pending){message(draft.message);return;}if(!panel.isConnected)return;
   panel.querySelector('[data-ai-draft]')?.remove();const section=node('section');section.dataset.aiDraft='true';section.append(node('h3','AI 검토 초안'),node('p','조사 원문 근거를 확인하고 수정한 뒤 승인하세요.'));
