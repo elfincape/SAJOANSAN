@@ -4,7 +4,7 @@ const management='https://api.supabase.com/v1/projects/'+ref;
 const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
 async function api(path,body){
  const r=await fetch(management+path,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
- if(!r.ok)throw Error('Pause operation failed HTTP '+r.status);return r;
+ if(!r.ok)throw Error('Pause operation '+path+' failed HTTP '+r.status+(path==='/database/query'?' '+(await r.text()).slice(0,1200):''));return r;
 }
 if(github&&repo){
  const ghHeaders={Authorization:'Bearer '+github,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
@@ -21,9 +21,12 @@ if(github&&repo){
 }
 await api('/secrets',[{name:'NOTION_SYNC_PAUSED',value:'true'}]);
 const sql=`do $pause$
+declare j record;
 begin
  if to_regclass('cron.job') is not null then
-  update cron.job set active=false where jobname like 'notion-%';
+  for j in select jobid from cron.job where jobname like 'notion-%' loop
+   perform cron.alter_job(j.jobid,active:=false);
+  end loop;
  end if;
 end; $pause$;
 select jobname,active from cron.job where jobname like 'notion-%';`;
