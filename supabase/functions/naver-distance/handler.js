@@ -11,15 +11,18 @@ export function makeHandler(env,fetcher=fetch){
   try{
    const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
    if(!token)return reply(401,{error:'로그인이 필요합니다.'});
+   const raw=await req.text();if(raw.length>20000)return reply(413,{error:'요청이 너무 큽니다.'});
+   let body;try{body=JSON.parse(raw);}catch{return reply(400,{error:'계산 요청을 확인해 주세요.'});}
+   const delivery=body?.resource==='delivery_points',center=delivery?body.center:'002';
+   if(!body||!['001','002'].includes(center)||(!delivery&&body.center!=='002'))return reply(400,{error:'센터를 확인해 주세요.'});
    const headers={apikey:env.SUPABASE_ANON_KEY,Authorization:'Bearer '+token,'Content-Type':'application/json'};
    const auth=await fetcher(env.SUPABASE_URL+'/auth/v1/user',{headers,signal});
    if(!auth.ok)return reply(401,{error:'다시 로그인해 주세요.'});
    const user=await auth.json();
-   const access=await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/operations_resource_allowed',{method:'POST',headers,body:JSON.stringify({p_resource:'charter',p_action:'read',p_center:'002'}),signal});
-   if(!user.id||!access.ok||await access.json()!==true)return reply(403,{error:'평택 용차 DB 열람 권한이 없습니다.'});
-   const raw=await req.text();if(raw.length>20000)return reply(413,{error:'요청이 너무 큽니다.'});
-   let body;try{body=JSON.parse(raw);}catch{return reply(400,{error:'계산 요청을 확인해 주세요.'});}
-   const input=validateRequest(body?.priority==='MIN_DISTANCE'?{...body,priority:'RECOMMEND'}:body);
+   const access=await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/operations_resource_allowed',{method:'POST',headers,body:JSON.stringify({p_resource:delivery?'delivery_points':'charter',p_action:'read',p_center:center}),signal});
+   if(!user.id||!access.ok||await access.json()!==true)return reply(403,{error:'센터 자료 열람 권한이 없습니다.'});
+   const validationBody=delivery?{...body,center:'002'}:body;
+   const input=validateRequest(body.priority==='MIN_DISTANCE'?{...validationBody,priority:'RECOMMEND'}:validationBody);
    if(body.priority==='MIN_DISTANCE')input.priority='MIN_DISTANCE';
    return reply(200,await calculateNaverRoute(input,env,fetcher,signal));
   }catch(e){return reply(e.status??502,{error:e.name==='TimeoutError'||e.name==='AbortError'?'거리 계산 시간이 초과되었습니다. 다시 시도해 주세요.':e.status?e.message:'네이버 거리 계산 중 연결 오류가 발생했습니다.'});}

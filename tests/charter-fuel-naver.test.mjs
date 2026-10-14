@@ -6,7 +6,7 @@ let calls=[],allowed=true,validUser=true,ambiguous=false,providerStatus=200;
 const response=data=>new Response(JSON.stringify(data));
 const fetcher=async(url,init)=>{
  if(url.endsWith('/auth/v1/user'))return validUser?response({id:'user'}):new Response('',{status:401});
- if(url.endsWith('/rpc/operations_resource_allowed')){assert.deepEqual(JSON.parse(init.body),{p_resource:'charter',p_action:'read',p_center:'002'});return response(allowed);}
+ if(url.endsWith('/rpc/operations_resource_allowed')){const p=JSON.parse(init.body);assert(['charter','delivery_points'].includes(p.p_resource));assert.equal(p.p_action,'read');assert(['001','002'].includes(p.p_center));if(p.p_resource==='charter')assert.equal(p.p_center,'002');return response(allowed);}
  const u=new URL(url);assert.equal(u.host,'maps.apigw.ntruss.com');assert.equal(init.headers['x-ncp-apigw-api-key-id'],'fake-id');assert.equal(init.headers['x-ncp-apigw-api-key'],'fake-secret');
  calls.push(u);
  if(providerStatus!==200)return new Response('',{status:providerStatus});
@@ -39,4 +39,7 @@ allowed=false;assert.equal((await handler(req())).status,403);assert.equal(calls
 validUser=false;assert.equal((await handler(req())).status,401);validUser=true;
 assert.equal((await handler(req({...input(1),center:'001'}))).status,400);assert.equal((await handler(req(input(1),'user','https://evil.test'))).status,403);
 assert.equal((await handler(req(input(31)))).status,400);
+assert.equal((await handler(req({...input(1),center:'001',resource:'delivery_points'}))).status,200);
+assert.equal((await handler(req({...input(1),center:'003',resource:'delivery_points'}))).status,400);
+allowed=false;calls=[];assert.equal((await handler(req({...input(1),center:'001',resource:'delivery_points'}))).status,403);assert.equal(calls.length,0);allowed=true;
 console.log('Naver auth/scope, ordered variable stops, Directions 5/15 selection, 30-stop chunk continuity, waypoint guide segments, duplicates, loops and safe errors passed');

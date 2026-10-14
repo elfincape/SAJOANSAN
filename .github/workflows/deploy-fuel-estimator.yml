@@ -6,6 +6,7 @@ on:
       - 'supabase/functions/kakao-distance/**'
       - 'supabase/functions/naver-distance/**'
       - 'scripts/check-naver-distance.mjs'
+      - 'scripts/check-destination-centers.mjs'
       - 'repo-root/js/charter-fuel-*.js'
       - 'repo-root/js/destination-distance-*.js'
       - 'tests/destination-distance*.mjs'
@@ -49,3 +50,5 @@ jobs:
         run: supabase functions deploy naver-distance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
       - name: Verify live Naver address and route APIs
         run: node scripts/check-naver-distance.mjs
+      - name: Verify center delivery-point schema and counts
+        run: node scripts/check-destination-centers.mjs
