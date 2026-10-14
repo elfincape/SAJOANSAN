@@ -13,9 +13,9 @@ Deno.serve(async req=>{
  if(req.method!=='POST'||req.headers.get('x-fuel-probe')!==${JSON.stringify(token)})return new Response('Unauthorized',{status:401});
  try{
   const base={origin:'경기도 평택시 산단로 263',priority:'RECOMMEND'},stops=${JSON.stringify(addresses)}.map(address=>({address}));
-  const five=await calculateNaverRoute({...base,stops:stops.slice(0,2)},Deno.env.toObject());
+  const five=await calculateNaverRoute({...base,priority:'MIN_DISTANCE',stops:stops.slice(0,2)},Deno.env.toObject());
   const fifteen=await calculateNaverRoute({...base,stops},Deno.env.toObject());
-  return Response.json({five:{usage:five.usage,distances:five.sections.map(s=>s.distanceMeters)},fifteen:{usage:fifteen.usage,distances:fifteen.sections.map(s=>s.distanceMeters)}});
+  return Response.json({five:{usage:five.usage,distances:five.sections.map(s=>s.distanceMeters),regions:five.regions},fifteen:{usage:fifteen.usage,distances:fifteen.sections.map(s=>s.distanceMeters)}});
  }catch(e){return Response.json({error:e.status?e.message:'Naver probe connection failed'},{status:e.status||502});}
 });`);
 let deployed=false;

@@ -19,7 +19,9 @@ export function makeHandler(env,fetcher=fetch){
    if(!user.id||!access.ok||await access.json()!==true)return reply(403,{error:'평택 용차 DB 열람 권한이 없습니다.'});
    const raw=await req.text();if(raw.length>20000)return reply(413,{error:'요청이 너무 큽니다.'});
    let body;try{body=JSON.parse(raw);}catch{return reply(400,{error:'계산 요청을 확인해 주세요.'});}
-   return reply(200,await calculateNaverRoute(validateRequest(body),env,fetcher,signal));
+   const input=validateRequest(body?.priority==='MIN_DISTANCE'?{...body,priority:'RECOMMEND'}:body);
+   if(body.priority==='MIN_DISTANCE')input.priority='MIN_DISTANCE';
+   return reply(200,await calculateNaverRoute(input,env,fetcher,signal));
   }catch(e){return reply(e.status??502,{error:e.name==='TimeoutError'||e.name==='AbortError'?'거리 계산 시간이 초과되었습니다. 다시 시도해 주세요.':e.status?e.message:'네이버 거리 계산 중 연결 오류가 발생했습니다.'});}
  };
 }

@@ -7,6 +7,8 @@ on:
       - 'supabase/functions/naver-distance/**'
       - 'scripts/check-naver-distance.mjs'
       - 'repo-root/js/charter-fuel-*.js'
+      - 'repo-root/js/destination-distance-*.js'
+      - 'tests/destination-distance*.mjs'
       - 'repo-root/admin/charter-fuel-estimator.html'
       - 'repo-root/admin/index.html'
       - 'repo-root/js/menu-permissions.js'
@@ -28,9 +30,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-save --package-lock=false jsdom@26
+      - run: npm install --no-save --package-lock=false jsdom@26 exceljs@4.4.0 xlsx@0.18.5
       - run: node tests/charter-fuel.test.mjs
-      - run: node tests/charter-fuel-ui.test.mjs
+      - run: node tests/destination-distance.test.mjs
+      - run: node tests/destination-distance-ui.test.mjs
       - run: node tests/charter-fuel-naver.test.mjs
       - run: node tests/menu-permissions.test.mjs
       - uses: supabase/setup-cli@v3
