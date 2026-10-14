@@ -36,7 +36,15 @@
             <option value="company">운수사순</option>
             <option value="updated">수정 최신순</option>
           </select>
+          <label class="text-xs flex items-center gap-1"><input id="pdf-include-company" type="checkbox" checked> PDF 파일명에 운수사 포함</label>
+          <button type="button" id="pdf-center-btn" class="btn btn-ghost">센터 전체 PDF 생성</button>
           <button id="new-btn" class="btn btn-primary">+ 신규</button>
+        </div>
+        <div class="px-3 py-2 border-b border-zinc-700 space-y-2">
+          <p class="text-xs text-zinc-400">센터 전체 PDF는 검색·운수사 필터와 관계없이 현재 센터의 모든 기사를 개별 파일로 OneDrive에 저장합니다. 서류 미등록 기사는 건너뜁니다.</p>
+          <p id="pdf-center-status" class="text-xs text-zinc-300" role="status" aria-live="polite"></p>
+          <button type="button" id="pdf-center-stop" class="btn btn-ghost hidden">현재 기사 완료 후 중단</button>
+          <ul id="pdf-center-details" class="text-xs text-amber-300 space-y-1 max-h-32 overflow-auto"></ul>
         </div>
         <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
           <table class="app-table driver-list-table">
@@ -131,6 +139,7 @@
     import { healthStatus, healthBadge, compareHealthDates, validDate, watchHealthDate } from '/js/driver-health.js';
     import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '/js/onedrive-api.js';
     import { documentChecksHtml } from '/js/driver-document-status.js';
+    import { compileCenterPdfs } from '/js/driver-pdf.js';
     import { mountDriverDocuments } from '/js/driver-documents.js';
     import { fetchAllRows } from '/js/unassigned-delivery-points.js';
     import { supabase } from '/js/supabase.js';
@@ -164,6 +173,7 @@
     let healthSchemaReady = false;
     const documents = mountDriverDocuments($('driver-documents'), {
       adapter: oneDriveDocuments,
+      getPdfOptions: () => ({includeCompany:$('pdf-include-company').checked}),
       onRecords: (driverId, records) => { state.documentRows.set(driverId, records); renderList(); },
       getExpiry: () => $('f-health-expiry').value,
       onSaved: (driverId,kind,expiry) => {
@@ -373,7 +383,52 @@
       $('btn-delete').classList.toggle('hidden', !isEdit);
     }
 
+    let pdfCenterPending=false,pdfCenterStop=false;
+    window.addEventListener('beforeunload',event=>{
+      if(pdfCenterPending){event.preventDefault();event.returnValue='';}
+    });
+    function pdfSummary(results,total) {
+      const count=status=>results.filter(row=>row.status===status).length;
+      return `처리 ${results.length}/${total} · 저장 ${count('saved')} · 서류 없음 ${count('skipped')} · 실패 ${count('failed')}`;
+    }
+    function renderPdfDetails(results) {
+      $('pdf-center-details').replaceChildren();
+      for(const row of results.filter(row=>row.status!=='saved')){
+        const li=document.createElement('li');
+        li.textContent=(row.driver.name||'기사')+' · '+(row.status==='skipped'?'서류 없음':row.message);
+        $('pdf-center-details').append(li);
+      }
+    }
+    async function saveCenterPdfs() {
+      if(pdfCenterPending)return;
+      const drivers=state.rows.map(row=>({id:row.id,name:row.name}));
+      if(!drivers.length){$('pdf-center-status').textContent='현재 센터에 등록된 기사가 없습니다.';return;}
+      const includeCompany=$('pdf-include-company').checked;
+      pdfCenterPending=true;pdfCenterStop=false;
+      $('pdf-center-btn').disabled=true;$('pdf-include-company').disabled=true;
+      $('pdf-center-stop').disabled=false;$('pdf-center-stop').classList.remove('hidden');
+      $('pdf-center-details').replaceChildren();
+      $('pdf-center-status').textContent='OneDrive 연결 확인 중…';
+      try {
+        if(!(await oneDriveDocuments.status()).connected)throw new Error('관리자가 OneDrive를 먼저 연결해 주세요.');
+        const report=await compileCenterPdfs(oneDriveDocuments,drivers,{
+          includeCompany,shouldStop:()=>pdfCenterStop,
+          onProgress:({index,total,driver,message,results})=>{
+            $('pdf-center-status').textContent=pdfSummary(results,total)+' · '+index+'번째 '+(driver.name||'기사')+' · '+message;
+            renderPdfDetails(results);
+          }
+        });
+        $('pdf-center-status').textContent=(report.stopped?'중단 · ':'완료 · ')+pdfSummary(report.results,report.total);
+        renderPdfDetails(report.results);
+      } catch(error){$('pdf-center-status').textContent=error.message;}
+      finally {
+        pdfCenterPending=false;$('pdf-center-btn').disabled=false;$('pdf-include-company').disabled=false;
+        $('pdf-center-stop').classList.add('hidden');
+      }
+    }
     function bindEvents() {
+      $('pdf-center-btn').addEventListener('click',saveCenterPdfs);
+      $('pdf-center-stop').addEventListener('click',()=>{pdfCenterStop=true;$('pdf-center-stop').disabled=true;});
       $('search-input').addEventListener('input', debounce(() => {
         state.filters.search = $('search-input').value.trim();
         applyAndRender();

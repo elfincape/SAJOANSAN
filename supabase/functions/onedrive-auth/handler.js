@@ -8,9 +8,9 @@ export const folderKind = kind => kind.endsWith('_back') ? kind.slice(0,-5) : ki
 export function filePart(value,fallback) {
   return Array.from(String(value||fallback).normalize('NFC').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g,'-').replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'')).slice(0,45).join('') || fallback;
 }
-export function documentFilename({center,plates,name,company},kind,extension) {
+export function documentFilename({center,plates,name,company},kind,extension,{includeCompany=true}={}) {
   center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
-  return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),filePart(company,'운수사미지정'),(kind==='permit_pdf'?'인허가취합':LABELS[kind])].join('_')+'.'+extension;
+  return [filePart(center,'센터미지정'),filePart(plates,'차량미지정'),filePart(name,'기사미지정'),...(includeCompany?[filePart(company,'운수사미지정')]:[]),(kind==='permit_pdf'?'인허가취합':LABELS[kind])].join('_')+'.'+extension;
 }
 export function companyDocumentFilename({center,company},kind,extension,pageNumber=0) {
   center=({'001':'안산','002':'평택','사조안산센터':'안산','사조평택센터':'평택'})[center]||center;
@@ -275,6 +275,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
         if(Number(req.headers.get('content-length'))>32*1024*1024)throw fail('취합할 사진 용량이 너무 큽니다.',413);
         const form=await req.formData(),id=String(form.get('driverId')||'');
         const d=await driver(user,id);
+        const includeCompany=form.get('includeCompany')!=='false';
         let versions;try{versions=JSON.parse(String(form.get('versions')||''));}catch{throw fail('사진 목록을 다시 불러와 주세요.');}
         if(!versions||Array.isArray(versions)||!Object.keys(versions).length||!Object.entries(versions).every(([k,v])=>(KINDS.includes(k)||/^[0-9a-f-]{36}$/i.test(k))&&typeof v==='string'&&v))throw fail('저장된 서류 사진을 선택해 주세요.');
         const snapshot=await db('driver_documents?select=id,document_type,page_number,request_id,uploaded_at&driver_id=eq.'+enc(id)+'&order=page_number.asc',{token:user.token});
@@ -302,7 +303,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
           const connection=await connected();
           const folder=await (await graph('/drives/'+enc(target.driveId)+'/items/'+enc(target.folderId),connection.accessToken)).json();
           if(!folder.folder||folder.id!==target.folderId)throw fail('PDF 저장 폴더를 확인할 수 없습니다.',502);
-          const filename=documentFilename(await naming(user,d),'permit_pdf','pdf');
+          const filename=documentFilename(await naming(user,d),'permit_pdf','pdf',{includeCompany});
           const path='/drives/'+enc(target.driveId)+'/items/'+enc(target.folderId)+':/'+enc(filename);
           const prior=(await db('driver_document_pdfs?select=*&driver_id=eq.'+enc(id)))[0];
           const found=await graph(path,connection.accessToken,{allowMissing:true});

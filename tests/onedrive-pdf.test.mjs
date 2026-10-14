@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {makeHandler,base64url,KINDS} from '../supabase/functions/onedrive-auth/handler.js';
+import {makeHandler,base64url,KINDS,documentFilename} from '../supabase/functions/onedrive-auth/handler.js';
 import {DOCUMENT_TYPES} from '../repo-root/js/driver-documents.js';
 import {prepareCompilation} from '../repo-root/js/driver-pdf.js';
 import {fitImage} from '../supabase/functions/onedrive-auth/pdf.js';
@@ -68,8 +68,8 @@ const saved=await (await handler(request())).json();assert.equal(saved.saved,tru
 assert.equal(prior.status,'saved');assert.equal(puts,2);
 prior=null;assert.equal((await handler(request())).status,409);assert.equal(puts,2);
 serverRecords=many;count=12;expectedPages=12;existing=null;prior=null;
-const pagesRequest=()=>{
- const f=new FormData();f.set('driverId',driver);f.set('versions',JSON.stringify(Object.fromEntries(serverRecords.map(r=>[r.id,r.request_id]))));
+const pagesRequest=(includeCompany=true)=>{
+ const f=new FormData();f.set('driverId',driver);f.set('includeCompany',String(includeCompany));f.set('versions',JSON.stringify(Object.fromEntries(serverRecords.map(r=>[r.id,r.request_id]))));
  serverRecords.forEach((r,i)=>f.set(r.id,new File([new Uint8Array([255,216,255,i])],r.id+'.jpg',{type:'image/jpeg'})));
  return new Request(root+'/functions/v1/onedrive-auth/compile-pdf',{method:'POST',headers:{Authorization:'Bearer user'},body:f});
 };
@@ -77,4 +77,10 @@ assert.equal((await handler(pagesRequest())).status,200,'server accepts more tha
 serverRecords=many.slice(0,1);expectedPages=1;
 assert.equal((await handler(pagesRequest())).status,200,'server accepts a partial set of document types');
 stale=true;assert.equal((await handler(pagesRequest())).status,409);stale=false;
+existing=null;prior=null;
+const withoutCompany=await (await handler(pagesRequest(false))).json();
+assert.equal(withoutCompany.saved,true);
+assert.equal(withoutCompany.fileName,'평택_차량미지정_기사_인허가취합.pdf');
+assert.equal(documentFilename({center:'002',plates:'경기80바1234',name:'홍길동',company:'이안물류'},'permit_pdf','pdf',{includeCompany:false}),'평택_경기80바1234_홍길동_인허가취합.pdf');
+assert.equal(documentFilename({center:'002',name:'기사',company:'이안물류'},'identity','jpg'),'평택_차량미지정_기사_이안물류_신분증.jpg');
 console.log('PDF order, completeness, layout, roles, stale revisions, configuration, collision and save recovery passed');

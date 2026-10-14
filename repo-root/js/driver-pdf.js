@@ -15,7 +15,7 @@ export async function photoToJpeg(blob) {
 }
 export async function prepareCompilation(adapter,driverId,onProgress=()=>{},normalize=photoToJpeg) {
   const records=await adapter.list(driverId);
-  if(!records.length)throw new Error('저장된 서류 사진이 없습니다.');
+  if(!records.length)throw Object.assign(new Error('저장된 서류 사진이 없습니다.'),{code:'NO_DOCUMENTS'});
   const kinds=DOCUMENT_TYPES.map(([kind])=>kind);
   const ordered=records.toSorted((a,b)=>kinds.indexOf(a.document_type)-kinds.indexOf(b.document_type)||(a.page_number||0)-(b.page_number||0));
   const versions={},images=[];
@@ -31,4 +31,25 @@ export async function prepareCompilation(adapter,driverId,onProgress=()=>{},norm
     images.push([key,await normalize(blob)]);
   }
   return {versions,images};
+}
+
+export async function compileCenterPdfs(adapter,drivers,{includeCompany=true,onProgress=()=>{},shouldStop=()=>false}={}) {
+  const results=[];
+  // Sequential requests keep each driver's images and PDF out of memory after saving.
+  for(const driver of drivers) {
+    if(shouldStop())break;
+    const index=results.length+1;
+    onProgress({index,total:drivers.length,driver,message:'서류 확인 중…',results:[...results]});
+    let result;
+    try {
+      const saved=await adapter.compilePdf(driver.id,message=>onProgress({index,total:drivers.length,driver,message,results:[...results]}),{includeCompany});
+      if(saved?.saved!==true)throw new Error('PDF 저장 결과를 확인하지 못했습니다.');
+      result={driver,status:'saved',fileName:saved.fileName};
+    } catch(error) {
+      result={driver,status:error.code==='NO_DOCUMENTS'?'skipped':'failed',message:error.message};
+    }
+    results.push(result);
+    onProgress({index,total:drivers.length,driver,message:result.status==='saved'?'저장 완료':result.message,results:[...results]});
+  }
+  return {results,total:drivers.length,stopped:results.length<drivers.length};
 }

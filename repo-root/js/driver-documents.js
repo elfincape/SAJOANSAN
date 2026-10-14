@@ -8,7 +8,7 @@ export function validateDocumentFile(file) {
   if (!file || !['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WEBP 사진을 선택해 주세요.');
   if (file.size <= 0 || file.size > 10 * 1024 * 1024) throw new Error('사진은 10MB 이하만 선택할 수 있습니다.');
 }
-export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onSaved=()=>{}, onRecords=()=>{}, companyMode=false }={}) {
+export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=>({}), adapter=null, onSaved=()=>{}, onRecords=()=>{}, companyMode=false }={}) {
   let generation=0,pending=false,refreshCurrent=()=>{};
   const urls=new Set();
   const clearUrls=()=>{urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();};
@@ -136,10 +136,10 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', adapter=null, onS
     if(adapter?.compilePdf&&!companyMode){
       const area=el('section','','border-t border-zinc-700 pt-3 space-y-2');
       pdfButton=addButton(area,'인허가 PDF 저장',()=>run(async()=>{
-        const result=await adapter.compilePdf(ownerId,message=>{if(current())notice.textContent=message;});
+        const result=await adapter.compilePdf(ownerId,message=>{if(current())notice.textContent=message;},getPdfOptions());
         return 'OneDrive 저장 완료 · '+result.fileName;
       },{reloadAfter:false}));
-      area.append(el('p','등록된 사진 전체를 서류 종류와 뒷면 순서대로 저장합니다.','text-xs text-zinc-400'));host.append(area);
+      area.append(el('p','서류가 일부만 등록되어 있어도 등록된 사진만 취합합니다. 사진이 없는 서류는 제외됩니다.','text-xs text-zinc-400'));host.append(area);
     }
     staticControls=controls.length;refresh();
     Promise.resolve().then(async()=>{

@@ -18,9 +18,10 @@ export const oneDriveDocuments = {
   configurePdf:url=>call('pdf-config',{url}),
   configureCompany:url=>call('company-config',{url}),
   replaceCompany:(driverId,kind)=>call('replace-company',{driverId,kind}),
-  compilePdf:async(driverId,onProgress)=>{
+  compilePdf:async(driverId,onProgress,{includeCompany=true}={})=>{
     const {versions,images}=await prepareCompilation(oneDriveDocuments,driverId,onProgress);
     const form=new FormData();form.set('driverId',driverId);form.set('versions',JSON.stringify(versions));
+    form.set('includeCompany',String(includeCompany));
     for(const [kind,blob] of images)form.set(kind,blob,kind+'.jpg');
     onProgress?.('PDF 생성 및 OneDrive 저장 중…');
     return call('compile-pdf',form);

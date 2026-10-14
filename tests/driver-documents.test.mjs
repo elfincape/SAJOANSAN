@@ -18,7 +18,7 @@ const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 const walk=node=>[node,...node.children.flatMap(walk)];
 const host=new Element('main');
 let rows=[{id:'front',document_type:'food_transport',request_id:'v1',uploaded_at:'2026-09-23'}],expiry='',failure=false;
-const calls=[],removes=[],downloads=[],replaces=[];
+const calls=[],removes=[],downloads=[],replaces=[],pdfCalls=[];
 const adapter={
  status:async()=>({connected:true}),list:async()=>rows,
  upload:async data=>{
@@ -28,16 +28,18 @@ const adapter={
  download:async(...args)=>{downloads.push(args);return new Blob(['photo']);},
  remove:async(...args)=>{removes.push(args);rows=rows.filter(r=>r.id!==args[3]);},
  replaceCompany:async(...args)=>{replaces.push(args);return {count:4};},
- compilePdf:async()=>({fileName:'all.pdf'})
+ compilePdf:async(...args)=>{pdfCalls.push(args);return {fileName:'all.pdf'};}
 };
 const notifications=[];
-const panel=mountDriverDocuments(host,{adapter,getExpiry:()=>expiry,onRecords:(id,rows)=>notifications.push([id,rows?.map(r=>({...r}))])});
+const panel=mountDriverDocuments(host,{adapter,getPdfOptions:()=>({includeCompany:false}),getExpiry:()=>expiry,onRecords:(id,rows)=>notifications.push([id,rows?.map(r=>({...r}))])});
 panel.reset('driver');await flush();
 const all=()=>walk(host),input=kind=>all().filter(n=>n.tag==='input')[DOCUMENT_TYPES.findIndex(([k])=>k===kind)];
 const buttons=text=>all().filter(n=>n.tag==='button'&&n.textContent===text);
 assert.equal(input('food_transport').multiple,false);assert.equal(input('food_transport_back').multiple,true);
 assert.equal(buttons('운수사 대체').length,2);
 assert.equal(buttons('인허가 PDF 저장')[0].disabled,false,'one saved photo is sufficient');
+await buttons('인허가 PDF 저장')[0].events.click();
+assert.equal(pdfCalls[0][0],'driver');assert.deepEqual(pdfCalls[0][2],{includeCompany:false});
 await buttons('저장 사진 보기')[0].events.click();
 const imgs=all().filter(n=>n.tag==='img');assert.equal(imgs.length,2);assert.equal(imgs[0].src,imgs[1].src);assert.match(imgs[1].className,/zoom/);
 const back=input('food_transport_back');
