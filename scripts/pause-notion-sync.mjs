@@ -25,7 +25,7 @@ begin
  if to_regclass('cron.job') is not null then
   update cron.job set active=false where jobname like 'notion-%';
  end if;
-end $pause$;
+end; $pause$;
 select jobname,active from cron.job where jobname like 'notion-%';`;
 const jobs=await (await api('/database/query',{query:sql})).json();
 if(jobs.some(j=>j.active!==false))throw Error('Notion scheduled jobs still active');
