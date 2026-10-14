@@ -1,0 +1,23 @@
+name: Verify Naver multi-option requests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/check-naver-multioption.mjs'
+      - '.github/workflows/verify-naver-multioption.yml'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - run: node scripts/check-naver-multioption.mjs
