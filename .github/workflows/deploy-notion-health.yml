@@ -16,6 +16,7 @@ on:
   workflow_dispatch:
 jobs:
   deploy:
+    if: ${{ false }} # Prevent sync and scheduler reinstallation while paused.
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

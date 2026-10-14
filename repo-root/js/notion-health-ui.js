@@ -31,6 +31,11 @@ async function call(action,body={}) {
 const reason=error=>error.name==='TimeoutError'?'응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.':error.message;
 const profile=await requireRole('admin');
 if(profile) {
+  ['test-btn','preview-btn','complete-btn','sync-btn'].forEach(id=>$(id).disabled=true);
+  message('test-status','Notion 동기화가 일시 중지되었습니다.');
+  $('complete-last-updated').textContent='자동 동기화 중지';
+}
+if(false && profile) {
   const center=await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
   $('hub-link').href=withCenterParam('/admin/',center);
   mountHeaderCenterSwitcher(next=>location.replace(withCenterParam('/admin/notion-health.html',next)));

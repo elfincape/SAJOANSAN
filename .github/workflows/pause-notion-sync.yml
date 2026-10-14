@@ -1,0 +1,43 @@
+name: Pause Notion synchronization
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pause-notion-sync.mjs'
+      - '.github/workflows/pause-notion-sync.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  pause:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/pause-notion-sync.mjs
+      - run: node tests/notion-sync-pause.test.mjs
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Deploy paused handlers
+        run: |
+          supabase functions deploy notion-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          supabase functions deploy notion-points --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          supabase functions deploy notion-graph --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+      - name: Verify production pause
+        run: |
+          node --input-type=module <<'JS'
+          for(const name of ['notion-health','notion-points','notion-graph']){
+            const r=await fetch('https://'+process.env.SUPABASE_PROJECT_REF+'.supabase.co/functions/v1/'+name+'/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+            const data=await r.json();
+            if(r.status!==503||data.code!=='sync_paused')throw Error(name+' did not stop');
+            console.log(name+' pause confirmed');
+          }
+          JS

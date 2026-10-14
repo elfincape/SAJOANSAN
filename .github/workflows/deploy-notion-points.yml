@@ -10,14 +10,13 @@ on:
       - 'scripts/notion-scan-cycle.mjs'
       - 'tests/notion-points*.test.mjs'
       - '.github/workflows/deploy-notion-points.yml'
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
 concurrency:
   group: notion-master-sync
   cancel-in-progress: false
 jobs:
   sync:
+    if: ${{ false }} # Temporarily paused by owner request.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:

@@ -2,6 +2,8 @@ import {supabase} from './supabase.js';
 import {SUPABASE_URL,SUPABASE_ANON_KEY} from './config.js';
 import {getRequiredCenter} from './center.js';
 export function mountNotionGraph({profile,kind,onRefresh,getId}){
+  // Temporarily paused: web saves must not send Notion requests.
+  return {syncOne:async()=>{}};
   if(profile?.role!=='admin')return {syncOne:async()=>{}};
   const header=document.querySelector('header > div');if(!header)return {syncOne:async()=>{}};
   const button=document.createElement('button');button.type='button';button.className='btn btn-ghost';button.textContent='노션 동기화';button.id='notion-graph-sync';

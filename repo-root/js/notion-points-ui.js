@@ -2,6 +2,8 @@ import {supabase} from './supabase.js';
 import {SUPABASE_URL,SUPABASE_ANON_KEY} from './config.js';
 import {getRequiredCenter} from './center.js';
 export function mountNotionPoints({profile,onRefresh}) {
+  // Temporarily paused: web saves must not send Notion requests.
+  return {syncOne:async()=>{}};
   const button=document.getElementById('notion-points-sync');
   const status=document.getElementById('notion-points-status');
   if(!button||profile?.role!=='admin')return {syncOne:async()=>{}};

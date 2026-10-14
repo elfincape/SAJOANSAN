@@ -13,6 +13,7 @@ export function makeHandler(env,fetcher=fetch) {
   return async req=>{
     if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
     if(req.method!=='POST')return json({error:'POST 요청만 지원합니다.'},405);
+    if(env.NOTION_SYNC_PAUSED==='true')return json({paused:true,error:'Notion 동기화가 일시 중지되었습니다.',code:'sync_paused'},503);
     try{
       const action=new URL(req.url).pathname.split('/').at(-1);
       if(!['test','sync','summary','verify','repair','scan'].includes(action))throw fail('지원하지 않는 요청입니다.',404);

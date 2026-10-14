@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    if: ${{ false }} # Prevent sync and scheduler reinstallation while paused.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
