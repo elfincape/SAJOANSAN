@@ -20,10 +20,10 @@ function settings(){
  if(!origin||origin.length>300)throw Error('출발지 주소를 입력해 주세요.');
  if(!Number.isFinite(price)||price<=0)throw Error('리터당 유류단가를 입력해 주세요.');
  if(Object.values(efficiencies).some(v=>!Number.isFinite(v)||v<=0))throw Error('톤수별 연비는 0보다 큰 값으로 입력해 주세요.');
- return {origin,price,priority,efficiencies};
+ return {origin,price,priority,efficiencies,provider:$('route-provider').value};
 }
 function saveSettings(){
- try{localStorage.setItem(storageKey,JSON.stringify({origin:$('origin-address').value,price:$('fuel-price').value,priority:$('route-priority').value,efficiencies:Object.fromEntries([...document.querySelectorAll('[data-efficiency]')].map(e=>[e.dataset.efficiency,e.value]))}));}catch{}
+ try{localStorage.setItem(storageKey,JSON.stringify({origin:$('origin-address').value,price:$('fuel-price').value,priority:$('route-priority').value,provider:$('route-provider').value,efficiencies:Object.fromEntries([...document.querySelectorAll('[data-efficiency]')].map(e=>[e.dataset.efficiency,e.value]))}));}catch{}
 }
 function row(parent,values){const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value??'';tr.append(td);}parent.append(tr);return tr;}
 function render(){
@@ -45,7 +45,7 @@ function render(){
  controls();
 }
 async function distance(input,session,stops){
- const response=await fetch(SUPABASE_URL+'/functions/v1/kakao-distance',{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({center:'002',origin:input.origin,priority:input.priority,stops:stops.map(s=>({address:s.address}))}),signal:AbortSignal.timeout(100000)});
+ const response=await fetch(SUPABASE_URL+'/functions/v1/'+(input.provider==='naver'?'naver-distance':'kakao-distance'),{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({center:'002',origin:input.origin,priority:input.priority,stops:stops.map(s=>({address:s.address}))}),signal:AbortSignal.timeout(100000)});
  let data;try{data=await response.json();}catch{throw Error('거리 계산 응답을 확인하지 못했습니다.');}
  if(!response.ok)throw Object.assign(Error(data.error||'거리 계산에 실패했습니다.'),{status:response.status});
  return data;
@@ -84,8 +84,12 @@ function download(){
  XLSX.utils.book_append_sheet(wb,sheet,'착지별 유류비');
  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['묶음','일자','톤수','착지수','총 편도거리(km)','총 사용량(L)','총 유류비(원)'],...results.map((r,i)=>[i+1,r.date,r.tons,r.rows.length,Number(r.distanceKm.toFixed(3)),Number(r.liters.toFixed(3)),Math.round(r.fuelCost)])]),'묶음별 합계');
  const avg=fuelSummary(results);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['톤수','측정 운행수','평균 편도거리(km)','평균 사용량(L)','평균 유류비(원)'],...avg.map(s=>[s.label,s.count,Number(s.averageDistance.toFixed(3)),Number(s.averageLiters.toFixed(3)),Math.round(s.averageFuelCost)])]),'톤수별 평균');
- const values=settings();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['출발지','운행방식','유류단가(원/L)','경로기준'],[values.origin,'편도',values.price,values.priority],[],['톤수','연비(km/L)'],...Object.entries(values.efficiencies).map(([tons,value])=>[tons==='11'?'11톤 이상':tons+'톤',value])]),'계산 기준');
+ const values=settings();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['출발지','운행방식','유류단가(원/L)','경로기준','지도 서비스'],[values.origin,'편도',values.price,values.priority,values.provider==='naver'?'네이버':'카카오'],[],['톤수','연비(km/L)'],...Object.entries(values.efficiencies).map(([tons,value])=>[tons==='11'?'11톤 이상':tons+'톤',value])]),'계산 기준');
  XLSX.writeFile(wb,koreaDate()+'_임시차_평균유류비.xlsx',{compression:true});
+}
+function updateProvider(){
+ const naver=$('route-provider').value==='naver',shortest=$('route-priority').querySelector('[value=DISTANCE]');shortest.disabled=naver;shortest.hidden=naver;if(naver&&$('route-priority').value==='DISTANCE')$('route-priority').value='RECOMMEND';
+ $('provider-note').textContent=naver?'네이버 자동차 도로경로 기준 예상 유류비입니다.':'카카오 자동차 도로경로 기준 예상 유류비입니다.';
 }
 async function initialize(){
  const url=new URL(location.href);if(url.searchParams.get('center')!=='pyeongtaek'&&url.searchParams.get('center')!=='002'){url.searchParams.set('center','pyeongtaek');location.replace(url.pathname+url.search);return;}
@@ -93,10 +97,11 @@ async function initialize(){
  const today=koreaDate();$('from-date').value=today.slice(0,8)+'01';$('through-date').value=today;
  try{
   const value=JSON.parse(localStorage.getItem(storageKey)||'null');
-  if(value){$('origin-address').value=value.origin||DEFAULT_ORIGIN;$('fuel-price').value=value.price||'';if(['DISTANCE','RECOMMEND','TIME'].includes(value.priority))$('route-priority').value=value.priority;
+  if(value){$('route-provider').value=value.provider==='naver'?'naver':'kakao';$('origin-address').value=value.origin||DEFAULT_ORIGIN;$('fuel-price').value=value.price||'';if(['DISTANCE','RECOMMEND','TIME'].includes(value.priority))$('route-priority').value=value.priority;
    for(const e of document.querySelectorAll('[data-efficiency]'))e.value=value.efficiencies?.[e.dataset.efficiency]??DEFAULT_EFFICIENCY[e.dataset.efficiency];}
  }catch{}
- document.querySelectorAll('#origin-address,#fuel-price,#route-priority,[data-efficiency]').forEach(e=>e.addEventListener('change',()=>{saveSettings();if(results.length){results=[];issues=[];render();message('계산 기준이 변경되었습니다. 다시 계산해 주세요.');}}));
+ updateProvider();
+ document.querySelectorAll('#origin-address,#fuel-price,#route-priority,#route-provider,[data-efficiency]').forEach(e=>e.addEventListener('change',()=>{updateProvider();saveSettings();if(results.length){results=[];issues=[];render();message('계산 기준이 변경되었습니다. 다시 계산해 주세요.');}}));
  for(const e of [$('from-date'),$('through-date')])e.addEventListener('change',()=>{source=[];results=[];issues=[];render();$('db-count').textContent='조회 기간이 변경되었습니다. DB를 다시 불러와 주세요.';});
  $('results-prev').onclick=()=>{resultPage--;render();};$('results-next').onclick=()=>{resultPage++;render();};
  $('load-db').onclick=()=>run(load);$('calculate').onclick=()=>run(calculate);$('export').onclick=()=>run(download);$('cancel').onclick=()=>{stopped=true;message('진행 중인 운행 계산이 끝나면 중지합니다.');};

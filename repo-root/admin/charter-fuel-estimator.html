@@ -7,13 +7,13 @@
 <section class="fuel-panel space-y-4"><h2 class="font-semibold">계산 기준</h2><div class="fuel-settings">
 <label class="fuel-origin"><span class="app-label">출발지 주소</span><input id="origin-address" class="app-input" maxlength="300" value="경기도 평택시 산단로 263"></label>
 <label><span class="app-label">유류단가 (원/L)</span><input id="fuel-price" type="number" min="1" step="any" class="app-input" placeholder="리터당 단가 입력"></label>
-<label><span class="app-label">경로 기준</span><select id="route-priority" class="app-select"><option value="DISTANCE">최단거리</option><option value="RECOMMEND">추천 경로</option><option value="TIME">최단시간</option></select></label>
+<label><span class="app-label">지도 서비스</span><select id="route-provider" class="app-select"><option value="kakao">카카오</option><option value="naver">네이버</option></select></label><label><span class="app-label">경로 기준</span><select id="route-priority" class="app-select"><option value="DISTANCE">최단거리</option><option value="RECOMMEND">추천 경로</option><option value="TIME">최단시간</option></select></label>
 <label><span class="app-label">1톤 연비 (km/L)</span><input data-efficiency="1" value="8.3" type="number" min="0.1" step="0.1" class="app-input"></label>
 <label><span class="app-label">2.5톤 연비 (km/L)</span><input data-efficiency="2.5" value="6.7" type="number" min="0.1" step="0.1" class="app-input"></label>
 <label><span class="app-label">3.5톤 연비 (km/L)</span><input data-efficiency="3.5" value="6" type="number" min="0.1" step="0.1" class="app-input"></label>
 <label><span class="app-label">5톤 연비 (km/L)</span><input data-efficiency="5" value="4.8" type="number" min="0.1" step="0.1" class="app-input"></label>
 <label><span class="app-label">11톤 이상 연비 (km/L)</span><input data-efficiency="11" value="4" type="number" min="0.1" step="0.1" class="app-input"></label>
-</div><p class="fuel-muted">DB의 운행 묶음별로 출발지 → 1착지 → 2착지 → 마지막 착지 순서로 이어서 계산합니다. 묶음마다 착지 수는 다릅니다. 센터 복귀거리는 포함하지 않습니다. 카카오 자동차 도로경로 기준 예상 유류비입니다.</p></section>
+</div><p class="fuel-muted">DB의 운행 묶음별로 출발지 → 1착지 → 2착지 → 마지막 착지 순서로 이어서 계산합니다. 묶음마다 착지 수는 다릅니다. 센터 복귀거리는 포함하지 않습니다. <span id="provider-note">카카오 자동차 도로경로 기준 예상 유류비입니다.</span></p></section>
 <section class="fuel-panel space-y-4"><h2 class="font-semibold">평택 DB 조회</h2><div class="fuel-toolbar">
 <label><span class="app-label">시작일</span><input id="from-date" type="date" class="app-input"></label>
 <label><span class="app-label">종료일</span><input id="through-date" type="date" class="app-input"></label>

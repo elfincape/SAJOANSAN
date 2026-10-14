@@ -48,4 +48,11 @@ assert.deepEqual([...document.querySelectorAll('#results tbody tr.fuel-total')].
 assert(document.querySelectorAll('#results tbody tr.fuel-leg')[3].textContent.includes('묶음1 착지1 · 주소 1-1'));
 assert.equal(document.querySelector('#averages tbody tr').children[1].textContent,'3');
 await document.getElementById('export').onclick();assert.equal(written.sheets[1].name,'묶음별 합계');assert.deepEqual(Array.from(written.sheets[1].rows.slice(1),r=>r[3]),[1,3,5]);
-console.log('DB-only source, user defaults, editable coefficients, minimal completed results, averages, resume, cancel, invalidation and private-free workbook passed');
+document.getElementById('route-provider').value='naver';document.getElementById('route-provider').dispatchEvent(new dom.window.Event('change'));
+assert.equal(document.querySelectorAll('#results tbody tr.fuel-leg').length,0);assert.equal(document.getElementById('route-priority').value,'RECOMMEND');assert(document.querySelector('#route-priority [value=DISTANCE]').hidden);
+context.fetch=async(url,init)=>{assert(url.endsWith('/naver-distance'));const body=JSON.parse(init.body);assert.equal(body.priority,'RECOMMEND');return new Response(JSON.stringify({sections:body.stops.map(()=>({distanceMeters:1000}))}));};
+await document.getElementById('calculate').onclick();assert.equal(document.querySelectorAll('#results tbody tr.fuel-group').length,3);
+await document.getElementById('export').onclick();assert.equal(written.sheets.at(-1).rows[1].at(-1),'네이버');
+assert.equal(JSON.parse(dom.window.localStorage.getItem('sajo.charter.fuel.tester')).provider,'naver');
+document.getElementById('route-provider').value='kakao';document.getElementById('route-provider').dispatchEvent(new dom.window.Event('change'));assert(!document.querySelector('#route-priority [value=DISTANCE]').hidden);
+console.log('DB-only source, defaults, minimal grouped results, averages, resume, cancel, provider switching, invalidation and private-free workbook passed');
