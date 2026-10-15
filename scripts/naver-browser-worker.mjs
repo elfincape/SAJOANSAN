@@ -14,14 +14,14 @@ export async function runWorker({db=query,lookup=browserDistance,browserFactory,
    const claimed=await db("with next as(select id from public.naver_browser_jobs where "+ready+filter+" order by created_at for update skip locked limit 1) update public.naver_browser_jobs j set status='running',worker_id="+quote(worker)+"::uuid,updated_at=now() from next where j.id=next.id returning j.id,j.origin,j.addresses,j.cursor,j.results");
    const job=claimed[0];
    if(!job){if(!keepAlive)break;await sleep(Math.min(pollMs,Math.max(0,stopAt-now())));continue;}
-   log('Server browser claimed job; '+job.cursor+' / '+job.addresses.length+' processed');let interrupted=false,failures=0;
+   log('Server browser started queued work');let interrupted=false,failures=0;
    for(let i=job.cursor;i<job.addresses.length;i++){
     const state=await db('select status from public.naver_browser_jobs where id='+quote(job.id)+'::uuid');if(state[0]?.status!=='running'){interrupted=true;break;}
     if(now()>stopAt){await db("update public.naver_browser_jobs set status='queued',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");interrupted=true;break;}
     const address=job.addresses[i];let result;
     try{result=await lookup(page,job.origin,address);failures=0;}catch(e){failures=e.code==='ADDRESS_NOT_FOUND'?0:failures+1;result={issue:e.code==='ADDRESS_NOT_FOUND'?'주소 검색 결과 확인 필요':'네이버 지도 거리우선 결과 확인 필요',measuredAt:new Date().toISOString()};}
     await db("update public.naver_browser_jobs set results=results||jsonb_build_object("+quote(address)+','+quote(JSON.stringify(result))+"::jsonb),cursor="+(i+1)+",updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");
-    log('Server browser progress '+(i+1)+' / '+job.addresses.length+'; '+(result.distanceText??'lookup needs attention'));
+    log(result.distanceText?'Server route result saved':'Server route needs attention');
     if(failures>=3){await db("update public.naver_browser_jobs set status='attention',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");interrupted=true;break;}
    }
    if(!interrupted)await db("update public.naver_browser_jobs set status='completed',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");

@@ -15,7 +15,7 @@ on:
       - 'tests/naver-browser*.mjs'
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '23 * * * *'
 permissions:
   contents: read
 jobs:
@@ -35,30 +35,50 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/naver-browser.test.mjs
       - run: node tests/naver-browser-worker.test.mjs
+      - run: node tests/naver-browser-lifecycle.test.mjs
       - run: node tests/naver-browser-ui.test.mjs
       - run: node scripts/apply-naver-browser-migration.mjs
       - run: node scripts/check-naver-browser-queue.mjs --live
-  worker:
+  replace:
     needs: [verify]
-    if: always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped')
+    if: github.event_name == 'push' && needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/naver-browser-replace.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+  worker:
+    needs: [verify, replace]
+    if: always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') && (needs.replace.result == 'success' || needs.replace.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
       contents: read
+      actions: write
     concurrency:
       group: naver-browser-queue-worker
       cancel-in-progress: ${{ github.event_name == 'push' }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      NAVER_WORKER_MINUTES: '45'
+      NAVER_WORKER_MINUTES: ${{ github.event_name == 'push' && '2' || '45' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node scripts/naver-browser-queue-status.mjs
       - run: npm install --no-save --package-lock=false playwright@1.56.1
       - run: npx playwright install --with-deps chromium
       - run: node scripts/naver-browser-worker.mjs --serve
-      - run: node scripts/naver-browser-queue-status.mjs
+      - name: Start next server worker
+        run: node scripts/naver-browser-handoff.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
