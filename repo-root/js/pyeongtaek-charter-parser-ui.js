@@ -31,7 +31,7 @@ function enable(){
 }
 function visible(){
  const from=$('from-date').value,to=$('to-date').value,query=$('customer-filter').value.trim().toLowerCase(),course=$('course-filter').value.trim().toLowerCase();
- return trips.filter(t=>(!t.date||((!from||t.date>=from)&&(!to||t.date<=to)))&&(!course||[t.course,t.vehicleSequence].some(v=>String(v||'').toLowerCase().includes(course)))&&(!$('issues-only').checked||activeIssues(t).length)&&(!query||t.deliveries.some(d=>[d.name,d.code,d.customer].some(v=>String(v||'').toLowerCase().includes(query)))));
+ return filterCharterStatisticsTrips(trips,{excludeCombined:$('stats-exclude-combined').checked}).filter(t=>(!t.date||((!from||t.date>=from)&&(!to||t.date<=to)))&&(!course||[t.course,t.vehicleSequence].some(v=>String(v||'').toLowerCase().includes(course)))&&(!$('issues-only').checked||activeIssues(t).length)&&(!query||t.deliveries.some(d=>[d.name,d.code,d.customer].some(v=>String(v||'').toLowerCase().includes(query)))));
 }
 function cellRow(parent,values,tag='td'){
  const row=document.createElement('tr');for(const value of values){const cell=document.createElement(tag);if(value instanceof Node)cell.append(value);else cell.textContent=value??'';row.append(cell);}parent.append(row);return row;
@@ -94,7 +94,7 @@ function renderStatistics(){
 }
 function resetStats(){
  for(const id of ['stats-from','stats-to','stats-vehicle','stats-customer','stats-client','stats-tons','stats-weekday'])$(id).value='';
- $('stats-min-trips').value='1';$('stats-limit').value='50';$('stats-sort').value='tripCount';$('stats-exclude-combined').checked=false;statsVehicle='';renderStatistics();
+ $('stats-min-trips').value='1';$('stats-limit').value='50';$('stats-sort').value='tripCount';$('stats-exclude-combined').checked=false;statsVehicle='';page=0;render();
 }
 function renderPreview(){
  const {headers,rows}=horizontalData(visible());const head=$('preview').querySelector('thead'),body=$('preview').querySelector('tbody');head.replaceChildren();body.replaceChildren();
@@ -285,7 +285,7 @@ async function initialize(){
  const actions={'delete-issues':removeAllIssues,'parse-btn':parseFile,'db-load':loadDB,'db-save':saveDB,'json-export':downloadJson,'archive-refresh':refreshArchives,'onedrive-config':configureDrive,'archive-save':archiveMonth,'archive-read':readDrive,'archive-purge':purgeMonth,'download-btn':()=>XLSX.writeFile(buildNormalizedWorkbook(visible(),XLSX),charterWorkbookFilename(visible()),{compression:true}),'preview-toggle':()=>{$('preview-wrap').hidden=!$('preview-wrap').hidden;if(!$('preview-wrap').hidden)renderPreview();}};
  for(const [id,action]of Object.entries(actions))$(id).onclick=()=>task(action);
  for(const button of document.querySelectorAll('[data-stats-view]'))button.onclick=()=>{statsView=button.dataset.statsView;renderStatistics();};
- for(const input of document.querySelectorAll('[data-stats-filter]'))input.addEventListener(input.tagName==='SELECT'||input.type==='checkbox'?'change':'input',()=>renderStatistics());
+ for(const input of document.querySelectorAll('[data-stats-filter]'))input.addEventListener(input.tagName==='SELECT'||input.type==='checkbox'?'change':'input',()=>{if(input.id==='stats-exclude-combined'){page=0;render();}else renderStatistics();});
  $('stats-driver-select').onchange=()=>{statsVehicle=$('stats-driver-select').value;renderStatistics();};$('stats-reset').onclick=resetStats;
  $('source-file').onchange=loadFile;$('json-file').onchange=()=>task(importJson);
  for(const id of ['from-date','to-date','customer-filter','course-filter','issues-only'])$(id).addEventListener('input',()=>{page=0;render();});
