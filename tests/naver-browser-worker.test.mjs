@@ -21,3 +21,7 @@ await runWorker({
 });
 assert.equal(lookups,3);assert(writes.some(sql=>sql.includes("status='attention'")));
 console.log('Idle worker accepts later jobs, persists progress, stops on access failures and isolates live fixtures');
+
+let addressAttempts=0,addressWrites=[];
+await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{addressWrites.push(sql);if(sql.startsWith('with next'))return [{...job,addresses:['A','B','C','D']}];if(sql.startsWith('select status'))return [{status:'running'}];return [];},lookup:async()=>{addressAttempts++;throw Object.assign(Error('Missing address'),{code:'ADDRESS_NOT_FOUND'});},log:()=>{}});
+assert.equal(addressAttempts,4);assert(addressWrites.some(sql=>sql.includes("status='completed'")));assert(!addressWrites.some(sql=>sql.includes("status='attention'")));console.log('Individual missing addresses do not halt the remaining destinations');

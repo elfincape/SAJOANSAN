@@ -47,7 +47,7 @@ jobs:
       contents: read
     concurrency:
       group: naver-browser-queue-worker
-      cancel-in-progress: false
+      cancel-in-progress: ${{ github.event_name == 'push' }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}

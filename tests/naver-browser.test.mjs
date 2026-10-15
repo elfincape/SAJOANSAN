@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {distanceFromCard,regionFromAddress} from '../scripts/lib/naver-map-browser.mjs';
+import {distanceFromCard,regionFromAddress,addressSearch} from '../scripts/lib/naver-map-browser.mjs';
 import {browserJobRows,watchBrowserJob,enqueueBrowserJob} from '../repo-root/js/naver-browser-model.js';
 assert.equal(distanceFromCard('5 거리우선 30 분 15km 택시비 18000원').distanceKm,15);
 assert.equal(distanceFromCard('거리 우선 2분 850m').distanceKm,.85);
@@ -13,3 +13,5 @@ assert.equal(browserJobRows(rows,{status:'attention',results:{}})[1].issue,'미�
 let polls=0,updates=0;const client={from:table=>{assert.equal(table,'naver_browser_jobs');const q={select:()=>q,eq:()=>q,single:async()=>({data:{status:++polls===1?'running':'completed',results:{}}})};return q;},rpc:async(name,body)=>{assert.equal(name,'naver_browser_enqueue');assert.equal(body.p_center,'001');return {data:'job'};}};
 await watchBrowserJob(client,'job',()=>updates++,async()=>{});assert.equal(updates,2);assert.equal(await enqueueBrowserJob(client,'001','출발',['주소']),'job');
 console.log('Genuine distance-priority-only parsing, display units, region grouping, candidate rejection and queued/terminal job handling passed');
+
+assert.equal(addressSearch('경기도 가상시 이전면 예제로 72-8').queries.at(-1),'예제로 72-8');assert.equal(addressSearch('서울특별시 관악구 예제로1 예시동').queries.at(-1),'예제로 1');assert.equal(addressSearch('서울특별시 구로구 예제로 152, 지하 1층').road.number,'152');assert.equal(addressSearch('서울특별시 강서구 양천로 67길 99').road.street,'양천로67길');assert.equal(addressSearch('서울특별시 강서구 양천로 67길 99').gu,'강서구');
