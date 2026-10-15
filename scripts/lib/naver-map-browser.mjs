@@ -25,6 +25,10 @@ export async function browserDistance(page,origin,address,{diagnostic=false}={})
    const suggestion=(road?options.filter({hasText:new RegExp(road[1]+'\\s*'+road[2]+'(?:\\D|$)')}):options).first();
    await suggestion.waitFor({state:'visible'});
    await suggestion.click();
+   const position=label==='출발지 입력'?3:4;
+   await page.waitForURL(url=>{const value=url.pathname.split('/')[position];return !!value&&value!=='-';});
+   // Route selection replaces the React input panel; let that transition finish before filling the next field.
+   await page.waitForTimeout(700);
   }
   await page.getByRole('button',{name:'길찾기',exact:true}).click();
   const card=page.locator('.route_summary_box').filter({hasText:/거리\s*우선/});await card.waitFor({state:'visible',timeout:45000});
