@@ -40,3 +40,36 @@ export function charterStatistics(trips,{from='',to=''}={}){
  const periodDays=start&&end&&end>=start?Math.round((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000)+1:0;
  return {tripCount,missingVehicle,missingCustomer,period:{from:start,to:end,days:periodDays},customers:customers(all,periodDays),drivers:[...vehicles.values()].map(v=>({key:v.key,name:v.name,names:rankedNames(v.names),tripCount:v.tripCount,dayCount:v.days.size,lastDate:v.lastDate,destinations:customers(v.destinations,periodDays)})).sort(compare)};
 }
+
+export function isCombinedCharterTrip(trip,mode='marked'){
+ const marked=/합[\s·-]*배송/.test(text(trip.type));
+ const destinations=new Set((trip.deliveries||[]).map(d=>text(d.code)?'code:'+text(d.code):text(d.name)?'name:'+JSON.stringify([text(d.name),text(d.customer)]):'stop:'+text(d.stopId||d.address||d.id)));
+ const multiple=destinations.size>1;
+ return mode==='multiple'?multiple:mode==='either'?marked||multiple:marked;
+}
+export function filterCharterStatisticsTrips(trips,options={}){
+ const {from='',to='',vehicle='',customer='',client='',tons='',weekday='',excludeCombined=false,combinedMode='marked'}=options;
+ if(validDate(from)&&validDate(to)&&from>to)return [];
+ const query=text(customer).toLowerCase(),vehicleQuery=text(vehicle).replace(/\s/g,'').toLowerCase();
+ return trips.flatMap(trip=>{
+  if((from||to)&&(!validDate(trip.date)||(from&&trip.date<from)||(to&&trip.date>to)))return [];
+  if(weekday!==''&&(!validDate(trip.date)||new Date(trip.date+'T00:00:00Z').getUTCDay()!==Number(weekday)))return [];
+  if(tons!==''&&String(trip.tons??'')!==tons)return [];
+  if(vehicleQuery&&![trip.vehicleNumber,trip.driver].some(v=>text(v).replace(/[\s-]/g,'').toLowerCase().includes(vehicleQuery.replace(/-/g,''))))return [];
+  if(excludeCombined&&isCombinedCharterTrip(trip,combinedMode))return [];
+  if(!query&&!client)return [trip];
+  const deliveries=(trip.deliveries||[]).filter(d=>(!client||text(d.customer)===client)&&(!query||[d.code,d.name].some(v=>text(v).toLowerCase().includes(query))));
+  return deliveries.length?[{...trip,deliveries}]:[];
+ });
+}
+export function rankCharterStatistics(rows,{sort='tripCount',minTrips=1,limit=50}={}){
+ const minimum=Number.isFinite(Number(minTrips))?Math.max(1,Number(minTrips)):1;
+ const result=rows.filter(row=>row.tripCount>=minimum).slice().sort((a,b)=>{
+  if(sort==='name')return a.name.localeCompare(b.name,'ko-KR');
+  const av=a[sort],bv=b[sort];
+  if(av==null&&bv!=null)return 1;if(bv==null&&av!=null)return -1;
+  const difference=sort==='lastDate'?String(bv??'').localeCompare(String(av??'')):Number(bv??0)-Number(av??0);
+  return difference||compare(a,b);
+ });
+ const maximum=Number(limit);return maximum>0?result.slice(0,maximum):result;
+}

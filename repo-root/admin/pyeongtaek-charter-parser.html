@@ -51,15 +51,42 @@
   </section>
   <section class="panel space-y-4">
    <h2 class="font-semibold">운행 · 거래처 통계</h2>
+   <div class="toolbar" role="tablist" aria-label="통계 종류">
+    <button id="stats-tab-drivers" data-stats-view="drivers" role="tab" aria-controls="stats-panel-drivers" aria-selected="true" class="btn btn-primary">기사별 운행 순위</button>
+    <button id="stats-tab-destinations" data-stats-view="destinations" role="tab" aria-controls="stats-panel-destinations" aria-selected="false" class="btn btn-ghost">기사별 자주 간 곳</button>
+    <button id="stats-tab-customers" data-stats-view="customers" role="tab" aria-controls="stats-panel-customers" aria-selected="false" class="btn btn-ghost">거래처 · 평균물량</button>
+   </div>
+   <div class="edit-grid">
+    <label><span class="app-label">통계 시작일</span><input id="stats-from" data-stats-filter type="date" class="app-input"></label>
+    <label><span class="app-label">통계 종료일</span><input id="stats-to" data-stats-filter type="date" class="app-input"></label>
+    <label><span class="app-label">차량번호 · 기사명</span><input id="stats-vehicle" data-stats-filter class="app-input" placeholder="검색어"></label>
+    <label><span class="app-label">납품처명 · 코드</span><input id="stats-customer" data-stats-filter class="app-input" placeholder="검색어"></label>
+    <label><span class="app-label">고객사</span><select id="stats-client" data-stats-filter class="app-select"><option value="">전체</option></select></label>
+    <label><span class="app-label">톤수</span><select id="stats-tons" data-stats-filter class="app-select"><option value="">전체</option></select></label>
+    <label><span class="app-label">요일</span><select id="stats-weekday" data-stats-filter class="app-select"><option value="">전체</option><option value="1">월요일</option><option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option><option value="5">금요일</option><option value="6">토요일</option><option value="0">일요일</option></select></label>
+    <label><span class="app-label">최소 운행 횟수</span><input id="stats-min-trips" data-stats-filter type="number" min="1" step="1" value="1" class="app-input"></label>
+    <label><span class="app-label">정렬 기준</span><select id="stats-sort" data-stats-filter class="app-select"><option value="tripCount">운행 횟수 많은 순</option><option value="dayCount">운행·납품 일수 많은 순</option><option value="name">차량·거래처 이름 순</option></select></label>
+    <label><span class="app-label">표시 건수</span><select id="stats-limit" data-stats-filter class="app-select"><option value="20">상위 20개</option><option value="50" selected>상위 50개</option><option value="100">상위 100개</option><option value="0">전체</option></select></label>
+    <label><span class="app-label">합배송 제외 기준</span><select id="stats-combined-mode" data-stats-filter class="app-select"><option value="marked">형태에 합배송 표시</option><option value="multiple">서로 다른 납품처 2곳 이상</option><option value="either">두 기준 중 하나라도 해당</option></select></label>
+   </div>
+   <div class="toolbar"><label class="cb" style="flex:none"><input id="stats-exclude-combined" data-stats-filter type="checkbox">합배송 제외</label><button id="stats-reset" class="btn btn-ghost">통계 조건 초기화</button></div>
    <p id="stats-period" class="text-sm muted"></p>
-   <p class="text-xs muted">현재 조회·필터 기준입니다. 차량번호를 누르면 자주 간 거래처를 볼 수 있습니다. 같은 운행에 같은 거래처가 여러 번 있어도 운행 횟수는 1회로 집계합니다.</p>
-   <h3 class="font-semibold">자주 운행한 차량</h3>
-   <div class="scroll"><table id="stats-drivers" class="app-table"><thead><tr><th>순위</th><th>차량번호</th><th>기사명</th><th>운행 횟수</th><th>운행 일수</th><th>최근 운행일</th></tr></thead><tbody></tbody></table></div>
-   <h3 id="stats-driver-title" class="font-semibold">차량별 자주 간 거래처</h3>
-   <div class="scroll"><table id="stats-driver-stops" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th></tr></thead><tbody></tbody></table></div>
-   <h3 class="font-semibold">자주 나온 거래처 · 일평균 물량</h3>
-   <p class="text-xs muted">납품일 평균은 납품한 날짜 수, 기간 평균은 위 기간의 전체 날짜 수로 나눕니다. 물량·일자가 누락된 거래처는 평균을 표시하지 않습니다. 총수량이 비어 있으면 냉동·냉장이 모두 있는 경우 합계를 사용합니다.</p>
-   <div class="scroll"><table id="stats-customers" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>고객사</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th><th>일평균 물량<br>(납품일)</th><th>일평균 물량<br>(전체 기간)</th><th>미집계 확인</th></tr></thead><tbody></tbody></table></div>
+   <p id="stats-error" class="text-sm text-red-300" role="alert"></p>
+   <p class="text-xs muted">불러온 데이터 안에서 통계 조건을 적용합니다. 운행 목록의 검색·삭제 필터와 별도로 적용됩니다.</p>
+   <div id="stats-panel-drivers" role="tabpanel" aria-labelledby="stats-tab-drivers" class="space-y-3">
+    <h3 class="font-semibold">자주 운행한 차량</h3>
+    <div class="scroll"><table id="stats-drivers" class="app-table"><thead><tr><th>순위</th><th>차량번호</th><th>기사명</th><th>운행 횟수</th><th>운행 일수</th><th>최근 운행일</th></tr></thead><tbody></tbody></table></div>
+   </div>
+   <div id="stats-panel-destinations" role="tabpanel" aria-labelledby="stats-tab-destinations" class="space-y-3" hidden>
+    <label><span class="app-label">조회할 차량</span><select id="stats-driver-select" class="app-select"></select></label>
+    <h3 id="stats-driver-title" class="font-semibold">차량별 자주 간 거래처</h3>
+    <div class="scroll"><table id="stats-driver-stops" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th><th>일평균 물량<br>(납품일)</th><th>일평균 물량<br>(전체 기간)</th></tr></thead><tbody></tbody></table></div>
+   </div>
+   <div id="stats-panel-customers" role="tabpanel" aria-labelledby="stats-tab-customers" class="space-y-3" hidden>
+    <h3 class="font-semibold">자주 나온 거래처 · 일평균 물량</h3>
+    <p class="text-xs muted">납품일 평균은 납품 날짜 수, 기간 평균은 기간 전체 날짜 수로 나눕니다. 물량·일자가 누락되면 평균을 비워 둡니다.</p>
+    <div class="scroll"><table id="stats-customers" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>고객사</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th><th>일평균 물량<br>(납품일)</th><th>일평균 물량<br>(전체 기간)</th><th>미집계 확인</th></tr></thead><tbody></tbody></table></div>
+   </div>
   </section>
   <section class="panel space-y-3">
    <h2 class="font-semibold">가로형 정산 파일</h2>
