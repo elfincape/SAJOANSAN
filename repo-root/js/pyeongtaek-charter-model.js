@@ -61,7 +61,7 @@ export function parseNormalizedSheet(sheet,XLSX,{centerCode='002',sourceName='',
   if(cache.has(cacheKey))return cache.get(cacheKey);
   const cell=sheet[key],raw=cell?.v;
   const failed=cell?.t==='e'||ERROR.test(String(raw??'').trim())||(cell?.f&&raw==null);
-  const value=failed?null:normalizeValue(kind==='text'&&cell?.t==='n'&&cell?.z?XLSX.format_cell(cell):raw,kind,{XLSX,year,date1904});
+  const value=failed?null:normalizeValue(kind==='text'&&cell?.t==='n'&&cell?.z?XLSX.utils.format_cell(cell):raw,kind,{XLSX,year,date1904});
   const result={key,value,raw:empty(raw)?null:String(raw),error:failed?(cell?.w||String(raw??'수식 결과 없음')):!empty(raw)&&value===null?'값 형식 확인':null};
   cache.set(cacheKey,result);return result;
  }
