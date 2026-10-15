@@ -5,14 +5,14 @@ import {menuPermissions} from './menu-permissions.js';
 import {permissionAllowed} from './portal-permissions.js';
 import {CENTER_ORIGINS,centerDestinations} from './destination-distance-db.js';
 import {DEFAULTS,TONS,excelAddresses,longestRows,resultValues,distanceWorkbook} from './destination-distance-model.js';
-const $=id=>document.getElementById(id);let workbook,dbRows=null,rows=[],busy=false,cancelled=false,key='',page=0,permissions,activeCenter=['ansan','001'].includes(new URL(location.href).searchParams.get('center'))?'001':'002';let currentJob=null;const PAGE=100;
+const $=id=>document.getElementById(id);let workbook,dbRows=null,rows=[],busy=false,cancelled=false,key='',page=0,permissions,activeCenter=['ansan','001'].includes(new URL(location.href).searchParams.get('center'))?'001':'002';let currentJob=null,calculationComplete=false;const PAGE=100;
 const status=text=>$('status').textContent=text;
 function lock(){document.querySelectorAll('input,select,button').forEach(e=>e.disabled=busy);for(const center of ['001','002'])$('center-'+center).disabled=busy||!permissionAllowed(permissions,'delivery_points','read',center);$('calculate').disabled=busy||(!workbook&&!dbRows);$('download').disabled=busy||!rows.some(r=>Number.isFinite(r.distanceKm));$('cancel').hidden=!busy;$('cancel').disabled=false;$('prev').disabled=busy||page===0;$('next').disabled=busy||(page+1)*PAGE>=rows.length;}
 function criteria(){const origin=$('origin').value.trim(),efficiencies=Object.fromEntries(TONS.map(t=>[t,Number(document.querySelector('[data-efficiency="'+t+'"]').value)]));if(!origin||origin.length>300||Object.values(efficiencies).some(n=>!Number.isFinite(n)||n<=0))throw Error('출발지와 연비를 확인해 주세요.');return {origin,efficiencies};}
 function render(){const body=$('results').querySelector('tbody');body.replaceChildren();page=Math.min(page,Math.max(0,Math.ceil(rows.length/PAGE)-1));let efficiencies;try{efficiencies=criteria().efficiencies;}catch{efficiencies=DEFAULTS;}
- for(const r of longestRows(rows).slice(page*PAGE,(page+1)*PAGE)){const tr=document.createElement('tr');[...resultValues(r,efficiencies),r.distanceText??'',r.measuredAt?new Date(r.measuredAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):''].forEach((value,i)=>{const td=document.createElement('td');td.textContent=typeof value==='number'&&i>=4?value.toLocaleString('ko-KR',{maximumFractionDigits:3}):value??'';if(i===4&&r.longest)td.className='longest';tr.append(td);});body.append(tr);}
+ for(const r of (calculationComplete?longestRows(rows):rows).slice(page*PAGE,(page+1)*PAGE)){const tr=document.createElement('tr');[...resultValues(r,efficiencies),r.distanceText??'',r.measuredAt?new Date(r.measuredAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):''].forEach((value,i)=>{const td=document.createElement('td');td.textContent=typeof value==='number'&&i>=4?value.toLocaleString('ko-KR',{maximumFractionDigits:3}):value??'';if(i===4&&r.longest)td.className='longest';tr.append(td);});body.append(tr);}
  $('count').textContent=rows.length?rows.length+'착지 · '+rows.filter(r=>Number.isFinite(r.distanceKm)).length+'계산 완료 · '+rows.filter(r=>r.issue).length+'확인 필요':'';$('page').textContent=rows.length?(page+1)+' / '+Math.ceil(rows.length/PAGE):'';lock();}
-function invalidate(){rows=[];page=0;render();}
+function invalidate(){rows=[];calculationComplete=false;page=0;render();}
 function columns(){dbRows=null;const sheet=workbook.Sheets[$('sheet').value],range=XLSX.utils.decode_range(sheet['!ref']||'A1');for(const id of ['address-column','name-column']){$(id).replaceChildren();if(id==='name-column')$(id).add(new Option('선택 안 함',''));for(let c=range.s.c;c<=range.e.c;c++){const letter=XLSX.utils.encode_col(c);$(id).add(new Option(letter,c));}}invalidate();}
 async function upload(){const file=$('file').files[0];if(!file)return;if(file.size>30*1024*1024)throw Error('30MB 이하 파일을 선택해 주세요.');workbook=null;dbRows=null;invalidate();const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});const sheets=wb.SheetNames.filter(n=>wb.Sheets[n]['!ref']);if(!sheets.length)throw Error('데이터가 있는 시트가 없습니다.');workbook=wb;$('sheet').replaceChildren(...sheets.map(n=>new Option(n,n)));columns();$('source-label').textContent=file.name;status(file.name);}
 async function calculate(){if(currentJob)return follow(currentJob);const input=criteria();localStorage.setItem(key,JSON.stringify({...input,centers:Object.fromEntries(['001','002'].map(c=>[c,$('origin-'+c).value]))}));rows=dbRows?dbRows.map(r=>({...r})):excelAddresses(workbook.Sheets[$('sheet').value],XLSX,{addressColumn:Number($('address-column').value),nameColumn:$('name-column').value===''?null:Number($('name-column').value),startRow:Number($('start-row').value)});page=0;cancelled=false;
@@ -23,8 +23,9 @@ async function calculate(){if(currentJob)return follow(currentJob);const input=c
  await follow(currentJob);
 }
 async function follow(id){
- currentJob=id;await watchBrowserJob(supabase,id,job=>{
-  rows=browserJobRows(rows,job);render();
+ currentJob=id;let renderedVersion;await watchBrowserJob(supabase,id,job=>{
+  const version=job.status+'|'+job.updated_at+'|'+Object.keys(job.results??{}).length;
+  if(version!==renderedVersion){calculationComplete=job.status==='completed';rows=browserJobRows(rows,job);render();renderedVersion=version;}
   status(({'queued':'서버 대기','running':'네이버 지도 조회 중','completed':'계산 완료','cancelled':'계산 중지','attention':'확인 필요 — 네이버 지도 조회를 중지했습니다.'})[job.status]+' · '+Object.keys(job.results??{}).length+' / '+(job.addresses?.length??rows.length));
  });currentJob=null;
 }
