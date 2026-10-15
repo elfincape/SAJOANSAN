@@ -21,7 +21,7 @@ if(process.argv.includes('--live')){
  const result=await query("select set_config('request.jwt.claim.sub',"+quote(actor)+",true);select public.naver_browser_enqueue('002','경기도 평택시 산단로 263','[\"경기도 오산시 성호대로 141\"]'::jsonb) as id");
  const id=result.at(-1)?.id;if(!id)throw Error('Live queue fixture could not be created');
  try{
-  await import('./naver-browser-worker.mjs');
+  const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id});
   const rows=await query('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
   const r=rows[0]?.results?.['경기도 오산시 성호대로 141'];if(rows[0]?.status!=='completed'||r?.method!=='naver-map-display'||r?.routeLabel!=='거리우선'||!(r?.distanceKm>0))throw Error('Live queued browser result verification failed');
   console.log('End-to-end server queue/browser/result persistence verified: '+r.distanceText);
