@@ -9,6 +9,7 @@ on:
       - 'supabase/functions/onedrive-auth/charter.js'
       - 'scripts/apply-charter-migration.mjs'
       - 'tests/charter-normalized.test.mjs'
+      - 'tests/charter-multifile.test.mjs'
       - 'tests/charter-storage.test.mjs'
       - 'tests/charter-db.test.mjs'
       - 'scripts/check-charter-save.mjs'
@@ -27,6 +28,9 @@ jobs:
           node-version: '24'
       - run: mkdir -p /tmp/charter-test && curl --fail --location --retry 3 https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js -o /tmp/charter-test/xlsx.cjs
       - run: node tests/charter-normalized.test.mjs
+        env:
+          XLSX_TEST_MODULE: /tmp/charter-test/xlsx.cjs
+      - run: node tests/charter-multifile.test.mjs
         env:
           XLSX_TEST_MODULE: /tmp/charter-test/xlsx.cjs
       - run: node tests/charter-storage.test.mjs

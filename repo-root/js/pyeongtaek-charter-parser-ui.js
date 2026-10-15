@@ -1,3 +1,4 @@
+import { parseCharterSources } from './pyeongtaek-charter-import.js';
 import { requireRole } from './auth.js';
 import { decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam } from './center.js';
 import { confirmDialog } from './ui.js';
@@ -103,19 +104,35 @@ async function removeEntry(id,deliveryId=null){
 
 async function replaceAllowed(){return !dirty||await confirmDialog('저장하지 않은 수정이 있습니다. 다른 데이터를 불러오시겠습니까?');}
 async function loadFile(){
- const revision=++fileRevision;source=null;$('source-sheet').replaceChildren();enable();
- const file=$('source-file').files[0];if(!file)return;
+ const revision=++fileRevision;source=null;$('source-sheet').replaceChildren();$('source-sheet').disabled=true;$('source-files').replaceChildren();$('source-files').hidden=true;$('source-sheet-label').hidden=false;enable();
+ const files=Array.from($('source-file').files||[]);if(!files.length)return;
  try{
-  if(!/\.(xlsx|xls)$/i.test(file.name)||file.size>20*1024*1024)throw new Error('20MB 이하 .xlsx/.xls 파일을 선택해 주세요.');
-  const bytes=await file.arrayBuffer();if(revision!==fileRevision)return;
-  const wb=XLSX.read(bytes,{type:'array',cellDates:false,cellNF:true});if(!wb.SheetNames.length)throw new Error('시트가 없습니다.');
-  source={workbook:wb,name:file.name};for(const name of wb.SheetNames)$('source-sheet').add(new Option(name,name));$('source-sheet').disabled=false;enable();message('파일을 읽었습니다. 시트를 선택하고 파싱을 실행하세요.');
- }catch(error){message(error.message,true);}
+  for(const file of files)if(!/\.(xlsx|xls)$/i.test(file.name)||file.size>20*1024*1024)throw new Error(file.name+': 파일당 20MB 이하 .xlsx/.xls 파일을 선택해 주세요.');
+  const sources=[];
+  for(const file of files){
+   const bytes=await file.arrayBuffer();if(revision!==fileRevision)return;
+   let wb;try{wb=XLSX.read(bytes,{type:'array',cellDates:false,cellNF:true});}catch{throw new Error(file.name+': 엑셀 파일을 읽지 못했습니다.');}
+   if(!wb.SheetNames.length)throw new Error(file.name+': 시트가 없습니다.');
+   sources.push({workbook:wb,name:file.name,sheetName:wb.SheetNames[0]});
+  }
+  if(revision!==fileRevision)return;source=sources;
+  if(source.length===1){
+   for(const name of source[0].workbook.SheetNames)$('source-sheet').add(new Option(name,name));$('source-sheet').disabled=false;
+  }else{
+   $('source-sheet-label').hidden=true;$('source-files').hidden=false;
+   for(const item of source){
+    const row=document.createElement('label');row.className='toolbar';const name=document.createElement('span');name.textContent=item.name;name.style.overflowWrap='anywhere';const select=document.createElement('select');select.className='app-select';select.setAttribute('aria-label',item.name+' 시트');select.style.maxWidth='100%';
+    for(const sheet of item.workbook.SheetNames)select.add(new Option(sheet,sheet));select.onchange=()=>{item.sheetName=select.value;};row.append(name,select);$('source-files').append(row);
+   }
+  }
+  enable();message(source.length+'개 파일을 읽었습니다. 파일별 시트를 선택하고 파싱을 실행하세요.');
+ }catch(error){if(revision!==fileRevision)return;source=null;enable();message(error.message,true);}
 }
 async function parseFile(){
  if(!source||!await replaceAllowed())return;
- const next=parseNormalizedSheet(source.workbook.Sheets[$('source-sheet').value],XLSX,{centerCode:center.code,sourceName:source.name,sheetName:$('source-sheet').value,year:Number($('source-year').value),date1904:!!source.workbook.Workbook?.WBProps?.date1904});
- showTrips(next,'upload');message(next.length+'운행을 파싱했습니다. 확인 필요 항목을 수정하거나 DB에 저장하세요.');
+ const selected=source.map(item=>({...item,sheetName:source.length===1?$('source-sheet').value:item.sheetName}));
+ const {trips:next,duplicates}=parseCharterSources(selected,XLSX,{centerCode:center.code,year:Number($('source-year').value)});
+ showTrips(next,'upload');message(source.length+'개 파일에서 '+next.length+'운행을 파싱했습니다.'+(duplicates?' 동일 운행 '+duplicates+'건은 중복 제외했습니다.':'')+' 확인 필요 항목을 수정하거나 DB에 저장하세요.');
 }
 async function loadDB(){
  if(!await replaceAllowed())return;
