@@ -61,7 +61,7 @@ function statsOptions(){
  }
 }
 function statsCriteria(){
- return {from:$('stats-from').value,to:$('stats-to').value,vehicle:$('stats-vehicle').value,customer:$('stats-customer').value,client:$('stats-client').value,tons:$('stats-tons').value,weekday:$('stats-weekday').value,excludeCombined:$('stats-exclude-combined').checked,combinedMode:$('stats-combined-mode').value};
+ return {from:$('stats-from').value,to:$('stats-to').value,vehicle:$('stats-vehicle').value,customer:$('stats-customer').value,client:$('stats-client').value,tons:$('stats-tons').value,weekday:$('stats-weekday').value,excludeCombined:$('stats-exclude-combined').checked};
 }
 function renderStatistics(){
  statsOptions();const criteria=statsCriteria(),filtered=filterCharterStatisticsTrips(trips,criteria),dates=trips.map(t=>t.date).filter(Boolean).sort();
@@ -94,7 +94,7 @@ function renderStatistics(){
 }
 function resetStats(){
  for(const id of ['stats-from','stats-to','stats-vehicle','stats-customer','stats-client','stats-tons','stats-weekday'])$(id).value='';
- $('stats-min-trips').value='1';$('stats-limit').value='50';$('stats-sort').value='tripCount';$('stats-combined-mode').value='marked';$('stats-exclude-combined').checked=false;statsVehicle='';renderStatistics();
+ $('stats-min-trips').value='1';$('stats-limit').value='50';$('stats-sort').value='tripCount';$('stats-exclude-combined').checked=false;statsVehicle='';renderStatistics();
 }
 function renderPreview(){
  const {headers,rows}=horizontalData(visible());const head=$('preview').querySelector('thead'),body=$('preview').querySelector('tbody');head.replaceChildren();body.replaceChildren();

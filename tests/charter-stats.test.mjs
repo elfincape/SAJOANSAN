@@ -23,13 +23,14 @@ console.log('PASS: vehicle-based trip ranking, driver destinations, unique trip/
 const merged=charterStatistics([trip('merged','2026-10-01','12가3456','김기사',[delivery('M','병합',20,{sourceCells:{quantity:'J4'}}),delivery('M','병합',20,{sourceCells:{quantity:'J4'}})])]);assert.equal(merged.customers[0].tripCount,1);assert.equal(merged.customers[0].totalQuantity,20);
 console.log('PASS: a merged quantity cell is counted once per customer and trip');
 
-const combinedFixtures=[{...trips[0],type:'용차'},{...trips[1],type:'합 배송'},{...trips[2],type:'용차'},{...trips[3],type:'용차'}];
-assert.equal(isCombinedCharterTrip(combinedFixtures[0],'marked'),false);assert.equal(isCombinedCharterTrip(combinedFixtures[0],'multiple'),true);
-assert.equal(isCombinedCharterTrip({...trips[0],deliveries:[trips[0].deliveries[0],trips[0].deliveries[1]]},'multiple'),false);
+const combinedFixtures=[{...trips[0],type:'합배송',course:'일반코스'},{...trips[1],type:'용차',course:'수원 합배송'},{...trips[2],type:'용차',course:'일반코스'},{...trips[3],type:'용차',course:'기타'}];
+assert.equal(isCombinedCharterTrip(combinedFixtures[0]),false);
+assert.equal(isCombinedCharterTrip(combinedFixtures[1]),true);
+for(const course of ['합배송-1','A(합배송)','평택합배송코스'])assert.equal(isCombinedCharterTrip({course}),true);
+for(const course of ['',undefined,'일반배송'])assert.equal(isCombinedCharterTrip({course,type:'합배송',deliveries:trips[0].deliveries}),false);
 assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{excludeCombined:true}).map(t=>t.id),['one','three','four']);
-assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{excludeCombined:true,combinedMode:'multiple'}).map(t=>t.id),['two','four']);
-assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{excludeCombined:true,combinedMode:'either'}).map(t=>t.id),['four']);
-const scoped=filterCharterStatisticsTrips(combinedFixtures,{customer:'사과',excludeCombined:true,combinedMode:'multiple'});assert.deepEqual(scoped.map(t=>t.id),['two']);
+assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{excludeCombined:false}).map(t=>t.id),['one','two','three','four']);
+const scoped=filterCharterStatisticsTrips(combinedFixtures,{customer:'사과',excludeCombined:true});assert.deepEqual(scoped.map(t=>t.id),['one','three']);
 assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{vehicle:'박기사'}).map(t=>t.id),['two']);
 assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{vehicle:'12 가 3456'}).map(t=>t.id),['one','two']);
 assert.deepEqual(filterCharterStatisticsTrips(combinedFixtures,{weekday:'6'}).map(t=>t.id),['three','four']);
@@ -38,4 +39,4 @@ const oneClient=filterCharterStatisticsTrips([{...trips[0],tons:2.5,deliveries:[
 assert.equal(rankCharterStatistics(stats.customers,{minTrips:2,limit:1})[0].code,'C1');assert.equal(rankCharterStatistics(stats.customers,{minTrips:2,limit:0}).length,2);
 assert.equal(rankCharterStatistics(stats.customers,{sort:'averageDeliveryDay',limit:0}).at(-1).code,'C3');
 assert.equal(JSON.stringify(trips),before);
-console.log('PASS: independent conditions, original-route combined classification before customer filtering, selectable exclusion modes, sorting, minimum frequency and limits');
+console.log('PASS: independent conditions, course-name combined classification before customer filtering, sorting, minimum frequency and limits');

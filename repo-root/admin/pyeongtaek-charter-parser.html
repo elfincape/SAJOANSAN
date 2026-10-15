@@ -67,9 +67,9 @@
     <label><span class="app-label">최소 운행 횟수</span><input id="stats-min-trips" data-stats-filter type="number" min="1" step="1" value="1" class="app-input"></label>
     <label><span class="app-label">정렬 기준</span><select id="stats-sort" data-stats-filter class="app-select"><option value="tripCount">운행 횟수 많은 순</option><option value="dayCount">운행·납품 일수 많은 순</option><option value="name">차량·거래처 이름 순</option></select></label>
     <label><span class="app-label">표시 건수</span><select id="stats-limit" data-stats-filter class="app-select"><option value="20">상위 20개</option><option value="50" selected>상위 50개</option><option value="100">상위 100개</option><option value="0">전체</option></select></label>
-    <label><span class="app-label">합배송 제외 기준</span><select id="stats-combined-mode" data-stats-filter class="app-select"><option value="marked">형태에 합배송 표시</option><option value="multiple">서로 다른 납품처 2곳 이상</option><option value="either">두 기준 중 하나라도 해당</option></select></label>
+    
    </div>
-   <div class="toolbar"><label class="cb" style="flex:none"><input id="stats-exclude-combined" data-stats-filter type="checkbox">합배송 제외</label><button id="stats-reset" class="btn btn-ghost">통계 조건 초기화</button></div>
+   <div class="toolbar"><label class="cb" style="flex:none"><input id="stats-exclude-combined" data-stats-filter type="checkbox">합배송 제외 (코스명 기준)</label><button id="stats-reset" class="btn btn-ghost">통계 조건 초기화</button></div>
    <p id="stats-period" class="text-sm muted"></p>
    <p id="stats-error" class="text-sm text-red-300" role="alert"></p>
    <p class="text-xs muted">불러온 데이터 안에서 통계 조건을 적용합니다. 운행 목록의 검색·삭제 필터와 별도로 적용됩니다.</p>

@@ -41,14 +41,11 @@ export function charterStatistics(trips,{from='',to=''}={}){
  return {tripCount,missingVehicle,missingCustomer,period:{from:start,to:end,days:periodDays},customers:customers(all,periodDays),drivers:[...vehicles.values()].map(v=>({key:v.key,name:v.name,names:rankedNames(v.names),tripCount:v.tripCount,dayCount:v.days.size,lastDate:v.lastDate,destinations:customers(v.destinations,periodDays)})).sort(compare)};
 }
 
-export function isCombinedCharterTrip(trip,mode='marked'){
- const marked=/합[\s·-]*배송/.test(text(trip.type));
- const destinations=new Set((trip.deliveries||[]).map(d=>text(d.code)?'code:'+text(d.code):text(d.name)?'name:'+JSON.stringify([text(d.name),text(d.customer)]):'stop:'+text(d.stopId||d.address||d.id)));
- const multiple=destinations.size>1;
- return mode==='multiple'?multiple:mode==='either'?marked||multiple:marked;
+export function isCombinedCharterTrip(trip){
+ return text(trip.course).includes('합배송');
 }
 export function filterCharterStatisticsTrips(trips,options={}){
- const {from='',to='',vehicle='',customer='',client='',tons='',weekday='',excludeCombined=false,combinedMode='marked'}=options;
+ const {from='',to='',vehicle='',customer='',client='',tons='',weekday='',excludeCombined=false}=options;
  if(validDate(from)&&validDate(to)&&from>to)return [];
  const query=text(customer).toLowerCase(),vehicleQuery=text(vehicle).replace(/\s/g,'').toLowerCase();
  return trips.flatMap(trip=>{
@@ -56,7 +53,7 @@ export function filterCharterStatisticsTrips(trips,options={}){
   if(weekday!==''&&(!validDate(trip.date)||new Date(trip.date+'T00:00:00Z').getUTCDay()!==Number(weekday)))return [];
   if(tons!==''&&String(trip.tons??'')!==tons)return [];
   if(vehicleQuery&&![trip.vehicleNumber,trip.driver].some(v=>text(v).replace(/[\s-]/g,'').toLowerCase().includes(vehicleQuery.replace(/-/g,''))))return [];
-  if(excludeCombined&&isCombinedCharterTrip(trip,combinedMode))return [];
+  if(excludeCombined&&isCombinedCharterTrip(trip))return [];
   if(!query&&!client)return [trip];
   const deliveries=(trip.deliveries||[]).filter(d=>(!client||text(d.customer)===client)&&(!query||[d.code,d.name].some(v=>text(v).toLowerCase().includes(query))));
   return deliveries.length?[{...trip,deliveries}]:[];
