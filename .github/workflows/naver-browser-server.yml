@@ -57,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
   worker:
     needs: [verify, replace]
-    if: always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') && (needs.replace.result == 'success' || needs.replace.result == 'skipped')
+    if: always() && !cancelled() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') && (needs.replace.result == 'success' || needs.replace.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:

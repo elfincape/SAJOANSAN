@@ -9,7 +9,7 @@ try{
   return {ok:true,status:204};
  };
  const run=async file=>import('data:text/javascript,'+encodeURIComponent(await readFile(new URL('../scripts/'+file,import.meta.url),'utf8')));
- await run('naver-browser-replace.mjs');assert.equal(calls.length,2);assert(calls[1].url.endsWith('/actions/runs/8/cancel'));assert.equal(calls[1].options.method,'POST');
+ await run('naver-browser-replace.mjs');assert.equal(calls.length,2);assert(calls[1].url.endsWith('/actions/runs/8/force-cancel'));assert.equal(calls[1].options.method,'POST');
  calls.length=0;await run('naver-browser-handoff.mjs');assert.equal(calls.length,1);assert(calls[0].url.endsWith('/actions/workflows/naver-browser-server.yml/dispatches'));assert.deepEqual(JSON.parse(calls[0].options.body),{ref:'main'});
 }finally{globalThis.fetch=originalFetch;for(const name of names)if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name];}
 console.log('Worker replacement excludes current/completed/other-branch runs; continuation only dispatches the same main workflow');

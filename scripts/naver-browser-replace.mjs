@@ -6,7 +6,7 @@ if(!response.ok)throw Error('Server replacement check failed: HTTP '+response.st
 const data=await response.json();
 for(const run of data.workflow_runs){
  if(String(run.id)===current||run.head_branch!=='main'||run.status==='completed')continue;
- const result=await fetch('https://api.github.com/repos/'+repository+'/actions/runs/'+run.id+'/cancel',{method:'POST',headers,signal:AbortSignal.timeout(30000)});
+ const result=await fetch('https://api.github.com/repos/'+repository+'/actions/runs/'+run.id+'/force-cancel',{method:'POST',headers,signal:AbortSignal.timeout(30000)});
  if(!result.ok&&result.status!==409)throw Error('Older server cancellation failed: HTTP '+result.status);
 }
 console.log('Older server replacements requested');
