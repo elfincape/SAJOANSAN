@@ -1,3 +1,4 @@
+import { reviewDeletionPlan } from './pyeongtaek-charter-review.js';
 import { parseCharterSources } from './pyeongtaek-charter-import.js';
 import { requireRole } from './auth.js';
 import { decorateCenterLinks,forceCenterSelectionFromUrl,mountHeaderCenterSwitcher,requireSelectedCenter,withCenterParam } from './center.js';
@@ -21,6 +22,7 @@ function enable(){
  for(const id of ['db-save','download-btn','json-export','preview-toggle'])$(id).disabled=!visible().length;
  for(const id of ['db-load','archive-refresh','onedrive-open','filter-reset'])$(id).disabled=false;
  for(const id of ['onedrive-config','archive-save'])$(id).disabled=profile?.role!=='admin';
+ $('delete-issues').disabled=!visible().some(t=>activeIssues(t).length);
  $('archive-read').disabled=!$('archive-list').value;$('archive-purge').disabled=profile?.role!=='admin'||!selectedArchive()||!!selectedArchive()?.purged_at;
  $('prev-page').disabled=page===0;$('next-page').disabled=(page+1)*PAGE>=visible().length;
  $('edit-cancel').disabled=false;$('edit-form').querySelector('button[type=submit]').disabled=false;
@@ -100,6 +102,26 @@ async function removeEntry(id,deliveryId=null){
   trips=trips.map(t=>t.id===id?next:t);
  }
  dirty=dirtyIds.size>0;render();message((whole?'운행':'납품처')+'을 삭제했습니다.'+(saved?' DB에도 반영했습니다.':' 파싱을 다시 실행하거나 원본 보관본을 불러오면 다시 표시됩니다.'));
+}
+
+async function removeAllIssues(){
+ const plan=reviewDeletionPlan(visible());if(!plan.length)return;
+ const whole=plan.filter(p=>!p.next).length,deliveries=plan.filter(p=>p.next).reduce((n,p)=>n+p.removedDeliveries,0),saved=plan.filter(p=>versions.has(p.trip.id)).length;
+ if(!await confirmDialog('현재 조회·필터 결과의 확인 필요 항목을 삭제합니다. 운행 전체 '+whole+'건 / 납품처 '+deliveries+'건.'+(saved?' DB에 저장된 '+saved+'운행에도 즉시 반영됩니다.':' 업로드·보관본 목록에서 제외됩니다.'),{danger:true,okText:'전체 삭제'}))return;
+ let completed=0;
+ try{
+  for(const {trip,next} of plan){
+   const persisted=versions.has(trip.id);
+   if(persisted){
+    if(next){const result=await saveCharterTrips(center.code,[next],versions);for(const row of result)versions.set(row.id,row.version);}
+    else{await deleteCharterTrip(center.code,trip.id,versions.get(trip.id));versions.delete(trip.id);}
+   }
+   if(next)trips=trips.map(t=>t.id===trip.id?next:t);else trips=trips.filter(t=>t.id!==trip.id);
+   if(persisted||!next)dirtyIds.delete(trip.id);completed++;message('확인 필요 삭제 중… '+completed+' / '+plan.length+'운행');
+  }
+  message('확인 필요 항목을 삭제했습니다. 운행 전체 '+whole+'건 / 납품처 '+deliveries+'건.');
+ }catch(error){throw new Error('확인 필요 삭제 '+completed+' / '+plan.length+'운행 반영 후 중단: '+(error.message||String(error)));}
+ finally{dirty=dirtyIds.size>0;render();}
 }
 
 async function replaceAllowed(){return !dirty||await confirmDialog('저장하지 않은 수정이 있습니다. 다른 데이터를 불러오시겠습니까?');}
@@ -212,7 +234,7 @@ async function initialize(){
  if(!globalThis.XLSX)throw new Error('엑셀 라이브러리를 불러오지 못했습니다. 새로고침해 주세요.');
  const now=new Date(),year=now.getFullYear();$('source-year').value=year;$('archive-month').value=year+'-'+String(now.getMonth()+1).padStart(2,'0');
  $('source-file').disabled=false;$('json-file').disabled=false;$('onedrive-url').value=localStorage.getItem('sajo.charter.folder.'+center.code)||'';
- const actions={'parse-btn':parseFile,'db-load':loadDB,'db-save':saveDB,'json-export':downloadJson,'archive-refresh':refreshArchives,'onedrive-config':configureDrive,'archive-save':archiveMonth,'archive-read':readDrive,'archive-purge':purgeMonth,'download-btn':()=>XLSX.writeFile(buildNormalizedWorkbook(visible(),XLSX),charterWorkbookFilename(visible()),{compression:true}),'preview-toggle':()=>{$('preview-wrap').hidden=!$('preview-wrap').hidden;if(!$('preview-wrap').hidden)renderPreview();}};
+ const actions={'delete-issues':removeAllIssues,'parse-btn':parseFile,'db-load':loadDB,'db-save':saveDB,'json-export':downloadJson,'archive-refresh':refreshArchives,'onedrive-config':configureDrive,'archive-save':archiveMonth,'archive-read':readDrive,'archive-purge':purgeMonth,'download-btn':()=>XLSX.writeFile(buildNormalizedWorkbook(visible(),XLSX),charterWorkbookFilename(visible()),{compression:true}),'preview-toggle':()=>{$('preview-wrap').hidden=!$('preview-wrap').hidden;if(!$('preview-wrap').hidden)renderPreview();}};
  for(const [id,action]of Object.entries(actions))$(id).onclick=()=>task(action);
  $('source-file').onchange=loadFile;$('json-file').onchange=()=>task(importJson);
  for(const id of ['from-date','to-date','customer-filter','course-filter','issues-only'])$(id).addEventListener('input',()=>{page=0;render();});

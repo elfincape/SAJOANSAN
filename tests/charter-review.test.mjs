@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {reviewDeletionPlan} from '../repo-root/js/pyeongtaek-charter-review.js';
+const make=(id,issues=[])=>({id,deliveries:[{id:'A',name:'정상'},{id:'B',name:'확인필요'}],issues});
+const normal=make('normal'),resolved=make('resolved',[{deliveryId:'B',resolved:true}]),delivery=make('delivery',[{deliveryId:'B',resolved:false},{deliveryId:'B',resolved:false}]),whole=make('whole',[{deliveryId:null,resolved:false}]);
+const original=JSON.stringify(delivery),plan=reviewDeletionPlan([normal,resolved,delivery,whole]);
+assert.equal(plan.length,2);assert.equal(plan[0].next.deliveries.length,1);assert.equal(plan[0].next.deliveries[0].id,'A');assert.equal(plan[0].removedDeliveries,1);assert.equal(plan[0].next.issues.length,0);assert.equal(plan[1].next,null);assert.equal(JSON.stringify(delivery),original);
+assert.equal(reviewDeletionPlan([make('all',[{deliveryId:'A'},{deliveryId:'B'}])])[0].next,null);
+assert.equal(reviewDeletionPlan([normal,resolved]).length,0);
+assert.equal(reviewDeletionPlan([make('orphan',[{deliveryId:'missing'}])]).length,0);
+console.log('PASS: remove only unresolved delivery issues, remove trip-level issues, deduplicate issue targets, retain normal/resolved data and leave originals unchanged');
