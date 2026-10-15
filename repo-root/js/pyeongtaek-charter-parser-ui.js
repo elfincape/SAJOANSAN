@@ -1,3 +1,4 @@
+import { charterStatistics } from './pyeongtaek-charter-stats.js';
 import { reviewDeletionPlan } from './pyeongtaek-charter-review.js';
 import { parseCharterSources } from './pyeongtaek-charter-import.js';
 import { requireRole } from './auth.js';
@@ -8,6 +9,7 @@ import { loadCharterTrips,existingVersions,saveCharterTrips,deleteCharterTrip,li
 import { charterOneDrive } from './pyeongtaek-charter-onedrive.js';
 const $=id=>document.getElementById(id),PAGE=50;
 let center,profile,source,trips=[],versions=new Map(),origin='upload',page=0,fileRevision=0,editing=null,archives=[],busy=false,dirty=false,dirtyIds=new Set();
+let statsVehicle='';
 const number=value=>value==null?'빈칸':Number(value).toLocaleString('ko-KR');
 function message(text,error=false){$('status').textContent=text;$('status').className=error?'text-sm text-red-300':'text-sm text-zinc-300';}
 async function task(action){
@@ -17,7 +19,7 @@ async function task(action){
 }
 function enable(){
  if(busy){document.querySelectorAll('button').forEach(b=>b.disabled=true);return;}
- document.querySelectorAll('#trip-table button,#warning-list button').forEach(b=>b.disabled=false);
+ document.querySelectorAll('#trip-table button,#warning-list button,#stats-drivers button').forEach(b=>b.disabled=false);
  for(const id of ['parse-btn'])$(id).disabled=!source;
  for(const id of ['db-save','download-btn','json-export','preview-toggle'])$(id).disabled=!visible().length;
  for(const id of ['db-load','archive-refresh','onedrive-open','filter-reset'])$(id).disabled=false;
@@ -41,12 +43,29 @@ function render(){
  const shown=visible();page=Math.min(page,Math.max(0,Math.ceil(shown.length/PAGE)-1));const query=$('customer-filter').value,s=routingSummary(shown,query);
  $('summary').replaceChildren();for(const text of ['운행 '+shown.length+'건','냉동 '+number(s.frozen),'냉장 '+number(s.chilled),'총 수량 '+number(s.quantity),'납품일 평균 '+number(s.average)]){const box=document.createElement('span');box.className='metric';box.textContent=text;$('summary').append(box);}
  $('analysis').textContent='요일별 운행: '+['일','월','화','수','목','금','토'].map((day,i)=>day+' '+s.weekdays[i]).join(' · ')+(query?' | 함께 간 거래처: '+(s.companions.slice(0,10).map(([name,count])=>name+' '+count+'회').join(', ')||'없음'):'');
+ renderStatistics(shown);
  const issues=shown.flatMap(t=>activeIssues(t).map(i=>({trip:t,...i})));$('warnings').hidden=!issues.length;$('warning-count').textContent='확인 필요 '+issues.length+'건';$('warning-list').replaceChildren();
  for(const issue of issues){const li=document.createElement('li');li.textContent=(issue.trip.date||'일자 미정')+' / '+(issue.trip.course||'코스 미정')+' / '+issue.cell+' '+issue.message;const button=document.createElement('button');button.className='btn btn-ghost text-xs ml-2';button.textContent='수정';button.onclick=()=>editTrip(issue.trip.id);const remove=document.createElement('button');remove.className='btn btn-danger text-xs ml-2';remove.textContent=issue.deliveryId?'납품처 삭제':'운행 삭제';remove.onclick=()=>task(()=>removeEntry(issue.trip.id,issue.deliveryId));li.append(button,remove);$('warning-list').append(li);}
  const body=$('trip-table').querySelector('tbody');body.replaceChildren();
  for(const t of shown.slice(page*PAGE,(page+1)*PAGE)){const button=document.createElement('button');button.textContent='수정';button.className='btn btn-ghost';button.onclick=()=>editTrip(t.id);const actions=document.createElement('div');actions.className='flex gap-2';const remove=document.createElement('button');remove.textContent='운행 삭제';remove.className='btn btn-danger';remove.onclick=()=>task(()=>removeEntry(t.id));actions.append(button,remove);cellRow(body,[t.date||'',(t.course||'')+' / '+(t.vehicleSequence||''),(t.vehicleNumber||'')+' / '+(t.tons??''),t.driver,t.deliveries.map(d=>d.name||'(빈칸)').join(', '),calculatedStops(t),activeIssues(t).length,actions]);}
  $('page-info').textContent=shown.length?(page+1)+' / '+Math.ceil(shown.length/PAGE)+' 페이지 · '+(origin==='db'?'DB':origin==='archive'?'보관본':'업로드')+(dirty?' · 미저장 수정 있음':''):'데이터가 없습니다.';
  if(!$('preview-wrap').hidden)renderPreview();enable();
+}
+const statsNumber=value=>value==null?'—':Number(value).toLocaleString('ko-KR',{maximumFractionDigits:2});
+function renderStatistics(shown){
+ const stats=charterStatistics(shown,{from:$('from-date').value,to:$('to-date').value});
+ $('stats-period').textContent=(stats.period.days?stats.period.from+' ~ '+stats.period.to+' · '+stats.period.days+'일':'조회 기간 없음')+' · '+stats.tripCount+'운행'+(stats.missingVehicle?' · 차량번호 미등록 '+stats.missingVehicle+'운행':'')+(stats.missingCustomer?' · 거래처 미등록 '+stats.missingCustomer+'행':'');
+ if(!stats.drivers.some(v=>v.key===statsVehicle))statsVehicle=stats.drivers[0]?.key||'';
+ const drivers=$('stats-drivers').querySelector('tbody');drivers.replaceChildren();
+ for(const [index,v] of stats.drivers.entries()){
+  const button=document.createElement('button');button.className='btn btn-ghost';button.textContent=v.name;button.setAttribute('aria-pressed',String(v.key===statsVehicle));if(v.key===statsVehicle)button.classList.add('ring-1','ring-emerald-400');button.disabled=busy;button.onclick=()=>{statsVehicle=v.key;renderStatistics(visible());};
+  cellRow(drivers,[index+1,button,v.names.join(' / '),v.tripCount,v.dayCount,v.lastDate]);
+ }
+ const selected=stats.drivers.find(v=>v.key===statsVehicle);$('stats-driver-title').textContent=selected?selected.name+' · 자주 간 거래처':'차량별 자주 간 거래처';
+ const destinations=$('stats-driver-stops').querySelector('tbody');destinations.replaceChildren();
+ for(const [index,d] of (selected?.destinations||[]).entries())cellRow(destinations,[index+1,d.code,d.name,d.tripCount,d.dayCount,statsNumber(d.totalQuantity)+(d.missingQuantity?' (일부 누락)':'')]);
+ const customers=$('stats-customers').querySelector('tbody');customers.replaceChildren();
+ for(const [index,c] of stats.customers.entries())cellRow(customers,[index+1,c.code,c.name,c.clients.join(' / '),c.tripCount,c.dayCount,statsNumber(c.totalQuantity)+(c.missingQuantity?' (일부 누락)':''),statsNumber(c.averageDeliveryDay),statsNumber(c.averagePeriodDay),[c.missingQuantity?'물량 '+c.missingQuantity+'행':'',c.missingDate?'일자 '+c.missingDate+'행':''].filter(Boolean).join(' / ')]);
 }
 function renderPreview(){
  const {headers,rows}=horizontalData(visible());const head=$('preview').querySelector('thead'),body=$('preview').querySelector('tbody');head.replaceChildren();body.replaceChildren();

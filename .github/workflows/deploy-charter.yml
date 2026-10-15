@@ -13,6 +13,7 @@ on:
       - 'tests/charter-storage.test.mjs'
       - 'tests/charter-db.test.mjs'
       - 'tests/charter-review.test.mjs'
+      - 'tests/charter-stats.test.mjs'
       - 'scripts/check-charter-save.mjs'
       - '.github/workflows/deploy-charter.yml'
   workflow_dispatch:
@@ -37,6 +38,7 @@ jobs:
       - run: node tests/charter-storage.test.mjs
       - run: node tests/charter-db.test.mjs
       - run: node tests/charter-review.test.mjs
+      - run: node tests/charter-stats.test.mjs
       - run: node tests/onedrive-server.test.mjs
       - name: Apply charter database schema
         run: node scripts/apply-charter-migration.mjs

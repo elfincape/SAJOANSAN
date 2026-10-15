@@ -49,6 +49,18 @@
    </div>
    <p id="db-save-status" role="status" aria-live="polite" class="text-sm text-zinc-300"></p>
   </section>
+  <section class="panel space-y-4">
+   <h2 class="font-semibold">운행 · 거래처 통계</h2>
+   <p id="stats-period" class="text-sm muted"></p>
+   <p class="text-xs muted">현재 조회·필터 기준입니다. 차량번호를 누르면 자주 간 거래처를 볼 수 있습니다. 같은 운행에 같은 거래처가 여러 번 있어도 운행 횟수는 1회로 집계합니다.</p>
+   <h3 class="font-semibold">자주 운행한 차량</h3>
+   <div class="scroll"><table id="stats-drivers" class="app-table"><thead><tr><th>순위</th><th>차량번호</th><th>기사명</th><th>운행 횟수</th><th>운행 일수</th><th>최근 운행일</th></tr></thead><tbody></tbody></table></div>
+   <h3 id="stats-driver-title" class="font-semibold">차량별 자주 간 거래처</h3>
+   <div class="scroll"><table id="stats-driver-stops" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th></tr></thead><tbody></tbody></table></div>
+   <h3 class="font-semibold">자주 나온 거래처 · 일평균 물량</h3>
+   <p class="text-xs muted">납품일 평균은 납품한 날짜 수, 기간 평균은 위 기간의 전체 날짜 수로 나눕니다. 물량·일자가 누락된 거래처는 평균을 표시하지 않습니다. 총수량이 비어 있으면 냉동·냉장이 모두 있는 경우 합계를 사용합니다.</p>
+   <div class="scroll"><table id="stats-customers" class="app-table"><thead><tr><th>순위</th><th>거래처 코드</th><th>거래처</th><th>고객사</th><th>운행 횟수</th><th>납품 일수</th><th>총물량</th><th>일평균 물량<br>(납품일)</th><th>일평균 물량<br>(전체 기간)</th><th>미집계 확인</th></tr></thead><tbody></tbody></table></div>
+  </section>
   <section class="panel space-y-3">
    <h2 class="font-semibold">가로형 정산 파일</h2>
    <p class="text-xs muted">운행ID마다 한 행으로 출력합니다. 차량번호·기사명·연락처는 E~G, 납품처는 I~T, 지역은 U~AF, 총착지·지역이동은 AG·AH에 출력합니다. 오른쪽 상세에는 납품처명·고객사·냉동·냉장·총수량을 포함하며 물량의 소수점 아래는 버립니다. 납품처·지역 6~12열은 엑셀에서 숨깁니다. 검색에 해당하는 운행의 동승 납품처도 함께 내려받습니다.</p>
