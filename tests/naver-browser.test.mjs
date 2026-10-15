@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {distanceFromCard,regionFromAddress} from '../scripts/lib/naver-map-browser.mjs';
+import {browserJobRows,watchBrowserJob,enqueueBrowserJob} from '../repo-root/js/naver-browser-model.js';
+assert.equal(distanceFromCard('5 거리우선 30 분 15km 택시비 18000원').distanceKm,15);
+assert.equal(distanceFromCard('거리 우선 2분 850m').distanceKm,.85);
+assert.throws(()=>distanceFromCard('추천 15km'));
+assert.throws(()=>distanceFromCard('거리우선 결과없음'));
+assert.equal(regionFromAddress('서울특별시 강남구 도산대로 1').region,'서울 강남구');assert.equal(regionFromAddress('경기도 수원시 영통구 주소').region,'수원시');
+const rows=[{address:'A'},{address:'B'}];
+assert.equal(browserJobRows(rows,{status:'completed',results:{A:{method:'api',routeLabel:'추천',distanceKm:10}}})[0].distanceKm,undefined);
+assert.equal(browserJobRows(rows,{status:'completed',results:{A:{method:'naver-map-display',routeLabel:'거리우선',distanceKm:15,regionKey:'x'}}})[0].distanceKm,15);
+assert.equal(browserJobRows(rows,{status:'attention',results:{}})[1].issue,'미계산');
+let polls=0,updates=0;const client={from:table=>{assert.equal(table,'naver_browser_jobs');const q={select:()=>q,eq:()=>q,single:async()=>({data:{status:++polls===1?'running':'completed',results:{}}})};return q;},rpc:async(name,body)=>{assert.equal(name,'naver_browser_enqueue');assert.equal(body.p_center,'001');return {data:'job'};}};
+await watchBrowserJob(client,'job',()=>updates++,async()=>{});assert.equal(updates,2);assert.equal(await enqueueBrowserJob(client,'001','출발',['주소']),'job');
+console.log('Genuine distance-priority-only parsing, display units, region grouping, candidate rejection and queued/terminal job handling passed');

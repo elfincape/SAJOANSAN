@@ -6,16 +6,57 @@ on:
       - 'scripts/lib/naver-map-browser.mjs'
       - 'scripts/check-naver-map-browser.mjs'
       - '.github/workflows/naver-browser-server.yml'
+      - 'scripts/naver-browser-*.mjs'
+      - 'scripts/apply-naver-browser-migration.mjs'
+      - 'scripts/check-naver-browser-queue.mjs'
+      - 'repo-root/sql/naver-browser-jobs.sql'
+      - 'repo-root/js/naver-browser-*.js'
+      - 'repo-root/admin/naver-shortest-distance.html'
+      - 'tests/naver-browser*.mjs'
   workflow_dispatch:
+  schedule:
+    - cron: '3-59/5 * * * *'
 jobs:
   verify:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-save --package-lock=false playwright@1.56.1
+      - run: npm install --no-save --package-lock=false playwright@1.56.1 jsdom@26 exceljs@4.4.0 xlsx@0.18.5
       - run: npx playwright install --with-deps chromium
+      - run: node tests/naver-browser.test.mjs
+      - run: node tests/naver-browser-ui.test.mjs
+      - run: node scripts/apply-naver-browser-migration.mjs
+      - run: node scripts/check-naver-browser-queue.mjs --live
       - run: node scripts/check-naver-map-browser.mjs
+  worker:
+    needs: [verify]
+    if: always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: naver-browser-queue-worker
+      cancel-in-progress: false
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - id: queue
+        run: node scripts/naver-browser-worker.mjs --has-work
+      - if: steps.queue.outputs.pending == 'true'
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - if: steps.queue.outputs.pending == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.queue.outputs.pending == 'true'
+        run: node scripts/naver-browser-worker.mjs
