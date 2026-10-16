@@ -5,14 +5,17 @@ import { validateAssignments } from './pdf-image-assignment.js';
 import { oneDriveDocuments, companyDocuments } from './onedrive-api.js';
 import { supabase } from './supabase.js';
 import { fetchAllRows } from './unassigned-delivery-points.js';
+import * as pdfjs from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { initializePdfTools } from './pdf-tools.js';
 
-const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
-const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const $ = id => document.getElementById(id);
 const state = { pdf: null, cards: [], drivers: [], companies: [], generation: 0, saving: false, loading: false };
 let zoomRequest = 0;
+let pdfTools;
 
 function option(value, label) {
   const node = document.createElement('option'); node.value = value; node.textContent = label; return node;
@@ -54,11 +57,12 @@ function getDriverInfo() {
     companyId: $('default-company').value, expiry: $('default-expiry').value };
 }
 
-async function renderPage(pdf, pageNumber, maxWidth) {
+async function renderPage(pdf, pageNumber, maxWidth, applyEdits = true) {
   const page = await pdf.getPage(pageNumber);
-  const base = page.getViewport({ scale: 1 });
+  const rotation = page.rotate + (applyEdits ? state.cards.find(card => card.pageNumber === pageNumber)?.rotation || 0 : 0);
+  const base = page.getViewport({ scale: 1, rotation });
   const scale = Math.min(maxWidth / base.width, 2400 / base.height);
-  const viewport = page.getViewport({ scale });
+  const viewport = page.getViewport({ scale, rotation });
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(viewport.width)); canvas.height = Math.max(1, Math.round(viewport.height));
   const context = canvas.getContext('2d', { alpha: false });
@@ -73,7 +77,7 @@ function jpegBlob(canvas, quality) {
 async function imageForPage(pdf, pageNumber) {
   let width = 1800;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const canvas = await renderPage(pdf, pageNumber, width);
+    const canvas = await renderPage(pdf, pageNumber, width, false);
     const blob = await jpegBlob(canvas, attempt ? 0.78 : 0.86);
     canvas.width = canvas.height = 0;
     if (blob.size <= MAX_IMAGE_BYTES) return new File([blob], `pdf-page-${pageNumber}.jpg`, { type: 'image/jpeg' });
@@ -127,10 +131,10 @@ function createCard(pageNumber) {
   kindSelect.append(option('', '서류 종류 선택'), ...DOCUMENT_TYPES.map(([kind, label]) => option(kind, label)), option('skip', '등록 제외'));
   kindLabel.append(kindText, kindSelect);
   const download = document.createElement('button'); download.type = 'button'; download.className = 'btn btn-ghost text-xs';
-  download.textContent = 'JPG 다운로드';
+  download.textContent = '원본 JPG 다운로드';
   const note = document.createElement('p'); note.className = 'text-xs text-zinc-400'; note.setAttribute('role', 'status');
   download.addEventListener('click', async () => {
-    if (state.saving || !state.pdf) return;
+    if (state.saving || state.loading || state.toolBusy || !state.pdf) return;
     download.disabled = true; note.textContent = 'JPG 변환 중…';
     try {
       const file = await imageForPage(state.pdf, pageNumber);
@@ -148,7 +152,7 @@ function createCard(pageNumber) {
 
 async function loadPdf(file) {
   if (!file) return;
-  if (state.saving || state.loading) { $('load-status').textContent = '현재 작업이 끝난 뒤 PDF를 바꿔 주세요.'; return; }
+  if (state.saving || state.loading || state.toolBusy) { $('load-status').textContent = '현재 작업이 끝난 뒤 PDF를 바꿔 주세요.'; return; }
   if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { $('load-status').textContent = 'PDF 파일을 선택해 주세요.'; return; }
   if (!file.size || file.size > MAX_PDF_BYTES) { $('load-status').textContent = 'PDF는 50MB 이하만 선택할 수 있습니다.'; return; }
   state.loading = true;
@@ -157,12 +161,14 @@ async function loadPdf(file) {
   hideZoom();
   $('pages').replaceChildren(); $('assignment').hidden = true; $('save-bar').hidden = true;
   state.cards = [];
+  pdfTools?.refresh();
   $('load-status').textContent = 'PDF를 읽는 중…';
   try {
+    await pdfTools?.beforeLoad();
     if (state.pdf) { await state.pdf.destroy(); state.pdf = null; }
-    const pdfjs = await import(PDFJS_URL);
-    pdfjs.GlobalWorkerOptions.workerSrc = WORKER_URL;
-    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    state.sourceBytes = new Uint8Array(await file.arrayBuffer());
+    state.filename = file.name.replace(/\.pdf$/i, '');
+    const pdf = await pdfjs.getDocument({ data: state.sourceBytes.slice() }).promise;
     if (generation !== state.generation) { await pdf.destroy(); return; }
     state.pdf = pdf; $('assignment').hidden = false; $('save-bar').hidden = false;
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
@@ -175,11 +181,11 @@ async function loadPdf(file) {
       $('load-status').textContent = `${pageNumber}/${pdf.numPages}페이지 미리보기 생성됨`;
     }
   } catch (error) { $('load-status').textContent = 'PDF를 읽지 못했습니다: ' + error.message; }
-  finally { state.loading = false; $('pdf-file').disabled = false; }
+  finally { state.loading = false; $('pdf-file').disabled = false; pdfTools?.refresh(); }
 }
 
 async function saveSelected() {
-  if (state.saving || !state.pdf) return;
+  if (state.saving || state.loading || state.toolBusy || !state.pdf || !state.assignmentsReady) return;
   let selected;
   const skipped = state.cards.filter(card => card.checkbox.checked && (!card.kindSelect.value || card.kindSelect.value === 'skip')).length;
   try {
@@ -203,7 +209,7 @@ async function saveSelected() {
       return;
     }
     for (const item of selected) {
-      const card = state.cards[item.pageNumber - 1];
+      const card = state.cards.find(card => card.pageNumber === item.pageNumber);
       card.note.textContent = '이미지 변환 중…';
       try {
         const file = await imageForPage(state.pdf, item.pageNumber);
@@ -223,13 +229,8 @@ async function main() {
   const profile = await requireRole('editor'); if (!profile) return;
   $('user-badge').textContent = `${profile.display_name || profile.email || ''} (${profile.role})`;
   await requireSelectedCenter(); decorateCenterLinks(document);
-  try {
-    [state.drivers, state.companies] = await Promise.all([
-      fetchAllRows(() => supabase.from('drivers').select('id,name,center_code,company_id,health_certificate_expires_on').order('name')),
-      fetchAllRows(() => supabase.from('companies').select('id,name,center_code').order('name'))
-    ]);
-  } catch (error) { $('load-status').textContent = '기사/운수사 목록을 불러오지 못했습니다: ' + error.message; return; }
-  initializeDriverFields();
+  $('save-selected').disabled = true;
+  pdfTools = initializePdfTools({ state, renderPage, hideZoom });
   $('pdf-file').addEventListener('change', event => {
     const file = event.target.files?.[0]; event.target.value = '';
     loadPdf(file);
@@ -262,6 +263,18 @@ async function main() {
   window.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
   window.addEventListener('drop', event => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
   $('save-selected').addEventListener('click', saveSelected);
+  try {
+    [state.drivers, state.companies] = await Promise.all([
+      fetchAllRows(() => supabase.from('drivers').select('id,name,center_code,company_id,health_certificate_expires_on').order('name')),
+      fetchAllRows(() => supabase.from('companies').select('id,name,center_code').order('name'))
+    ]);
+    initializeDriverFields();
+    state.assignmentsReady = true;
+    $('save-selected').disabled = false;
+  } catch (error) {
+    $('connection-status').textContent = '기사/운수사 목록을 불러오지 못해 서류 등록을 사용할 수 없습니다: ' + error.message;
+    return;
+  }
   try { const connection = await oneDriveDocuments.status(); $('connection-status').textContent = connection.connected ? 'OneDrive 연결됨' : 'OneDrive 연결이 필요합니다.'; }
   catch (error) { $('connection-status').textContent = error.message; }
 }

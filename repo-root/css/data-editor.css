@@ -13,6 +13,15 @@
 .editor-main .panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
 .import-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .import-panel label { display: block; margin-bottom: 8px; }
+.import-panel h2 { margin: 0 0 8px; font-size: 17px; }
+.import-panel select { max-width: 100%; margin-bottom: 10px; }
+.import-panel [hidden] { display: none; }
+#worksheet-controls { margin-top: 14px; }
+#file-dashboard { min-width: 0; }
+.file-statuses { padding-left: 20px; overflow-wrap: anywhere; }
+.file-statuses li { margin-bottom: 6px; }
+.file-statuses progress { display: block; width: 100%; margin-top: 4px; }
+.file-statuses .error { color: #fca5a5; }
 .import-panel textarea { display: block; width: 100%; resize: vertical; margin-bottom: 8px; }
 .header-choice { margin-top: 16px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

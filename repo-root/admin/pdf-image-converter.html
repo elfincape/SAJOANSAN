@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>PDF IMG 변환기 · 관리 허브</title>
+  <title>PDF 도구 · 관리 허브</title>
   <link rel="stylesheet" href="/css/common.css">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -12,7 +12,7 @@
   <header class="border-b border-zinc-800">
     <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
       <a href="/admin/" class="text-xs text-zinc-400 hover:text-white">← 관리 허브</a>
-      <h1 class="text-base font-semibold">PDF IMG 변환기</h1>
+      <h1 class="text-base font-semibold">PDF 도구 · 이미지 변환</h1>
       <div class="flex-1"></div>
       <span id="user-badge" class="text-xs text-zinc-400"></span>
     </div>
@@ -34,6 +34,36 @@
         <label class="text-xs">보건증 만료일<input id="default-expiry" type="date" class="app-input mt-1"></label>
       </div>
       <p id="connection-status" class="text-xs text-zinc-400" role="status"></p>
+    </section>
+    <section class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4 space-y-3">
+      <h2 class="font-semibold">PDF 병합 / 이미지 → PDF</h2>
+      <p class="text-xs text-zinc-400">파일은 이 브라우저에서 처리됩니다. 기사 서류 등록 버튼을 누를 때만 OneDrive로 전송됩니다. 파일당 최대 50MB, 합계 최대 100MB입니다.</p>
+      <label class="block text-sm">PDF 또는 JPG/PNG 추가<input id="pdf-tool-files" type="file" multiple accept="application/pdf,.pdf,image/jpeg,image/png,.jpg,.jpeg,.png" class="block mt-2 w-full"></label>
+      <ol id="pdf-tool-inputs" class="space-y-2"></ol>
+      <button id="pdf-tool-merge" type="button" class="btn btn-primary">목록 순서로 PDF 만들기 / 병합</button>
+      <p id="pdf-tool-status" class="text-sm" role="status" aria-live="polite"></p>
+    </section>
+    <section id="pdf-tool-editor" hidden class="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4 space-y-3">
+      <h2 class="font-semibold">페이지 보기 / 편집</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="pdf-tool-prev" type="button" class="btn btn-ghost">이전</button>
+        <label class="text-sm">현재 순서 <input id="pdf-tool-page" type="number" min="1" value="1" class="app-input w-20"></label>
+        <span id="pdf-tool-count" class="text-sm"></span>
+        <button id="pdf-tool-next" type="button" class="btn btn-ghost">다음</button>
+        <label class="text-sm">확대 <select id="pdf-tool-zoom" class="app-select w-28"><option value="0.5">50%</option><option value="1" selected>100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
+      </div>
+      <div id="pdf-tool-viewer" class="overflow-auto max-h-[70vh] bg-zinc-950 rounded p-2" aria-label="현재 PDF 페이지"></div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="text-sm">이미지 형식 <select id="pdf-tool-format" class="app-select w-24"><option value="png">PNG</option><option value="jpg">JPG</option></select></label>
+        <button id="pdf-tool-current-image" type="button" class="btn btn-ghost">현재 페이지 이미지</button>
+        <button id="pdf-tool-selected-images" type="button" class="btn btn-ghost">체크한 페이지 이미지</button>
+        <button id="pdf-tool-save" type="button" class="btn btn-primary">편집 PDF 다운로드</button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="text-sm">추출할 현재 순서 <input id="pdf-tool-range" type="text" placeholder="예: 1-3, 5" class="app-input w-44"></label>
+        <button id="pdf-tool-extract" type="button" class="btn btn-ghost">범위 추출 PDF</button>
+      </div>
+      <p class="text-xs text-zinc-400">아래 카드에서 다운로드할 PDF의 순서, 회전, 삭제를 편집합니다. 범위는 편집 중인 카드 순서 기준입니다. 편집에서 삭제한 페이지도 기사 서류로 등록할 수 있으며, 서류 등록과 카드의 원본 JPG 다운로드는 원본 방향을 사용합니다. 다시 불러오면 편집을 초기화합니다. 여러 이미지 다운로드는 브라우저의 다운로드 허용이 필요할 수 있습니다.</p>
     </section>
     <section id="pages" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></section>
     <section id="save-bar" hidden class="sticky bottom-0 rounded-lg border border-zinc-600 bg-zinc-900/95 p-3 flex items-center gap-3 shadow-lg">

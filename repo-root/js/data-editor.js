@@ -1,5 +1,13 @@
 import { requireRole } from './auth.js';
 import { withCenterParam } from './center.js';
+import { AllCommunityModule, ModuleRegistry, createGrid, themeQuartz } from 'ag-grid-community';
+import ExcelJS from 'exceljs';
+import Uppy from '@uppy/core';
+import Dashboard from '@uppy/dashboard';
+import '@uppy/core/css/style.css';
+import '@uppy/dashboard/css/style.css';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 const element = (id) => document.getElementById(id);
 let api;
@@ -8,6 +16,116 @@ let rows = [];
 let columnSequence = 0;
 let rowSequence = 0;
 let busy = false;
+let uppy;
+let importedWorkbook = null;
+let workbookFileId = null;
+const fileStates = new Map();
+
+function setBusy(value) {
+  busy = value;
+  element('workspace').disabled = value;
+  uppy?.getPlugin('Dashboard').setOptions({ disabled: value });
+  updateCounts();
+  updateFileQueue();
+}
+
+function updateFileQueue() {
+  if (!uppy) return;
+  const files = uppy.getFiles();
+  const selected = element('import-file').value;
+  element('import-file').replaceChildren(...files.map((file) => new Option(file.name, file.id)));
+  if (files.some((file) => file.id === selected)) element('import-file').value = selected;
+  element('import-file').disabled = busy || !files.length;
+  element('read-file').disabled = busy || !files.length;
+  element('file-statuses').replaceChildren(...files.map((file) => {
+    const item = document.createElement('li');
+    const state = fileStates.get(file.id) || { text: '대기 중', stage: 'waiting' };
+    const label = document.createElement('span');
+    label.textContent = `${file.name}: ${state.text}`;
+    item.append(label);
+    if (state.stage === 'reading') {
+      const progress = document.createElement('progress');
+      progress.setAttribute('aria-label', `${file.name} 로컬 읽기 진행 중`);
+      item.append(progress);
+    }
+    item.classList.toggle('error', state.stage === 'error');
+    return item;
+  }));
+}
+
+function cellText(value) {
+  if (value == null) return '';
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  if (typeof value !== 'object') return String(value);
+  if ('formula' in value || 'sharedFormula' in value) return cellText(value.result);
+  if (Array.isArray(value.richText)) return value.richText.map((part) => part.text || '').join('');
+  if ('error' in value) return String(value.error);
+  if ('text' in value) return cellText(value.text);
+  return '';
+}
+
+function validateSize(height, width) {
+  if (height > 100000 || width > 500 || height * width > 2000000) {
+    throw new Error('최대 100,000행 · 500열 · 2,000,000셀까지 불러올 수 있습니다. 원본 파일을 나눠 주세요.');
+  }
+}
+
+function worksheetMatrix(sheet) {
+  validateSize(sheet.rowCount, sheet.columnCount);
+  const matrix = [];
+  sheet.eachRow({ includeEmpty: true }, (row) => {
+    const values = [];
+    row.eachCell({ includeEmpty: true }, (cell, columnNumber) => { values[columnNumber - 1] = cellText(cell.value); });
+    matrix.push(values);
+  });
+  return matrix;
+}
+
+async function readSelectedFile() {
+  const file = uppy.getFile(element('import-file').value);
+  if (!file || busy) return;
+  setBusy(true);
+  importedWorkbook = null;
+  workbookFileId = null;
+  element('worksheet-controls').hidden = true;
+  fileStates.set(file.id, { text: '브라우저에서 읽고 분석하는 중…', stage: 'reading' });
+  updateFileQueue();
+  try {
+    const buffer = await file.data.arrayBuffer();
+    if (file.name.toLowerCase().endsWith('.xlsx')) {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      if (!workbook.worksheets.length) throw new Error('워크시트가 없는 파일입니다.');
+      importedWorkbook = workbook;
+      workbookFileId = file.id;
+      element('worksheet').replaceChildren(...workbook.worksheets.map((sheet) => new Option(sheet.name, String(sheet.id))));
+      element('worksheet-controls').hidden = false;
+      fileStates.set(file.id, { text: `${workbook.worksheets.length}개 시트 읽기 완료 · 불러올 시트를 선택하세요.`, stage: 'ready' });
+      message('워크시트를 선택하고 ‘선택 시트 불러오기’를 누르세요.');
+    } else {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+      const imported = replaceTable(parseTable(text, ','));
+      fileStates.set(file.id, { text: imported ? '로컬 불러오기 완료' : '표 교체 취소 · 다시 읽기 가능', stage: 'ready' });
+    }
+  } catch (error) {
+    fileStates.set(file.id, { text: error.message, stage: 'error' });
+    message('파일 읽기 실패 (CSV는 UTF-8 필요): ' + error.message, true);
+  } finally { setBusy(false); }
+}
+
+function importWorksheet() {
+  if (!importedWorkbook || busy) return;
+  setBusy(true);
+  try {
+    const sheet = importedWorkbook.getWorksheet(Number(element('worksheet').value));
+    if (!sheet) throw new Error('워크시트를 선택하세요.');
+    const imported = replaceTable(worksheetMatrix(sheet));
+    fileStates.set(workbookFileId, { text: imported ? `‘${sheet.name}’ 로컬 불러오기 완료` : '시트 교체 취소', stage: 'ready' });
+  } catch (error) {
+    fileStates.set(workbookFileId, { text: error.message, stage: 'error' });
+    message('시트 불러오기 실패: ' + error.message, true);
+  } finally { setBusy(false); }
+}
 
 function message(text, error = false) {
   element('status').textContent = text;
@@ -70,7 +188,7 @@ function updateCounts() {
   element('delete-rows').disabled = busy || !api.getSelectedRows().length;
   element('delete-column-button').disabled = busy || !columns.length;
   element('download-csv').disabled = busy || !columns.length;
-  element('download-xlsx').disabled = busy || !columns.length || !window.ExcelJS;
+  element('download-xlsx').disabled = busy || !columns.length;
 }
 
 function renderColumns() {
@@ -82,15 +200,17 @@ function renderColumns() {
 function replaceTable(matrix) {
   if (!matrix.length) throw new Error('불러올 데이터가 없습니다.');
   const width = matrix.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+  validateSize(matrix.length, width);
+  if (!width) throw new Error('불러올 셀이 없습니다.');
   api.stopEditing();
-  if (rows.length && !confirm('현재 표를 새 데이터로 바꿀까요? 필요한 데이터는 먼저 다운로드하세요.')) return false;
+  if ((rows.length || columns.length) && !confirm('현재 표를 새 데이터로 바꿀까요? 필요한 데이터는 먼저 다운로드하세요.')) return false;
   const headers = element('has-header').checked ? matrix[0] : [];
   const data = element('has-header').checked ? matrix.slice(1) : matrix;
   columns = [];
-  for (let index = 0; index < width; index++) columns.push(newColumn(headers[index] || `열 ${index + 1}`));
+  for (let index = 0; index < width; index++) columns.push(newColumn(cellText(headers[index]) || `열 ${index + 1}`));
   rows = data.map((values) => {
     const row = newRow();
-    columns.forEach((column, index) => { row[column.field] = values[index] ?? ''; });
+    columns.forEach((column, index) => { row[column.field] = cellText(values[index]); });
     return row;
   });
   element('search').value = '';
@@ -119,6 +239,7 @@ function pasteAtCell(event) {
     const ordered = displayedColumns();
     const startColumn = Math.max(0, ordered.findIndex((column) => column.field === focused?.column.getColId()));
     const width = matrix.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    validateSize(Math.max(rows.length, (focused?.rowIndex ?? 0) + matrix.length), Math.max(columns.length, startColumn + width));
     while (ordered.length < startColumn + width) {
       const column = newColumn();
       columns.push(column);
@@ -170,13 +291,10 @@ function exportCsv() {
 }
 
 async function exportXlsx() {
-  if (!window.ExcelJS) { message('ExcelJS를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.', true); return; }
-  busy = true;
-  element('workspace').disabled = true;
-  updateCounts();
+  setBusy(true);
   try {
     const { headers, data } = exportRows();
-    const workbook = new window.ExcelJS.Workbook();
+    const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('데이터');
     sheet.addRow(headers);
     sheet.addRows(data);
@@ -186,7 +304,7 @@ async function exportXlsx() {
     download(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), '데이터편집.xlsx');
     message('현재 표시 조건의 데이터를 XLSX로 다운로드했습니다.');
   } catch (error) { message('XLSX 다운로드 실패: ' + error.message, true); }
-  finally { busy = false; element('workspace').disabled = false; updateCounts(); }
+  finally { setBusy(false); }
 }
 
 async function init() {
@@ -194,9 +312,8 @@ async function init() {
   if (!profile) return;
   element('user-badge').textContent = profile.display_name || profile.email;
   element('back-link').href = withCenterParam('/admin/');
-  if (!window.agGrid) { message('AG Grid를 불러오지 못했습니다. 네트워크 확인 후 새로고침하세요.', true); return; }
-  api = window.agGrid.createGrid(element('data-grid'), {
-    theme: window.agGrid.themeQuartz.withParams({ backgroundColor: '#18181b', foregroundColor: '#f4f4f5', headerBackgroundColor: '#27272a', accentColor: '#34d399', browserColorScheme: 'dark' }),
+  api = createGrid(element('data-grid'), {
+    theme: themeQuartz.withParams({ backgroundColor: '#18181b', foregroundColor: '#f4f4f5', headerBackgroundColor: '#27272a', accentColor: '#34d399', browserColorScheme: 'dark' }),
     columnDefs: [],
     rowData: [],
     defaultColDef: { editable: true, sortable: true, filter: 'agTextColumnFilter', floatingFilter: true, resizable: true, minWidth: 100, initialWidth: 170, cellDataType: false },
@@ -216,18 +333,31 @@ async function init() {
     try { if (replaceTable(parseTable(element('paste-input').value, '\t'))) element('paste-input').value = ''; }
     catch (error) { message(error.message, true); }
   };
-  element('csv-file').onchange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    busy = true;
-    element('workspace').disabled = true;
-    updateCounts();
-    try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('20MB 이하의 CSV 파일을 선택하세요.');
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
-      replaceTable(parseTable(text, ','));
-    } catch (error) { message('CSV 불러오기 실패 (UTF-8 파일 필요): ' + error.message, true); }
-    finally { busy = false; event.target.value = ''; element('workspace').disabled = false; updateCounts(); }
+  uppy = new Uppy({
+    autoProceed: false,
+    restrictions: { maxFileSize: 20 * 1024 * 1024, maxNumberOfFiles: 5, allowedFileTypes: ['.csv', '.xlsx'] },
+  }).use(Dashboard, {
+    target: element('file-dashboard'), inline: true, height: 280, width: '100%', theme: 'dark',
+    hideUploadButton: true, disableStatusBar: true, disableThumbnailGenerator: true,
+    proudlyDisplayPoweredByUppy: false,
+    locale: { strings: { dropPasteFiles: 'CSV 또는 XLSX 파일을 여기에 놓거나 %{browseFiles}', browseFiles: '파일 선택' } },
+    note: '서버 업로드 없음 · 파일을 추가한 후 아래에서 로컬 읽기를 실행하세요.',
+  });
+  uppy.on('file-added', updateFileQueue);
+  uppy.on('file-removed', (file) => {
+    fileStates.delete(file.id);
+    if (workbookFileId === file.id) {
+      importedWorkbook = null;
+      workbookFileId = null;
+      element('worksheet-controls').hidden = true;
+    }
+    updateFileQueue();
+  });
+  uppy.on('restriction-failed', (file, error) => message(error.message, true));
+  element('read-file').onclick = readSelectedFile;
+  element('import-worksheet').onclick = importWorksheet;
+  element('import-file').onchange = () => {
+    element('worksheet-controls').hidden = element('import-file').value !== workbookFileId;
   };
   element('add-row').onclick = () => {
     api.stopEditing();
@@ -270,7 +400,7 @@ async function init() {
   element('download-xlsx').onclick = exportXlsx;
   element('workspace').disabled = false;
   updateCounts();
-  message(window.ExcelJS ? '데이터를 불러오거나 행·열을 추가해 시작하세요.' : 'CSV 편집은 가능합니다. XLSX 다운로드에 필요한 ExcelJS를 불러오지 못했습니다.', !window.ExcelJS);
+  message('CSV·XLSX 파일이나 붙여넣은 데이터를 불러오거나 행·열을 추가해 시작하세요.');
 }
 
 init().catch((error) => message('편집 도구 초기화 실패: ' + error.message, true));

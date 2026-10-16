@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>개인 일정 · 관리 허브</title>
+  <link rel="stylesheet" href="/css/common.css">
+  <link rel="stylesheet" href="/css/calendar-tool.css">
+</head>
+<body>
+  <header class="calendar-header">
+    <a id="back-link" href="/admin/" class="btn btn-ghost">← 관리 허브</a>
+    <h1>개인 일정</h1><span id="user-badge" class="muted"></span>
+  </header>
+  <main class="calendar-main">
+    <p class="muted">내 계정의 일정은 현재 브라우저에만 저장됩니다. 다른 기기·사용자와 공유하거나 동기화하지 않습니다. 브라우저 데이터 삭제 시 사라집니다.</p>
+    <p id="status" role="status" aria-live="polite">일정 도구를 준비하고 있습니다.</p>
+    <fieldset id="workspace" disabled>
+      <div class="calendar-actions">
+        <button id="add-event" class="btn btn-primary" type="button">+ 일정 추가</button>
+        <span class="muted">날짜를 선택해 추가하거나 일정을 눌러 수정하세요. 드래그로 이동·기간 변경이 가능합니다.</span>
+      </div>
+      <div id="calendar" data-color-scheme="dark" aria-label="개인 일정 달력"></div>
+    </fieldset>
+  </main>
+  <dialog id="event-dialog" aria-labelledby="dialog-title">
+    <form id="event-form">
+      <h2 id="dialog-title">일정 추가</h2>
+      <label for="event-title">제목</label>
+      <input id="event-title" class="app-input" required maxlength="160" autocomplete="off">
+      <label class="all-day"><input id="event-all-day" type="checkbox" checked> 하루 종일</label>
+      <div class="date-fields">
+        <div><label for="event-start">시작</label><input id="event-start" class="app-input" type="date" required></div>
+        <div><label for="event-end">종료 <span class="muted">(포함)</span></label><input id="event-end" class="app-input" type="date" required></div>
+      </div>
+      <label for="event-memo">메모</label>
+      <textarea id="event-memo" class="app-input" rows="4" maxlength="5000" placeholder="장소, 준비물, 업무 메모"></textarea>
+      <p id="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button id="delete-event" class="btn btn-danger" type="button" hidden>일정 삭제</button>
+        <button id="cancel-event" class="btn btn-ghost" type="button">취소</button>
+        <button class="btn btn-primary" type="submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="/js/calendar-tool.js"></script>
+</body>
+</html>

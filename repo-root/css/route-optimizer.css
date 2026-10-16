@@ -1,0 +1,9 @@
+header { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:16px; border-bottom:1px solid var(--border); }
+header h1 { font-size:20px; margin:0; }
+main { max-width:1100px; padding:20px; margin:auto; }
+fieldset { border:0; padding:0; }
+.toolbar { display:flex; flex-wrap:wrap; gap:16px; margin:16px 0; }
+label { display:block; }
+textarea { margin:8px 0; font-family:monospace; }
+#optimizer-status.error { color:#fca5a5; }
+#optimizer-result article { border:1px solid var(--border); border-radius:8px; padding:16px; margin:12px 0; }
