@@ -1,3 +1,4 @@
+import { renderDocumentSearch } from './portal-document-search.js';
 export const searchLabels={task:'업무',incident:'특이사항',survey:'업무조사',vehicles:'차량',drivers:'기사',routes:'코스',companies:'회사',delivery_points:'납품처',file:'첨부파일'};
 export function searchTarget(kind,row){
  if(kind==='file')for(const type of ['task','incident','survey'])if(row[type+'_id'])return {type,id:row[type+'_id']};
@@ -45,6 +46,7 @@ export function createPortalSearch({supabase,node,button,centerName,openRecord,m
      }
     }
     if(!total)items.append(node('p','검색 결과가 없습니다.'));
+renderDocumentSearch({supabase,host:items,node,button,openRecord,term,center:scope.value,page,current:()=>generation===request&&form.isConnected,next:()=>search(page+1)});
     const pages=node('div');if(page>0)button('이전 20건',()=>search(page-1),pages);
     if(data.groups.some(g=>g.total>(page+1)*20)&&page<100)button('유형별 다음 20건',()=>search(page+1),pages);items.append(pages);message('');
    }catch(error){if(generation===request&&form.isConnected)message(error.message||'검색하지 못했습니다.',true);}

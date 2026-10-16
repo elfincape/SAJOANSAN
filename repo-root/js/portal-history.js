@@ -56,6 +56,20 @@ export function createPortalHistory({api,node,button,field,centerName,stamp,mess
   }
   function show(row){
    panel.replaceChildren(node('h2',row.title??'업무'));const dl=node('dl');panel.append(dl);
+      const guide = node('details', undefined, 'workflow-guide'),
+        summary = node('summary', '업무 처리 흐름 안내');
+      guide.append(summary);
+      guide.addEventListener('toggle', () => {
+        if (!guide.open || guide.querySelector('iframe')) return;
+        const frame = node('iframe');
+        frame.title = '일반적인 업무 처리 흐름 안내';
+        frame.src = '/assets/task-workflow.html';
+        frame.loading = 'lazy';
+        frame.setAttribute('sandbox', 'allow-scripts');
+        guide.append(frame);
+      });
+      panel.append(guide);
+
    const info=(label,value)=>{if(value!=null&&value!=='')dl.append(node('dt',label),node('dd',String(value)));};
    info('센터',centerName(row.center_code));info('현재 상태',historyStatuses[row.state]);if(row.kind==='task')info('업무일',taskPeriod(row));
    for(const [key,value] of Object.entries(row.inputs??{}))if(typeof value!=='object')info(key==='work_note'?'업무 내용':key,value);
