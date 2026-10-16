@@ -217,12 +217,9 @@
 .workspace-ui:not(.portal-shell) table tbody td {
   background: #fff;
 }
-.workspace-ui:not(.portal-shell) .data-table tr.health-reminder-row td {
-  background: #fff3dd;
-}
-.workspace-ui:not(.portal-shell) .data-table tr.health-reminder-row:hover td {
-  background: #ffeac2;
-}
+body.workspace-ui tr.health-expired > td { background: #fff0f0 !important; }
+body.workspace-ui tr.health-soon > td { background: #fff6df !important; }
+body.workspace-ui tr.health-missing > td { background: #fff2e6 !important; }
 .hub-heading {
   margin: 12px 0 24px;
 }
