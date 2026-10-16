@@ -16,7 +16,7 @@ export function createPortalHistory({api,node,button,field,centerName,stamp,mess
   const from=field(form,'조회 시작일','from',saved.from,'date'),through=field(form,'조회 종료일','through',saved.through,'date');from.required=through.required=true;
   const status=node('select'),statusLabel=node('label','상태');status.setAttribute('aria-label','처리 기록 상태');const any=node('option','전체');any.value='';status.append(any);
   for(const [value,title] of Object.entries(historyStatuses)){const option=node('option',title);option.value=value;status.append(option);}status.value=saved.status;statusLabel.append(status);form.append(statusLabel);actions.append(form);
-  const periods=node('div',undefined,'view-buttons');for(const [unit,title] of [['day','일'],['week','주'],['month','월']])button(title,()=>{const range=periodBounds(koreaDate(),unit);from.value=range.from;through.value=range.through;load();},periods);form.append(periods);
+  const periods=node('div',undefined,'view-buttons');for(const [unit,title] of [['day','일'],['week','주'],['month','월']]){const control=button(title,()=>{const range=periodBounds(koreaDate(),unit);from.value=range.from;through.value=range.through;load();},periods);control.dataset.historyPeriod=unit;}form.append(periods);
   let request=0,loaded=null;
   function draw(){
    if(!loaded)return;
@@ -49,7 +49,7 @@ export function createPortalHistory({api,node,button,field,centerName,stamp,mess
   }
   async function load(){
    if(!form.reportValidity())return;if(from.value>through.value){message('조회 시작일과 종료일을 확인해 주세요.',true);return;}
-   Object.assign(saved,{center:center.value,from:from.value,through:through.value,status:status.value});const current=++request;form.setAttribute('aria-busy','true');
+   Object.assign(saved,{center:center.value,from:from.value,through:through.value,status:status.value});for(const control of periods.children){const range=periodBounds(koreaDate(),control.dataset.historyPeriod);control.setAttribute('aria-pressed',String(saved.from===range.from&&saved.through===range.through));}const current=++request;form.setAttribute('aria-busy','true');
    try{const data=await api.historyRecords({...saved});if(generation!==ticket||request!==current||!form.isConnected)return;loaded=data;draw();}
    catch(error){if(generation===ticket&&request===current)message(error.message||'처리 기록을 불러오지 못했습니다.',true);}
    finally{if(request===current)form.removeAttribute('aria-busy');}

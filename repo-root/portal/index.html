@@ -1,21 +1,450 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>업무 포털 · 이안물류</title><link rel="stylesheet" href="/css/operations.css"><link rel="stylesheet" href="/css/portal.css"></head>
-<body class="portal-shell">
-<a class="skip-link" href="#portal-main">본문으로 이동</a>
-<div id="portal-sidebar" class="portal-sidebar" aria-label="업무 포털 메뉴">
- <div class="sidebar-brand"><a href="/portal/">이안물류<span>통합 업무 포털</span></a><button data-navigation-toggle id="sidebar-close" class="sidebar-close" type="button" aria-label="메뉴 닫기">닫기</button></div>
- <div class="sidebar-content">
-  <details class="sidebar-group" open><summary>센터 업무</summary><nav id="center-navigation" data-center-view="center" aria-label="센터 업무"><button data-view="incidents">특이사항</button></nav></details>
-  <details class="sidebar-group"><summary>업무 등록·조사</summary><nav data-center-view="surveys" aria-label="센터별 업무 등록"></nav></details>
-  <section id="hq-navigation" hidden><details class="sidebar-group" open><summary>배송팀</summary><nav aria-label="배송팀 업무"><button data-view="hq" hidden>전체 업무·지원 요청</button><button data-view="briefing" hidden>AI 브리핑</button></nav></details></section>
-  <details class="sidebar-group" open><summary>조회·알림</summary><nav aria-label="조회와 알림"><button data-view="search">통합 검색</button><button data-view="notifications">알림함 <span id="unread"></span></button></nav></details>
-  <details class="sidebar-group"><summary>운영 관리</summary><nav aria-label="운영 기록"><button data-view="history">처리 기록</button><button id="permissions-navigation" data-view="permissions" hidden>목록별 권한</button><button data-view="connections" hidden>OneDrive 관리</button><button id="members-navigation" data-view="members" hidden>멤버 목록</button><button data-view="trash">휴지통</button><button data-view="backups" hidden>운영 원본 보관</button><a id="audit-navigation" href="/admin/audit-log.html" hidden>운영정보 변경 이력</a></nav></details>
- </div>
- <div class="sidebar-footer"><a href="/admin/">운영관리 열기 <span aria-hidden="true">↗</span></a><a href="/">대시보드</a></div>
-</div>
-<div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
-<div id="portal-content"><header class="portal-header"><button data-navigation-toggle id="sidebar-toggle" type="button" aria-controls="portal-sidebar" aria-expanded="false" aria-label="업무 메뉴 열기">메뉴</button><strong>업무 포털</strong><span id="user"></span></header>
-<main id="portal-main" tabindex="-1"><div class="heading"><div><h1 id="portal-title" tabindex="-1">업무목록</h1><p id="portal-description">해야 할 업무를 확인하고 바로 처리하세요.</p></div><div class="heading-actions"><button id="refresh">새로고침</button><button id="issue-task" type="button" hidden>업무 발행</button><button id="new-task" class="primary" type="button" hidden>일회성 업무등록</button></div></div>
-<div id="message" role="status" aria-live="polite"></div><section id="quick-actions" class="quick-actions" aria-label="업무 등록"></section>
-<div class="filters task-toolbar"><select id="center" hidden aria-label="선택한 센터"></select><input id="completed" type="checkbox" checked hidden><div class="toolbar-top"><div class="toolbar-period"><div id="task-unit" class="view-buttons" role="group" aria-label="조회 기간"><button type="button" data-view-control="task-unit" data-value="day" aria-pressed="true">일</button><button type="button" data-view-control="task-unit" data-value="week" aria-pressed="false">주</button><button type="button" data-view-control="task-unit" data-value="month" aria-pressed="false">월</button></div><div class="date-navigation"><button id="period-prev" type="button" aria-label="이전 기간">‹</button><input id="task-date" type="date" aria-label="기준일"><button id="period-next" type="button" aria-label="다음 기간">›</button><button id="period-today" type="button">오늘</button></div></div><div id="task-layout" class="view-buttons" role="group" aria-label="보기 방식"><button type="button" data-view-control="task-layout" data-value="list" aria-pressed="true">목록</button><button type="button" data-view-control="task-layout" data-value="calendar" aria-pressed="false">캘린더</button></div></div><div class="toolbar-bottom"><div id="task-status" class="view-buttons" role="group" aria-label="업무 상태"><button type="button" data-view-control="task-status" data-value="all" aria-pressed="true">전체</button><button type="button" data-view-control="task-status" data-value="active" aria-pressed="false">진행중</button><button type="button" data-view-control="task-status" data-value="completed" aria-pressed="false">완료</button><button type="button" data-view-control="task-status" data-value="delayed" aria-pressed="false">지연</button></div><label class="check"><input id="mine" type="checkbox">내 업무만</label></div></div>
-<div class="workspace"><section class="list"><div class="list-heading"><strong id="list-title">업무목록</strong><span id="count"></span></div><div id="items" class="portal-items"></div></section><aside id="detail" aria-label="업무 처리"><p>업무를 선택하세요.</p></aside></div></main></div><dialog id="task-ticket-dialog" class="parent-task-dialog" aria-label="업무 티켓 상세"></dialog><dialog id="parent-task-dialog" class="parent-task-dialog" aria-label="상위 업무 상세"></dialog><script type="module" src="/js/portal-screen.js"></script></body></html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>업무 포털 · 이안물류</title>
+    <link rel="stylesheet" href="/css/operations.css" />
+    <link rel="stylesheet" href="/css/portal.css" />
+  </head>
+  <body class="portal-shell">
+    <a class="skip-link" href="#portal-main">본문으로 이동</a>
+    <div id="portal-sidebar" class="portal-sidebar" aria-label="업무 포털 메뉴">
+      <div class="sidebar-brand">
+        <a href="/portal/"
+          ><span class="portal-brand-mark" aria-hidden="true"
+            ><svg
+              class="portal-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="7" width="18" height="14" rx="2" />
+              <path d="M7 7V3h10v4M8 12h8M8 16h5" /></svg></span
+          ><span class="portal-brand-name"
+            >이안물류<small>통합 업무 포털</small></span
+          ></a
+        ><button
+          data-navigation-toggle
+          id="sidebar-close"
+          class="sidebar-close"
+          type="button"
+          aria-label="메뉴 닫기"
+        >
+          닫기
+        </button>
+      </div>
+      <div class="sidebar-content">
+        <details class="sidebar-group" open>
+          <summary>
+            <span class="sidebar-group-label"
+              ><svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="7" width="18" height="14" rx="2" />
+                <path d="M7 7V3h10v4M8 12h8M8 16h5" /></svg
+              >센터 업무</span
+            >
+          </summary>
+          <nav
+            id="center-navigation"
+            data-center-view="center"
+            aria-label="센터 업무"
+          >
+            <button data-view="incidents">특이사항</button>
+          </nav>
+        </details>
+        <details class="sidebar-group">
+          <summary>
+            <span class="sidebar-group-label"
+              ><svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5"
+                /></svg
+              >업무 등록·조사</span
+            >
+          </summary>
+          <nav data-center-view="surveys" aria-label="센터별 업무 등록"></nav>
+        </details>
+        <section id="hq-navigation" hidden>
+          <details class="sidebar-group" open>
+            <summary>
+              <span class="sidebar-group-label"
+                ><svg
+                  class="portal-icon"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+                  />
+                  <circle cx="9" cy="7" r="4" /></svg
+                >배송팀</span
+              >
+            </summary>
+            <nav aria-label="배송팀 업무">
+              <button data-view="hq" hidden>전체 업무·지원 요청</button
+              ><button data-view="briefing" hidden>AI 브리핑</button>
+            </nav>
+          </details>
+        </section>
+        <details class="sidebar-group" open>
+          <summary>
+            <span class="sidebar-group-label"
+              ><svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="10.5" cy="10.5" r="7.5" />
+                <path d="m16 16 5 5" /></svg
+              >조회·알림</span
+            >
+          </summary>
+          <nav aria-label="조회와 알림">
+            <button data-view="search">통합 검색</button
+            ><button data-view="notifications">
+              알림함 <span id="unread"></span>
+            </button>
+          </nav>
+        </details>
+        <details class="sidebar-group">
+          <summary>
+            <span class="sidebar-group-label"
+              ><svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" /></svg
+              >운영 관리</span
+            >
+          </summary>
+          <nav aria-label="운영 기록">
+            <button data-view="history">처리 기록</button
+            ><button id="permissions-navigation" data-view="permissions" hidden>
+              목록별 권한</button
+            ><button data-view="connections" hidden>OneDrive 관리</button
+            ><button id="members-navigation" data-view="members" hidden>
+              멤버 목록</button
+            ><button data-view="trash">휴지통</button
+            ><button data-view="backups" hidden>운영 원본 보관</button
+            ><a id="audit-navigation" href="/admin/audit-log.html" hidden
+              >운영정보 변경 이력</a
+            >
+          </nav>
+        </details>
+      </div>
+      <div class="sidebar-footer">
+        <a href="/admin/">운영관리 열기 <span aria-hidden="true">↗</span></a
+        ><a href="/">대시보드</a>
+      </div>
+    </div>
+    <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+    <div id="portal-content">
+      <header class="portal-header">
+        <button
+          data-navigation-toggle
+          id="sidebar-toggle"
+          type="button"
+          aria-controls="portal-sidebar"
+          aria-expanded="false"
+          aria-label="업무 메뉴 열기"
+        >
+          메뉴</button
+        ><strong>업무 포털</strong>
+        <div class="portal-identity">
+          <span class="portal-user-avatar" aria-hidden="true"
+            ><svg
+              class="portal-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="8" r="4" />
+              <path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg></span
+          ><span id="user"></span>
+        </div>
+      </header>
+      <main id="portal-main" tabindex="-1">
+        <div class="heading">
+          <div>
+            <h1 id="portal-title" tabindex="-1">업무목록</h1>
+            <p id="portal-description">
+              해야 할 업무를 확인하고 바로 처리하세요.
+            </p>
+          </div>
+          <div class="heading-actions">
+            <button id="refresh">
+              <svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20 7v5h-5M4 17v-5h5M6.1 6.1a8.3 8.3 0 0 1 13.7 3.1M4.2 14.8a8.3 8.3 0 0 0 13.7 3.1"
+                /></svg
+              >새로고침</button
+            ><button id="issue-task" type="button" hidden>업무 발행</button
+            ><button id="new-task" class="primary" type="button" hidden>
+              <svg
+                class="portal-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" /></svg
+              >일회성 업무등록
+            </button>
+          </div>
+        </div>
+        <div id="message" role="status" aria-live="polite"></div>
+        <section
+          id="quick-actions"
+          class="quick-actions"
+          aria-label="업무 등록"
+        ></section>
+        <div class="filters task-toolbar">
+          <select id="center" hidden aria-label="선택한 센터"></select
+          ><input id="completed" type="checkbox" checked hidden />
+          <div class="toolbar-top">
+            <div class="toolbar-period">
+              <div
+                id="task-unit"
+                class="view-buttons"
+                role="group"
+                aria-label="조회 기간"
+              >
+                <button
+                  type="button"
+                  data-view-control="task-unit"
+                  data-value="day"
+                  aria-pressed="true"
+                >
+                  일</button
+                ><button
+                  type="button"
+                  data-view-control="task-unit"
+                  data-value="week"
+                  aria-pressed="false"
+                >
+                  주</button
+                ><button
+                  type="button"
+                  data-view-control="task-unit"
+                  data-value="month"
+                  aria-pressed="false"
+                >
+                  월
+                </button>
+              </div>
+              <div class="date-navigation">
+                <button id="period-prev" type="button" aria-label="이전 기간">
+                  ‹</button
+                ><input id="task-date" type="date" aria-label="기준일" /><button
+                  id="period-next"
+                  type="button"
+                  aria-label="다음 기간"
+                >
+                  ›</button
+                ><button id="period-today" type="button">오늘</button>
+              </div>
+            </div>
+            <div
+              id="task-layout"
+              class="view-buttons"
+              role="group"
+              aria-label="보기 방식"
+            >
+              <button
+                type="button"
+                data-view-control="task-layout"
+                data-value="list"
+                aria-pressed="true"
+              >
+                <svg
+                  class="portal-icon"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+                  /></svg
+                >목록</button
+              ><button
+                type="button"
+                data-view-control="task-layout"
+                data-value="calendar"
+                aria-pressed="false"
+              >
+                <svg
+                  class="portal-icon"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2" /></svg
+                >캘린더
+              </button>
+            </div>
+          </div>
+          <div class="toolbar-bottom">
+            <div
+              id="task-status"
+              class="view-buttons"
+              role="group"
+              aria-label="업무 상태"
+            >
+              <button
+                type="button"
+                data-view-control="task-status"
+                data-value="all"
+                aria-pressed="true"
+              >
+                전체<span class="status-count" data-status-count="all"
+                  >0</span
+                ></button
+              ><button
+                type="button"
+                data-view-control="task-status"
+                data-value="active"
+                aria-pressed="false"
+              >
+                진행중<span class="status-count" data-status-count="active"
+                  >0</span
+                ></button
+              ><button
+                type="button"
+                data-view-control="task-status"
+                data-value="completed"
+                aria-pressed="false"
+              >
+                완료<span class="status-count" data-status-count="completed"
+                  >0</span
+                ></button
+              ><button
+                type="button"
+                data-view-control="task-status"
+                data-value="delayed"
+                aria-pressed="false"
+              >
+                지연<span class="status-count" data-status-count="delayed"
+                  >0</span
+                >
+              </button>
+            </div>
+            <label class="check"
+              ><input id="mine" type="checkbox" />내 업무만</label
+            >
+          </div>
+        </div>
+        <div class="workspace">
+          <section class="list">
+            <div class="list-heading">
+              <strong id="list-title">업무목록</strong><span id="count"></span>
+            </div>
+            <div id="items" class="portal-items"></div>
+          </section>
+          <aside id="detail" aria-label="업무 처리">
+            <p>업무를 선택하세요.</p>
+          </aside>
+        </div>
+      </main>
+    </div>
+    <dialog
+      id="task-ticket-dialog"
+      class="parent-task-dialog"
+      aria-label="업무 티켓 상세"
+    ></dialog>
+    <dialog
+      id="parent-task-dialog"
+      class="parent-task-dialog"
+      aria-label="상위 업무 상세"
+    ></dialog>
+    <script type="module" src="/js/portal-screen.js"></script>
+  </body>
+</html>

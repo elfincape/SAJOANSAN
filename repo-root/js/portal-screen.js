@@ -72,7 +72,7 @@ function renderOneDrive(){
 async function refresh(){if(state.busy)return;setBusy(true);message('업무를 불러오는 중입니다…');try{await loadData();render();message('');}catch(error){message(error.message||'업무를 불러오지 못했습니다.',true);}finally{setBusy(false);}}
 function choose(type,row){if($('parent-task-dialog')?.open)$('parent-task-dialog').close();if((type!=='task'||state.view==='hq')&&$('task-ticket-dialog').open)$('task-ticket-dialog').close();state.selected={type,row};if(state.view!=='hq'&&(type==='task'||state.view==='center')&&!$('task-ticket-dialog').open){$('task-ticket-dialog').showModal();}renderDetail();}
 function addRow(row,type,parent,extra=''){
- const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span');if(type==='incident'||state.view==='hq')content.append(node('span',centerName(type==='incident'?incidentCenterCode(row):row.center_code),'center-property'));if(state.view==='hq')content.append(node('span',type==='incident'?'특이사항':'업무','record-property'));content.append(document.createTextNode(row.title),node('small',extra));
+ const el=button(row.title,()=>choose(type,row),parent,'task-row');el.replaceChildren();const content=node('span');if(type==='incident'||state.view==='hq')content.append(node('span',centerName(type==='incident'?incidentCenterCode(row):row.center_code),'center-property'));if(state.view==='hq')content.append(node('span',type==='incident'?'특이사항':'업무','record-property'));content.className='task-row-copy';content.append(node('strong',row.title,'task-row-name'),node('small',extra));
  
  el.append(content,node('span',type==='survey'?surveyStages[row.stage]:type==='incident'?incidentStatus(row):taskStateLabels[taskState(row)],'badge status-'+(type==='task'?taskState(row):type==='incident'?'incident-'+(row.status==='resolved'?'resolved':'open'):'other')));if(state.selected?.row.id===row.id)el.classList.add('selected');
 }
@@ -87,7 +87,7 @@ function render(){
 
  $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='permissions'?'목록별 권한':state.view==='members'?'멤버 목록':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':state.view==='trash'?'휴지통':centerName(center)+' 업무목록';
  $('portal-description').textContent=hq?'확인 필요한 업무와 특이사항을 센터 속성으로 확인하고 여기에서 처리하세요.':state.view==='incidents'?'센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.':'진행 중 업무는 날짜가 지나도 계속 표시됩니다.';
- document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
+ document.querySelector('.filters').hidden=!['center','hq'].includes(state.view);$('task-layout').hidden=state.view!=='center';document.querySelector('.toolbar-bottom').hidden=state.view!=='center';document.body.classList.toggle('calendar-view',state.view==='center'&&state.layout==='calendar');document.body.classList.toggle('center-workspace',state.view==='center');$('new-task').hidden=state.view!=='center'||!canWrite(center);document.querySelectorAll('[data-view-control]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===state[{ 'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl]])));
 
  $('mine').disabled=state.view!=='center';$('completed').disabled=!['center','hq'].includes(state.view);$('center').disabled=['hq','notifications','access','briefing'].includes(state.view);
  const actions=$('quick-actions');actions.replaceChildren();$('issue-task').hidden=state.view!=='center'||!canWrite(center);
@@ -115,7 +115,9 @@ function render(){
   if(!count)list.append(node('p','확인 필요한 미완료 항목이 없습니다.'));
  }else if(state.view==='center'){
   const period=periodBounds($('task-date').value,state.unit);
-  const visible=tasks.filter(t=>(!$('mine').checked||assignedToMe(t))&&(state.status==='all'||taskState(t)===state.status));
+  const candidates=tasks.filter(t=>(!$('mine').checked||assignedToMe(t))&&(overlapsPeriod(t,period.from,period.through)||(taskEnd(t)<period.from&&!finished(t))));
+  for(const label of document.querySelectorAll('[data-status-count]')){const value=label.dataset.statusCount;label.textContent=value==='all'?candidates.length:candidates.filter(t=>taskState(t)===value).length;}
+  const visible=candidates.filter(t=>state.status==='all'||taskState(t)===state.status);
   const inPeriod=visible.filter(t=>overlapsPeriod(t,period.from,period.through)),overdue=visible.filter(t=>taskEnd(t)<period.from&&!finished(t));count=inPeriod.length+overdue.length;
   if(overdue.length){items.append(node('h3','이전 기간 미완료 · '+overdue.length+'건'));overdue.forEach(t=>addTaskWithChildren(t,items));}
   items.append(node('h3',period.from+(period.from===period.through?'':' ~ '+period.through)));
@@ -136,7 +138,9 @@ function render(){
   count=state.notifications.length;
   for(const n of state.notifications)button(`${n.read_at?'':'● '}${n.title} · ${stamp(n.created_at)}`,()=>openNotification(n),items,'task-row');
  }
- if(!count&&!hq)items.append(node('p','표시할 항목이 없습니다.'));
+ if(!count&&!hq&&state.view!=='surveys'){
+  const empty=node('div',undefined,'portal-empty');empty.append(node('strong',state.view==='center'?'조회 조건에 맞는 업무가 없습니다.':state.view==='notifications'?'새로운 알림이 없습니다.':'표시할 항목이 없습니다.'),node('p',state.view==='center'?'기간이나 상태를 변경해 확인하세요. 새 업무는 상단에서 등록할 수 있습니다.':state.view==='trash'?'휴지통으로 이동한 업무가 여기에 표시됩니다.':'등록된 항목이 있으면 여기에 표시됩니다.'));items.append(empty);
+ }
  $('count').textContent=count+'건';$('list-title').textContent={center:'업무목록',trash:'휴지통의 업무',hq:'업무와 지원 요청',incidents:'특이사항',surveys:state.registrationTab==='surveys'?'업무조사':'등록된 업무',notifications:'내 알림',access:'활성 직원'}[state.view];
  renderDetail();
 }
@@ -145,6 +149,7 @@ function customizeTask(template){openTaskDesigner({template,center:$('center').v
  function addTaskWithChildren(task,parent){addRow(task,'task',parent,taskPeriod(task)+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'업무'));const children=state.incidents.filter(i=>i.task_id===task.id);if(children.length){const group=node('div',undefined,'incident-children');children.forEach(i=>addRow(i,'incident',group,'↳ 특이사항 · '+stamp(i.created_at)));parent.append(group);}}
  function renderTaskCalendar(tasks,parent){
  const unit=state.unit,daily=unit==='month'?tasks.filter(t=>taskEnd(t)===t.work_date):[],periodTasks=unit==='month'?tasks.filter(t=>taskEnd(t)!==t.work_date):tasks,dates=calendarDates($('task-date').value,unit),grid=node('div',undefined,'task-calendar calendar-spans calendar-'+unit),width=unit==='day'?1:7;
+ grid.classList.toggle('is-empty',!tasks.length);
  for(let i=0;i<dates.length;i+=width){const days=dates.slice(i,i+width),week=node('div',undefined,'calendar-span-week');week.style.setProperty('--days',days.length);
   for(const date of days){const cell=node('section',undefined,'calendar-cell');cell.style.gridColumn=days.indexOf(date)+1;cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');if(unit==='month'){const entries=daily.filter(t=>t.work_date===date);if(entries.length)calendarDailyDropdown(entries,date,cell);}week.append(cell);}
   const bars=node('div',undefined,'calendar-bars');for(const segment of calendarSegments(periodTasks,days)){const {task,start,end,lane,continuesBefore,continuesAfter}=segment;
