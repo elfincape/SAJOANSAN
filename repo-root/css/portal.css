@@ -841,7 +841,7 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.portal-shell #detail:has(> p:only-child) {
+.portal-shell #detail:where(:has(> p:only-child)) {
   display: flex;
   align-items: center;
   justify-content: center;
