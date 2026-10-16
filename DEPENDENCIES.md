@@ -13,6 +13,8 @@ npm run test:browser:install
 | 개발 | Prettier | 변경 파일 형식 검사 |
 | 개발 | Playwright | 기존 주요 화면의 브라우저 회귀 검사 |
 | 개발·배포 | Vite | 기존 HTML·Vanilla JavaScript 다중 페이지 빌드 |
+| 기존 코스 관리 | AG Grid Community | 코스 목록 정렬·필터·열 너비 조절 |
+| 기존 Excel 화면 | ExcelJS | 템플릿 읽기·수정과 XLSX 생성 |
 | 기존 PDF 화면 | PDF.js | PDF 미리보기와 페이지 이미지 변환 |
 | 기존 PDF 화면 | pdf-lib | PDF 병합·분할·페이지 편집과 저장 |
 
@@ -29,4 +31,6 @@ GitHub에 연결된 Vercel은 포함된 `vercel.json`에 따라 빌드합니다.
 
 ## 연결된 화면
 
+- 관리 허브 → 코스 관리: AG Grid Community를 기존 코스 목록에 적용하며 편집·납품처·삭제와 DB 처리는 기존 로직을 유지합니다.
+- ExcelJS를 사용하는 기존 화면은 CDN 대신 npm/Vite에서 고정 버전을 공통 로딩합니다.
 - 관리 허브 → PDF IMG 변환기: PDF.js와 pdf-lib를 기존 기사 서류 등록 흐름 안에서 사용합니다. 미리보기·편집·병합·분할·변환 결과는 사용자가 다운로드하며, 기존 기사 서류 등록 버튼을 눌렀을 때만 OneDrive에 저장합니다.
