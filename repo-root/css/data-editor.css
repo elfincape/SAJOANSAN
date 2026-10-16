@@ -1,0 +1,31 @@
+.editor-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.editor-header h1 { margin: 0; font-size: 20px; }
+.editor-header .muted { margin-left: auto; }
+.editor-main { max-width: 1600px; margin: auto; padding: 20px; }
+.editor-main fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.editor-main .panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
+.import-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.import-panel label { display: block; margin-bottom: 8px; }
+.import-panel textarea { display: block; width: 100%; resize: vertical; margin-bottom: 8px; }
+.header-choice { margin-top: 16px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.controls .toolbar + .toolbar { margin-top: 12px; }
+.controls input, .controls select { width: 220px; max-width: 100%; }
+.controls select { min-width: 140px; }
+.export-toolbar #counts { margin-right: auto; }
+.grid-help { font-size: 13px; line-height: 1.7; }
+#data-grid { width: 100%; height: 64vh; min-height: 360px; }
+#status { min-height: 24px; }
+#status.error { color: #fca5a5; }
+@media (max-width: 720px) {
+  .import-panel { grid-template-columns: 1fr; }
+  .editor-main { padding: 12px; }
+  .editor-header { padding: 12px; }
+}
