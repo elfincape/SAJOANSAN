@@ -20,6 +20,7 @@
   "dependencies": {
     "ag-grid-community": "36.2.0",
     "exceljs": "4.4.0",
+    "open-props": "1.7.23",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38"
   }

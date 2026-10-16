@@ -1,5 +1,14 @@
 # 개발 도구와 라이브러리
 
+## UI 스타일 기반
+
+- Open Props: npm의 `open-props`를 정확한 버전으로 고정한다. `ui-foundation.css`에서 easing·size·border 변수만 가져오며 normalize와 전역 버튼 재설정은 사용하지 않는다. 공통 CSS와 업무 포털 CSS에서 동일한 기반을 사용한다.
+- Uiverse Galaxy: 설치형 패키지가 아닌 HTML/CSS 원본 모음이다. AbanoubMagdy1의 `fluffy-octopus-90` 토글을 포털의 기존 `내 업무만` 필터에 맞게 수정했다. 기존 checkbox ID와 이벤트를 유지하고 키보드 포커스·44px 레이블·모션 감소 설정을 지원한다.
+- 원본: https://github.com/uiverse-io/galaxy/blob/main/Toggle-switches/AbanoubMagdy1_fluffy-octopus-90.html
+- 두 프로젝트의 MIT 원문은 `repo-root/assets/licenses/`에 포함한다.
+- daisyUI·React Bits·Magic UI는 참고 후보이며 설치하지 않았다. 현재 CSS 및 Vanilla JS에 불필요한 프레임워크와 중복 컴포넌트를 추가하지 않는다.
+- 위 항목은 CSS 라이브러리이므로 MCP나 Codex 스킬로 등록할 대상이 아니다.
+
 Node.js 22.13 이상 또는 24 이상을 권장합니다.
 
 ```sh

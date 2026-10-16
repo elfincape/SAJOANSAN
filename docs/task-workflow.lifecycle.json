@@ -1,0 +1,60 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "업무 처리 흐름 안내",
+    "subtitle": "일반적인 상태 안내입니다. 개별 업무의 실제 처리 이력은 원본 기록을 확인하세요.",
+    "output": "repo-root/assets/task-workflow.html",
+    "quality_profile": "showcase"
+  },
+  "mainPath": [
+    "registered",
+    "active",
+    "completed"
+  ],
+  "states": [
+    {
+      "id": "registered",
+      "type": "start",
+      "label": "업무 등록"
+    },
+    {
+      "id": "active",
+      "type": "active",
+      "label": "업무 처리",
+      "sublabel": "내용 기록 · 담당자 인계"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "완료"
+    },
+    {
+      "id": "not-applicable",
+      "type": "neutral",
+      "label": "해당없음"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "registered",
+      "to": "active",
+      "label": "처리 시작"
+    },
+    {
+      "from": "active",
+      "to": "completed",
+      "label": "완료 처리"
+    },
+    {
+      "from": "active",
+      "to": "not-applicable",
+      "label": "해당없음 기록"
+    },
+    {
+      "from": "completed",
+      "to": "active",
+      "label": "업무 재개"
+    }
+  ]
+}

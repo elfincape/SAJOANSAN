@@ -32,3 +32,5 @@ if (!cfg.url || !cfg.anonKey || cfg.url.includes('YOUR-')) {
 
 export const SUPABASE_URL      = cfg.url;
 export const SUPABASE_ANON_KEY = cfg.anonKey;
+
+export const DOCUMENT_SEARCH_URL = import.meta.env?.VITE_DOCUMENT_SEARCH_URL || 'https://211.233.219.199/search';
