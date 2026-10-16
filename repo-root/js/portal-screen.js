@@ -154,7 +154,7 @@ function customizeTask(template){openTaskDesigner({template,center:$('center').v
  for(let i=0;i<dates.length;i+=width){const days=dates.slice(i,i+width),week=node('div',undefined,'calendar-span-week');week.style.setProperty('--days',days.length);
   for(const date of days){const cell=node('section',undefined,'calendar-cell');cell.style.gridColumn=days.indexOf(date)+1;cell.append(node('h4',date.slice(5)+' · '+['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()]));if(date===koreaDate())cell.classList.add('calendar-today');if(unit==='month'){const entries=daily.filter(t=>t.work_date===date);if(entries.length)calendarDailyDropdown(entries,date,cell);}week.append(cell);}
   const bars=node('div',undefined,'calendar-bars');for(const segment of calendarSegments(periodTasks,days)){const {task,start,end,lane,continuesBefore,continuesAfter}=segment;
-   addRow(task,'task',bars,taskPeriod(task)+' · '+(cadenceLabels[task.template_snapshot?.spec?.ui_cadence]??'기간 업무'));const bar=bars.lastElementChild;bar.classList.add('calendar-task-bar');bar.style.gridColumn=(start+1)+' / '+(end+2);bar.style.gridRow=lane+1;bar.title=task.title+' · '+taskPeriod(task);bar.classList.toggle('continues-before',continuesBefore);bar.classList.toggle('continues-after',continuesAfter);
+   addRow(task,'task',bars,taskPeriod(task).replace(/\d{4}-(\d{2})-(\d{2})/g,'$1.$2').replace(' ~ ','–'));const bar=bars.lastElementChild;bar.classList.add('calendar-task-bar');bar.style.gridColumn=(start+1)+' / '+(end+2);bar.style.gridRow=lane+1;bar.title=task.title+' · '+taskPeriod(task);bar.classList.toggle('continues-before',continuesBefore);bar.classList.toggle('continues-after',continuesAfter);
   }week.append(bars);grid.append(week);
  }parent.append(grid);
 }
