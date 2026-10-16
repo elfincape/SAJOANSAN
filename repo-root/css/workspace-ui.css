@@ -1,7 +1,7 @@
 @import './ui-foundation.css';
 @import './workspace-components.css';
 
-.workspace-ui {
+body.workspace-ui {
   color-scheme: light;
   --bg: #f3f6f8;
   --bg-page: #f3f6f8;
