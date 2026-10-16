@@ -145,8 +145,79 @@
   min-height: min-content;
 }
 .workspace-ui.portal-shell .calendar-today {
-  background: #19372f;
-  border-color: #54bb96;
+  background: #f5fbf8;
+  border-color: #258260;
+}
+.workspace-ui.portal-shell .calendar-cell h4 {
+  padding-inline: 0;
+  white-space: nowrap;
+  color: #4b6472;
+}
+.workspace-ui.portal-shell .calendar-today h4 {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #185f45;
+}
+.workspace-ui.portal-shell .calendar-today h4::after {
+  content: '오늘';
+  display: inline-block;
+  flex: 0 0 auto;
+  padding: 1px 2px;
+  border-radius: 4px;
+  background: #dcefe4;
+  color: #185f45;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-bars {
+  margin-inline: 0;
+}
+.workspace-ui.portal-shell .calendar-task-bar.task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px 8px;
+  justify-self: center;
+  width: calc(100% - 8px);
+  min-height: 68px;
+  padding: 8px 10px;
+  background: #e7f3ed;
+  border-color: #86b39e;
+  border-radius: 6px;
+}
+.workspace-ui.portal-shell .calendar-task-bar .task-row-copy {
+  display: contents;
+}
+.workspace-ui.portal-shell .calendar-task-bar .task-row-name {
+  flex: 0 0 100%;
+  min-width: 0;
+  color: #204d3b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar small {
+  min-width: 0;
+  max-width: calc(100% - 52px);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3e6352;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar .badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar.task-row:hover:not(:disabled),
+.workspace-ui.portal-shell .calendar-task-bar.task-row.selected {
+  background: #d8ecdf;
+  border-color: #398362;
 }
 .workspace-ui.portal-shell .task-calendar {
   max-width: 100%;
@@ -245,4 +316,12 @@
   border-radius: 8px;
 }
 
-@media (max-width: 760px) { .workspace-ui .toolbar label { min-width: 0; max-width: 100%; } .workspace-ui input[type="file"] { max-width: 100%; } }
+@media (max-width: 760px) {
+  .workspace-ui .toolbar label {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .workspace-ui input[type='file'] {
+    max-width: 100%;
+  }
+}
