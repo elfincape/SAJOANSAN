@@ -78,6 +78,7 @@ function addRow(row,type,parent,extra=''){
 }
 function render(){
  $('items').removeAttribute('role');$('items').removeAttribute('aria-labelledby');
+ document.body.classList.toggle('registration-workspace',state.view==='surveys'&&state.registrationTab==='templates');
  document.body.classList.toggle('permissions-workspace',state.view==='permissions');const hq=state.view==='hq',center=$('center').value;
  document.querySelectorAll('nav button').forEach(el=>{const active=el.dataset.view===state.view&&(!el.dataset.center||el.dataset.center===center);el.setAttribute('aria-pressed',String(active));if(active){const group=el.closest('details');if(group)group.open=true;}});
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?center:undefined)){$('portal-title').textContent='열람 권한 없음';$('portal-description').textContent='관리자에게 이 목록의 열람 권한을 요청하세요.';$('items').replaceChildren();$('detail').replaceChildren();$('quick-actions').replaceChildren();$('new-task').hidden=$('issue-task').hidden=true;document.querySelector('.filters').hidden=true;return;}
