@@ -8,10 +8,28 @@
   <link rel="stylesheet" href="/css/common.css">
   <style>
     #route-grid { height:calc(100vh - 200px); min-height:420px; }
-    .route-grid-actions { display:flex; justify-content:flex-end; gap:.25rem; height:100%; align-items:center; }
+    .route-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+    .route-toolbar #search-input { flex:1 1 320px; min-width:200px; }
+    .route-toolbar #filter-company { width:172px; }
+    .route-toolbar .btn { min-height:38px; white-space:nowrap; }
+    .route-toolbar [aria-pressed="true"] { background:#e7f3ee; border-color:#087f72; color:#08634f; }
+    .route-filter-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:0 2px 10px; color:#526776; font-size:12px; }
+    #route-grid .ag-sort-order { display:none; }
+    #route-grid .ag-header-cell, #route-grid .ag-cell { padding-inline:12px; }
+    #route-grid .route-grid-action-cell { padding-inline:8px; }
+    .route-grid-actions { display:flex; justify-content:flex-start; gap:6px; height:100%; align-items:center; }
+    #route-grid .route-grid-actions .btn { min-height:36px; padding:0 10px; font-size:12px; line-height:1; }
+    #route-grid .route-action-stops { background:#e8f3ee; color:#08634f; border-color:#c1dace; font-weight:600; }
+    #route-grid .route-action-delete { border-color:transparent; background:transparent; color:#b42332; }
+    #route-grid .route-action-delete:hover { background:#fff0f0; border-color:#efc2c7; }
     .route-grid-days { display:flex; flex-wrap:wrap; align-items:center; gap:.25rem; height:100%; }
-    .route-grid-day { font-size:.625rem; padding:.125rem .25rem; border-radius:.25rem; background:rgba(127,29,29,.4); border:1px solid rgba(185,28,28,.5); color:#fda4af; }
-    @media (max-width:640px) { #route-grid { height:calc(100vh - 230px); } }
+    .route-grid-day { font-size:.6875rem; line-height:1.4; padding:.125rem .25rem; border-radius:.25rem; background:#fff1f2; border:1px solid #f2c9cf; color:#a51e36; }
+    @media (max-width:640px) {
+      .route-toolbar #search-input { flex-basis:100%; min-width:0; }
+      .route-toolbar #filter-company { flex:1; min-width:120px; }
+      .route-toolbar .btn, #route-grid .route-grid-actions .btn { min-height:42px; }
+      #route-grid { height:calc(100vh - 285px); }
+    }
   </style>
 <link rel="stylesheet" href="/css/workspace-ui.css">
 </head>
@@ -30,15 +48,21 @@
 
   <main class="flex-1 max-w-[1400px] w-full mx-auto px-4 py-3">
     <!-- 툴바 -->
-    <div class="flex flex-wrap items-center gap-2 mb-3">
-      <input id="search-input" type="search" placeholder="코스명/호차/기사/차량번호 검색"
+    <div class="route-toolbar" role="search" aria-label="코스 검색 및 필터">
+      <input id="search-input" type="search" aria-label="코스명, 호차, 기사, 차량번호 검색" placeholder="코스명/호차/기사/차량번호 검색"
              class="app-input flex-1 min-w-[220px]">
-      <select id="filter-company" class="app-select w-44">
+      <select id="filter-company" aria-label="운수사 선택" class="app-select w-44">
         <option value="">운수사(전체)</option>
       </select>
+      <button id="column-filters-btn" type="button" class="btn btn-ghost" aria-pressed="false" aria-controls="route-grid">상세 필터</button>
+      <button id="reset-filters-btn" type="button" class="btn btn-ghost hidden">필터 초기화</button>
       <button id="new-btn" class="btn btn-primary">+ 새 코스</button>
     </div>
 
+    <div class="route-filter-summary">
+      <span id="filter-summary" role="status" aria-live="polite">전체 코스</span>
+      <span>열 제목을 눌러 정렬 · Shift로 추가 정렬</span>
+    </div>
     <div id="route-grid" aria-label="코스 목록"></div>
 
     <div class="px-1 py-2 text-xs text-zinc-400 flex items-center justify-between">
@@ -92,6 +116,7 @@
 
     const $ = (id) => document.getElementById(id);
     const collator = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' });
+    const compactGrid = window.matchMedia('(max-width: 760px)');
     const gridApi = createGrid($('route-grid'), {
       theme: themeQuartz.withParams({
         accentColor: '#087f72',
@@ -102,28 +127,31 @@
         rowHoverColor: '#edf6f2'
       }),
       columnDefs: [
-        { field: 'company', headerName: '운수사', minWidth: 140, sort: 'asc', sortIndex: 0 },
-        { field: 'carNumber', headerName: '호차', minWidth: 90, sort: 'asc', sortIndex: 1 },
-        { field: 'routeName', headerName: '코스명', minWidth: 150, sort: 'asc', sortIndex: 2 },
-        { field: 'primaryDriver', headerName: '주기사', minWidth: 110 },
-        { field: 'secondaryDriver', headerName: '보조기사', minWidth: 110, cellStyle: { color: '#526776' } },
-        { field: 'primaryVehicle', headerName: '주차량', minWidth: 125 },
+        { field: 'company', headerName: '운수사', width: 160, minWidth: 140, sort: 'asc', sortIndex: 0 },
+        { field: 'carNumber', headerName: '호차', width: 125, minWidth: 100, sort: 'asc', sortIndex: 1 },
+        { field: 'routeName', headerName: '코스명', width: 170, minWidth: 145, sort: 'asc', sortIndex: 2 },
+        { field: 'primaryDriver', headerName: '주기사', width: 110, minWidth: 100 },
+        { field: 'secondaryDriver', headerName: '보조기사', width: 110, minWidth: 100, cellStyle: { color: '#526776' } },
+        { field: 'primaryVehicle', headerName: '주차량', width: 160, minWidth: 155 },
         { field: 'stopCount', headerName: '납품처', width: 95, filter: 'agNumberColumnFilter', cellStyle: { textAlign: 'right' } },
         { field: 'closedDaysText', headerName: '휴무일', minWidth: 135, cellRenderer: closedDaysRenderer },
         { field: 'activeLabel', headerName: '상태', width: 95, cellRenderer: statusRenderer },
-        { headerName: '작업', colId: 'actions', width: 250, pinned: 'right', sortable: false, filter: false, resizable: false, cellRenderer: actionRenderer }
+        { headerName: '작업', colId: 'actions', width: 216, minWidth: 216, pinned: compactGrid.matches ? null : 'right', cellClass: 'route-grid-action-cell', sortable: false, filter: false, resizable: false, cellRenderer: actionRenderer }
       ],
       defaultColDef: {
         sortable: true,
         filter: 'agTextColumnFilter',
-        floatingFilter: true,
+        floatingFilter: false,
+        suppressHeaderFilterButton: true,
         resizable: true,
         comparator: (left, right) => collator.compare(String(left ?? ''), String(right ?? ''))
       },
       rowData: [],
       getRowId: params => params.data.id,
-      rowHeight: 44,
-      headerHeight: 38,
+      rowHeight: compactGrid.matches ? 52 : 46,
+      headerHeight: 44,
+      onFilterChanged: event => updateFilterSummary(event.api),
+      onModelUpdated: event => updateFilterSummary(event.api),
       floatingFiltersHeight: 38,
       animateRows: false,
       suppressCellFocus: true,
@@ -220,11 +248,15 @@
       });
 
       renderGrid({ coById, drvById, vehById });
-      $('result-count').textContent =
-        state.routes.length === 0 ? '코스 없음'
-        : (state.filtered.length === state.routes.length
-            ? `총 ${state.routes.length}건`
-            : `총 ${state.filtered.length}건 (전체 ${state.routes.length}건 중)`);
+      updateFilterSummary(gridApi);
+    }
+
+    function updateFilterSummary(api) {
+      const count = Object.keys(api.getFilterModel()).length + Number(Boolean(state.filters.search)) + Number(Boolean(state.filters.companyId));
+      $('filter-summary').textContent = count ? `필터 ${count}개 적용 중` : '전체 코스';
+      $('reset-filters-btn').classList.toggle('hidden', !count);
+      const shown = api.getDisplayedRowCount();
+      $('result-count').textContent = state.routes.length === 0 ? '코스 없음' : shown === state.routes.length ? `총 ${shown}건` : `${shown}건 표시 · 전체 ${state.routes.length}건`;
     }
 
     function renderGrid({ coById, drvById, vehById }) {
@@ -258,6 +290,24 @@
       $('filter-company').addEventListener('change', () => {
         state.filters.companyId = $('filter-company').value;
         applyAndRender();
+      });
+      $('column-filters-btn').addEventListener('click', () => {
+        const button = $('column-filters-btn');
+        const expanded = button.getAttribute('aria-pressed') !== 'true';
+        button.setAttribute('aria-pressed', String(expanded));
+        gridApi.setGridOption('defaultColDef', { ...gridApi.getGridOption('defaultColDef'), floatingFilter: expanded, suppressHeaderFilterButton: !expanded });
+      });
+      $('reset-filters-btn').addEventListener('click', () => {
+        $('search-input').value = '';
+        $('filter-company').value = '';
+        state.filters = { search: '', companyId: '' };
+        gridApi.setFilterModel(null);
+        applyAndRender();
+      });
+      compactGrid.addEventListener('change', event => {
+        gridApi.setColumnsPinned(['actions'], event.matches ? null : 'right');
+        gridApi.setGridOption('rowHeight', event.matches ? 52 : 46);
+        gridApi.resetRowHeights();
       });
       $('new-btn').addEventListener('click', () => openRouteForm(null));
     }
@@ -513,7 +563,8 @@
 
     function statusRenderer(params) {
       const status = document.createElement('span');
-      status.className = params.value === '비활성' ? 'text-rose-400 text-xs' : 'text-emerald-400 text-xs';
+      status.className = 'text-xs';
+      status.style.color = params.value === '비활성' ? '#a51e36' : '#08634f';
       status.textContent = params.value;
       return status;
     }
@@ -522,15 +573,16 @@
       const container = document.createElement('div');
       container.className = 'route-grid-actions';
       const actions = [
-        ['납품처 ' + params.data.stopCount, () => openRouteStopsPopup(params.data.id), ''],
+        ['납품처 ' + params.data.stopCount, () => openRouteStopsPopup(params.data.id), ' route-action-stops'],
         ['편집', () => openRouteForm(params.data.route), ''],
-        ['삭제', () => deleteRoute(params.data.id), ' text-rose-400']
+        ['삭제', () => deleteRoute(params.data.id), ' route-action-delete']
       ];
       for (const [label, action, extraClass] of actions) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'btn btn-ghost text-xs' + extraClass;
         button.textContent = label;
+        button.setAttribute('aria-label', `${params.data.routeName || params.data.carNumber || '코스'} ${label}`);
         button.addEventListener('click', event => {
           event.stopPropagation();
           action();

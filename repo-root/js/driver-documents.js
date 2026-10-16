@@ -18,12 +18,13 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
   function reset(ownerId){
     const generationId=++generation,current=()=>generationId===generation;
     clearUrls();host.replaceChildren();
-    host.append(el('h3',companyMode?'운수사 인허가 사진':'기사 서류 사진','font-semibold text-sm'));
-    const notice=el('p','','text-xs text-zinc-300');notice.setAttribute('role','status');host.append(notice);
+    if(!(host.className||'').includes('document-manager'))host.className=(host.className||'')+' document-manager';
+    host.append(el('h3',companyMode?'운수사 인허가 사진':'기사 서류 사진','document-manager-title'));
+    const notice=el('p','','document-manager-notice');notice.setAttribute('role','status');host.append(notice);
     if(!ownerId){notice.textContent=(companyMode?'운수사':'기사')+' 기본 정보를 먼저 저장하세요.';return;}
     notice.textContent='사진 선택 또는 Ctrl+V로 자동 저장됩니다. 뒷면은 여러 장 추가할 수 있습니다.';
     let records=[],loaded=false;
-    const controls=[],areas=new Map(),types=companyMode?DOCUMENT_TYPES.slice(0,4):DOCUMENT_TYPES;
+    const controls=[],areas=new Map(),counts=new Map(),types=companyMode?DOCUMENT_TYPES.slice(0,4):DOCUMENT_TYPES;
     const version=row=>row.request_id||row.uploaded_at;
     const addButton=(parent,label,action)=>{
       const b=el('button',label,'btn btn-ghost text-xs');b.type='button';
@@ -64,18 +65,22 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
       for(const [kind] of types){
         const area=areas.get(kind);area.replaceChildren();
         const pages=records.filter(r=>r.document_type===kind).toSorted((a,b)=>(a.page_number||0)-(b.page_number||0));
-        if(!pages.length){area.append(el('p','등록된 사진 없음','text-xs text-zinc-500'));continue;}
+        counts.get(kind).textContent=pages.length+'장';
+        if(!pages.length){area.append(el('p','등록된 사진 없음','document-empty'));continue;}
         pages.forEach((row,index)=>{
-          const card=el('div','','border-t border-zinc-700 pt-2 space-y-2');
-          card.append(el('p',(kind.endsWith('_back')?(index+1)+'번째 · ':'')+'DB저장됨 · '+new Date(row.uploaded_at).toLocaleString('ko-KR'),'text-xs text-emerald-300'));
+          const card=el('div','','document-file');
+          const info=el('div','','document-file-info');
+          info.append(el('p',row.file_name||(kind.endsWith('_back')?(index+1)+'번째 사진':'등록 사진'),'document-file-name'));
+          info.append(el('p',new Date(row.uploaded_at).toLocaleString('ko-KR')+' 저장','document-file-date'));card.append(info);
+          const actions=el('div','','document-file-actions');card.append(actions);
           const imageArea=el('div');card.append(imageArea);
-          addButton(card,'저장 사진 보기',()=>run(async()=>{
+          addButton(actions,'저장 사진 보기',()=>run(async()=>{
             notice.textContent='사진 불러오는 중…';
             const blob=await adapter.download(ownerId,kind,version(row),row.id);
             if(current())preview(imageArea,row,blob);
             return '저장된 사진 · 마우스를 올리면 확대됩니다.';
           },{reloadAfter:false}));
-          addButton(card,'사진 삭제',()=>{
+          addButton(actions,'사진 삭제',()=>{
             if(!window.confirm('선택한 사진을 삭제 보관 폴더로 이동하시겠습니까?'))return;
             return run(async()=>{await adapter.remove(ownerId,kind,version(row),row.id);return '사진 삭제 완료';});
           });
@@ -84,12 +89,17 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
       }
     }
     for(const [kind,label] of types){
-      const box=el('section','','border border-zinc-700 rounded p-3 space-y-2');
-      const caption=el('label',label,'block text-sm font-medium');
+      const box=el('section','','document-kind');box.setAttribute('data-file-dropzone','');
+      const details=el('details','','document-kind-details');details.open=kind===types[0][0];box.append(details);
+      const heading=el('summary','','document-kind-heading'),count=el('span','0장','document-count');
+      heading.append(el('span',label),count);counts.set(kind,count);details.append(heading);
+      const content=el('div','','document-kind-content');details.append(content);
+      const uploadActions=el('div','','document-upload-actions');content.append(uploadActions);
+      const caption=el('label','사진 선택','document-upload-label');
       const input=el('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';
-      input.multiple=kind.endsWith('_back');input.className='block w-full text-xs mt-2';controls.push(input);caption.append(input);
-      box.append(caption);
-      if(input.multiple)box.append(el('p','여러 장 선택 가능 · 기존 뒷면에 추가됩니다.','text-xs text-zinc-400'));
+      input.multiple=kind.endsWith('_back');input.className='document-file-input';input.setAttribute('aria-label',label+' 사진 선택');controls.push(input);caption.append(input);
+      uploadActions.append(caption);
+      if(input.multiple)content.append(el('p','여러 장 선택 가능 · 기존 뒷면에 추가됩니다.','document-hint'));
       const save=files=>{
         if(!files.length)return;
         const expiry=getExpiry();
@@ -112,7 +122,7 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
         });
       };
       input.addEventListener('change',()=>save(Array.from(input.files||[])));
-      const paste=addButton(box,'사진 붙여넣기 · 클릭 후 Ctrl+V',()=>{});
+      const paste=addButton(uploadActions,'붙여넣기 · Ctrl+V',()=>{});
       paste.setAttribute('aria-label',label+' 사진 붙여넣기');
       box.addEventListener('paste',event=>{
         if(pending||!loaded||!current())return;
@@ -122,7 +132,7 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
         if(files.length){event.preventDefault();return save(files);}
       });
       if(!companyMode&&['food_transport','livestock_transport'].includes(kind)&&adapter?.replaceCompany){
-        addButton(box,'운수사 대체',()=>{
+        const replace=addButton(uploadActions,'운수사 대체',()=>{
           if(!window.confirm(label.replace(' 앞','')+' 앞면과 모든 뒷면을 기사에 저장된 운수사의 사진으로 대체하시겠습니까?'))return;
           return run(async()=>{
             notice.textContent='운수사 사진 복사 중…';
@@ -130,8 +140,9 @@ export function mountDriverDocuments(host, { getExpiry=()=>'', getPdfOptions=()=
             return '운수사 사진 '+result.count+'장으로 대체했습니다.';
           });
         });
+        replace.className+=' document-company-replace';
       }
-      const area=el('div','','space-y-3');areas.set(kind,area);box.append(area);host.append(box);
+      const area=el('div','','document-file-list');areas.set(kind,area);content.append(area);host.append(box);
     }
     if(adapter?.compilePdf&&!companyMode){
       const area=el('section','','border-t border-zinc-700 pt-3 space-y-2');
