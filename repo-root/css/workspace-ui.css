@@ -1,23 +1,29 @@
 @import './ui-foundation.css';
+@import './workspace-components.css';
 
 .workspace-ui {
-  --bg: #151b20;
-  --bg-page: #0d1217;
-  --bg-soft: #202a32;
-  --bg-softer: #303d48;
-  --panel: #182127;
-  --fg: #edf3f7;
-  --text: #edf3f7;
-  --fg-mute: #a9bac7;
-  --muted: #a9bac7;
-  --border: #34434f;
-  --border-soft: #28353f;
-  --accent: #34d399;
-  --green: #6ee7b7;
+  color-scheme: light;
+  --bg: #f3f6f8;
+  --bg-page: #f3f6f8;
+  --bg-soft: #f1f5f7;
+  --bg-softer: #e8eef2;
+  --panel: #fff;
+  --fg: #203443;
+  --text: #203443;
+  --fg-mute: #526776;
+  --muted: #526776;
+  --border: #cbd7df;
+  --border-soft: #e0e7ec;
+  --accent: #087f72;
+  --green: #087567;
+  --ui-focus: #087f72;
   background-color: var(--bg-page);
   color: var(--fg);
   text-rendering: optimizeLegibility;
   line-height: 1.55;
+  font-family:
+    'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
+  font-size: 14px;
 }
 
 .workspace-ui :where(input, select, textarea, button) {
@@ -33,7 +39,7 @@
 }
 
 .workspace-ui :where(input, textarea)::placeholder {
-  color: #8da1b0;
+  color: #637887;
 }
 .workspace-ui :where(input, select, textarea):disabled {
   cursor: not-allowed;
@@ -52,7 +58,7 @@
   background: #177c57;
 }
 .workspace-ui .btn-ghost:hover {
-  background: #26363f;
+  background: #e8f1ee;
 }
 .workspace-ui :where(button, a)[aria-current='page'] {
   color: var(--green);
@@ -64,7 +70,7 @@
   font-weight: 600;
 }
 .workspace-ui table tbody tr:hover {
-  background-color: #1e3038;
+  background-color: #edf6f2;
 }
 .workspace-ui :where(dialog, [role='dialog']) {
   max-width: calc(100vw - 24px);
@@ -85,20 +91,20 @@
   gap: 16px;
 }
 .workspace-ui #menu-grid > a {
-  min-height: 108px;
-  padding: 22px;
-  border-radius: 12px;
-  background: #182127;
+  min-height: 112px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--panel);
   border-color: var(--border);
 }
 .workspace-ui #menu-grid > a:hover {
-  border-color: #6ee7b7;
-  background: #1d302d;
+  border-color: #6aab95;
+  background: #f5fbf8;
 }
 .workspace-ui #menu-grid > a:focus-visible {
   outline-offset: 4px;
 }
-.workspace-ui #menu-grid h2 {
+.workspace-ui #menu-grid h3 {
   font-size: 16px;
 }
 .workspace-ui #menu-grid p {
@@ -109,16 +115,16 @@
   padding-bottom: 4px;
 }
 .workspace-ui #app {
-  background: var(--bg);
+  background: var(--panel);
   border-color: var(--border);
 }
 
 .workspace-ui.portal-shell .portal-header {
-  background: #10191f;
+  background: #fff;
   border-color: var(--border-soft);
 }
 .workspace-ui.portal-shell h1 {
-  font-size: clamp(23px, 2.2vw, 30px);
+  font-size: 26px;
   letter-spacing: -0.025em;
 }
 .workspace-ui.portal-shell .portal-sidebar {

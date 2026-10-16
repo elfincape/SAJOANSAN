@@ -7,7 +7,6 @@
   <title>코스표 · 사조안산</title>
   <link rel="stylesheet" href="/css/common.css">
   <link rel="stylesheet" href="/css/driver-documents.css">
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     html, body {
       height: 100%;
@@ -91,45 +90,37 @@
   </header>
 
   <!-- 필터 바 -->
-  <div id="filter-bar" class="border-b border-zinc-800 bg-zinc-900/95">
-    <div class="max-w-[1600px] mx-auto px-4 py-2 flex flex-wrap items-center gap-2">
-
-      <!-- 다중선택 드롭다운 -->
-      <div data-multi="company_name" class="min-w-[110px]"></div>
-      <div data-multi="route_name"   class="min-w-[120px]"></div>
-      <div data-multi="car_number"   class="min-w-[90px]"></div>
-      <div data-multi="dp_region"    class="min-w-[100px]"></div>
-      <div data-multi="security_key_location" class="min-w-[120px]"></div>
-      <div data-multi="security_password" class="min-w-[100px]"></div>
-      <div data-multi="driver_name"  class="min-w-[100px]"></div>
-
-      <!-- 텍스트 검색 -->
-      <input id="search-input" type="search"
+  <div id="filter-bar">
+    <div class="dashboard-query">
+      <input id="search-input" type="search" aria-label="코스표 검색"
              placeholder="전체 컬럼 검색 (기사명·전화번호 포함)"
              class="app-input w-64 text-xs"
              autocomplete="off">
-
-      <!-- 진입조건 체크박스 -->
-      <span class="text-xs text-zinc-500 ml-1">진입:</span>
-      <label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_under_1ton"> 1t</label>
-      <label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_under_3_5ton"> 3.5t</label>
-      <label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_over_5ton"> 5t+</label>
-      <label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_unmanned_yard"> 야적</label>
-
-      <div class="flex-1"></div>
-
-      <!-- 뷰 토글 -->
-      <div class="flex rounded overflow-hidden border border-zinc-700 text-xs shrink-0">
+      <div class="flex rounded overflow-hidden border border-zinc-700 text-xs shrink-0" role="group" aria-label="코스표 보기 방식">
         <button class="view-toggle px-2.5 py-1.5" data-view="flat">목록</button>
         <button class="view-toggle px-2.5 py-1.5" data-view="group">코스별</button>
       </div>
-
-      <button id="reset-sort"    class="btn btn-ghost text-xs shrink-0">정렬 초기화</button>
-      <button id="reset-filters" class="btn btn-ghost text-xs shrink-0">필터 초기화</button>
-
-      <span id="active-filter-count" class="text-xs text-amber-400 shrink-0"></span>
-      <span id="result-count"        class="text-xs text-zinc-400 shrink-0"></span>
+      <span id="result-count" role="status" aria-live="polite"></span>
     </div>
+    <details class="dashboard-filter-details">
+      <summary>상세 필터 <span id="active-filter-count"></span></summary>
+      <div class="dashboard-filter-controls">
+        <div data-multi="company_name" class="min-w-[110px]"></div>
+<div data-multi="route_name"   class="min-w-[120px]"></div>
+<div data-multi="car_number"   class="min-w-[90px]"></div>
+<div data-multi="dp_region"    class="min-w-[100px]"></div>
+<div data-multi="security_key_location" class="min-w-[120px]"></div>
+<div data-multi="security_password" class="min-w-[100px]"></div>
+<div data-multi="driver_name"  class="min-w-[100px]"></div>
+        <span class="text-xs text-zinc-500">진입 조건</span>
+        <label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_under_1ton"> 1t</label>
+<label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_under_3_5ton"> 3.5t</label>
+<label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_over_5ton"> 5t+</label>
+<label class="cb text-xs"><input type="checkbox" data-cb="entry_cond" value="allow_unmanned_yard"> 야적</label>
+        <button id="reset-filters" class="btn btn-ghost">필터 초기화</button>
+        <button id="reset-sort" class="btn btn-ghost">정렬 초기화</button>
+      </div>
+    </details>
   </div>
 
   <!-- 로딩 표시 -->

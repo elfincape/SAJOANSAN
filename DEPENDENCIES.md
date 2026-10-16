@@ -2,6 +2,9 @@
 
 ## UI 스타일 기반
 
+- Tailwind CSS 3.4.17: 기존 HTML의 유틸리티를 Vite/PostCSS 빌드에 포함한다. 런타임 CDN 스크립트는 제거하여 외부 연결 실패가 전체 레이아웃을 깨뜨리지 않도록 한다. `utilities.css`는 기본 레이어, `common.css` 마지막의 utilities 지시문은 기존 클래스 우선순위를 유지한다.
+- 디자인 참고: shadcn의 sidebar-07 예제와 21st.dev의 대시보드·검색 내비게이션 패턴을 검토했다. 현재 Vanilla JS에 맞춘 독립 구현이며 두 React 라이브러리를 설치하거나 해당 소스를 복제하지 않았다.
+
 - Open Props: npm의 `open-props`를 정확한 버전으로 고정한다. `ui-foundation.css`에서 easing·size·border 변수만 가져오며 normalize와 전역 버튼 재설정은 사용하지 않는다. 공통 CSS와 업무 포털 CSS에서 동일한 기반을 사용한다.
 - Uiverse Galaxy: 설치형 패키지가 아닌 HTML/CSS 원본 모음이다. AbanoubMagdy1의 `fluffy-octopus-90` 토글을 포털의 기존 `내 업무만` 필터에 맞게 수정했다. 기존 checkbox ID와 이벤트를 유지하고 키보드 포커스·44px 레이블·모션 감소 설정을 지원한다.
 - 원본: https://github.com/uiverse-io/galaxy/blob/main/Toggle-switches/AbanoubMagdy1_fluffy-octopus-90.html
