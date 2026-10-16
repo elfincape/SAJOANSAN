@@ -6,7 +6,6 @@
   <meta name="robots" content="noindex, nofollow">
   <title>관리 허브 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
-  <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="/css/workspace-ui.css">
 </head>
 <body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
@@ -33,8 +32,30 @@
 
   <!-- 본문 -->
   <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-8">
-    <p class="text-sm text-zinc-400 mb-6">관리할 항목을 선택하세요.</p>
+    <div class="hub-heading">
+      <h2>운영에 필요한 도구를 찾으세요</h2>
+      <p>선택한 센터에서 사용할 수 있는 업무와 관리 도구입니다.</p>
+    </div>
+    <section class="hub-controls" aria-label="관리 도구 찾기">
+      <div class="hub-search">
+        <label for="menu-search">도구 검색</label>
+        <input id="menu-search" type="search" placeholder="코스, 기사, 엑셀 등 도구 이름 검색" autocomplete="off" aria-controls="menu-grid">
+      </div>
+      <div id="hub-categories" class="hub-categories" role="group" aria-label="도구 분류">
+        <button type="button" data-hub-category="all" aria-pressed="true">전체</button>
+        <button type="button" data-hub-category="work" aria-pressed="false">업무 처리</button>
+        <button type="button" data-hub-category="reference" aria-pressed="false">기준정보</button>
+        <button type="button" data-hub-category="files" aria-pressed="false">파일 도구</button>
+        <button type="button" data-hub-category="system" aria-pressed="false">시스템</button>
+      </div>
+    </section>
+    <p id="hub-result-count" class="hub-result-count" role="status" aria-live="polite"></p>
     <div id="menu-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <div id="hub-empty" class="hub-empty" hidden>
+      <h2>조건에 맞는 도구가 없습니다</h2>
+      <p>검색어를 바꾸거나 전체 도구에서 다시 찾아보세요.</p>
+      <button id="hub-reset" type="button" class="btn">검색·분류 초기화</button>
+    </div>
   </main>
 
   <script type="module">
@@ -47,6 +68,7 @@
       withCenterParam
     } from '/js/center.js';
     import { isPrivateFeatureOwner, loadPrivateFeatures } from '/js/private-features.js';
+    import { mountAdminHub } from '/js/admin-hub.js';
 
     const profile = await requireRole('editor');
     if (!profile) { /* 리다이렉트 됨 */ }
@@ -63,7 +85,7 @@
     const isPrivateOwner = isPrivateFeatureOwner(profile);
     const privateFeatures = loadPrivateFeatures(profile);
     const menus = [
-        { href:'/portal/', title:'직원·HQ 업무 포털', desc:'오늘 할 일·업무 처리·인계·센터 업무조사', icon:'▤', color:'emerald' },
+        { href:'/portal/', title:'직원·HQ 업무 포털', desc:'오늘 할 일·업무 처리·인계·센터 업무조사', icon:iconLog(), color:'emerald' },
       { feature:'routes', href: '/admin/routes.html',          title: '코스 관리',      desc: '코스와 납품처(운행시간) 편집',
         icon: iconRoute(), color: 'emerald' },
       { feature:'deliveryPoints', href: '/admin/delivery-points.html', title: '납품처 관리',    desc: '납품처 마스터(주소·진입조건·마감시간)',
@@ -71,7 +93,7 @@
       { feature:'drivers', href: '/admin/drivers.html',         title: '기사 관리',      desc: '기사 명부와 연락처',
         icon: iconUser(),  color: 'amber' },
       { feature:'drivers', href: '/admin/pdf-image-converter.html', title: 'PDF IMG 변환기', desc: 'PDF 페이지를 기사 서류 사진으로 등록',
-        icon: '🖼️', color: 'cyan' },
+        icon: iconParser(), color: 'cyan' },
       { feature:'vehicles', href: '/admin/vehicles.html',        title: '차량 관리',      desc: '차량번호·톤수·팔레트 적재량',
         icon: iconTruck(), color: 'violet' },
       { feature:'companies', href: '/admin/companies.html',       title: '운수사 관리',    desc: '운수사 정보',
@@ -80,36 +102,36 @@
         icon: iconParser(), color: 'sky' },
       { feature:'pyeongtaekCharterParser', href: '/admin/pyeongtaek-charter-parser.html', title: '평택 용차내역 파서', desc: '엑셀 업로드·DB 조회/수정·가로형 정산·OneDrive 월 보관',
         icon: iconParser(), color: 'sky' },
-      { href:'/admin/charter-fuel-estimator.html', title:'착지별 주행거리 계산', desc:'', icon:'⛽', color:'amber' },
-      { href:'/admin/naver-shortest-distance.html', title:'네이버 최단거리 계산', desc:'', icon:'↗', color:'sky' },
+      { href:'/admin/charter-fuel-estimator.html', title:'착지별 주행거리 계산', desc:'', icon:iconTruck(), color:'amber' },
+      { href:'/admin/naver-shortest-distance.html', title:'네이버 최단거리 계산', desc:'', icon:iconRoute(), color:'sky' },
       { feature:'transfers', href: '/admin/transfers.html', title: '이배송 관리', desc: '이배송 관리',
         icon: iconTransfer(), color: 'emerald' },
       { feature:'excelCompare', href: '/admin/excel-compare.html', title: '엑셀 시트 비교', desc: '여러 열로 행 매칭·값 가져오기·TRUE/FALSE 확인',
-        icon: '⇄', color: 'emerald' },
+        icon: iconTransfer(), color: 'emerald' },
       { feature:'palletSlips', href: '/admin/pallet-slips.html', title: '파레트 전표관리', desc: '엑셀 전표 매칭 후 결과 내려받기',
-        icon: '📦', color: 'violet' },
+        icon: iconStore(), color: 'violet' },
       { feature:'oneTopWork', href: '/admin/one-top-two-room-work.html', title: '1탑2실 작업', desc: '영수증 촬영·온도 분석·차량번호별 Excel 반영',
-        icon: '📷', color: 'sky' },
+        icon: iconParser(), color: 'sky' },
       { feature:'dailyTemperature', href: '/admin/daily-temperature.html', title: '1탑2실 템플릿 생성', desc: '고정·광역·임시 순서 유지 템플릿 생성',
-        icon: '🌡️', color: 'emerald' },
+        icon: iconParser(), color: 'emerald' },
       { feature:'coupangEntry', href: '/admin/coupang-entry.html', title: '쿠팡 입문확인', desc: '쿠팡 시간표 이미지·배차정보 매칭 엑셀 생성',
-        icon: '🧾', color: 'cyan' },
+        icon: iconLog(), color: 'cyan' },
       ...(isPrivateOwner ? [{ feature:'ansanGimhaeBusanAnsan', href: '/admin/ansan-gimhae-busan-ansan.html', title: '안산김해부산안산', desc: '',
-        icon: '🔁', color: 'amber' }] : []),
+        icon: iconRoute(), color: 'amber' }] : []),
       ...(isPrivateOwner ? [{ feature:'imageStraightener', href: '/admin/image-straightener.html', title: '기울기 보정', desc: '',
-        icon: '↻', color: 'cyan' }] : []),
+        icon: iconParser(), color: 'cyan' }] : []),
       { feature:'haulCalculator', href: '/admin/haul-dispatch-calculator.html', title: '하불 배차 계산', desc: '실제 구간단가 기준 최저가 차량 조합 계산',
-        icon: '₩', color: 'emerald' },
+        icon: iconLog(), color: 'emerald' },
       ...(isAdmin ? [
-        { href:'/admin/notion-health.html', title:'보건증 Notion 연동', desc:'보건증 갱신 목록 연결 확인', icon:'🔗', color:'emerald' },
-        { feature:'exportData', href: '/admin/export.html', icon: '📤', title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
-        { feature:'importData', href: '/admin/import.html', icon: '📥', title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
+        { href:'/admin/notion-health.html', title:'보건증 Notion 연동', desc:'보건증 갱신 목록 연결 확인', icon:iconLog(), color:'emerald' },
+        { feature:'exportData', href: '/admin/export.html', icon: iconTransfer(), title: '코스표 내려받기', desc: 'CSV / XLSX로 전체 코스 다운로드', color: 'cyan' },
+        { feature:'importData', href: '/admin/import.html', icon: iconTransfer(), title: 'CSV 일괄 가져오기', desc: '엑셀 코스표를 한 번에 업로드', color: 'amber', adminOnly: true },
         { feature:'users', href: '/admin/users.html',     title: '사용자 관리', desc: '계정·권한·활성 상태',
           icon: iconShield(), color: 'cyan',  adminOnly: true },
         ...(isPrivateOwner ? [{ feature:'auditLog', href: '/admin/audit-log.html', title: '변경 이력',   desc: '데이터 변경 로그',
           icon: iconLog(),    color: 'zinc',  adminOnly: true }] : [])
       ] : []),
-      ...(isPrivateOwner ? [{ href:'/admin/settings.html', title:'설정', desc:'관리 허브 기능 표시 설정', icon:'⚙', color:'zinc' }] : [])
+      ...(isPrivateOwner ? [{ href:'/admin/settings.html', title:'설정', desc:'관리 허브 기능 표시 설정', icon:iconShield(), color:'zinc' }] : [])
     ].filter(menu => !menu.feature || privateFeatures[menu.feature]);
 
     const COLOR = {
@@ -145,6 +167,7 @@
       `;
     }).join('');
     decorateCenterLinks(grid, center);
+    mountAdminHub(grid);
 
     // ----- 인라인 SVG 아이콘들 -----
     function iconRoute() {

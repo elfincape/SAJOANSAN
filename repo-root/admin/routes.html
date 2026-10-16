@@ -6,7 +6,6 @@
   <meta name="robots" content="noindex, nofollow">
   <title>코스 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     #route-grid { height:calc(100vh - 200px); min-height:420px; }
     .route-grid-actions { display:flex; justify-content:flex-end; gap:.25rem; height:100%; align-items:center; }
@@ -95,19 +94,19 @@
     const collator = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' });
     const gridApi = createGrid($('route-grid'), {
       theme: themeQuartz.withParams({
-        accentColor: '#34d399',
-        backgroundColor: '#18181b',
-        borderColor: '#3f3f46',
-        foregroundColor: '#f4f4f5',
-        headerBackgroundColor: '#27272a',
-        rowHoverColor: 'rgba(63, 63, 70, .55)'
+        accentColor: '#087f72',
+        backgroundColor: '#ffffff',
+        borderColor: '#d8e2e8',
+        foregroundColor: '#203443',
+        headerBackgroundColor: '#edf2f5',
+        rowHoverColor: '#edf6f2'
       }),
       columnDefs: [
         { field: 'company', headerName: '운수사', minWidth: 140, sort: 'asc', sortIndex: 0 },
         { field: 'carNumber', headerName: '호차', minWidth: 90, sort: 'asc', sortIndex: 1 },
         { field: 'routeName', headerName: '코스명', minWidth: 150, sort: 'asc', sortIndex: 2 },
         { field: 'primaryDriver', headerName: '주기사', minWidth: 110 },
-        { field: 'secondaryDriver', headerName: '보조기사', minWidth: 110, cellStyle: { color: '#a1a1aa' } },
+        { field: 'secondaryDriver', headerName: '보조기사', minWidth: 110, cellStyle: { color: '#526776' } },
         { field: 'primaryVehicle', headerName: '주차량', minWidth: 125 },
         { field: 'stopCount', headerName: '납품처', width: 95, filter: 'agNumberColumnFilter', cellStyle: { textAlign: 'right' } },
         { field: 'closedDaysText', headerName: '휴무일', minWidth: 135, cellRenderer: closedDaysRenderer },

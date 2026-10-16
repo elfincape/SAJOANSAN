@@ -464,6 +464,9 @@ function populateMultiSelect(key, options) {
 // 필터/검색/뷰 토글
 // -----------------------------------------------------------------------------
 function bindFilterEvents() {
+  document.getElementById('table-area')?.addEventListener('click', event => {
+    if (event.target.closest('[data-empty-reset]')) document.getElementById('reset-filters')?.click();
+  });
   const searchInput = document.getElementById('search-input');
   searchInput?.addEventListener('input', () => {
     state.filters.search = searchInput.value.trim();
@@ -494,6 +497,7 @@ function bindViewToggle() {
 
 function refreshViewToggleStyle() {
   document.querySelectorAll('.view-toggle').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.view === state.view));
     if (b.dataset.view === state.view) {
       b.classList.add('bg-emerald-600', 'text-white');
       b.classList.remove('text-zinc-400');
@@ -644,7 +648,7 @@ function renderFlatTable() {
   const cols = visibleColumns();
 
   if (state.filtered.length === 0) {
-    host.innerHTML = `<div class="text-center text-sm text-zinc-500 py-12">조건에 맞는 코스가 없습니다.</div>`;
+    host.innerHTML = `<div class="dashboard-empty"><strong>조건에 맞는 코스가 없습니다</strong><p>검색어를 줄이거나 상세 필터를 초기화해 보세요.</p><button type="button" class="btn btn-ghost" data-empty-reset>필터 초기화</button></div>`;
     return;
   }
 
@@ -850,7 +854,7 @@ function renderGroups() {
   root.innerHTML = '';
 
   if (state.filtered.length === 0) {
-    root.innerHTML = `<div class="text-center text-sm text-zinc-500 py-12">조건에 맞는 코스가 없습니다.</div>`;
+    root.innerHTML = `<div class="dashboard-empty"><strong>조건에 맞는 코스가 없습니다</strong><p>검색어를 줄이거나 상세 필터를 초기화해 보세요.</p><button type="button" class="btn btn-ghost" data-empty-reset>필터 초기화</button></div>`;
     return;
   }
 

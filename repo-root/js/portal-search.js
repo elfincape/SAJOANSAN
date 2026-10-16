@@ -45,7 +45,7 @@ export function createPortalSearch({supabase,node,button,centerName,openRecord,m
       items.append(line);
      }
     }
-    if(!total)items.append(node('p','검색 결과가 없습니다.'));
+    if(!total)items.append(node('p','검색 결과가 없습니다. 검색어를 줄이거나 센터를 모든 센터로 변경해 보세요.'));
 renderDocumentSearch({supabase,host:items,node,button,openRecord,term,center:scope.value,page,current:()=>generation===request&&form.isConnected,next:()=>search(page+1)});
     const pages=node('div');if(page>0)button('이전 20건',()=>search(page-1),pages);
     if(data.groups.some(g=>g.total>(page+1)*20)&&page<100)button('유형별 다음 20건',()=>search(page+1),pages);items.append(pages);message('');
@@ -53,6 +53,6 @@ renderDocumentSearch({supabase,host:items,node,button,openRecord,term,center:sco
    finally{if(form.isConnected)form.querySelector('button').disabled=false;}
   }
   form.onsubmit=event=>{event.preventDefault();search();};
-  if(saved.term&&generation===ticket)search(saved.page);else items.append(node('p','검색어를 입력하세요.'));
+  if(saved.term&&generation===ticket)search(saved.page);else items.append(node('p','업무명·차량번호·기사·회사·납품처 중 두 글자 이상 입력하세요. 완료된 기록도 함께 검색합니다.'));
  };
 }
