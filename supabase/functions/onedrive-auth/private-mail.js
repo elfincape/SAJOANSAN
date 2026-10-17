@@ -132,12 +132,33 @@ export async function handlePrivateMail(action, req, user, ctx) {
     let drive = await (
       await graph('/me/drive?$select=id,owner', env.access)
     ).json();
+    if (String(drive.id).toLowerCase() !== box.drive_id.toLowerCase())
+      throw fail('OWNER_FOLDER_REQUIRED', 409);
     if (!drive.owner?.user?.id)
       drive = await (await graph('/me/drive', env.access)).json();
     if (String(drive.id).toLowerCase() !== box.drive_id.toLowerCase())
       throw fail('OWNER_FOLDER_REQUIRED', 409);
     const owner = drive.owner?.user?.id;
-    if (!owner) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
+    // /me/drive identifies the delegated account's default drive. Its owner is
+    // optional; an item/ACL check below is still mandatory when it is omitted.
+    const folder = await (
+      await graph(
+        '/drives/' +
+          enc(box.drive_id) +
+          '/items/' +
+          enc(box.folder_id) +
+          '?$select=id,folder,parentReference,remoteItem',
+        env.access,
+      )
+    ).json();
+    if (
+      !folder.folder ||
+      folder.id !== box.folder_id ||
+      folder.remoteItem ||
+      String(folder.parentReference?.driveId).toLowerCase() !==
+        box.drive_id.toLowerCase()
+    )
+      throw fail('OWNER_FOLDER_REQUIRED', 409);
     await privatePermissions(box, box.folder_id, env, owner);
     return owner;
   }
@@ -174,6 +195,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
         ...(p.grantedToIdentities || []),
       ].filter(Boolean);
       if (
+        owner &&
         identities.some(
           (identity) => identity.user?.id && identity.user.id !== owner,
         )
@@ -188,6 +210,10 @@ export async function handlePrivateMail(action, req, user, ctx) {
     // Known sharing takes precedence; unresolved metadata still prevents connection.
     if (permissions['@odata.nextLink'])
       throw fail('PERMISSIONS_INCOMPLETE', 409);
+    // Without the optional owner identity, only an explicitly complete empty
+    // sharing ACL can prove no other access. Never guess identities from IDs.
+    if (!owner && permissions.value.length)
+      throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
     if (missingIdentity) throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
   }
   async function fenceMailbox(box, lease) {
@@ -329,9 +355,11 @@ export async function handlePrivateMail(action, req, user, ctx) {
       )
         throw fail('OWNER_FOLDER_REQUIRED', 409);
       const box = { drive_id: driveId, folder_id: item.id };
-      let owner;
+      let owner,
+        verified = false;
       try {
         owner = await privateDestination(box, env);
+        verified = true;
       } catch (error) {
         if (!body.configure && error.status === 409)
           return json({
@@ -365,8 +393,8 @@ export async function handlePrivateMail(action, req, user, ctx) {
         drive_id: driveId,
         name: String(item.name || '').slice(0, 200),
         drive_owner_id: owner,
-        private: !!owner,
-        ...(!owner ? { reason: 'DRIVE_OWNER_UNAVAILABLE' } : {}),
+        private: verified,
+        ...(!verified ? { reason: 'DRIVE_OWNER_UNAVAILABLE' } : {}),
       };
       if (!body.configure) return json(result);
       const rows = await db(
@@ -376,7 +404,8 @@ export async function handlePrivateMail(action, req, user, ctx) {
       );
       if (rows.length) {
         const old = rows[0];
-        if (!owner && old.enabled) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
+        if (!verified && old.enabled)
+          throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
         if (old.drive_id !== driveId || old.folder_id !== item.id)
           throw fail('EXISTING_MAILBOX_DESTINATION_CONFLICT', 409);
         return json({

@@ -47,6 +47,12 @@ const ctx = {
         parentReference: { driveId: wrongDrive ? 'other' : 'drive' },
       });
     if (path === '/me/drive?$select=id') return Response.json({ id: 'drive' });
+    if (path.startsWith('/drives/drive/items/folder?'))
+      return Response.json({
+        id: 'folder',
+        folder: {},
+        parentReference: { driveId: 'drive' },
+      });
     if (path === '/me/drive')
       return Response.json({
         id: 'drive',
@@ -194,6 +200,12 @@ existing = true;
 existingEnabled = true;
 await assert.rejects(() => run(true), /DRIVE_OWNER_UNAVAILABLE/);
 assert.equal(inserts, 2);
+existing = false;
+permissionOverride = { value: [] };
+const verifiedDraft = await (await run(true)).json();
+assert.equal(verifiedDraft.private, true);
+assert.equal(verifiedDraft.enabled, false);
+assert.equal(inserts, 3);
 console.log(
   'PASS authenticated private folder inspection/config: fixed owner, connected account, drive+permissions, no grants/upload, disabled mailbox only, conflicts/shared/foreign denied',
 );

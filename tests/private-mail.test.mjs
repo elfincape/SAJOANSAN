@@ -93,6 +93,12 @@ async function graph(path, access, opts = {}) {
   assert.equal(access, 'access');
   if (path.startsWith('/me/drive'))
     return json({ id: 'drive', owner: { user: { id: 'drive-owner' } } });
+  if (path.startsWith('/drives/drive/items/private?'))
+    return json({
+      id: 'private',
+      folder: {},
+      parentReference: { driveId: 'drive' },
+    });
   if (path.endsWith('/permissions'))
     return json({
       value:
