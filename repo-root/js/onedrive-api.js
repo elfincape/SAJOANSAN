@@ -71,6 +71,12 @@ export const operationsBackups={
  retry:id=>call('backups-retry',{id}),
  download:id=>call('backups-download',{id},true)
 };
+export const privateMail={
+ status:()=>call('private-mail-status'),
+ list:(query='',offset=0)=>call('private-mail-list',{query,offset}),
+ detail:id=>call('private-mail-detail',{id}),
+ download:(id,index)=>call('private-mail-download',{id,index},true)
+};
 export async function connectOneDrive() {
   const result=await call('start',{returnPath:location.pathname+location.search});
   const target=new URL(result.authorizationUrl);

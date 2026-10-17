@@ -1,6 +1,7 @@
 import { handleCharter } from './charter.js';
 import { handleOperations } from './operations.js';
 import { handleBackups } from './backups.js';
+import { handlePrivateMail } from './private-mail.js';
 export const FOLDER_KINDS = ['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 export const LABELS = {food_transport:'식품운반업_앞',food_transport_back:'식품운반업_뒤',livestock_transport:'축산물운반업_앞',livestock_transport_back:'축산물운반업_뒤',freight_license:'화물운송사자격증',vehicle_registration:'차량등록증',identity:'신분증',health_certificate:'보건증'};
 export const KINDS = Object.keys(LABELS);
@@ -169,6 +170,15 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
       if(!root||!service||!anon)throw fail('서버 설정이 필요합니다.',503);
       if(action==='callback'&&req.method==='GET')return await callback(url);
       if(req.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
+      if(action==='private-mail-sync'){
+        const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+        if(!env.MAIL_COLLECTOR_KEY||env.MAIL_COLLECTOR_KEY.length<32||token!==env.MAIL_COLLECTOR_KEY)throw fail('수집기 인증이 필요합니다.',403);
+        return await handlePrivateMail(action,req,{}, {db,graph,connected,settings,withLock,json,fail,hash,fetcher});
+      }
+      if(action.startsWith('private-mail-')){
+        const mailUser=await caller(req,false,true);
+        return await handlePrivateMail(action,req,mailUser,{db,graph,connected,settings,withLock,json,fail,hash,fetcher});
+      }
       if(action==='backups-scheduled'){
         const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
         if(!token)throw fail('서버 인증이 필요합니다.',401);

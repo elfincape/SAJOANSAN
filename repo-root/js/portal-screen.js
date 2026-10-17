@@ -14,6 +14,7 @@ import {operationsFiles,connectOneDrive,finishOneDrive} from './onedrive-api.js'
 import {portalAi} from './portal-ai.js';
 import {createPortalSearch} from './portal-search.js';
 import {createPortalBackups} from './portal-backups.js';
+import {createPortalMail} from './portal-mail.js';
 import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
 import {periodBounds,shiftPeriod,calendarDates,calendarSegments,taskRunsOnDate,taskScheduleLabel,taskEnd,taskPeriod,overlapsPeriod,taskState,taskStateLabels} from './portal-task-views.js';
 import {setupDialogDismiss} from './portal-dialog.js';
@@ -30,7 +31,7 @@ function message(text,error=false){$('message').textContent=text;$('message').cl
 const centerLabels={'001':'사조안산','002':'사조평택',gimhae:'김해센터',yangsan:'양산공장'};
 function centerName(code){return centerLabels[code]??state.context.centers.find(c=>c.code===code)?.name??code;}
 const viewResource=view=>({center:'tasks',surveys:'forms',briefing:'briefing',access:'members'})[view]??view;
-function allowed(resource,action='read',center){return permissionAllowed(state.permissions,resource,action,center);}
+function allowed(resource,action='read',center){if(resource==='mail')return action==='read'&&state.mailAvailable===true;return permissionAllowed(state.permissions,resource,action,center);}
 function canWrite(code,resource='tasks'){return state.context.writable_centers.includes(code)&&allowed(resource,'edit',code)&&(!['hq','search','notifications','trash'].includes(state.view)||allowed(viewResource(state.view),'edit',code));}
 function updateNavigation(){
  for(const el of document.querySelectorAll('nav button[data-view]'))el.hidden=!allowed(viewResource(el.dataset.view),'read',el.dataset.center);
@@ -50,6 +51,7 @@ function button(text,handler,parent,className){const el=node('button',text,class
 const renderPortalHistory=createPortalHistory({api,node,button,field,centerName,stamp,message,allowed,openRecord:async(type,id)=>{try{const {data,error}=await supabase.from(type==='task'?'operations_tasks':'operations_incidents').select('*').eq('id',id).single();if(error)throw error;choose(type,data);}catch(error){message(error.message||'원본을 불러올 수 없습니다.',true);}}});
 const renderRegistrationView=createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,deleteSurvey:survey=>{if(confirm('이 업무조사를 삭제할까요?'))mutate('survey-delete:'+survey.id,requestId=>api.deleteSurvey({requestId,survey}),()=>{if(state.selected?.type==='survey'&&state.selected.row.id===survey.id)state.selected=null;});},retire:template=>{if(confirm('등록 업무를 삭제할까요? 이미 발행한 티켓과 기록은 유지됩니다.'))mutate('retire:'+template.id,id=>api.retireCustom({requestId:id,template}));},onTabChange:tab=>{if(state.busy)return;state.registrationTab=tab;state.selected=null;render();}});
 const renderBackups=createPortalBackups({node,button,message,stamp});
+const renderMail=createPortalMail({node,button,message,stamp});
 const renderSearch=createPortalSearch({supabase,node,button,centerName,message,openRecord:async(type,id)=>{
  try{const table={task:'operations_tasks',incident:'operations_incidents',survey:'operations_surveys'}[type];
   const {data,error}=await supabase.from(table).select('*').eq('id',id).single();if(error)throw error;choose(type,data);
@@ -68,7 +70,7 @@ async function mutate(key,operation,success){
 async function loadData(){
  state.permissions=await api.permissions();updateNavigation();
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){Object.assign(state,{tasks:[],incidents:[],templates:[],surveys:[],notifications:[],selected:null});return;}
- if(['search','backups','connections','history'].includes(state.view))return;
+ if(['mail','search','backups','connections','history'].includes(state.view))return;
  const center=$('center').value,period=periodBounds($('task-date').value||koreaDate(),state.unit);
  const [tasks,incidents,templates,surveys,notifications,staff,briefing,members,participants]=await Promise.all([
  api.tasks({center:['hq','trash'].includes(state.view)?undefined:center,trash:state.view==='trash',from:period.from,through:period.through,includeCompleted:true}),
@@ -97,6 +99,10 @@ function render(){
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?center:undefined)){$('portal-title').textContent='열람 권한 없음';$('portal-description').textContent='관리자에게 이 목록의 열람 권한을 요청하세요.';$('items').replaceChildren();$('detail').replaceChildren();$('quick-actions').replaceChildren();$('new-task').hidden=$('issue-task').hidden=true;document.querySelector('.filters').hidden=true;return;}
  if(state.view==='history'){$('portal-title').textContent='처리 기록';$('portal-description').textContent='센터 업무와 특이사항의 실제 처리 내역을 확인하세요.';document.body.classList.remove('center-workspace','calendar-view');document.querySelector('.filters').hidden=true;$('new-task').hidden=$('issue-task').hidden=true;renderPortalHistory(state.context.centers);if(state.selected)renderDetail();return;}
  if(state.view==='connections'){renderOneDrive();return;}
+ if(state.view==='mail'){
+  $('portal-title').textContent='개인 메일함';$('portal-description').textContent='본인 전용 받은 메일과 첨부파일을 확인하세요.';
+  document.body.classList.remove('center-workspace','calendar-view');document.querySelector('.filters').hidden=true;document.querySelector('.toolbar-bottom').hidden=true;$('new-task').hidden=$('issue-task').hidden=true;$('center').disabled=true;renderMail();return;
+ }
  if(state.view==='permissions'){$('portal-title').textContent='목록별 권한';$('portal-description').textContent='멤버의 역할·센터 속성으로 열람과 수정 조건을 설정하세요.';document.body.classList.remove('center-workspace','calendar-view');document.querySelector('.filters').hidden=true;$('new-task').hidden=$('issue-task').hidden=true;$('quick-actions').replaceChildren();$('count').textContent=state.permissions.rules.length+'개 목록';$('list-title').textContent='운영관리·포털 목록';renderPermissions({context:state.permissions,centers:state.context.centers,node,button,field,items:$('items'),panel:$('detail'),centerName,save:(config,data)=>mutate(JSON.stringify(['permission',config.resource,config.version,data]),requestId=>api.updatePermission({requestId,config,...data}))});return;}
 
  $('portal-title').textContent=hq?'배송팀 업무':state.view==='briefing'?'배송팀 AI 브리핑':state.view==='access'?'센터 담당자 배정':state.view==='permissions'?'목록별 권한':state.view==='members'?'멤버 목록':state.view==='notifications'?'알림함':state.view==='surveys'?centerName(center)+' 업무 등록·조사':state.view==='incidents'?'특이사항':state.view==='trash'?'휴지통':centerName(center)+' 업무목록';
@@ -451,6 +457,7 @@ async function start(){
  document.querySelector('[data-view=hq]').hidden=!isHq();$('members-navigation').hidden=!isHq();$('permissions-navigation').hidden=!isHq();document.querySelector('[data-view=briefing]').hidden=!isHq();if(isHq()&&!requested)state.view='hq';
  document.querySelector('[data-view=backups]').hidden=!isHq();
  $('hq-navigation').hidden=!isHq();$('audit-navigation').hidden=!isHq();
+ try{const {data,error}=await supabase.from('private_mailboxes').select('id').limit(1);state.mailAvailable=!error&&data?.length>0;}catch{state.mailAvailable=false;}
  buildCenterNavigation();updateNavigation();const requestedView=new URLSearchParams(location.search).get('view');if(requestedView&&allowed(viewResource(requestedView)))state.view=requestedView;
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){const first=[...document.querySelectorAll('nav button[data-view]')].find(el=>!el.hidden);if(first){state.view=first.dataset.view;if(first.dataset.center)$('center').value=first.dataset.center;}}
 

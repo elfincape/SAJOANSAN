@@ -1,0 +1,24 @@
+[Unit]
+Description=Private read-only POP mailbox collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sajo-mail
+Group=sajo-mail
+WorkingDirectory=/opt/sajo-mail
+ExecStart=/usr/bin/python3 /opt/sajo-mail/collector.py
+EnvironmentFile=/etc/sajo-mail.env
+LoadCredential=pop-password:/etc/sajo-mail/pop-password
+StateDirectory=sajo-mail
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/sajo-mail
+MemoryMax=192M
+CPUQuota=25%
+TimeoutStartSec=9min
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

@@ -379,3 +379,5 @@ body.workspace-ui.portal-shell {
     padding: 8px 10px;
   }
 }
+.private-mail-body { width: 100%; min-height: 420px; border: 1px solid var(--theme-border, #ccd3cf); background: #fff; color-scheme: light; }
+.private-mail-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
