@@ -1,5 +1,8 @@
 import { privateMail } from './onedrive-api.js';
-import {mountMailDiagnostic,MAIL_DIAGNOSTIC_OWNER_ID} from './portal-mail-diagnostic.js';
+import {
+  mountMailReceipt,
+  MAIL_DIAGNOSTIC_OWNER_ID,
+} from './portal-mail-diagnostic.js';
 
 export function createPortalMail({ node, button, message, stamp, profile }) {
   let generation = 0;
@@ -13,18 +16,14 @@ export function createPortalMail({ node, button, message, stamp, profile }) {
       document
         .querySelector('[data-view=mail]')
         ?.getAttribute('aria-pressed') === 'true';
-    document.getElementById('quick-actions').replaceChildren();
+    const actions = document.getElementById('quick-actions');
+    actions.replaceChildren();
     document.getElementById('list-title').textContent = '받은 메일';
     document.getElementById('count').textContent = '';
     items.replaceChildren(node('p', '메일함을 불러오는 중입니다…'));
-    detail.replaceChildren(
-      node('h2', '개인 메일함'),
-      node(
-        'p',
-        '메일은 본인만 열람하며 통합 검색과 AI 브리핑에 포함되지 않습니다. 제목·발신자로 검색할 수 있습니다. 외부 이미지와 활성 콘텐츠는 표시하지 않습니다.',
-      ),
-    );
-    if(profile?.id===MAIL_DIAGNOSTIC_OWNER_ID)mountMailDiagnostic({host:detail,node,button,isActive:active});
+    detail.replaceChildren(node('p', '메일을 선택하세요.'));
+    if (profile?.id === MAIL_DIAGNOSTIC_OWNER_ID)
+      mountMailReceipt({ host: actions, node, button, isActive: active });
     try {
       const status = await privateMail.status();
       if (!active()) return;
@@ -179,13 +178,7 @@ export function createPortalMail({ node, button, message, stamp, profile }) {
               );
           } else content.append(node('p', '표시 가능한 본문이 없습니다.'));
           const downloads = node('section');
-          detail.append(
-            downloads,
-            node(
-              'p',
-              '첨부파일은 저장 후 신뢰할 수 있는지 확인하고 여세요. 실행 파일은 실행하지 마세요.',
-            ),
-          );
+          detail.append(downloads);
           for (const file of mail.files.filter((f) =>
             ['attachment', 'eml'].includes(f.kind),
           )) {

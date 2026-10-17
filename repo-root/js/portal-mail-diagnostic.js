@@ -1,172 +1,33 @@
-import {
-  runMailConnectionDiagnostic,
-  runMailCollection,
-  configurePrivateMailFolder,
-  mailFolderReason,
-} from './private-mail-diagnostic-api.js';
+import { runMailCollection } from './private-mail-diagnostic-api.js';
 export { MAIL_DIAGNOSTIC_OWNER_ID } from './private-mail-diagnostic-api.js';
 
-export function mountMailDiagnostic({ host, node, button, isActive }) {
-  const section = node('section');
-  section.id = 'mail-connection-diagnostic';
-  section.append(
-    node('h3', '클라우드 메일 연결 진단'),
-    node(
-      'p',
-      '비밀번호 없이 클라우드에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
-    ),
-  );
-  const status = node(
-    'p',
-    '클라우드 연결 미검증 · 아래 버튼을 눌러 단발 검사를 실행하세요.',
-  );
+export function mountMailReceipt({ host, node, button, isActive }) {
+  const status = node('p');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
-  const results = node('ul');
-  const run = button(
-    '클라우드 POP 연결 확인',
-    async () => {
-      if (run.disabled) return;
-      run.disabled = true;
-      status.textContent = '클라우드에서 연결을 확인하는 중입니다…';
-      results.replaceChildren();
-      try {
-        const result = await runMailConnectionDiagnostic();
-        if (!isActive() || !section.isConnected) return;
-        status.textContent = result.ok
-          ? 'DNS·TCP·TLS·POP 인사말 확인 완료. 메일 계정 로그인은 하지 않았습니다.'
-          : '클라우드 연결 진단에 실패했습니다. 실패한 단계를 확인해 주세요.';
-        for (const [key, label] of [
-          ['dns', 'DNS 확인'],
-          ['tcp', 'TCP 995 연결'],
-          ['tls', 'TLS 연결/검증'],
-          ['greeting', 'POP 인사말'],
-        ])
-          results.append(
-            node(
-              'li',
-              label +
-                ' · ' +
-                ({ ok: '성공', failed: '실패', pending: '미실행' }[
-                  result.stages?.[key]
-                ] || '확인 불가'),
-            ),
-          );
-        if (result.code)
-          results.append(
-            node(
-              'li',
-              '결과 코드 · ' + String(result.code).replace(/[^A-Z_]/g, ''),
-            ),
-          );
-        for (const [key, label] of [
-          ['execution_platform', '실행 환경'],
-          ['tls_protocol', 'TLS 버전'],
-          ['tls_cipher', 'TLS 암호군'],
-          ['tls_phase', 'TLS 실패 지점'],
-          ['tls_error', 'TLS 오류 분류'],
-          ['execution_region', '실행 지역'],
-        ]) {
-          if (result[key])
-            results.append(
-              node(
-                'li',
-                label +
-                  ' · ' +
-                  String(result[key])
-                    .replace(/[^A-Za-z0-9_.-]/g, '')
-                    .slice(0, 40),
-              ),
-            );
-        }
-        if (result.checked_at)
-          results.append(
-            node(
-              'li',
-              '실행 시각 · ' +
-                new Date(result.checked_at).toLocaleString('ko-KR'),
-            ),
-          );
-      } catch (error) {
-        if (isActive() && section.isConnected)
-          status.textContent = error.message;
-      } finally {
-        run.disabled = false;
-      }
-    },
-    section,
-  );
-  section.append(status, results);
-  const folderInput = node('input');
-  folderInput.type = 'url';
-  folderInput.id = 'private-mail-folder-url';
-  folderInput.placeholder = 'OneDrive 폴더 링크';
-  folderInput.autocomplete = 'off';
-  const folderLabel = node('label', '메일 저장 폴더');
-  folderLabel.htmlFor = folderInput.id;
-  const folderStatus = node('p', '본인 OneDrive의 비공개 폴더만 연결합니다.');
-  folderStatus.setAttribute('role', 'status');
-  section.append(folderLabel, folderInput, folderStatus);
-  const folderAction = async (configure, control) => {
-    if (control.disabled) return;
-    control.disabled = true;
-    try {
-      const result = await configurePrivateMailFolder(
-        folderInput.value,
-        configure,
-      );
-      if (isActive() && section.isConnected)
-        folderStatus.textContent = result.private
-          ? configure
-            ? '메일 폴더를 연결했습니다. 수신은 아직 비활성 상태입니다.'
-            : '본인 전용 폴더 확인 완료: ' + String(result.name || '')
-          : mailFolderReason(result.reason);
-    } catch (error) {
-      if (isActive() && section.isConnected)
-        folderStatus.textContent = error.message;
-    } finally {
-      control.disabled = false;
-    }
-  };
-  const inspect = button(
-    '메일 폴더 확인',
-    () => folderAction(false, inspect),
-    section,
-  );
-  const configure = button(
-    '메일 폴더 연결',
-    () => folderAction(true, configure),
-    section,
-  );
-  const receiptStatus = node(
-    'p',
-    '수신 설정을 완료한 뒤 한 번에 최대 1건씩 가져옵니다. 서버 원본은 삭제하지 않습니다.',
-  );
-  receiptStatus.setAttribute('role', 'status');
   const receive = button(
-    '메일 1회 수신',
+    '메일 가져오기',
     async () => {
       if (receive.disabled) return;
       receive.disabled = true;
-      receiptStatus.textContent = '메일 수신을 확인하는 중입니다…';
+      status.textContent = '메일을 가져오는 중…';
       try {
         const result = await runMailCollection();
-        if (isActive() && section.isConnected)
-          receiptStatus.textContent =
-            '저장 ' +
+        if (isActive() && status.isConnected)
+          status.textContent =
             Number(result.counts?.saved || 0) +
-            '건 · 다음 배치 대기 ' +
-            Number(result.counts?.deferred || 0) +
-            '건. 목록을 새로고침해 주세요.';
-      } catch (error) {
-        if (isActive() && section.isConnected)
-          receiptStatus.textContent = error.message;
+            '건 저장' +
+            (result.counts?.deferred
+              ? ' · 대기 ' + Number(result.counts.deferred) + '건'
+              : '');
+      } catch {
+        if (isActive() && status.isConnected)
+          status.textContent = '메일을 가져오지 못했습니다.';
       } finally {
         receive.disabled = false;
       }
     },
-    section,
+    host,
   );
-  section.append(receiptStatus);
-  host.append(section);
+  host.append(status);
 }

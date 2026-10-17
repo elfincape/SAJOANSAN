@@ -10,11 +10,8 @@ const source = await readFile(
   'utf8',
 );
 let owner = true,
-  calls = 0,
   collectCalls = 0,
-  folderCalls = 0,
-  folderReason = null,
-  tlsFailure = false;
+  collectionFailure = false;
 const errors = [],
   unexpected = [];
 try {
@@ -33,65 +30,19 @@ try {
           "id: '" + (owner ? OWNER_ID : 'browser-test-user') + "'",
         ),
       });
-    if (url.pathname.endsWith('/private-mail-folder')) {
-      folderCalls++;
-      const body = request.postDataJSON();
-      assert.equal(body.url, 'https://1drv.ms/f/example');
-      assert.equal(request.headers().authorization, 'Bearer mock-only');
-      return route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          private: !folderReason,
-          reason: folderReason,
-          name: 'Private mail',
-          configured: body.configure,
-          enabled: false,
-        }),
-      });
-    }
     if (url.pathname.endsWith('/private-mail-collect')) {
       collectCalls++;
       assert.equal(request.headers().authorization, 'Bearer mock-only');
       assert.deepEqual(request.postDataJSON(), { mode: 'collect' });
       await new Promise((resolve) => setTimeout(resolve, 200));
       return route.fulfill({
+        status: collectionFailure ? 503 : 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, counts: { saved: 1, deferred: 3 } }),
-      });
-    }
-    if (url.pathname.endsWith('/private-mail-diagnostic')) {
-      calls++;
-      assert.equal(request.method(), 'POST');
-      assert.equal(request.headers().authorization, 'Bearer mock-only');
-      assert.deepEqual(request.postDataJSON(), {});
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      return route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ok: !tlsFailure,
-          ...(tlsFailure
-            ? {
-                code: 'TLS_FAILED',
-                tls_phase: 'TLS_HANDSHAKE',
-                tls_error: 'CERT_TRUST',
-              }
-            : {}),
-          execution_region: 'ap-northeast-2',
-          execution_platform: 'vercel-node',
-          ...(!tlsFailure
-            ? {
-                tls_protocol: 'TLSv1.2',
-                tls_cipher: 'TLS_RSA_WITH_AES_256_GCM_SHA384',
-              }
-            : {}),
-          stages: {
-            dns: 'ok',
-            tcp: 'ok',
-            tls: tlsFailure ? 'failed' : 'ok',
-            greeting: tlsFailure ? 'pending' : 'ok',
-          },
-          checked_at: '2026-10-17T00:00:00Z',
-        }),
+        body: JSON.stringify(
+          collectionFailure
+            ? { error: 'COLLECTION_NOT_CONFIGURED' }
+            : { ok: true, counts: { saved: 1, deferred: 3 } },
+        ),
       });
     }
     if (url.pathname.endsWith('/private-mail-status'))
@@ -112,30 +63,48 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(server.url + '/portal/?view=mail');
-  const button = page.getByRole('button', {
-    name: '클라우드 POP 연결 확인',
+  await page
+    .getByText('아직 개인 메일함이 구성되지 않았습니다.', { exact: true })
+    .waitFor();
+  const receive = page.getByRole('button', {
+    name: '메일 가져오기',
     exact: true,
   });
-  await button.waitFor();
-  assert.equal(calls, 0);
-  assert.ok(
-    (await page.locator('#mail-connection-diagnostic').textContent()).includes(
-      '클라우드 연결 미검증',
-    ),
+  assert.equal(await receive.count(), 1);
+  assert.equal(await page.locator('#mail-connection-diagnostic').count(), 0);
+  assert.equal(await page.locator('#private-mail-folder-url').count(), 0);
+  assert.equal(
+    await page
+      .getByRole('button', { name: /폴더 연결|폴더 확인|POP 연결/ })
+      .count(),
+    0,
   );
-  await button.click();
-  assert.equal(await button.isDisabled(), true);
-  await page.evaluate(() =>
-    document.querySelector('#mail-connection-diagnostic button').click(),
+  assert.equal(
+    await page
+      .getByText(/비공개 폴더|DNS·TCP|보안 권한|외부 이미지와 활성/)
+      .count(),
+    0,
   );
-  await page.getByText('TLS 연결/검증 · 성공', { exact: true }).waitFor();
-  await page.getByText('실행 환경 · vercel-node', { exact: true }).waitFor();
-  await page.getByText('TLS 버전 · TLSv1.2', { exact: true }).waitFor();
+  assert.equal(collectCalls, 0);
+  await receive.click();
+  assert.equal(await receive.isDisabled(), true);
   await page
-    .getByText('TLS 암호군 · TLS_RSA_WITH_AES_256_GCM_SHA384', { exact: true })
+    .locator('#quick-actions button')
+    .evaluate((button) => button.click());
+  await page.getByText('1건 저장 · 대기 3건', { exact: true }).waitFor();
+  assert.equal(collectCalls, 1);
+  assert.equal(await receive.isDisabled(), false);
+  collectionFailure = true;
+  await receive.click();
+  await page
+    .getByText('메일을 가져오지 못했습니다.', { exact: true })
     .waitFor();
-  assert.equal(calls, 1);
-  assert.equal(await button.isDisabled(), false);
+  assert.equal(collectCalls, 2);
+  assert.equal(await receive.isDisabled(), false);
+  assert.equal(
+    await page.getByText(/수신 설정|권한을 확인|COLLECTION_NOT/).count(),
+    0,
+  );
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     assert.ok(
@@ -144,78 +113,20 @@ try {
       ),
     );
   }
-  assert.equal(folderCalls, 0);
-  await page
-    .locator('#private-mail-folder-url')
-    .fill('https://1drv.ms/f/example');
-  await page
-    .getByRole('button', { name: '메일 폴더 확인', exact: true })
-    .click();
-  await page
-    .getByText('본인 전용 폴더 확인 완료: Private mail', { exact: true })
-    .waitFor();
-  await page
-    .getByRole('button', { name: '메일 폴더 연결', exact: true })
-    .click();
-  await page
-    .getByText('메일 폴더를 연결했습니다. 수신은 아직 비활성 상태입니다.', {
-      exact: true,
-    })
-    .waitFor();
-  assert.equal(folderCalls, 2);
-  folderReason = 'ANONYMOUS_LINK_PRESENT';
-  await page
-    .getByRole('button', { name: '메일 폴더 확인', exact: true })
-    .click();
-  await page
-    .getByText(
-      'OneDrive 권한에서 링크를 가진 누구나 접근 가능한 권한을 확인했습니다.',
-      { exact: true },
-    )
-    .waitFor();
-  folderReason = 'DRIVE_OWNER_UNAVAILABLE';
-  await page
-    .getByRole('button', { name: '메일 폴더 확인', exact: true })
-    .click();
-  await page
-    .getByText(
-      'OneDrive가 드라이브 소유자 ID를 반환하지 않았습니다. 공유 여부와는 별개입니다.',
-      { exact: true },
-    )
-    .waitFor();
-  folderReason = null;
-  assert.equal(collectCalls, 0);
-  const receive = page.getByRole('button', {
-    name: '메일 1회 수신',
-    exact: true,
-  });
-  await receive.click();
-  assert.equal(await receive.isDisabled(), true);
-  await page
-    .getByText('저장 1건 · 다음 배치 대기 3건. 목록을 새로고침해 주세요.', {
-      exact: true,
-    })
-    .waitFor();
-  assert.equal(collectCalls, 1);
-  tlsFailure = true;
-  await button.click();
-  await page.getByText('TLS 연결/검증 · 실패', { exact: true }).waitFor();
-  await page
-    .getByText('TLS 실패 지점 · TLS_HANDSHAKE', { exact: true })
-    .waitFor();
-  await page.getByText('TLS 오류 분류 · CERT_TRUST', { exact: true }).waitFor();
-  await page.getByText('실행 지역 · ap-northeast-2', { exact: true }).waitFor();
   owner = false;
   await page.reload();
-  await page.locator('#portal-title').waitFor();
   await page.waitForTimeout(200);
-  assert.equal(await page.locator('#mail-connection-diagnostic').count(), 0);
+  assert.equal(
+    await page
+      .getByRole('button', { name: '메일 가져오기', exact: true })
+      .count(),
+    0,
+  );
   assert.equal(await page.locator('[data-view=mail]').isVisible(), false);
-  assert.equal(calls, 2);
   assert.deepEqual(errors, []);
   assert.deepEqual(unexpected, []);
   console.log(
-    'PASS diagnostic UI: configured owner without mailbox row, no automatic probe, existing session request, double-click prevention, staged results, nonowner hidden, desktop/mobile layout',
+    'PASS mail UI: setup/diagnostics absent, explicit owner-only receipt, existing session, no auto request, duplicate click denied, compact success/error, desktop/mobile layout',
   );
 } finally {
   await browser.close();

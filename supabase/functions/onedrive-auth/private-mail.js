@@ -129,9 +129,13 @@ export async function handlePrivateMail(action, req, user, ctx) {
   async function privateDestination(box, env) {
     if (env.driveId.toLowerCase() !== box.drive_id.toLowerCase())
       throw fail('OneDrive 계정이 메일 보관 계정과 다릅니다.', 409);
-    const drive = await (
+    let drive = await (
       await graph('/me/drive?$select=id,owner', env.access)
     ).json();
+    if (!drive.owner?.user?.id)
+      drive = await (await graph('/me/drive', env.access)).json();
+    if (String(drive.id).toLowerCase() !== box.drive_id.toLowerCase())
+      throw fail('OWNER_FOLDER_REQUIRED', 409);
     const owner = drive.owner?.user?.id;
     if (!owner) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
     await privatePermissions(box, box.folder_id, env, owner);

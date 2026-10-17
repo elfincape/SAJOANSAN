@@ -4,6 +4,7 @@ const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc';
 let shared = false,
   permissionOverride,
   missingOwner = false,
+  fullDriveOwner,
   inserts = 0,
   existing = false,
   wrongDrive = false;
@@ -45,6 +46,11 @@ const ctx = {
         parentReference: { driveId: wrongDrive ? 'other' : 'drive' },
       });
     if (path === '/me/drive?$select=id') return Response.json({ id: 'drive' });
+    if (path === '/me/drive')
+      return Response.json({
+        id: 'drive',
+        owner: fullDriveOwner ? { user: { id: fullDriveOwner } } : {},
+      });
     if (path === '/me/drive?$select=id,owner')
       return Response.json({
         id: 'drive',
@@ -149,6 +155,11 @@ assert.equal((await (await run()).json()).private, true);
 permissionOverride = undefined;
 missingOwner = true;
 assert.equal((await (await run()).json()).reason, 'DRIVE_OWNER_UNAVAILABLE');
+fullDriveOwner = 'drive-owner';
+assert.equal((await (await run()).json()).private, true);
+fullDriveOwner = 'other';
+assert.equal((await (await run()).json()).reason, 'OTHER_PRINCIPAL_PRESENT');
+fullDriveOwner = undefined;
 missingOwner = false;
 assert.equal(inserts, 1);
 existing = true;
