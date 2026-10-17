@@ -27,7 +27,7 @@ const iso = value => Number.isFinite(value) ? new Date(value).toISOString() : nu
 function sourceVersion(row) {
   const raw = clone(row.source?.raw ?? null);
   if (Array.isArray(raw)) while (raw.length && (raw.at(-1) == null || raw.at(-1) === '')) raw.pop();
-  return JSON.stringify([raw, ...['date', 'course', 'customer', 'name', 'address', 'boxes', 'otd', 'mode', 'notes'].map(key => row[key] ?? null)]);
+  return JSON.stringify([raw, ...['date', 'course', 'customer', 'code', 'name', 'address', 'boxes', 'otd', 'mode', 'notes'].map(key => row[key] ?? null)]);
 }
 
 function vehicleKeys(records) {
@@ -147,11 +147,21 @@ export function prepareStops(rows, destinations = [], overrides = {}) {
     groups.get(key).sourceRows.push(row);
   }
   const stops = [...groups.values()].map(group => {
-    const ds = destinationsByAddress.get(group.address) || [];
+    const candidates = destinationsByAddress.get(group.address) || [];
+    const matched = group.sourceRows.map(r => {
+      const code = text(r.code ?? r.destinationCode);
+      const exact = candidates.filter(d => code ? text(d.code) === code : normalize(d.name) === normalize(r.name));
+      return exact.length === 1 ? exact[0] : null;
+    });
+    const ds = matched.every(Boolean) ? [...new Set(matched)] : candidates;
     const adjustment = overrides.byId?.[group.id] || overrides.byAddress?.[group.address] || {};
     const sourceRows = group.sourceRows;
     const stopIssues = [];
     const add = (code, message, severity = 'warning') => stopIssues.push(issue(code, message, { stopId: group.id }, severity));
+    const connected = new Set(matched.filter(Boolean));
+    const profileFor = d => connected.has(d) && d?.dispatch_profile && typeof d.dispatch_profile === 'object' ? d.dispatch_profile : null;
+    if (matched.some((d, i) => !d && (candidates.some(c => c.dispatch_profile) || text(sourceRows[i].code ?? sourceRows[i].destinationCode)))) add('ambiguous_profile', '납품정보의 거래처 코드 또는 이름과 주소가 일치하지 않습니다. 연결을 확인하기 전에는 자동 배정하지 않습니다.', 'error');
+    if (matched.some(d => !profileFor(d))) add('missing_dispatch_profile', '납품정보 DB 미등록 거래처가 있습니다. 기존 납품정보를 임시 적용하므로 확인해 주세요.');
     if (sourceRows.some(r => conflicts.has(r))) add('conflicting_source', '동일 원본 행의 값이 충돌하므로 자동 배정하지 않습니다.', 'error');
     if (unique(ds.map(d => normalize(d.delivery_location))).length > 1) add('ambiguous_destination', '같은 주소에 서로 다른 납품장소가 있습니다. 동·창고·출입구를 확인하기 전에는 자동 배정하지 않습니다.', 'error');
     const validBoxes = sourceRows.every(r => nonnegative(typeof r.boxes === 'string' ? r.boxes.replace(/,/g, '') : r.boxes));
@@ -163,22 +173,28 @@ export function prepareStops(rows, destinations = [], overrides = {}) {
     if (sourceRows.some(r => !text(r.course))) add('missing_course', '원래 코스가 누락되었습니다. 배정 전에 확인해 주세요.', 'error');
     const dates = unique(sourceRows.map(r => text(r.date)));
     if (dates.length > 1 || (overrides.date && dates.some(d => d !== overrides.date))) add('date_mismatch', '원본 날짜와 배차 기준일이 다릅니다.', 'error');
-    const conditions = sourceRows.map(r => parseOTD(r.otd, r.date || overrides.date));
+    const conditions = sourceRows.filter((r, i) => !profileFor(matched[i])).map(r => parseOTD(r.otd, r.date || overrides.date));
     for (const d of ds) {
-      if (text(d.deadline_text)) conditions.push(parseOTD(d.deadline_text, overrides.date || dates[0]));
+      if (profileFor(d)) conditions.push(parseOTD(d.dispatch_profile.otd, overrides.date || dates[0]));
+      else if (text(d.deadline_text)) conditions.push(parseOTD(d.deadline_text, overrides.date || dates[0]));
       else if (numeric(d.deadline_business_min)) conditions.push(parseOTD(Number(d.deadline_business_min), overrides.date || dates[0]));
     }
     if (adjustment.otd != null) conditions.push(parseOTD(adjustment.otd, overrides.date || dates[0]));
     if (conditions.some(c => !c.valid)) add('invalid_otd', '해석할 수 없는 OTD가 있습니다. 도착 조건을 확인해 주세요.', 'error');
-    if (sourceRows.some(r => !text(r.otd) && text(r.notes)) || ds.some(d => !text(d.deadline_text) && !numeric(d.deadline_business_min) && text(d.memo))) add('notes_without_otd', 'OTD 없이 메모가 있습니다. 메모의 시간 조건을 확인해 주세요.');
+    if (sourceRows.some((r, i) => !profileFor(matched[i]) && !text(r.otd) && text(r.notes)) || ds.some(d => profileFor(d) ? !text(d.dispatch_profile.otd) && text(d.dispatch_profile.notes) : !text(d.deadline_text) && !numeric(d.deadline_business_min) && text(d.memo))) add('notes_without_otd', 'OTD 없이 메모가 있습니다. 메모의 시간 조건을 확인해 주세요.');
     const window = bounds(conditions);
     if (window.start > window.end) add('otd_conflict', '같은 착지의 도착 조건이 서로 충돌합니다.', 'error');
-    const modes = unique([...sourceRows.map(r => text(r.mode)), ...ds.map(d => text(d.delivery_method)), text(adjustment.mode)]);
+    const modes = unique([...sourceRows.filter((r, i) => !profileFor(matched[i])).map(r => text(r.mode)), ...ds.map(d => text(profileFor(d)?.mode ?? d.delivery_method)), text(adjustment.mode)]);
     const modeText = modes.join(' ');
-    const attended = /attended|\uB300\uBA74/i.test(modeText), inspection = /inspection|\uAC80\uC218/i.test(modeText);
-    const yard = /yard|\uC57C\uC801|\uBB34\uC778/i.test(modeText);
-    const serviceValues = ds.map(d => d.serviceMinutes ?? d.service_minutes).filter(nonnegative).map(Number);
-    const marginValues = ds.map(d => d.marginMinutes ?? d.margin_minutes).filter(nonnegative).map(Number);
+    const attended = /\battended\b|\uB300\uBA74|\uC720\uC778/i.test(modeText), inspection = /inspection|\uAC80\uC218/i.test(modeText);
+    const yard = /yard|unmanned|unattended|\uC57C\uC801|\uBB34\uC778/i.test(modeText);
+    const serviceValues = ds.map(d => {
+      const p = profileFor(d);
+      if (!p) return d.serviceMinutes ?? d.service_minutes ?? ((attended || !yard ? settings.attendedMinutes : settings.yardMinutes) + (inspection ? settings.inspectionMinutes : 0));
+      const unload = nonnegative(p.unloadMinutes) ? Number(p.unloadMinutes) : ['unmanned', 'yard'].includes(p.mode) ? settings.yardMinutes : settings.attendedMinutes;
+      return unload + (nonnegative(p.inspectionMinutes) ? Number(p.inspectionMinutes) : 0);
+    }).filter(nonnegative).map(Number);
+    const marginValues = ds.map(d => profileFor(d) ? nonnegative(d.dispatch_profile.marginMinutes) ? d.dispatch_profile.marginMinutes : settings.marginMinutes : d.marginMinutes ?? d.margin_minutes).filter(nonnegative).map(Number);
     const serviceMinutes = nonnegative(adjustment.serviceMinutes) ? Number(adjustment.serviceMinutes) : serviceValues.length ? Math.max(...serviceValues) : (attended || !yard ? settings.attendedMinutes : settings.yardMinutes) + (inspection ? settings.inspectionMinutes : 0);
     if (!modes.length || (!attended && !inspection && !yard)) add('unknown_service_mode', '납품 방식이 미확인입니다. 대면납 기본 서비스 시간을 적용했으므로 확인해 주세요.');
     const marginMinutes = nonnegative(adjustment.marginMinutes) ? Number(adjustment.marginMinutes) : marginValues.length ? Math.max(...marginValues) : settings.marginMinutes;
@@ -189,7 +205,8 @@ export function prepareStops(rows, destinations = [], overrides = {}) {
     const region = regionValues.length === 1 ? regionValues[0] : group.address.split(' ').slice(0, 2).join(' ');
     return { ...group, name: unique(sourceRows.map(r => text(r.name))).join(' / '), boxes: Math.round(rawBoxes), rawBoxes, validBoxes,
       courses, customers: unique(sourceRows.map(r => text(r.customer))), otd: conditions, mode: modeText, modes,
-      notes: unique([...sourceRows.map(r => text(r.notes)), ...ds.map(d => text(d.memo))]).join('\n'), serviceMinutes, marginMinutes,
+      notes: unique([...sourceRows.map(r => text(r.notes)), ...ds.map(d => text(profileFor(d)?.notes ?? d.memo))]).join('\n'), serviceMinutes, marginMinutes,
+      deliveryProfiles: ds.map(d => ({ destinationId: d.id, code: d.code, name: d.name, source: profileFor(d) ? 'dispatch_profile' : 'legacy', profile: clone(profileFor(d)) })),
       region, restrictions, destinationIds: ds.map(d => d.id), issues: stopIssues };
   });
   return { stops, issues: [...issues, ...stops.flatMap(s => s.issues)] };

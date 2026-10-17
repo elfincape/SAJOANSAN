@@ -188,6 +188,37 @@
   padding-top: 12px;
   justify-content: space-between;
 }
+.pd-source-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--theme-border);
+  margin: 12px 0;
+}
+.pd-source-tabs button {
+  padding: 10px 14px;
+  border-bottom: 3px solid transparent;
+}
+.pd-source-tabs button[aria-selected='true'] {
+  border-color: var(--theme-accent);
+  color: var(--theme-accent);
+  font-weight: 700;
+}
+#dispatch-app .pd-profile-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.pd-profile-list summary {
+  overflow-wrap: anywhere;
+}
+#pd-profiles-panel td select {
+  min-width: 220px;
+}
+#pd-profiles-panel td small {
+  display: block;
+  color: var(--theme-warn);
+}
 #dispatch-app details {
   border-top: 1px solid var(--theme-border-soft);
   padding: 12px 0;

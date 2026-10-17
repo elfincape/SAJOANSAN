@@ -7,6 +7,7 @@ async function sha256(buffer) {
   return Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', buffer)), b => b.toString(16).padStart(2, '0')).join('');
 }
 const aliases = {
+  code: ['code', '\uCC29\uC9C0\uCF54\uB4DC', '\uAC70\uB798\uCC98\uCF54\uB4DC', '\uB0A9\uD488\uCC98\uCF54\uB4DC'],
   date: ['date', '\uBC30\uCC28\uC77C', '\uBC30\uCC28\uAE30\uC900\uC77C', '\uAE30\uC900\uC77C', '\uBC30\uC1A1\uC77C', '\uB0A9\uD488\uC77C', '\uC77C\uC790'],
   course: ['course', '\uCF54\uC2A4', '\uCF54\uC2A4\uBA85', '\uC6D0\uB798\uCF54\uC2A4', '\uB178\uC120', '\uD638\uCC28'],
   customer: ['customer', '\uACE0\uAC1D\uC0AC', '\uD654\uC8FC', '\uD654\uC8FC\uBA85'],
@@ -34,7 +35,7 @@ function gridValues(rows) {
 
 // Version only: callers must also compare source coordinates or proven file aliases.
 export function dispatchRowVersion(row) {
-  return JSON.stringify([rowValues(row.source?.raw), ...Object.keys(aliases).map(field => row[field] ?? null)]);
+  return JSON.stringify([rowValues(row.source?.raw), ...Object.keys(aliases).map(field => field === 'code' ? text(row.code) : row[field] ?? null)]);
 }
 
 function cellValue(value) {
@@ -164,7 +165,7 @@ export function mapRows(rows, mapping, { fileName = '', sheetName = '', date = '
     const row = { source: { file: sourceFile, sheet: sourceSheet, row: index + 1, raw, signature: metadata?.signature || null, contentSignature: metadata?.contentSignature || null } };
     const rowIssues = [];
     const issue = (field, code, message) => rowIssues.push({ row: index + 1, field, code, message, severity: 'error' });
-    for (const field of ['course', 'customer', 'name', 'address', 'otd', 'mode', 'notes']) row[field] = text(get(field));
+    for (const field of ['code', 'course', 'customer', 'name', 'address', 'otd', 'mode', 'notes']) row[field] = text(get(field));
     const inputDate = get('date');
     row.date = !(mapping.date >= 0) ? dateValue(date) : dateValue(inputDate, metadata?.date1904);
     if (!row.date) issue('date', 'INVALID_DATE', '올바른 배차 기준일을 입력해 주세요.');
@@ -226,7 +227,7 @@ export async function loadDispatchContext(supabase) {
   const routes = await read('routes', 'routes', 'id,name,primary_driver_id,primary_vehicle_id,active', ['id'], query => query.eq('active', true));
   const people = await read('drivers', 'drivers', 'id,name');
   const vehicles = await read('vehicles', 'vehicles', 'id,plate_number,tonnage');
-  const destinations = await read('delivery_points', 'delivery_points', 'id,code,name,address,region,allow_under_1ton,allow_under_3_5ton,allow_over_5ton,allow_unmanned_yard,delivery_method,access_method,delivery_location,deadline_text,deadline_business_min,memo,center_code');
+  const destinations = await read('delivery_points', 'delivery_points', 'id,code,name,address,region,allow_under_1ton,allow_under_3_5ton,allow_over_5ton,allow_unmanned_yard,delivery_method,access_method,delivery_location,deadline_text,deadline_business_min,memo,center_code,dispatch_profile');
   const addresses = await read('delivery_points', 'naver_api_addresses', '*');
   const legs = await read('delivery_points', 'naver_api_legs', '*', ['from_id', 'to_id']);
   const byDriver = new Map(people.map(row => [row.id, row]));

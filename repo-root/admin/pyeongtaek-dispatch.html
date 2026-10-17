@@ -29,50 +29,85 @@
       <p id="pd-status" role="status" aria-live="polite">로그인 확인 중</p>
       <div id="pd-work" hidden>
         <nav class="pd-stages" aria-label="가배차 단계">
-          <button data-stage="0" aria-current="step">1 물량표</button
+          <button data-stage="0" aria-current="step">1 자료</button
           ><button data-stage="1">2 고정차</button
           ><button data-stage="2">3 초안</button
           ><button data-stage="3">4 상세 조정</button
           ><button data-stage="4">5 저장·출력</button>
         </nav>
         <p id="pd-totals" class="pd-totals"></p>
+        <p id="pd-regeneration" class="pd-issues" role="status" hidden>
+          납품정보 DB 변경됨 · 현재 수동 조정은 유지됩니다. 고정차 단계에서
+          초안을 다시 생성한 후 저장하세요.
+        </p>
         <section data-panel="0" aria-labelledby="pd-import-title">
-          <h3 id="pd-import-title">물량표</h3>
-          <div class="pd-fields">
-            <label
-              >파일<input
-                id="pd-file"
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                data-edit /></label
-            ><label>시트<select id="pd-sheet" data-edit></select></label
-            ><label
-              >제목 행<input
-                id="pd-header"
-                type="number"
-                min="1"
-                step="1"
-                value="1"
-                data-edit
-            /></label>
-          </div>
-          <div id="pd-mapping" class="pd-fields"></div>
-          <div class="pd-toolbar">
-            <button id="pd-preview" class="btn btn-ghost" data-edit>
-              미리보기</button
-            ><button id="pd-import" class="btn btn-primary" data-edit>
-              선택일 물량 반영</button
-            ><button id="pd-clear" class="btn btn-ghost" data-edit>
-              물량 비우기
+          <h3 id="pd-import-title">배차 자료</h3>
+          <div class="pd-source-tabs" role="tablist" aria-label="자료 구분">
+            <button
+              id="pd-volume-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="pd-volume-panel"
+            >
+              1 물량파일
+            </button>
+            <button
+              id="pd-profiles-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="pd-profiles-panel"
+              tabindex="-1"
+            >
+              2 납품정보 DB
             </button>
           </div>
-          <p id="pd-preview-count"></p>
-          <div id="pd-import-issues" class="pd-issues"></div>
-          <div id="pd-preview-table" class="pd-scroll"></div>
-          <details>
-            <summary>반영된 원본</summary>
-            <div id="pd-source-table" class="pd-scroll"></div>
-          </details>
+          <div
+            id="pd-volume-panel"
+            role="tabpanel"
+            aria-labelledby="pd-volume-tab"
+          >
+            <div class="pd-fields">
+              <label
+                >파일<input
+                  id="pd-file"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  data-edit /></label
+              ><label>시트<select id="pd-sheet" data-edit></select></label
+              ><label
+                >제목 행<input
+                  id="pd-header"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="1"
+                  data-edit
+              /></label>
+            </div>
+            <div id="pd-mapping" class="pd-fields"></div>
+            <div class="pd-toolbar">
+              <button id="pd-preview" class="btn btn-ghost" data-edit>
+                미리보기</button
+              ><button id="pd-import" class="btn btn-primary" data-edit>
+                선택일 물량 반영</button
+              ><button id="pd-clear" class="btn btn-ghost" data-edit>
+                물량 비우기
+              </button>
+            </div>
+            <p id="pd-preview-count"></p>
+            <div id="pd-import-issues" class="pd-issues"></div>
+            <div id="pd-preview-table" class="pd-scroll"></div>
+            <details>
+              <summary>반영된 원본</summary>
+              <div id="pd-source-table" class="pd-scroll"></div>
+            </details>
+          </div>
+          <div
+            id="pd-profiles-panel"
+            role="tabpanel"
+            aria-labelledby="pd-profiles-tab"
+            hidden
+          ></div>
         </section>
         <section data-panel="1" hidden aria-labelledby="pd-drivers-title">
           <div class="pd-toolbar">

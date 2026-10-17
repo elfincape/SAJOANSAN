@@ -16,9 +16,11 @@ import {
 import {
   DEFAULT_SETTINGS,
   createDraft,
+  prepareStops,
   recalculateDraft,
 } from './pyeongtaek-dispatch-model.js';
 import './exceljs-global.js';
+import { createProfilesUI } from './pyeongtaek-dispatch-profiles-ui.js';
 
 const $ = (id) => document.getElementById('pd-' + id);
 const clone = (value) => structuredClone(value);
@@ -34,6 +36,7 @@ const state = {
   ready: false,
   busy: false,
   dirty: false,
+  needsRegeneration: false,
   rows: [],
   drivers: [],
   context: { addresses: [], legs: [], destinations: [], issues: [] },
@@ -49,14 +52,13 @@ const state = {
 };
 const fields = {
   date: '기준일',
+  code: '납품처 코드 (선택)',
   course: '원래 코스',
   customer: '고객사',
   name: '착지명',
   address: '주소',
   boxes: '박스 수',
-  otd: 'OTD',
-  mode: '납품 방식',
-  notes: '메모',
+  notes: '당일 메모 (선택)',
 };
 const number = (value) =>
   Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -216,14 +218,20 @@ function touch(reason) {
   controls();
 }
 function discard() {
-  return !state.dirty || confirm('저장하지 않은 변경사항을 버리시겠습니까?');
+  return (
+    !(state.dirty || profiles.isDirty()) ||
+    confirm('저장하지 않은 변경사항을 버리시겠습니까?')
+  );
 }
 function controls() {
-  for (const el of $('work').querySelectorAll('button,input,select,textarea'))
+  for (const el of $('work').querySelectorAll('button,input,select,textarea')) {
+    if (el.closest('#pd-profiles-panel')) continue;
     el.disabled =
       state.busy ||
       !state.ready ||
       (el.hasAttribute('data-edit') && !state.editable);
+  }
+  profiles.controls();
   $('date').disabled = state.busy || !state.ready;
   for (const id of [
     'save',
@@ -241,16 +249,20 @@ function controls() {
   $('create').disabled ||= !state.rows.length;
   $('import').disabled ||= !state.preview?.rows?.length;
   $('preview').disabled ||= !state.book;
+  $('save').disabled ||= state.needsRegeneration;
+  $('save-copy').disabled ||= state.needsRegeneration;
+  $('regeneration').hidden = !state.needsRegeneration;
   $('stop-query').disabled = false;
-  $('state').textContent = state.dirty
-    ? '진행 중 · 미저장'
-    : state.id
-      ? '저장됨'
-      : state.draft
-        ? state.draft.issues?.length
-          ? '확인 필요'
-          : '초안 생성됨'
-        : '진행 중';
+  $('state').textContent =
+    state.dirty || profiles.isDirty()
+      ? '진행 중 · 미저장'
+      : state.id
+        ? '저장됨'
+        : state.draft
+          ? state.draft.issues?.length
+            ? '확인 필요'
+            : '초안 생성됨'
+          : '진행 중';
   $('app')?.setAttribute('aria-busy', String(state.busy));
 }
 async function run(fn, { edit = false } = {}) {
@@ -310,7 +322,7 @@ function render() {
     ...state.history.map((h) => node('p', time(h.at) + ' · ' + h.reason)),
   );
   $('saved-info').textContent = state.id
-    ? `저장 ID ${state.id} · 버전 ${state.revision}`
+    ? `${state.date} 저장본 · 버전 ${state.revision}`
     : '저장된 버전 없음';
   controls();
 }
@@ -447,6 +459,7 @@ function importRows() {
 async function context({ replaceDrivers = false } = {}) {
   const next = await loadDispatchContext(supabase);
   state.context = next;
+  profiles.renderList();
   if (replaceDrivers) state.drivers = clone(next.drivers);
   issues($('context-issues'), next.issues);
   render();
@@ -552,6 +565,10 @@ function driverChanged() {
   message('당일 조건 변경됨 · 초안을 다시 생성해 주세요.');
 }
 async function generate() {
+  if (profiles.isDirty())
+    throw Error(
+      '납품정보 수정사항을 먼저 저장하거나 취소해 주세요. 파일 미리보기도 DB 저장 또는 파일 비우기가 필요합니다.',
+    );
   if (
     state.context.issues?.length &&
     !confirm(
@@ -576,6 +593,7 @@ async function generate() {
     },
   });
   state.routeId = state.draft.routes[0]?.id;
+  state.needsRegeneration = false;
   touch('가배차 초안 생성');
   stage(2);
   message('초안 생성됨 · 확인 필요 항목을 검토해 주세요.');
@@ -1023,6 +1041,8 @@ function payload() {
   };
 }
 async function save(copy = false) {
+  if (state.needsRegeneration)
+    throw Error('납품정보 DB 변경 후 초안을 다시 생성해 주세요.');
   if (!state.draft) throw Error('저장할 초안이 없습니다.');
   const result = await saveDraft(supabase, {
     ...(copy ? {} : state.id ? { id: state.id } : {}),
@@ -1041,12 +1061,11 @@ async function snapshots() {
   const list = await listDrafts(supabase, state.date);
   table(
     $('snapshots'),
-    ['기준일', '버전', '수정 시각', '저장 ID', '불러오기'],
+    ['기준일', '버전', '수정 시각', '불러오기'],
     list.map((item) => [
       item.date,
       item.revision,
       time(item.updatedAt),
-      item.id,
       button('불러오기', () => restore(item.id)),
     ]),
   );
@@ -1062,17 +1081,59 @@ async function restore(id) {
   if (p.center && p.center !== '002')
     throw Error('평택 초안만 열 수 있습니다.');
   state.rows = clone(p.rows || []);
+  profiles.reset();
+  state.needsRegeneration = restoredProfilesChanged(p);
   state.drivers = clone(p.drivers || []);
   state.draft = clone(p.draft);
   state.settings = clone(p.settings || p.draft.settings);
-  if (p.context) state.context = { ...state.context, ...clone(p.context) };
+  if (p.context)
+    state.context = {
+      ...state.context,
+      ...clone(p.context),
+      destinations: state.context.destinations,
+    };
   state.history = clone(p.history || []);
   state.id = value.id;
   state.revision = value.revision;
   state.dirty = false;
   $('reason').value = p.reason || '';
   stage(2);
-  message('저장 당시 초안을 불러왔습니다.');
+  message(
+    state.needsRegeneration
+      ? '저장 당시 초안을 불러왔습니다. 납품정보 DB가 달라 초안 재생성 후 저장할 수 있습니다.'
+      : '저장 당시 초안을 불러왔습니다.',
+  );
+}
+function restoredProfilesChanged(payload) {
+  const signature = (stops) =>
+    JSON.stringify(
+      stops
+        .map((stop) => [
+          stop.id,
+          (stop.deliveryProfiles || [])
+            .filter((entry) => entry.profile)
+            .map((entry) => [
+              String(entry.destinationId),
+              ...[
+                'revision',
+                'otd',
+                'mode',
+                'unloadMinutes',
+                'inspectionMinutes',
+                'marginMinutes',
+                'notes',
+                'updatedAt',
+              ].map((key) => entry.profile[key] ?? null),
+            ])
+            .sort(([a], [b]) => a.localeCompare(b)),
+        ])
+        .filter(([, entries]) => entries.length)
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    );
+  const current = prepareStops(payload.rows || [], state.context.destinations, {
+    date: state.date,
+  });
+  return signature(payload.draft.stops || []) !== signature(current.stops);
 }
 async function exportExcel() {
   if (!state.draft) throw Error('출력할 초안이 없습니다.');
@@ -1277,7 +1338,7 @@ document.addEventListener(
   true,
 );
 addEventListener('beforeunload', (event) => {
-  if (state.dirty || state.busy) {
+  if (state.dirty || profiles.isDirty() || state.busy) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -1295,6 +1356,8 @@ $('date').onchange = () =>
       return;
     }
     state.date = next;
+    profiles.reset();
+    state.needsRegeneration = false;
     state.rows = [];
     state.draft = null;
     state.preview = null;
@@ -1444,6 +1507,7 @@ async function initialize() {
     return;
   }
   state.editable = permissionAllowed(permissions, 'charter', 'edit', '002');
+  profiles.setPermissions(permissions);
   state.ready = true;
   $('access').textContent = state.editable ? '' : '열람 전용';
   $('work').hidden = false;
@@ -1453,5 +1517,70 @@ async function initialize() {
     stage(0);
     message('기준일 물량표를 선택하거나 저장된 초안을 불러오세요.');
   });
+}
+const profiles = createProfilesUI({
+  host: $('profiles-panel'),
+  state,
+  supabase,
+  run,
+  message,
+  onDirty: controls,
+  async onReload() {
+    const next = await loadDispatchContext(supabase);
+    if (next.issues?.some((issue) => issue.table === 'delivery_points'))
+      throw Error('납품정보 DB 조회 실패 · 권한과 연결 상태를 확인해 주세요.');
+    const signature = (destinations) =>
+      JSON.stringify(
+        destinations
+          .map((d) => [String(d.id), d.dispatch_profile ?? null])
+          .sort(([a], [b]) => a.localeCompare(b)),
+      );
+    const changed =
+      signature(next.destinations) !== signature(state.context.destinations);
+    state.context.destinations = next.destinations;
+    if (state.draft && changed) {
+      state.needsRegeneration = true;
+      touch('납품정보 DB 다시 읽기 · 초안 재생성 필요');
+    }
+    render();
+  },
+  onSaved(records) {
+    for (const record of records) {
+      const destination = state.context.destinations.find(
+        (d) => String(d.id) === String(record.id),
+      );
+      if (destination) destination.dispatch_profile = record.dispatch_profile;
+    }
+    if (state.draft) {
+      state.needsRegeneration = true;
+      touch('납품정보 DB 변경 · 초안 재생성 필요');
+    }
+    render();
+  },
+});
+function sourceTab(selected) {
+  for (const name of ['volume', 'profiles']) {
+    const active = name === selected;
+    $(name + '-tab').setAttribute('aria-selected', String(active));
+    $(name + '-tab').tabIndex = active ? 0 : -1;
+    $(name + '-panel').hidden = !active;
+  }
+}
+for (const name of ['volume', 'profiles']) {
+  $(name + '-tab').onclick = () => sourceTab(name);
+  $(name + '-tab').onkeydown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next =
+      event.key === 'Home'
+        ? 'volume'
+        : event.key === 'End'
+          ? 'profiles'
+          : name === 'volume'
+            ? 'profiles'
+            : 'volume';
+    sourceTab(next);
+    $(next + '-tab').focus();
+  };
 }
 initialize().catch((error) => message(error.message, true));
