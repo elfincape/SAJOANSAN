@@ -22,7 +22,7 @@
 - [x] UI: import/mapping, daily driver availability, draft/detail changes, save/load/export, unsaved-work protection.
 - [x] Navigation integration: Pyeongtaek-only hub/sidebar entry, existing charter resource permission mapping. Shared light/dark/responsive UI verification remains with UI task.
 - [x] Verification: constraints and conservation, import failures, permission isolation, stale saves, desktop/mobile workflows, lint/build, independent review.
-- [ ] Commit and push feature branch; report deployment status precisely.
+- [x] Commit and push feature branch; report deployment status precisely.
 
 ## Interfaces
 
@@ -51,3 +51,4 @@ Shared physical vehicles must not receive duplicate capacity through route alias
 - Final lint passed. Eight related existing permission/cache/provider/browser test files passed. Agents also ran the broader pre-existing suite: it is not fully green (missing dependencies/fixtures and assertions outside this feature); no broad regression-success claim is made. No new persistent test files were added.
 - Model inline checks passed whole-stop rounding and conservation, absent drivers, unconfirmed 5-ton quotas, midnight windows, missing-time handling, parent-course hints without inheriting capacity. Agent dense 500-stop check completed in approximately 1.48 seconds; optimization remains bounded and provisional.
 - Remaining operational prerequisites: actual Naver cache has zero legs; real authenticated provider collection and account allowance verification have not been performed. Production main/Vercel frontend remains unchanged. Draft DB storage is deployed and local UI is available on port 8773.
+- Implementation commit `eff84c4` pushed successfully to `origin/codex/pyeongtaek-route-relations`. Local entry: `http://127.0.0.1:8773/admin/pyeongtaek-dispatch.html?center=pyeongtaek`.
