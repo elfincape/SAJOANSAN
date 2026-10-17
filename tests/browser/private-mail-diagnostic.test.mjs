@@ -10,7 +10,8 @@ const source = await readFile(
   'utf8',
 );
 let owner = true,
-  calls = 0;
+  calls = 0,
+  tlsFailure = false;
 const errors = [],
   unexpected = [];
 try {
@@ -38,8 +39,21 @@ try {
       return route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
-          ok: true,
-          stages: { dns: 'ok', tcp: 'ok', tls: 'ok', greeting: 'ok' },
+          ok: !tlsFailure,
+          ...(tlsFailure
+            ? {
+                code: 'TLS_FAILED',
+                tls_phase: 'TLS_HANDSHAKE',
+                tls_error: 'CERT_TRUST',
+              }
+            : {}),
+          execution_region: 'ap-northeast-2',
+          stages: {
+            dns: 'ok',
+            tcp: 'ok',
+            tls: tlsFailure ? 'failed' : 'ok',
+            greeting: tlsFailure ? 'pending' : 'ok',
+          },
           checked_at: '2026-10-17T00:00:00Z',
         }),
       });
@@ -78,7 +92,7 @@ try {
   await page.evaluate(() =>
     document.querySelector('#mail-connection-diagnostic button').click(),
   );
-  await page.getByText('TLS 인증서 검증 · 성공', { exact: true }).waitFor();
+  await page.getByText('TLS 연결/검증 · 성공', { exact: true }).waitFor();
   assert.equal(calls, 1);
   assert.equal(await button.isDisabled(), false);
   for (const width of [1440, 390]) {
@@ -89,13 +103,21 @@ try {
       ),
     );
   }
+  tlsFailure = true;
+  await button.click();
+  await page.getByText('TLS 연결/검증 · 실패', { exact: true }).waitFor();
+  await page
+    .getByText('TLS 실패 지점 · TLS_HANDSHAKE', { exact: true })
+    .waitFor();
+  await page.getByText('TLS 오류 분류 · CERT_TRUST', { exact: true }).waitFor();
+  await page.getByText('실행 지역 · ap-northeast-2', { exact: true }).waitFor();
   owner = false;
   await page.reload();
   await page.locator('#portal-title').waitFor();
   await page.waitForTimeout(200);
   assert.equal(await page.locator('#mail-connection-diagnostic').count(), 0);
   assert.equal(await page.locator('[data-view=mail]').isVisible(), false);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   assert.deepEqual(errors, []);
   assert.deepEqual(unexpected, []);
   console.log(

@@ -43,3 +43,14 @@ node node_modules/vite/bin/vite.js build
 남았다면 이름과 만료 조건으로만 제거한다. secret/권한/cron 복구는 필요 없다.
 정리 배포 전에도 endpoint는 JWT+owner 보호 상태이며 자격 증명이나 메일에
 접근할 기능은 없다.
+
+## TLS failure classification
+
+TLS uses the unchanged validated connection and handshake. Failures expose only
+TLS_SETUP or TLS_HANDSHAKE and one fixed category: TIMEOUT, CERT_HOSTNAME,
+CERT_VALIDITY, CERT_TRUST, CERT_OTHER, API_UNAVAILABLE, CONNECTION_CLOSED,
+PROTOCOL, OTHER. Categories are hints from known runtime error patterns, not
+proof of a root cause. Unknown messages remain OTHER. Raw errors, stacks and
+credentials are neither returned nor logged. execution_region is an allowlisted
+SB_REGION value, otherwise unknown. The UI says TLS 연결/검증 rather than
+claiming every TLS failure is a certificate validation failure.

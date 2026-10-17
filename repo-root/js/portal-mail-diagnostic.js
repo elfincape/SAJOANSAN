@@ -8,7 +8,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
     node('h3', '클라우드 메일 연결 진단'),
     node(
       'p',
-      '비밀번호 없이 Supabase에서 DNS·TCP 995·TLS 인증서·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
+      '비밀번호 없이 Supabase에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
     ),
   );
   const status = node(
@@ -34,7 +34,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
         for (const [key, label] of [
           ['dns', 'DNS 확인'],
           ['tcp', 'TCP 995 연결'],
-          ['tls', 'TLS 인증서 검증'],
+          ['tls', 'TLS 연결/검증'],
           ['greeting', 'POP 인사말'],
         ])
           results.append(
@@ -54,6 +54,23 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
               '결과 코드 · ' + String(result.code).replace(/[^A-Z_]/g, ''),
             ),
           );
+        for (const [key, label] of [
+          ['tls_phase', 'TLS 실패 지점'],
+          ['tls_error', 'TLS 오류 분류'],
+          ['execution_region', '실행 지역'],
+        ]) {
+          if (result[key])
+            results.append(
+              node(
+                'li',
+                label +
+                  ' · ' +
+                  String(result[key])
+                    .replace(/[^A-Za-z0-9_-]/g, '')
+                    .slice(0, 40),
+              ),
+            );
+        }
         if (result.checked_at)
           results.append(
             node(

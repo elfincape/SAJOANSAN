@@ -54,6 +54,7 @@ const network = {
   },
 };
 const env = {
+  SB_REGION: 'ap-northeast-2',
   SUPABASE_URL: 'https://db.test',
   SUPABASE_ANON_KEY: 'public',
   SUPABASE_SERVICE_ROLE_KEY: 'server-only',
@@ -159,4 +160,67 @@ release();
 assert.equal((await first).status, 200);
 console.log(
   'PASS diagnostic: getUser/owner/active authentication, fixed target, distributed lock, TLS verification, bounded timeout, connection close, sanitized stage-only results, concurrency denial',
+);
+
+assert.equal(result.execution_region, 'ap-northeast-2');
+assert.equal(failure.tls_phase, 'TLS_HANDSHAKE');
+assert.equal(failure.tls_error, 'OTHER');
+assert.equal(timed.tls_phase, 'TLS_HANDSHAKE');
+assert.equal(timed.tls_error, 'TIMEOUT');
+for (const [error, category] of [
+  [
+    Error('invalid peer certificate: UnknownIssuer secret-marker'),
+    'CERT_TRUST',
+  ],
+  [
+    Error('invalid peer certificate: NotValidForName secret-marker'),
+    'CERT_HOSTNAME',
+  ],
+  [Error('certificate expired secret-marker'), 'CERT_VALIDITY'],
+  [Error('invalid certificate signature secret-marker'), 'CERT_OTHER'],
+  [
+    new TypeError('Deno.startTls is not a function secret-marker'),
+    'API_UNAVAILABLE',
+  ],
+  [Error('connection reset secret-marker'), 'CONNECTION_CLOSED'],
+  [Error('tls alert handshake failure secret-marker'), 'PROTOCOL'],
+  [Error('unrecognized secret-marker'), 'OTHER'],
+  [
+    Object.assign(Error('secret-marker'), { code: 'secret-marker_TIMEOUT' }),
+    'OTHER',
+  ],
+]) {
+  for (const phase of ['TLS_SETUP', 'TLS_HANDSHAKE']) {
+    const fake = {
+      ...network,
+      startTls: async () => {
+        if (phase === 'TLS_SETUP') throw error;
+        return {
+          handshake: async () => {
+            throw error;
+          },
+          close() {
+            closed++;
+          },
+        };
+      },
+    };
+    const classified = await probePopConnection(fake, {
+      region: 'ap-northeast-2',
+    });
+    assert.equal(classified.tls_phase, phase);
+    assert.equal(classified.tls_error, category);
+    assert.equal(classified.execution_region, 'ap-northeast-2');
+    assert.equal(classified.stages.greeting, 'pending');
+    assert.ok(!JSON.stringify(classified).includes('secret-marker'));
+    assert.ok(!Object.hasOwn(classified, 'stack'));
+  }
+}
+assert.equal(
+  (await probePopConnection(network, { region: 'secret-marker' }))
+    .execution_region,
+  'unknown',
+);
+console.log(
+  'PASS TLS phase/category allowlist, region allowlist, no upstream error or stack disclosure',
 );

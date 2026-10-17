@@ -4,6 +4,70 @@ const HOST = 'mail.onnet21.com',
   SITE = 'https://sajoansan.vercel.app';
 const LOCK = 'private-mail-pop-diagnostic';
 
+// Inspect locally, but never return or log upstream messages, names, or stacks.
+function classifyTlsError(error) {
+  const name = typeof error?.name === 'string' ? error.name : '';
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (error?.code === 'TLS_TIMEOUT') return 'TIMEOUT';
+  if (
+    /notvalidforname|notcertvalidforname|certnotvalidforname|hostname mismatch|does not match.*name/i.test(
+      message,
+    )
+  )
+    return 'CERT_HOSTNAME';
+  if (
+    /certificate.*expired|certexpired|certificate.*not yet valid|certnotvalidyet/i.test(
+      message,
+    )
+  )
+    return 'CERT_VALIDITY';
+  if (
+    /unknownissuer|unknown issuer|unable to get.*issuer|unable to verify.*certificate|self.signed certificate/i.test(
+      message,
+    )
+  )
+    return 'CERT_TRUST';
+  if (/certificate|invalidcert/i.test(message)) return 'CERT_OTHER';
+  if (
+    name === 'TypeError' &&
+    /not a function|not implemented|unsupported/i.test(message)
+  )
+    return 'API_UNAVAILABLE';
+  if (
+    /unexpected.?eof|connection.*(?:reset|closed|aborted)|broken pipe/i.test(
+      message,
+    ) ||
+    [
+      'ConnectionReset',
+      'ConnectionAborted',
+      'BrokenPipe',
+      'UnexpectedEof',
+    ].includes(name)
+  )
+    return 'CONNECTION_CLOSED';
+  if (/protocol|cipher|handshake.*(?:failure|failed)|tls alert/i.test(message))
+    return 'PROTOCOL';
+  return 'OTHER';
+}
+
+const REGIONS = new Set([
+  'ap-northeast-1',
+  'ap-northeast-2',
+  'ap-south-1',
+  'ap-southeast-1',
+  'ap-southeast-2',
+  'ca-central-1',
+  'us-east-1',
+  'us-west-1',
+  'us-west-2',
+  'eu-central-1',
+  'eu-central-2',
+  'eu-west-1',
+  'eu-west-2',
+  'eu-west-3',
+  'sa-east-1',
+]);
+
 async function bounded(promise, ms, code) {
   let timer,
     timedOut = false;
@@ -30,7 +94,11 @@ async function bounded(promise, ms, code) {
   }
 }
 
-export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
+export async function probePopConnection(
+  network,
+  { timeoutMs = 3000, region } = {},
+) {
+  const execution_region = REGIONS.has(region) ? region : 'unknown';
   const stages = {
     dns: 'pending',
     tcp: 'pending',
@@ -39,7 +107,8 @@ export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
   };
   let stage = 'dns',
     tcp,
-    tls;
+    tls,
+    tlsPhase;
   const started = Date.now();
   try {
     const addresses = await bounded(
@@ -57,11 +126,13 @@ export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
     );
     stages.tcp = 'ok';
     stage = 'tls';
+    tlsPhase = 'TLS_SETUP';
     tls = await bounded(
       network.startTls(tcp, { hostname: HOST }),
       timeoutMs,
       'TLS_TIMEOUT',
     );
+    tlsPhase = 'TLS_HANDSHAKE';
     await bounded(tls.handshake(), timeoutMs, 'TLS_TIMEOUT');
     stages.tls = 'ok';
     stage = 'greeting';
@@ -86,6 +157,7 @@ export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
     stages.greeting = 'ok';
     return {
       ok: true,
+      execution_region,
       target: HOST + ':' + PORT,
       stages,
       elapsed_ms: Date.now() - started,
@@ -93,7 +165,12 @@ export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
     };
   } catch (error) {
     stages[stage] = 'failed';
-    const code = error.code?.endsWith('_TIMEOUT')
+    const code = [
+      'DNS_TIMEOUT',
+      'TCP_TIMEOUT',
+      'TLS_TIMEOUT',
+      'GREETING_TIMEOUT',
+    ].includes(error?.code)
       ? error.code
       : {
           dns: 'DNS_FAILED',
@@ -103,6 +180,10 @@ export async function probePopConnection(network, { timeoutMs = 3000 } = {}) {
         }[stage];
     return {
       ok: false,
+      execution_region,
+      ...(stage === 'tls'
+        ? { tls_phase: tlsPhase, tls_error: classifyTlsError(error) }
+        : {}),
       target: HOST + ':' + PORT,
       stages,
       code,
@@ -216,7 +297,9 @@ export function makeDiagnosticHandler(
         );
       holder = candidate;
       // Never read input targets or send POP commands. A successful greeting is the end.
-      return json(await probePopConnection(network, { timeoutMs }));
+      return json(
+        await probePopConnection(network, { timeoutMs, region: env.SB_REGION }),
+      );
     } catch {
       return json(
         {
