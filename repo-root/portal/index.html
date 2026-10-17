@@ -9,9 +9,10 @@
     <link rel="stylesheet" href="/css/portal.css" />
     <link rel="stylesheet" href="/css/workspace-ui.css" />
     <link rel="stylesheet" href="/css/portal-theme.css" />
-  <link rel="stylesheet" href="/css/theme.css">
-<script type="module" src="/js/theme.js"></script>
-</head>
+    <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/portal-task-ui.css" />
+    <script type="module" src="/js/theme.js"></script>
+  </head>
   <body class="workspace-ui portal-shell">
     <a class="skip-link" href="#portal-main">본문으로 이동</a>
     <div id="portal-sidebar" class="portal-sidebar" aria-label="업무 포털 메뉴">
@@ -260,50 +261,61 @@
           class="quick-actions"
           aria-label="업무 등록"
         ></section>
-        <div class="filters task-toolbar">
+        <div
+          class="filters task-toolbar"
+          role="region"
+          aria-label="업무 조회 조건"
+        >
           <select id="center" hidden aria-label="선택한 센터"></select
           ><input id="completed" type="checkbox" checked hidden />
           <div class="toolbar-top">
-            <div class="toolbar-period">
-              <div
-                id="task-unit"
-                class="view-buttons"
-                role="group"
-                aria-label="조회 기간"
-              >
-                <button
-                  type="button"
-                  data-view-control="task-unit"
-                  data-value="day"
-                  aria-pressed="true"
+            <div class="toolbar-period-group">
+              <span class="filter-label">조회 기간</span>
+              <div class="toolbar-period">
+                <div
+                  id="task-unit"
+                  class="view-buttons"
+                  role="group"
+                  aria-label="조회 기간"
                 >
-                  일</button
-                ><button
-                  type="button"
-                  data-view-control="task-unit"
-                  data-value="week"
-                  aria-pressed="false"
-                >
-                  주</button
-                ><button
-                  type="button"
-                  data-view-control="task-unit"
-                  data-value="month"
-                  aria-pressed="false"
-                >
-                  월
-                </button>
-              </div>
-              <div class="date-navigation">
-                <button id="period-prev" type="button" aria-label="이전 기간">
-                  ‹</button
-                ><input id="task-date" type="date" aria-label="기준일" /><button
-                  id="period-next"
-                  type="button"
-                  aria-label="다음 기간"
-                >
-                  ›</button
-                ><button id="period-today" type="button">오늘</button>
+                  <button
+                    type="button"
+                    data-view-control="task-unit"
+                    data-value="day"
+                    aria-pressed="true"
+                  >
+                    일</button
+                  ><button
+                    type="button"
+                    data-view-control="task-unit"
+                    data-value="week"
+                    aria-pressed="false"
+                  >
+                    주</button
+                  ><button
+                    type="button"
+                    data-view-control="task-unit"
+                    data-value="month"
+                    aria-pressed="false"
+                  >
+                    월
+                  </button>
+                </div>
+                <div class="date-navigation">
+                  <button id="period-prev" type="button" aria-label="이전 기간">
+                    ‹</button
+                  ><input
+                    id="task-date"
+                    type="date"
+                    aria-label="기준일"
+                  /><button
+                    id="period-next"
+                    type="button"
+                    aria-label="다음 기간"
+                  >
+                    ›</button
+                  ><button id="period-today" type="button">오늘</button>
+                </div>
               </div>
             </div>
             <div
@@ -359,49 +371,56 @@
             </div>
           </div>
           <div class="toolbar-bottom">
-            <div
-              id="task-status"
-              class="view-buttons"
-              role="group"
-              aria-label="업무 상태"
-            >
-              <button
-                type="button"
-                data-view-control="task-status"
-                data-value="all"
-                aria-pressed="true"
+            <div class="toolbar-status-group">
+              <span class="filter-label">업무 상태</span>
+              <div
+                id="task-status"
+                class="view-buttons"
+                role="group"
+                aria-label="업무 상태"
               >
-                전체<span class="status-count" data-status-count="all"
-                  >0</span
-                ></button
-              ><button
-                type="button"
-                data-view-control="task-status"
-                data-value="active"
-                aria-pressed="false"
-              >
-                진행중<span class="status-count" data-status-count="active"
-                  >0</span
-                ></button
-              ><button
-                type="button"
-                data-view-control="task-status"
-                data-value="completed"
-                aria-pressed="false"
-              >
-                완료<span class="status-count" data-status-count="completed"
-                  >0</span
-                ></button
-              ><button
-                type="button"
-                data-view-control="task-status"
-                data-value="delayed"
-                aria-pressed="false"
-              >
-                지연<span class="status-count" data-status-count="delayed"
-                  >0</span
+                <button
+                  type="button"
+                  data-view-control="task-status"
+                  data-value="all"
+                  data-task-state="all"
+                  aria-pressed="true"
                 >
-              </button>
+                  전체<span class="status-count" data-status-count="all"
+                    >0</span
+                  ></button
+                ><button
+                  type="button"
+                  data-view-control="task-status"
+                  data-value="active"
+                  data-task-state="active"
+                  aria-pressed="false"
+                >
+                  진행중<span class="status-count" data-status-count="active"
+                    >0</span
+                  ></button
+                ><button
+                  type="button"
+                  data-view-control="task-status"
+                  data-value="completed"
+                  data-task-state="completed"
+                  aria-pressed="false"
+                >
+                  완료<span class="status-count" data-status-count="completed"
+                    >0</span
+                  ></button
+                ><button
+                  type="button"
+                  data-view-control="task-status"
+                  data-value="delayed"
+                  data-task-state="delayed"
+                  aria-pressed="false"
+                >
+                  지연<span class="status-count" data-status-count="delayed"
+                    >0</span
+                  >
+                </button>
+              </div>
             </div>
             <label class="check ui-switch"
               ><span class="ui-switch-control"

@@ -39,9 +39,9 @@ export function mountCoupangWorkflow({task,panel,form,node,button,files,collect,
  const results=node('div',undefined,'coupang-results');section.append(results);section.insertBefore(form,results);const taskActions=form.querySelector(':scope > .actions');if(taskActions)section.append(taskActions);
  const urls=new Set();let frame=null,busy=false,initReady=false,disposed=false,receive=null,running=null,runTimer=null;
  const session=sessions.get(task.id)??{file:null,source:null,pending:null};sessions.set(task.id,session);
- const held=new Map();
+ const held=new Map(),workspace=panel.closest('#task-ticket-dialog')??panel;
  function toggleBusy(value){
-  busy=value;if(value){for(const el of panel.querySelectorAll('button,input,textarea,select')){if(el.tagName==='BUTTON'&&el.textContent==='닫기')continue;held.set(el,el.disabled);el.disabled=true;}}
+  busy=value;if(value){for(const el of workspace.querySelectorAll('button,input,textarea,select')){if(el.tagName==='BUTTON'&&el.textContent==='닫기')continue;held.set(el,el.disabled);el.disabled=true;}}
   else{for(const [el,disabled] of held)el.disabled=disabled;held.clear();}
  }
  const dispatch=()=>form.elements['field_'+settings.dispatch_field]?.value??'';
@@ -69,7 +69,7 @@ export function mountCoupangWorkflow({task,panel,form,node,button,files,collect,
    if(task.inputs.coupang_result.image_error)results.append(node('p','이미지 생성 실패: '+task.inputs.coupang_result.image_error));
   }catch(error){if(!disposed)results.replaceChildren(node('p','생성 자료를 불러오지 못했습니다. '+error.message));}
  }
- const observer=new MutationObserver(()=>{if(section.isConnected)return;disposed=true;clearTimeout(runTimer);if(receive)window.removeEventListener('message',receive);urls.forEach(url=>URL.revokeObjectURL(url));observer.disconnect();});observer.observe(panel,{childList:true});
+ const observer=new MutationObserver(()=>{if(section.isConnected)return;disposed=true;clearTimeout(runTimer);if(receive)window.removeEventListener('message',receive);urls.forEach(url=>URL.revokeObjectURL(url));observer.disconnect();});observer.observe(workspace,{childList:true,subtree:true});
  renderResults();
  if(!writable){status.textContent='저장된 이미지를 클릭하여 확대하거나 복사하세요.';return;}
  const picker=node('div',undefined,'coupang-photo-input');picker.setAttribute('data-file-dropzone','');section.insertBefore(picker,form);picker.append(node('p','배차표 사진'));
