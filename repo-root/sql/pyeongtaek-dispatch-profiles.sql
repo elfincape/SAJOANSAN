@@ -1,4 +1,4 @@
--- PREPARED ONLY: review before applying. No legacy deadline/method or course view changes.
+-- Adds dispatch profiles without changing legacy deadline/method or course views.
 -- Reuses existing delivery_points grants, RLS and operations_resource_allowed edit guard.
 begin;
 
@@ -37,7 +37,6 @@ end $$;
 revoke all on function public.valid_pyeongtaek_dispatch_profile(jsonb,boolean) from public,anon;
 grant execute on function public.valid_pyeongtaek_dispatch_profile(jsonb,boolean) to authenticated;
 
-alter table public.delivery_points drop constraint if exists delivery_points_dispatch_profile_valid;
 alter table public.delivery_points add constraint delivery_points_dispatch_profile_valid check (
  dispatch_profile is null or (
    center_code is not distinct from '002'
@@ -77,7 +76,6 @@ begin
  new.dispatch_profile := jsonb_set(new.dispatch_profile,'{updatedAt}',to_jsonb(to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')));
  return new;
 end $$;
-drop trigger if exists guard_dispatch_profile on public.delivery_points;
 create trigger guard_dispatch_profile before insert or update on public.delivery_points
  for each row execute function public.guard_pyeongtaek_dispatch_profile();
 revoke all on function public.guard_pyeongtaek_dispatch_profile() from public,anon,authenticated;
