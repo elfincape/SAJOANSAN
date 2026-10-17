@@ -1,10 +1,11 @@
-import { getCurrentProfile } from './auth.js';
+import { getCurrentProfile, signOut } from './auth.js';
 import { getAdminMenus } from './admin-menu.js';
 import { categoryForPath } from './admin-hub.js';
 import { getSelectedCenter, withCenterParam } from './center.js';
 import { menuPermissions, resourceForPath } from './menu-permissions.js';
 import { permissionAllowed } from './portal-permissions.js';
-import { renderWorkspaceNavigation } from './workspace-navigation.js';
+import { mountAppShell } from './app-shell.js';
+import { applicationAreaForPath } from './workspace-navigation.js';
 
 const body = document.body;
 const params = new URLSearchParams(location.search);
@@ -16,74 +17,29 @@ else mountWorkspace();
 
 function mountWorkspace() {
   const header = body.querySelector(':scope > header, #app > header');
-  const toolbar =
-    header?.firstElementChild?.tagName === 'DIV'
-      ? header.firstElementChild
-      : header;
   const main = body.querySelector(':scope > main, #app');
-  if (!toolbar || !main) return;
-  main.id ||= 'work-main';
-  const skip = document.createElement('a');
-  skip.className = 'work-skip';
-  skip.href = '#' + main.id;
-  skip.textContent = '본문으로 이동';
-  main.setAttribute('tabindex', '-1');
-  const sidebar = document.createElement('dialog');
-  sidebar.id = 'work-navigation';
-  sidebar.className = 'work-navigation';
-  sidebar.setAttribute('aria-label', '업무 탐색');
-  sidebar.innerHTML = `<div class="work-brand"><a href="/portal/">이안물류<small>통합 업무</small></a><button type="button" class="work-nav-close" aria-label="메뉴 닫기" title="메뉴 닫기">×</button></div>
-    <nav id="work-workspace-navigation" aria-label="주요 화면"></nav>
-    <div class="work-center"><span>현재 센터</span><strong></strong><a href="/admin/?selectCenter=1" data-fixed-center="true">센터 변경</a></div>
-    <nav aria-label="업무 메뉴"></nav>`;
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'work-nav-toggle btn btn-ghost';
-  toggle.setAttribute('aria-label', '업무 메뉴 열기');
-  toggle.setAttribute('aria-controls', sidebar.id);
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.title = '업무 메뉴 열기';
-  toggle.textContent = '☰';
-  body.prepend(skip, sidebar);
-  toolbar.prepend(toggle);
-  const mobile = matchMedia('(max-width: 1000px)');
+  if (!header || !main) return;
+  const title = (
+    header.querySelector('h1,strong')?.textContent ||
+    document.title.split('·')[0]
+  )
+    .replace(/^[\s\p{Extended_Pictographic}\uFE0F\u200D]+/u, '')
+    .trim();
+  const shell = mountAppShell({
+    area: applicationAreaForPath(),
+    title,
+    main,
+    legacyHeader: header,
+    onSignOut: signOut,
+  });
   let navigationContext;
   let navigationCenter;
-  function closeDrawer() {
-    sidebar.close();
-    toggle.setAttribute('aria-expanded', 'false');
-    toggle.focus();
-  }
-  function syncDrawer() {
-    if (sidebar.open) sidebar.close();
-    toggle.setAttribute('aria-expanded', 'false');
-    if (!mobile.matches) sidebar.setAttribute('open', '');
-  }
-  toggle.addEventListener('click', () => {
-    sidebar.showModal();
-    toggle.setAttribute('aria-expanded', 'true');
-  });
-  sidebar
-    .querySelector('.work-nav-close')
-    .addEventListener('click', closeDrawer);
-  sidebar.addEventListener('cancel', () =>
-    toggle.setAttribute('aria-expanded', 'false'),
-  );
-  sidebar.addEventListener('click', (event) => {
-    if (event.target === sidebar && mobile.matches) closeDrawer();
-    const link = event.target.closest('a[href]');
-    if (link && link.dataset.centerLink === 'true')
-      link.href = withCenterParam(link.href);
-  });
-  mobile.addEventListener('change', syncDrawer);
-  syncDrawer();
   updateCenter();
   const centerHost = document.getElementById('center-switcher');
   if (centerHost)
-    new MutationObserver(updateCenter).observe(centerHost, {
-      childList: true,
-      subtree: true,
-    });
+    centerHost.addEventListener('app-center-bind', () =>
+      queueMicrotask(updateCenter),
+    );
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-center-code]'))
       queueMicrotask(updateCenter);
@@ -92,22 +48,11 @@ function mountWorkspace() {
   mountSectionNavigation(main);
   loadNavigation().catch((error) => {
     console.warn('[workspace] 메뉴를 불러오지 못했습니다:', error);
-    renderWorkspaceNavigation(
-      sidebar.querySelector('#work-workspace-navigation'),
-      {
-        center: getSelectedCenter()?.code,
-      },
-    );
+    shell.updateContext({ center: getSelectedCenter()?.code });
   });
 
   function updateCenter() {
-    sidebar.querySelector('.work-center strong').textContent =
-      getSelectedCenter()?.name || '센터 선택';
-    sidebar.querySelector('.work-brand a').href = withCenterParam('/portal/');
-    for (const link of header.querySelectorAll('a[href]')) {
-      if (new URL(link.href).pathname.startsWith('/portal/'))
-        link.href = withCenterParam(link.href);
-    }
+    shell.updateContext({ center: getSelectedCenter()?.code });
     if (navigationContext && navigationCenter !== getSelectedCenter()?.code)
       renderNavigation();
   }
@@ -124,16 +69,14 @@ function mountWorkspace() {
     const { profile, permissions } = navigationContext;
     const selected = getSelectedCenter();
     navigationCenter = selected?.code;
-    renderWorkspaceNavigation(
-      sidebar.querySelector('#work-workspace-navigation'),
-      {
-        profile,
-        permissions,
-        center: selected?.code,
-      },
-    );
-    const nav = sidebar.querySelector('nav[aria-label="업무 메뉴"]');
-    nav.replaceChildren();
+    shell.updateContext({ profile, permissions, center: selected?.code });
+    if (applicationAreaForPath() !== 'admin') {
+      shell.menus.replaceChildren();
+      return;
+    }
+    const nav = document.createElement('nav');
+    nav.setAttribute('aria-label', '관리 업무');
+    shell.menus.replaceChildren(nav);
     const groups = {
       work: '업무 처리',
       reference: '기준정보',
@@ -162,8 +105,7 @@ function mountWorkspace() {
       const summary = document.createElement('summary');
       summary.textContent = title;
       section.append(summary);
-      for (const menu of items)
-        section.append(makeLink(menu.href, menu.title, menu.icon));
+      for (const menu of items) section.append(makeLink(menu.href, menu.title));
       nav.append(section);
     }
     updateCenter();
@@ -182,17 +124,11 @@ function activePath(href) {
   return pathname === location.pathname;
 }
 
-function makeLink(href, title, icon) {
+function makeLink(href, title) {
   const link = document.createElement('a');
   link.href = withCenterParam(href);
   link.dataset.centerLink = 'true';
-  if (icon) {
-    const span = document.createElement('span');
-    span.className = 'work-nav-icon';
-    span.setAttribute('aria-hidden', 'true');
-    span.innerHTML = icon;
-    link.append(span);
-  }
+  link.className = 'app-function-link';
   const label = document.createElement('span');
   label.textContent = title;
   link.append(label);

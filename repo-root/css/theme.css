@@ -1,4 +1,12 @@
+@import './app-shell.css';
+
 :root {
+  --theme-primary: #087f5b;
+  --theme-sidebar: #202422;
+  --theme-sidebar-text: #d1dbd5;
+  --theme-sidebar-muted: #a8b3ad;
+  --theme-sidebar-hover: #2e3530;
+  --theme-sidebar-border: #3a403d;
   --theme-page: #f6f7f8;
   --theme-panel: #fff;
   --theme-soft: #f1f3f5;
@@ -27,14 +35,14 @@
 }
 
 html[data-theme='dark'] {
-  --theme-page: #181c20;
-  --theme-panel: #22282d;
-  --theme-soft: #2c333a;
-  --theme-stripe: #252d33;
-  --theme-text: #e9eef2;
-  --theme-muted: #abb6bf;
-  --theme-border: #49545e;
-  --theme-border-soft: #39434b;
+  --theme-page: #181a19;
+  --theme-panel: #222523;
+  --theme-soft: #2c302d;
+  --theme-stripe: #252a27;
+  --theme-text: #e6ece8;
+  --theme-muted: #aab5ae;
+  --theme-border: #464d48;
+  --theme-border-soft: #343d37;
   --theme-hover: #2d3b33;
   --theme-selected: #244a37;
   --theme-selected-text: #b6efd0;

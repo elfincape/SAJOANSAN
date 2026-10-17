@@ -11,11 +11,17 @@ const portalResources = new Set([
   'history',
   'trash',
 ]);
-const destinations = [
+export const applicationAreas = [
   { href: '/portal/', label: '업무 포털', area: 'portal' },
   { href: '/admin/', label: '관리 허브', area: 'admin' },
   { href: '/', label: '대시보드', area: 'dashboard' },
 ];
+
+export function applicationAreaForPath(path = location.pathname) {
+  if (path === '/portal' || path.startsWith('/portal/')) return 'portal';
+  if (path === '/admin' || path.startsWith('/admin/')) return 'admin';
+  return 'dashboard';
+}
 
 export function renderWorkspaceNavigation(
   host,
@@ -35,13 +41,9 @@ export function renderWorkspaceNavigation(
           selected?.code || center,
         ),
     );
-  const area = location.pathname.startsWith('/portal/')
-    ? 'portal'
-    : location.pathname.startsWith('/admin/')
-      ? 'admin'
-      : 'dashboard';
+  const area = applicationAreaForPath();
   const links = [];
-  for (const destination of destinations) {
+  for (const destination of applicationAreas) {
     if (destination.area === 'admin' && !canManage) continue;
     if (destination.area === 'dashboard' && !manager) continue;
     const link = document.createElement('a');

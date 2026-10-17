@@ -52,97 +52,11 @@ body.workspace-ui.portal-shell {
 .workspace-ui.portal-shell .heading {
   margin-bottom: 24px;
 }
-.workspace-ui.portal-shell .portal-header {
-  padding-inline: 32px;
-  background: var(--theme-panel);
-  border-color: var(--border);
-}
-.workspace-ui.portal-shell .portal-header > strong {
-  color: var(--muted);
-  font-size: 13px;
-}
-.workspace-ui.portal-shell .portal-user-avatar {
-  background: var(--theme-soft);
-  color: var(--theme-selected-text);
-}
 .workspace-ui.portal-shell #portal-description {
   font-size: 13px;
 }
 .workspace-ui.portal-shell #user {
   font-size: 12px;
-}
-.workspace-ui.portal-shell .portal-sidebar {
-  background: #202422;
-  border-right: 0;
-  color: #e5ebe7;
-}
-.workspace-ui.portal-shell .sidebar-brand {
-  min-height: 88px;
-  padding: 20px 20px 16px;
-}
-.workspace-ui.portal-shell .portal-brand-mark {
-  background: #35423a;
-  border-color: #4b5a50;
-  color: #fff;
-}
-.workspace-ui.portal-shell .portal-brand-name {
-  font-size: 18px;
-  color: #fff;
-}
-.workspace-ui.portal-shell .portal-brand-name small {
-  color: #b7c5bd;
-  font-size: 11px;
-}
-.workspace-ui.portal-shell .sidebar-content {
-  padding: 0 12px 20px;
-}
-.workspace-ui.portal-shell .sidebar-group {
-  margin: 8px 0 16px;
-}
-.workspace-ui.portal-shell .sidebar-group > summary {
-  padding: 10px 12px;
-  color: #b8c2bc;
-  border-radius: 6px;
-}
-.workspace-ui.portal-shell .sidebar-group > summary:hover {
-  background: #2b302d;
-}
-.workspace-ui.portal-shell .sidebar-group nav {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  gap: 3px;
-}
-.workspace-ui.portal-shell .portal-sidebar nav :is(button, a) {
-  min-height: 42px;
-  padding: 11px 12px;
-  border-radius: 6px;
-  color: #d1dbd5;
-  background: transparent;
-}
-.workspace-ui.portal-shell .portal-sidebar nav :is(button, a):hover {
-  background: #2e3530;
-  border-color: transparent;
-  color: #fff;
-}
-.workspace-ui.portal-shell .portal-sidebar nav button[aria-pressed='true'] {
-  background: var(--theme-selected);
-  color: var(--theme-selected-text);
-  border-color: transparent;
-  font-weight: 650;
-}
-.workspace-ui.portal-shell .sidebar-footer {
-  padding: 18px 20px;
-  border-color: #3b443e;
-}
-.workspace-ui.portal-shell .sidebar-footer a {
-  color: #c8d3cc;
-  font-size: 12px;
-}
-.workspace-ui.portal-shell .sidebar-close {
-  color: #fff;
-  background: transparent;
-  border-color: #4d5751;
 }
 .workspace-ui.portal-shell #message {
   border-left: 3px solid var(--accent);
@@ -352,16 +266,10 @@ body.workspace-ui.portal-shell {
   .workspace-ui.portal-shell main {
     padding: 24px;
   }
-  .workspace-ui.portal-shell .portal-header {
-    padding-inline: 24px;
-  }
 }
 @media (max-width: 760px) {
   .workspace-ui.portal-shell main {
     padding: 22px 16px 32px;
-  }
-  .workspace-ui.portal-shell .portal-header {
-    padding-inline: 16px;
   }
   .workspace-ui.portal-shell h1 {
     font-size: 22px;

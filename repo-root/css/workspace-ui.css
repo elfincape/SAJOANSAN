@@ -1,6 +1,5 @@
 @import './ui-foundation.css';
 @import './workspace-components.css';
-@import './workspace-navigation.css';
 
 body.workspace-ui {
   color-scheme: light;

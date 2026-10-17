@@ -156,6 +156,10 @@ export async function requireSelectedCenter({ force = false } = {}) {
 
 export function mountHeaderCenterSwitcher(onChange) {
   let host = document.getElementById('center-switcher');
+  if (host?.dataset.appCenter === 'true') {
+    host.dispatchEvent(new CustomEvent('app-center-bind', { detail: { onChange } }));
+    return host;
+  }
   if (!host) {
     host = document.createElement('div');
     host.id = 'center-switcher';

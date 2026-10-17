@@ -7,7 +7,7 @@ import {setupPortalMentions} from './portal-mentions.js';
 import {renderPermissions,permissionAllowed} from './portal-permissions.js';
 import {renderMembers} from './portal-members.js';
 import {renderParticipants,subjectLabel} from './portal-participants.js';
-import {requireAuth} from './auth.js';
+import {requireAuth,signOut} from './auth.js';
 import {supabase} from './supabase.js';
 import {createOperationsApi} from './operations-api.js';
 import {operationsFiles,connectOneDrive,finishOneDrive} from './onedrive-api.js';
@@ -17,13 +17,13 @@ import {createPortalBackups} from './portal-backups.js';
 import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
 import {periodBounds,shiftPeriod,calendarDates,calendarSegments,taskRunsOnDate,taskScheduleLabel,taskEnd,taskPeriod,overlapsPeriod,taskState,taskStateLabels} from './portal-task-views.js';
 import {setupDialogDismiss} from './portal-dialog.js';
-import {setupPortalSidebar} from './portal-sidebar.js';
-import {renderWorkspaceNavigation} from './workspace-navigation.js';
+import {mountAppShell} from './app-shell.js';
 import {getCenterByCode,withCenterParam} from './center.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
 const state={view:'center',registrationTab:'templates',unit:'week',layout:'calendar',status:'all',context:null,tasks:[],incidents:[],templates:[],surveys:[],notifications:[],parents:[],selected:null,busy:false,retry:null};
+let appShell;
 const incidentKinds=['차량 대차','차량 섭외 지연','납품처 문제','기사 문제','차량 문제','기타 특이사항'];
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text).replaceAll('HQ','배송팀');if(className)el.className=className;return el;}
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
@@ -36,12 +36,9 @@ function updateNavigation(){
  for(const el of document.querySelectorAll('nav button[data-view]'))el.hidden=!allowed(viewResource(el.dataset.view),'read',el.dataset.center);
  $('hq-navigation').hidden=!allowed('hq')&&!allowed('briefing');
  const center=$('center').value,selected=getCenterByCode(center);
- renderWorkspaceNavigation($('portal-workspace-navigation'),{profile,permissions:state.permissions,center});
+ appShell.updateContext({profile,permissions:state.permissions,center,centers:state.context?.centers??[]});
  $('audit-navigation').hidden=!selected||!allowed('audit','read',center);
  if(selected)$('audit-navigation').href=withCenterParam('/admin/audit-log.html',selected);
- const brand=document.querySelector('.sidebar-brand > a'),url=new URL('/portal/',location.origin);
- if(center)url.searchParams.set('center',center);
- brand.href=url.pathname+url.search;
 }
 
 function isHq(){return profile.role==='admin';}
@@ -443,7 +440,8 @@ function buildCenterNavigation(){
  document.querySelectorAll('[data-center-view]').forEach(nav=>{nav.replaceChildren();for(const center of centers){const el=node('button',centerName(center.code));el.type='button';el.dataset.view=nav.dataset.centerView;el.dataset.center=center.code;nav.append(el);}if(nav.dataset.centerView==='center'){const incidents=node('button','특이사항');incidents.type='button';incidents.dataset.view='incidents';nav.append(incidents);}if(!centers.length)nav.append(node('p','접근 가능한 센터가 없습니다.'));});
 }
 async function start(){
- setupPortalSidebar();for(const id of ['task-ticket-dialog','parent-task-dialog'])setupDialogDismiss($(id));$('task-date').value=koreaDate();
+ appShell=mountAppShell({area:'portal',main:$('portal-content'),menuContent:$('portal-menu-template').content.cloneNode(true),onSignOut:signOut,onCenterChange:code=>{if(state.busy)return;$('center').value=code;$('center').onchange?.();}});
+ for(const id of ['task-ticket-dialog','parent-task-dialog'])setupDialogDismiss($(id));$('task-date').value=koreaDate();
  $('task-date').onchange=refresh;$('new-task').onclick=taskCreate;$('issue-task').onclick=issueTaskPicker;document.querySelectorAll('[data-view-control]').forEach(el=>el.onclick=()=>{if(state.busy)return;const key={'task-unit':'unit','task-layout':'layout','task-status':'status'}[el.dataset.viewControl];state[key]=el.dataset.value;if(key==='unit')refresh();else render();});
  $('period-prev').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,-1);refresh();};$('period-next').onclick=()=>{$('task-date').value=shiftPeriod($('task-date').value,state.unit,1);refresh();};$('period-today').onclick=()=>{$('task-date').value=koreaDate();refresh();};
  $('user').textContent=profile.display_name??profile.email??'';

@@ -26,12 +26,19 @@ addEventListener('storage', (event) => {
   if (event.key === storageKey || event.key === null) applyTheme(savedTheme());
 });
 
-function mountToggle() {
+export function mountThemeToggle(host) {
   if (
     parent !== window &&
     new URLSearchParams(location.search).has('portal_task')
   )
     return;
+  if (toggle) {
+    if (host) {
+      toggle.classList.remove('theme-toggle-floating');
+      host.append(toggle);
+    }
+    return toggle;
+  }
   toggle = document.createElement('button');
   toggle.id = 'theme-toggle';
   toggle.type = 'button';
@@ -48,17 +55,24 @@ function mountToggle() {
   const header = document.querySelector(
     '.portal-header, body > header, #app > header',
   );
-  const host =
+  const target =
+    host ||
     header?.querySelector('.portal-identity') ||
     (header?.firstElementChild?.tagName === 'DIV'
       ? header.firstElementChild
       : header);
-  if (host) host.append(toggle);
+  if (target) target.append(toggle);
   else {
     toggle.classList.add('theme-toggle-floating');
     document.body.append(toggle);
   }
   applyTheme(root.dataset.theme);
+  return toggle;
+}
+
+function mountToggle() {
+  if (document.body.matches('.work-shell,.portal-shell')) return;
+  mountThemeToggle();
 }
 
 if (document.readyState === 'loading')
