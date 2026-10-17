@@ -1015,7 +1015,7 @@ function payload() {
   const names = new Set(
     [
       state.draft.settings.origin || state.draft.settings.originAddress,
-      ...state.draft.stops.map((s) => s.address),
+      ...state.draft.stops.flatMap((s) => s.addresses || [s.address]),
     ].map((v) =>
       String(v || '')
         .normalize('NFKC')
@@ -1136,8 +1136,13 @@ function restoredProfilesChanged(payload) {
     );
   const current = prepareStops(payload.rows || [], state.context.destinations, {
     date: state.date,
+    addresses: state.context.addresses,
   });
-  return signature(payload.draft.stops || []) !== signature(current.stops);
+  const grouping = (stops) => JSON.stringify(stops.map((stop) =>
+    (stop.sourceRows || []).map((row) => JSON.stringify([row.id, row.address, row.source])).sort(),
+  ).map((rows) => JSON.stringify(rows)).sort());
+  return grouping(payload.draft.stops || []) !== grouping(current.stops) ||
+    signature(payload.draft.stops || []) !== signature(current.stops);
 }
 async function exportExcel() {
   if (!state.draft) throw Error('출력할 초안이 없습니다.');

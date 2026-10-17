@@ -1,4 +1,4 @@
-import {normalizeAddress,groupAddresses,buildCandidates} from './model.js';
+import {normalizeAddress,groupAddresses,buildCandidates,pointIdentity,consolidateCoordinates} from './model.js';
 import {geocodeAddress,queryLeg,coordinateKey} from './provider.js';
 
 const fail=(message,status=400)=>Object.assign(new Error(message),{status});
@@ -7,14 +7,15 @@ const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function integer(value,fallback,min,max){const n=value??fallback;if(!Number.isInteger(n)||n<min||n>max)throw fail('조회 범위와 요청 한도를 확인해 주세요.');return n;}
 function summary(job){
- const s=job.state??{},points=s.points??[],byId=new Map(points.map(p=>[p.id,p]));
+ const s=structuredClone(job.state??{});consolidateCoordinates(s);
+ const points=s.points??[],byId=new Map(points.map(p=>[p.id,p]));
  return {id:job.id,status:job.status,error:job.error||'',updatedAt:job.updated_at,
   phase:s.phase,stops:s.phase==='directions'?Math.max(0,points.length-1):s.groups?.length??0,sourceRows:s.sourceRows??0,geoDone:s.geoCursor??0,geoTotal:(s.groups?.length??0)+1,
   geoIssues:s.geoIssues??[],candidates:s.edges?.length??0,processed:s.edgeCursor??0,completed:s.completed??0,cached:s.cached??0,failed:s.failed??0,deferred:s.deferred??0,
   routeIssues:(s.routeIssues??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
   directionsAttempts:job.directions_attempts,directionsBudget:job.directions_budget,geocodingAttempts:job.geocoding_attempts,geocodingBudget:job.geocoding_budget,
   lastResults:(s.lastResults??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
-  origin:s.origin,allowanceVerified:false,policy:'neighbors-v1',limit:s.limit??50};
+  origin:s.origin,sameLocation:!!s.sameLocation,mergedEdges:s.mergedEdges??0,allowanceVerified:false,policy:'coordinates-v1',limit:s.limit??50};
 }
 export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
  return async req=>{
@@ -82,7 +83,7 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
    if(!env.NAVER_MAPS_CLIENT_ID||!env.NAVER_MAPS_CLIENT_SECRET)throw fail('네이버 Maps 인증 설정이 없습니다.',503);
    lock=crypto.randomUUID();claimed=await rpc('naver_api_claim',{p_job:job.id,p_lock:lock});
    if(!claimed)return reply(200,{...summary(job),busy:job.status==='running'});
-   job=claimed;state=structuredClone(job.state);const started=Date.now();let processed=0,jobStatus='queued',jobError=null;
+   job=claimed;state=structuredClone(job.state);consolidateCoordinates(state);const started=Date.now();let processed=0,jobStatus='queued',jobError=null;
    async function external(kind,url,init){
     if(Date.now()-started>45000)throw fail('다음 배치에서 이어서 조회합니다.',408);
     await sleep(500);
@@ -115,6 +116,7 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
        }
       }
       const edges=buildCandidates(state.points,{limit:state.limit,originId:center.id,preferred});
+      state.sameLocation=state.kind==='single'&&state.points.length===1&&state.geoIssues.length===0;
       const indexes=new Map(state.points.map((p,i)=>[p.id,i]));state.edges=edges.map(e=>[indexes.get(e.from),indexes.get(e.to),e.reason]);state.phase='directions';continue;
      }
      const entry=entries[state.geoCursor];
@@ -127,8 +129,8 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
        if(!p)throw fail('작업 잠금이 갱신되었습니다. 다시 불러와 주세요.',409);
       }
       const standard=normalizeAddress(p.standard_address||entry.address),detail=/\d+\s*(?:동|호)(?:\s|$)|지하|출입구|후문|정문/.test(entry.address);
-      const alias=state.points.find(previous=>previous.address.replace(/\s/g,'')===entry.address.replace(/\s/g,'')&&previous.standardAddress===standard&&previous.x===Number(p.x)&&previous.y===Number(p.y));
-      if(alias)state.aliases[entry.key]=alias.id;
+      const identity=pointIdentity(p),alias=identity&&state.points.find(previous=>pointIdentity(previous)===identity);
+      if(alias){state.aliases[entry.key]=alias.id;alias.addresses=[...new Set([...(alias.addresses??[alias.address]),entry.address])];}
       else state.points.push({id:p.id,address:entry.address,addressKey:entry.key,standardAddress:standard,detail,name:entry.name,x:Number(p.x),y:Number(p.y),regionKey:p.region_key,otd:entry.sources?.find(s=>s.otd)?.otd});
       state.geoCursor++;processed++;
      }catch(e){
@@ -140,8 +142,8 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
     }else{
      if(state.edgeCursor>=state.edges.length){jobStatus='completed';state.deferred=0;break;}
      const [fromIndex,toIndex,reason]=state.edges[state.edgeCursor],from=state.points[fromIndex],to=state.points[toIndex],coords=coordinateKey(from,to);
-     const cached=await db('naver_api_legs?'+new URLSearchParams({select:'*',center_code:'eq.002',from_id:'eq.'+from.id,to_id:'eq.'+to.id,priority:'eq.RECOMMEND',coords_key:'eq.'+coords}));
-     const prior=cached?.[0],fresh=prior&&Number.isFinite(Date.parse(prior.measured_at))&&(Date.parse(prior.measured_at)>=Date.parse(job.created_at)||Date.now()-Date.parse(prior.measured_at)<=1800000);
+     const cached=await db('naver_api_legs?'+new URLSearchParams({select:'*',center_code:'eq.002',priority:'eq.RECOMMEND',coords_key:'eq.'+coords,order:'measured_at.desc',limit:'1'}));
+     const prior=cached?.sort((a,b)=>Date.parse(b.measured_at)-Date.parse(a.measured_at))[0],fresh=prior&&Number.isFinite(Date.parse(prior.measured_at))&&(Date.parse(prior.measured_at)>=Date.parse(job.created_at)||Date.now()-Date.parse(prior.measured_at)<=1800000);
      try{
       let leg=prior;
       if(!fresh){

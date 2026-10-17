@@ -16,6 +16,38 @@ export function groupAddresses(rows) {
  return [...groups.values()];
 }
 
+export function pointIdentity(point) {
+ return point&&[point.x,point.y].every(v=>v!==''&&v!=null&&Number.isFinite(Number(v)))?`${Number(point.x)},${Number(point.y)}`:null;
+}
+
+export function consolidateCoordinates(state) {
+ if(state.phase==='directions'&&state.coordinateIdentityVersion===1)return;
+ const original=state.points??[],points=[],byCoordinate=new Map(),indexes=new Map(),ids=new Map();
+ state.aliases??={};
+ for(const [index,point] of original.entries()) {
+  const key=pointIdentity(point)??`id:${point.id}`;
+  let representative=byCoordinate.get(key);
+  if(representative==null){representative=points.length;byCoordinate.set(key,representative);points.push({...point,addresses:[...(point.addresses??[point.address])]});}
+  const target=points[representative];
+  target.addresses=[...new Set([...target.addresses,...(point.addresses??[point.address])])];
+  indexes.set(index,representative);ids.set(point.id,target.id);
+  if(point.id!==target.id)state.aliases[point.addressKey]=target.id;
+ }
+ for(const [address,id] of Object.entries(state.aliases))state.aliases[address]=ids.get(id)??id;
+ const seen=new Set(),edges=[];let cursor=0;
+ // Keep completed edges ahead of pending edges so an old job never restarts its saved prefix.
+ for(const [index,edge] of (state.edges??[]).entries()) {
+  const from=indexes.get(edge[0]),to=indexes.get(edge[1]),key=`${from}>${to}`;
+  if(from==null||to==null||from===to||seen.has(key))continue;
+  seen.add(key);edges.push([from,to,edge[2]]);if(index<(state.edgeCursor??0))cursor++;
+ }
+ state.mergedEdges=(state.mergedEdges??0)+(state.edges?.length??0)-edges.length;
+ state.points=points;state.edges=edges;state.edgeCursor=cursor;
+ for(const field of ['lastResults','routeIssues'])for(const result of state[field]??[]){result.fromId=ids.get(result.fromId)??result.fromId;result.toId=ids.get(result.toId)??result.toId;}
+ if(state.phase==='directions')state.deferred=Math.max(0,edges.length-cursor);
+ state.coordinateIdentityVersion=1;
+}
+
 const radians=value=>value*Math.PI/180;
 function distanceBetween(from,to) {
  const latitude=radians(to.y-from.y),longitude=radians(to.x-from.x);

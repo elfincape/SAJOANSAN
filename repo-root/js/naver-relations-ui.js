@@ -155,7 +155,7 @@ export function createRelationsUI({
     );
     const n = (v) => Number(v ?? 0).toLocaleString('ko-KR');
     $('relation-count').textContent =
-      `원본 ${n(value.sourceRows)}행 · 착지 ${n(value.stops)}개 · 주소 ${n(value.geoDone)}/${n(value.geoTotal)} · 후보 ${n(value.candidates)}구간 · 완료 ${n(value.completed)} · 캐시 ${n(value.cached)} · 실패 ${n(value.failed)} · 보류 ${n(value.deferred)} · 도로 요청 ${n(value.directionsAttempts)}/${n(value.directionsBudget)} · 주소 요청 ${n(value.geocodingAttempts)}/${n(value.geocodingBudget)}`;
+      `원본 ${n(value.sourceRows)}행 · 착지 ${n(value.stops)}개 · 주소 ${n(value.geoDone)}/${n(value.geoTotal)} · 후보 ${n(value.candidates)}구간 · 처리 ${n(value.processed)}구간 · 누적 완료 ${n(value.completed)} · 누적 캐시 ${n(value.cached)} · 누적 실패 ${n(value.failed)} · 보류 ${n(value.deferred)} · 도로 요청 ${n(value.directionsAttempts)}/${n(value.directionsBudget)} · 주소 요청 ${n(value.geocodingAttempts)}/${n(value.geocodingBudget)}`;
     const issues = [...(value.geoIssues ?? []), ...(value.routeIssues ?? [])];
     $('relation-issues').hidden = !issues.length;
     $('relation-issue-list').replaceChildren();
@@ -257,7 +257,7 @@ export function createRelationsUI({
   async function previewSource() {
     preview = await call('preview', criteria());
     $('relation-count').textContent =
-      `원본 ${preview.sourceRows.toLocaleString('ko-KR')}행 · 통합 착지 ${preview.stops.toLocaleString('ko-KR')}개 · 주소 누락 ${preview.invalidRows.toLocaleString('ko-KR')}행 · 예상 최대 ${preview.estimatedCandidates.toLocaleString('ko-KR')}구간 · 이번 도로 요청 한도 ${preview.directionsBudget.toLocaleString('ko-KR')}건`;
+      `원본 ${preview.sourceRows.toLocaleString('ko-KR')}행 · 조회 주소 ${preview.stops.toLocaleString('ko-KR')}개 · 주소 누락 ${preview.invalidRows.toLocaleString('ko-KR')}행 · 예상 최대 ${preview.estimatedCandidates.toLocaleString('ko-KR')}구간 · 이번 도로 요청 한도 ${preview.directionsBudget.toLocaleString('ko-KR')}건`;
     message('후보 범위 확인 완료');
   }
   async function collect() {
@@ -388,7 +388,9 @@ export function createRelationsUI({
     }
     const r = value.lastResults?.at(-1);
     $('relation-pair-status').textContent =
-      r && !r.error
+      value.sameLocation
+        ? '같은 좌표 · 이동 거리 0km · 이동시간 0분'
+        : r && !r.error
         ? `${(r.distanceMeters / 1000).toFixed(2)}km · ${(r.durationSeconds / 60).toFixed(1)}분 · ${new Date(r.measuredAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · ${r.cached ? '저장값 재사용' : 'DB 저장 완료'}`
         : value.error || r?.error || '구간 조회 중지';
   }

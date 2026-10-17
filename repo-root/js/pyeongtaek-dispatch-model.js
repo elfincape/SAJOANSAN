@@ -24,6 +24,22 @@ const nonnegative = value => numeric(value) && Number(value) >= 0;
 const issue = (code, message, extra = {}, severity = 'warning') => ({ code, message, severity, ...extra });
 const iso = value => Number.isFinite(value) ? new Date(value).toISOString() : null;
 
+const coordinates = point => point && [point.x, point.y].every(numeric) ? `${Number(point.x)},${Number(point.y)}` : null;
+function addressIdentities(addresses) {
+  const identities = new Map();
+  for (const point of addresses) {
+    if ((point.center_code && point.center_code !== '002') || (point.status && point.status !== 'ready')) continue;
+    for (const address of unique([normalize(point.address), normalize(point.address_key)])) {
+      if (!identities.has(address)) identities.set(address, new Set());
+      identities.get(address).add(coordinates(point));
+    }
+  }
+  return address => {
+    const values = identities.get(normalize(address));
+    return values?.size === 1 ? [...values][0] : null;
+  };
+}
+
 function sourceVersion(row) {
   const raw = clone(row.source?.raw ?? null);
   if (Array.isArray(raw)) while (raw.length && (raw.at(-1) == null || raw.at(-1) === '')) raw.pop();
@@ -122,10 +138,12 @@ function bounds(conditions) {
 export function prepareStops(rows, destinations = [], overrides = {}) {
   const settings = settingsFor(overrides.settings || overrides);
   const groups = new Map(), seen = new Map(), issues = [], conflicts = new Set();
+  const locationFor = addressIdentities(overrides.addresses || []);
+  const addressKey = address => locationFor(address) ? `coordinates:${locationFor(address)}` : normalize(address);
   const destinationsByAddress = new Map();
   for (const d of destinations) {
     if (d.center_code && d.center_code !== '002') continue;
-    const key = normalize(d.address);
+    const key = addressKey(d.address);
     if (!key) continue;
     if (!destinationsByAddress.has(key)) destinationsByAddress.set(key, []);
     destinationsByAddress.get(key).push(d);
@@ -142,12 +160,13 @@ export function prepareStops(rows, destinations = [], overrides = {}) {
       prior.forEach(r => conflicts.add(r)); conflicts.add(row);
       prior.push(row);
     } else if (identity) seen.set(identity, [row]);
-    const address = normalize(row.address), key = address || `missing:${index}`;
-    if (!groups.has(key)) groups.set(key, { id: `stop-${groups.size + 1}`, address, sourceRows: [] });
+    const address = normalize(row.address), key = addressKey(address) || `missing:${index}`;
+    if (!groups.has(key)) groups.set(key, { id: `stop-${groups.size + 1}`, address, addresses: [], coordinateIdentity: locationFor(address), sourceRows: [] });
+    if (!groups.get(key).addresses.includes(address)) groups.get(key).addresses.push(address);
     groups.get(key).sourceRows.push(row);
   }
   const stops = [...groups.values()].map(group => {
-    const candidates = destinationsByAddress.get(group.address) || [];
+    const candidates = destinationsByAddress.get(addressKey(group.address)) || [];
     const matched = group.sourceRows.map(r => {
       const code = text(r.code ?? r.destinationCode);
       const exact = candidates.filter(d => code ? text(d.code) === code : normalize(d.name) === normalize(r.name));
@@ -163,7 +182,7 @@ export function prepareStops(rows, destinations = [], overrides = {}) {
     if (matched.some((d, i) => !d && (candidates.some(c => c.dispatch_profile) || text(sourceRows[i].code ?? sourceRows[i].destinationCode)))) add('ambiguous_profile', '납품정보의 거래처 코드 또는 이름과 주소가 일치하지 않습니다. 연결을 확인하기 전에는 자동 배정하지 않습니다.', 'error');
     if (matched.some(d => !profileFor(d))) add('missing_dispatch_profile', '납품정보 DB 미등록 거래처가 있습니다. 기존 납품정보를 임시 적용하므로 확인해 주세요.');
     if (sourceRows.some(r => conflicts.has(r))) add('conflicting_source', '동일 원본 행의 값이 충돌하므로 자동 배정하지 않습니다.', 'error');
-    if (unique(ds.map(d => normalize(d.delivery_location))).length > 1) add('ambiguous_destination', '같은 주소에 서로 다른 납품장소가 있습니다. 동·창고·출입구를 확인하기 전에는 자동 배정하지 않습니다.', 'error');
+    if (!group.coordinateIdentity && unique(ds.map(d => normalize(d.delivery_location))).length > 1) add('ambiguous_destination', '같은 주소에 서로 다른 납품장소가 있습니다. 동·창고·출입구를 확인하기 전에는 자동 배정하지 않습니다.', 'error');
     const validBoxes = sourceRows.every(r => nonnegative(typeof r.boxes === 'string' ? r.boxes.replace(/,/g, '') : r.boxes));
     const rawBoxes = sourceRows.reduce((sum, r) => sum + (nonnegative(typeof r.boxes === 'string' ? r.boxes.replace(/,/g, '') : r.boxes) ? Number(String(r.boxes).replace(/,/g, '')) : 0), 0);
     if (!validBoxes) add('invalid_boxes', '물량이 누락되었거나 잘못된 값입니다. 원본 값은 보존됩니다.', 'error');
@@ -234,9 +253,10 @@ function cacheFor(addresses = [], legs = []) {
     if (a.center_code && a.center_code !== '002') continue;
     if (a.status && a.status !== 'ready') continue;
     byId.set(String(a.id), a);
-    const key = normalize(a.address);
-    if (!byAddress.has(key)) byAddress.set(key, []);
-    byAddress.get(key).push(a.id);
+    for (const key of unique([normalize(a.address), normalize(a.address_key)])) {
+      if (!byAddress.has(key)) byAddress.set(key, []);
+      byAddress.get(key).push(coordinates(a) || `id:${a.id}`);
+    }
   }
   for (const leg of legs) {
     if (leg.center_code && leg.center_code !== '002') continue;
@@ -247,15 +267,15 @@ function cacheFor(addresses = [], legs = []) {
       const key = `${Number(from.x)},${Number(from.y)}>${Number(to.x)},${Number(to.y)}|diesel|1`;
       if (leg.coords_key !== key) continue;
     }
-    const key = JSON.stringify([String(leg.from_id), String(leg.to_id)]);
+    if (!from || !to) continue;
+    const key = JSON.stringify([coordinates(from) || `id:${from.id}`, coordinates(to) || `id:${to.id}`]);
     const existing = byPair.get(key);
     if (!existing || (Date.parse(leg.measured_at) || 0) > (Date.parse(existing.measured_at) || 0)) byPair.set(key, leg);
   }
   return (from, to) => {
-    // Ambiguous addresses/entrances cannot safely be resolved by coordinate equality.
     const a = unique(byAddress.get(normalize(from)) || []), b = unique(byAddress.get(normalize(to)) || []);
     if (a.length !== 1 || b.length !== 1) return null;
-    const leg = byPair.get(JSON.stringify([String(a[0]), String(b[0])]));
+    const leg = byPair.get(JSON.stringify([a[0], b[0]]));
     return leg && nonnegative(leg.duration_seconds) ? leg : null;
   };
 }
@@ -411,7 +431,7 @@ function solveCandidates(candidates, stops, fixed, budget, settings, issues) {
 }
 
 export function createDraft({ rows = [], drivers = [], destinations = [], addresses = [], legs = [], date, settings: input = {} } = {}) {
-  const settings = settingsFor(input), prepared = prepareStops(rows, destinations, { settings, date, byId: input.byId, byAddress: input.byAddress });
+  const settings = settingsFor(input), prepared = prepareStops(rows, destinations, { settings, date, addresses, byId: input.byId, byAddress: input.byAddress });
   const { stops } = prepared, issues = [...prepared.issues], routes = [];
   const getLeg = cacheFor(addresses, legs), assigned = new Set();
   const budget = { calls: 0, remaining: settings.solverBudgetMs, exhausted: false };

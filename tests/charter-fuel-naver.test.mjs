@@ -162,11 +162,30 @@ console.log('Collector persistence, budget including center legs, deferred resum
 collectorStore.addresses.push(...['창고 A','창고 B'].map(address=>({id:crypto.randomUUID(),center_code:'002',address_key:address,address,standard_address:'동일 건물 주소',x:127.3,y:37.3,status:'ready',measured_at:new Date().toISOString()})));
 let sameBuilding=await invokeCollector({action:'create',center:'002',rows:[{address:'창고 A'},{address:'창고 B'}],directionsBudget:4});
 sameBuilding=await invokeCollector({action:'batch',center:'002',jobId:sameBuilding.id});
-assert.equal(sameBuilding.stops,2,'Provider-standard address/coordinates alone do not establish the same physical stop');
-assert.equal(sameBuilding.candidates,4);assert.equal(sameBuilding.origin,'경기도 평택시 산단로 263');
+assert.equal(sameBuilding.stops,1,'Identical Naver coordinates establish one physical stop despite different address labels');
+assert.equal(sameBuilding.candidates,1);assert.equal(sameBuilding.origin,'경기도 평택시 산단로 263');
+const beforeSamePair=collectorStore.driving;
+let samePair=await invokeCollector({action:'create',center:'002',kind:'single',origin:'창고 A',rows:[{address:'창고 B'}]});
+samePair=await invokeCollector({action:'batch',center:'002',jobId:samePair.id});
+assert.equal(samePair.status,'completed');assert.equal(samePair.sameLocation,true);assert.equal(samePair.stops,0);assert.equal(samePair.candidates,0);assert.equal(collectorStore.driving,beforeSamePair);
 assert.equal((await batchHandler(relationReq({action:'resume',center:'002',jobId:collected.id,directionsBudget:60,expectedUpdatedAt:'1970-01-01T00:00:00Z'}))).status,409,'A stale tab cannot overwrite the latest saved budget');
+collectorStore.addresses.push(...['route error A','route error B'].map((address,i)=>({id:crypto.randomUUID(),center_code:'002',address_key:address,address,x:127.7+i/10,y:37,status:'ready'})));
 let routeFailureJob=await invokeCollector({action:'create',center:'002',rows:[{address:'route error A'},{address:'route error B'}],directionsBudget:10});routeFailureOnce=true;
 for(let i=0;i<5&&routeFailureJob.status!=='completed';i++)routeFailureJob=await invokeCollector({action:'batch',center:'002',jobId:routeFailureJob.id});
 assert.equal(routeFailureJob.status,'completed');assert.equal(routeFailureJob.failed,1);assert.equal(routeFailureJob.completed,3);assert.equal(routeFailureJob.routeIssues.length,1);assert(routeFailureJob.routeIssues[0].error.includes('네이버 코드 1'));
 assert.equal(routeFailureJob.processed,4,'A route-specific HTTP 400 must not stop the remaining edges');
 console.log('Documented HTTP 400 route failures are retained as issues and bulk collection continues without invented distances');
+
+const centerPoint=collectorStore.addresses.find(a=>a.address.includes('산단로')),warehousePoints=collectorStore.addresses.filter(a=>a.address.startsWith('창고'));
+const nearbyPoint={id:crypto.randomUUID(),center_code:'002',address_key:'근처 창고',address:'근처 창고',x:127.3000001,y:37.3,status:'ready'};
+collectorStore.addresses.push(nearbyPoint);
+collectorStore.legs.push({center_code:'002',from_id:warehousePoints[1].id,to_id:nearbyPoint.id,priority:'RECOMMEND',coords_key:coordinateKey(warehousePoints[1],nearbyPoint),distance_meters:100,duration_seconds:60000,measured_at:new Date().toISOString()});
+const legacyJob={id:crypto.randomUUID(),center_code:'002',owner_id:'user',status:'queued',created_at:new Date().toISOString(),updated_at:new Date().toISOString(),directions_attempts:1,directions_budget:4,geocoding_attempts:0,geocoding_budget:2000,
+ state:{kind:'collection',phase:'directions',origin:centerPoint.address,groups:[],points:[centerPoint,...warehousePoints,nearbyPoint].map(a=>({...a,addressKey:a.address_key})),aliases:{},edges:[[0,1,'center'],[0,2,'center'],[1,2,'nearby'],[1,3,'nearby'],[2,3,'nearby']],edgeCursor:1,completed:1,cached:0,failed:0,lastResults:[],geoCursor:4}};
+collectorStore.jobs.push(legacyJob);const callsBeforeMigration=collectorStore.driving;
+const migrated=await invokeCollector({action:'batch',center:'002',jobId:legacyJob.id});
+assert.equal(migrated.stops,2,'Identical coordinates merge but an arbitrarily close different coordinate stays separate');
+assert.equal(migrated.candidates,2);assert.equal(migrated.processed,2);assert.equal(migrated.completed,2);assert.equal(migrated.cached,1);assert.equal(migrated.mergedEdges,3);
+assert.equal(collectorStore.driving,callsBeforeMigration,'Saved progress and a coordinate-equivalent alias cache need no repeat Naver call');
+assert.equal(legacyJob.state.aliases['창고 B'],warehousePoints[0].id);
+console.log('Legacy duplicate-coordinate jobs retain their completed prefix, remove self/duplicate legs and reuse alias-ID road measurements');
