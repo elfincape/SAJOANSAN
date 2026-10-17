@@ -130,52 +130,15 @@
                   >평택 납품처 DB</span
                 >
               </div>
-              <div class="pd-fields">
-                <label
-                  >센터 출발지<input
-                    id="relation-origin"
-                    maxlength="300"
-                    value="경기도 평택시 산단로 263"
-                /></label>
-                <label
-                  >착지별 후보 수<input
-                    id="relation-limit"
-                    type="number"
-                    min="1"
-                    max="50"
-                    step="1"
-                    value="50"
-                /></label>
-                <label
-                  >도로 조회 한도<select id="relation-budget">
-                    <option value="60">시험 · 60건</option>
-                    <option value="1000">1,000건</option>
-                    <option value="25000">25,000건</option>
-                  </select></label
-                >
-                <label
-                  >조사 대상 파일<input
-                    id="relation-files"
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    multiple
-                /></label>
-              </div>
               <div class="pd-toolbar">
-                <button id="relation-use-db" class="btn btn-ghost">
-                  평택 납품처 DB 선택
-                </button>
-                <button id="relation-preview" class="btn btn-ghost">
-                  후보 확인
-                </button>
-                <button id="relation-start" class="btn btn-primary" disabled>
-                  수집 시작
+                <button id="relation-bulk" class="btn btn-primary">
+                  납품정보 DB 전체 일괄 조사
                 </button>
                 <button id="relation-restore" class="btn btn-ghost">
                   최근 작업
                 </button>
-                <button id="relation-resume" class="btn btn-primary" disabled>
-                  재개
+                <button id="relation-resume" class="btn btn-ghost" disabled>
+                  이어서 조사
                 </button>
                 <button id="relation-stop" class="btn btn-ghost" hidden>
                   중지
@@ -184,6 +147,51 @@
                   구간 다운로드
                 </button>
               </div>
+              <details id="relation-settings">
+                <summary>조사 범위·파일 선택</summary>
+                <div class="pd-fields">
+                  <label
+                    >센터 출발지<input
+                      id="relation-origin"
+                      maxlength="300"
+                      value="경기도 평택시 산단로 263"
+                  /></label>
+                  <label
+                    >착지별 후보 수<input
+                      id="relation-limit"
+                      type="number"
+                      min="1"
+                      max="50"
+                      step="1"
+                      value="50"
+                  /></label>
+                  <label
+                    >도로 조회 한도<select id="relation-budget">
+                      <option value="60">시험 · 60건</option>
+                      <option value="1000">1,000건</option>
+                      <option value="25000" selected>25,000건</option>
+                    </select></label
+                  >
+                  <label
+                    >조사 대상 파일<input
+                      id="relation-files"
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      multiple
+                  /></label>
+                </div>
+                <div class="pd-toolbar">
+                  <button id="relation-use-db" class="btn btn-ghost">
+                    평택 납품처 DB 선택
+                  </button>
+                  <button id="relation-preview" class="btn btn-ghost">
+                    후보 확인
+                  </button>
+                  <button id="relation-start" class="btn btn-primary" disabled>
+                    선택 자료 수집
+                  </button>
+                </div>
+              </details>
               <p id="relation-status" role="status" aria-live="polite"></p>
               <p id="relation-count" class="pd-muted"></p>
               <p id="relation-allowance" class="pd-muted">
@@ -194,8 +202,8 @@
                 <summary>주소 확인 필요</summary>
                 <ul id="relation-issue-list"></ul>
               </details>
-              <details open>
-                <summary>납품처 DB 조회</summary>
+              <details id="relation-db-single">
+                <summary>단건 납품처 조회</summary>
                 <div class="pd-fields">
                   <label
                     >납품처 검색<input

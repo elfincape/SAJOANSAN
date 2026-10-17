@@ -20,7 +20,9 @@ assert.equal(document.getElementById('relations-panel'),null,'Web distance-prior
 const dispatchHtml=fs.readFileSync(new URL('../repo-root/admin/pyeongtaek-dispatch.html',import.meta.url),'utf8');
 const dispatchDocument=new JSDOM(dispatchHtml).window.document;
 assert(dispatchDocument.getElementById('relations-panel'),'API collector belongs to provisional dispatch');
-assert.equal(dispatchDocument.getElementById('relation-budget').value,'60');
+assert.equal(dispatchDocument.getElementById('relation-budget').value,'25000');
+assert.equal(dispatchDocument.getElementById('relation-db-single').open,false);
+assert.equal(dispatchDocument.getElementById('relation-settings').open,false);
 assert.equal(dispatchDocument.getElementById('relation-limit').max,'50');
 const relationCode=fs.readFileSync(new URL('../repo-root/js/naver-relations-ui.js',import.meta.url),'utf8');
 assert(relationCode.includes('naver-relations'));assert(!relationCode.includes('SERVICE_ROLE'));
@@ -28,11 +30,12 @@ assert(relationCode.includes('naver_api_cancel'));assert(relationCode.includes('
 console.log('Integrated route collection controls, safe pilot default, stop/resume and dated estimates passed');
 
 const relationDom=new JSDOM(dispatchHtml,{url:'http://127.0.0.1:8772/admin/pyeongtaek-dispatch.html?center=pyeongtaek&view=roads'}),relationDocument=relationDom.window.document;
-let relationRequests=[];
+let relationRequests=[],bulkBatches=0;
 const relationResult={id:'test-route-job',updatedAt:'2026-10-17T00:00:00Z',status:'completed',stops:2,sourceRows:3,geoDone:3,geoTotal:3,candidates:4,completed:4,cached:1,failed:0,deferred:0,directionsAttempts:3,directionsBudget:60,geocodingAttempts:3,geocodingBudget:2000,lastResults:[{from:'주소 A',to:'주소 B',reason:'nearby',distanceMeters:1234,durationSeconds:123,measuredAt:'2026-10-17T00:00:00Z',cached:true}]};
 const relationClient={functions:{invoke:async(name,{body})=>{
  assert.equal(name,'naver-relations');assert.equal(body.center,'002');relationRequests.push(body);
- return {data:body.action==='preview'?{stops:2,sourceRows:3,invalidRows:0,estimatedCandidates:4,directionsBudget:body.directionsBudget}:body.action==='create'?{...relationResult,status:'queued'}:relationResult};
+ if(body.action==='batch'&&bulkBatches>0){bulkBatches--;return {data:{...relationResult,status:bulkBatches?'queued':'completed'}};}
+ return {data:body.action==='preview'?{stops:body.directionsBudget===25000?500:2,sourceRows:3,invalidRows:0,estimatedCandidates:4,directionsBudget:body.directionsBudget}:body.action==='create'?{...relationResult,status:'queued'}:relationResult};
 }},rpc:async(name)=>{assert.equal(name,'naver_api_cancel');return {data:null};}};
 const destinationRecords=[{id:'dp-a',code:'P001',name:'알파',address:'주소 A',center_code:'002',dispatch_profile:{otd:'09:00 이전',mode:'unmanned'}},{id:'dp-b',code:'P002',name:'베타',address:'주소 B',center_code:'002'},{id:'dp-empty',code:'NOADDR',name:'주소 없음',address:'',center_code:'002'},{id:'dp-other',code:'OTHER',name:'타센터',address:'주소 A',center_code:'001'}];
 const relationContext={getDestinations:()=>destinationRecords,requireRole:async()=>({id:'test-user'}),supabase:relationClient,menuPermissions:async()=>({access:{delivery_points:{edit_centers:['002']}}}),permissionAllowed,excelAddresses:base.excelAddresses,XLSX,ExcelJS,document:relationDocument,location:relationDom.window.location,URL,Blob,setTimeout:fn=>{fn();return 0;},addEventListener:()=>{}};relationContext.globalThis=relationContext;
@@ -62,6 +65,13 @@ const dispatchWb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(dispatchWb,X
 Object.defineProperty(relationDocument.getElementById('relation-files'),'files',{value:[{name:'dispatch.xlsx',size:dispatchBytes.length,arrayBuffer:async()=>dispatchBytes}],configurable:true});
 await relationDocument.getElementById('relation-files').onchange();const uploaded=relationRequests.at(-1).rows;
 assert.equal(uploaded.length,2);assert.equal(uploaded[0].quantity,20.9333);assert.equal(uploaded[0].customer,'한성');assert.equal(uploaded[0].originalCourse,'평택97');assert.equal(uploaded[1].otd,'04:00');assert.equal(uploaded[0].sourceSheet,'Sheet1');
+const beforeBulk=relationRequests.length;bulkBatches=3;await relationDocument.getElementById('relation-bulk').onclick();
+const bulkRequests=relationRequests.slice(beforeBulk),bulkCreate=bulkRequests.find(r=>r.action==='create');
+assert(!Object.hasOwn(bulkCreate,'rows'),'Bulk source must be the complete server DB, never the selected record or uploaded file');
+assert.equal(bulkCreate.directionsBudget,25000);assert.equal(bulkCreate.limit,49,'500 center legs plus 49 candidates per stop fit within 25,000');
+assert.equal(bulkRequests.filter(r=>r.action==='batch').length,3,'One click automatically continues multiple batches');
+assert.equal(relationDocument.getElementById('relation-source-label').textContent,'평택 납품정보 DB 전체');
+console.log('One-click whole-DB collection ignores manual selections/files, reserves center budget and runs all batches automatically');
 console.log('Collector UI modes, no automatic live call, preview/create/batch, stale estimate display and customer/volume/course/OTD file preservation passed');
 Object.assign(relationResult,{error:'요청 한도 도달',deferred:100,directionsBudget:25000,origin:'저장된 센터 주소',limit:25});
 await relationDocument.getElementById('relation-start').onclick();
@@ -96,7 +106,7 @@ if(process.env.ROUTE_UI_BROWSER==='1'){
   await page.route('https://cdn.jsdelivr.net/npm/xlsx@*/**',route=>route.fulfill({contentType:'application/javascript',body:'window.XLSX={};'}));
   for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
    await page.setViewportSize(viewport);await page.goto((process.env.ROUTE_UI_BASE_URL||'http://127.0.0.1:8772')+'/admin/pyeongtaek-dispatch.html?center=pyeongtaek&view=roads');
-   await page.locator('#relations-panel').waitFor({state:'visible'});await page.locator('#relation-preview').click();await page.locator('#relation-start').click();
+   await page.locator('#relations-panel').waitFor({state:'visible'});await page.locator('#relation-bulk').click();
    await page.locator('#relation-status').filter({hasText:'수집 완료'}).waitFor();
    const bounds=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,heading:document.querySelector('#relations-panel h4').getBoundingClientRect().toJSON()}));
    assert(bounds.scroll<=bounds.width+1,`${name} page overflow: ${JSON.stringify(bounds)}`);

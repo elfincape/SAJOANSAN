@@ -33,6 +33,7 @@ export function createRelationsUI({
       e.disabled = unavailable;
     for (const id of [
       'relation-preview',
+      'relation-bulk',
       'relation-use-db',
       'relation-restore',
       'relation-pair',
@@ -267,6 +268,23 @@ export function createRelationsUI({
     render(job);
     await collect();
   }
+  async function collectDatabase() {
+    sourceRows = null;
+    $('relation-files').value = '';
+    $('relation-source-label').textContent = '평택 납품정보 DB 전체';
+    $('relation-budget').value = '25000';
+    $('relation-limit').value = '50';
+    invalidate();
+    await previewSource();
+    // Reserve center legs before distributing the remaining request budget equally.
+    const limit = Math.max(
+      1,
+      Math.min(50, Math.floor(25000 / preview.stops) - 1),
+    );
+    $('relation-limit').value = String(limit);
+    message('DB 전체 일괄 조사 중');
+    await create();
+  }
   async function resume() {
     render(
       await call('resume', {
@@ -483,6 +501,7 @@ export function createRelationsUI({
   function initialize() {
     if (!allowed)
       message('도로 구간 수집에는 평택 납품처 수정 권한이 필요합니다.');
+    $('relation-bulk').onclick = () => guarded(collectDatabase, true);
     $('relation-use-db').onclick = () =>
       guarded(async () => {
         sourceRows = null;
