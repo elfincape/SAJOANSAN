@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { handlePrivateMail } from '../supabase/functions/onedrive-auth/private-mail.js';
 const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
-  id = '39045005-313e-42e1-b50c-2394b3b6ff26';
+  // Keep the original private-policy branch covered separately from the pinned
+  // existing-storage target exercised in private-mail-standard-storage.test.mjs.
+  id = '00000000-0000-4000-8000-000000000003';
 let box,
   shared,
   missingOwner,

@@ -137,6 +137,25 @@ export async function handlePrivateMail(action, req, user, ctx) {
   async function privateDestination(box, env) {
     if (env.driveId.toLowerCase() !== box.drive_id.toLowerCase())
       throw fail('OneDrive 계정이 메일 보관 계정과 다릅니다.', 409);
+    if (box.id === APPROVED_MAIL_TARGET.mailbox_id) {
+      if (!(await approvedAnonymousDestination(user.id, box)))
+        throw fail('OWNER_FOLDER_REQUIRED', 409);
+      // The user chose the existing authenticated storage behavior for this
+      // exact target. Graph authorization and local-item validation still apply.
+      const folder = await (
+        await graph(
+          '/drives/' +
+            enc(box.drive_id) +
+            '/items/' +
+            enc(box.folder_id) +
+            '?$select=id,folder,parentReference,remoteItem',
+          env.access,
+        )
+      ).json();
+      if (!isMailDestinationItem(box, box.folder_id, folder))
+        throw fail('OWNER_FOLDER_REQUIRED', 409);
+      return;
+    }
     let drive = await (
       await graph('/me/drive?$select=id,owner', env.access)
     ).json();
@@ -171,6 +190,14 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return owner;
   }
   async function privatePermissions(box, itemId, env, owner, item) {
+    if (box.id === APPROVED_MAIL_TARGET.mailbox_id) {
+      if (
+        !(await approvedAnonymousDestination(user.id, box)) ||
+        !isMailDestinationItem(box, itemId, item)
+      )
+        throw fail('OWNER_FOLDER_REQUIRED', 409);
+      return;
+    }
     const permissions = await (
       await graph(
         '/drives/' +
@@ -181,21 +208,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
         env.access,
       )
     ).json();
-    const approved = await approvedAnonymousDestination(user.id, box);
-    const localItem = isMailDestinationItem(box, itemId, item);
-    const anonymousAllowed = approved && localItem;
-    validateMailPermissions(permissions, owner, anonymousAllowed, fail);
-    if (
-      anonymousAllowed &&
-      permissions.value.some((p) => p.link?.scope === 'anonymous')
-    )
-      console.info(
-        JSON.stringify({
-          event: 'private_mail',
-          stage: 'destination',
-          code: 'APPROVED_ANONYMOUS_DESTINATION',
-        }),
-      );
+    validateMailPermissions(permissions, owner, false, fail);
   }
   async function fenceMailbox(box, lease) {
     const live = (
