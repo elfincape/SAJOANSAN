@@ -1,6 +1,7 @@
 import { privateMail } from './onedrive-api.js';
+import {mountMailDiagnostic,MAIL_DIAGNOSTIC_OWNER_ID} from './portal-mail-diagnostic.js';
 
-export function createPortalMail({ node, button, message, stamp }) {
+export function createPortalMail({ node, button, message, stamp, profile }) {
   let generation = 0;
   return async function renderMail() {
     const ticket = ++generation,
@@ -23,6 +24,7 @@ export function createPortalMail({ node, button, message, stamp }) {
         '메일은 본인만 열람하며 통합 검색과 AI 브리핑에 포함되지 않습니다. 제목·발신자로 검색할 수 있습니다. 외부 이미지와 활성 콘텐츠는 표시하지 않습니다.',
       ),
     );
+    if(profile?.id===MAIL_DIAGNOSTIC_OWNER_ID)mountMailDiagnostic({host:detail,node,button,isActive:active});
     try {
       const status = await privateMail.status();
       if (!active()) return;

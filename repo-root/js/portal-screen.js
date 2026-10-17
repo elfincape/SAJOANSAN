@@ -15,6 +15,7 @@ import {portalAi} from './portal-ai.js';
 import {createPortalSearch} from './portal-search.js';
 import {createPortalBackups} from './portal-backups.js';
 import {createPortalMail} from './portal-mail.js';
+import {MAIL_DIAGNOSTIC_OWNER_ID} from './private-mail-diagnostic-api.js';
 import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
 import {periodBounds,shiftPeriod,calendarDates,calendarSegments,taskRunsOnDate,taskScheduleLabel,taskEnd,taskPeriod,overlapsPeriod,taskState,taskStateLabels} from './portal-task-views.js';
 import {setupDialogDismiss} from './portal-dialog.js';
@@ -48,7 +49,7 @@ function button(text,handler,parent,className){const el=node('button',text,class
 const renderPortalHistory=createPortalHistory({api,node,button,field,centerName,stamp,message,allowed,openRecord:async(type,id)=>{try{const {data,error}=await supabase.from(type==='task'?'operations_tasks':'operations_incidents').select('*').eq('id',id).single();if(error)throw error;choose(type,data);}catch(error){message(error.message||'원본을 불러올 수 없습니다.',true);}}});
 const renderRegistrationView=createRegistrationView({node,button,canWrite,addRow,centerName,customizeTask,surveyForm,deleteSurvey:survey=>{if(confirm('이 업무조사를 삭제할까요?'))mutate('survey-delete:'+survey.id,requestId=>api.deleteSurvey({requestId,survey}),()=>{if(state.selected?.type==='survey'&&state.selected.row.id===survey.id)state.selected=null;});},retire:template=>{if(confirm('등록 업무를 삭제할까요? 이미 발행한 티켓과 기록은 유지됩니다.'))mutate('retire:'+template.id,id=>api.retireCustom({requestId:id,template}));},onTabChange:tab=>{if(state.busy)return;state.registrationTab=tab;state.selected=null;render();}});
 const renderBackups=createPortalBackups({node,button,message,stamp});
-const renderMail=createPortalMail({node,button,message,stamp});
+const renderMail=createPortalMail({node,button,message,stamp,profile});
 const renderSearch=createPortalSearch({supabase,node,button,centerName,message,openRecord:async(type,id)=>{
  try{const table={task:'operations_tasks',incident:'operations_incidents',survey:'operations_surveys'}[type];
   const {data,error}=await supabase.from(table).select('*').eq('id',id).single();if(error)throw error;choose(type,data);
@@ -456,6 +457,7 @@ async function start(){
  document.querySelector('[data-view=backups]').hidden=!isHq();
  $('hq-navigation').hidden=!isHq();$('audit-navigation').hidden=!isHq();
  try{const {data,error}=await supabase.from('private_mailboxes').select('id').limit(1);state.mailAvailable=!error&&data?.length>0;}catch{state.mailAvailable=false;}
+ if(profile.id===MAIL_DIAGNOSTIC_OWNER_ID)state.mailAvailable=true;
  buildCenterNavigation();updateNavigation();const requestedView=new URLSearchParams(location.search).get('view');if(requestedView&&allowed(viewResource(requestedView)))state.view=requestedView;
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){const first=[...document.querySelectorAll('nav button[data-view]')].find(el=>!el.hidden);if(first){state.view=first.dataset.view;if(first.dataset.center)$('center').value=first.dataset.center;}}
 
