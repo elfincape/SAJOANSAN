@@ -126,7 +126,11 @@ export function createRelationsUI({
       running: '수집 중',
       paused: '중지됨',
       attention: '확인 필요',
-      completed: value.deferred ? '조회 한도 도달' : '수집 완료',
+      completed: value.deferred
+        ? '조회 한도 도달'
+        : value.failed
+          ? '수집 완료 · 확인 필요 구간 있음'
+          : '수집 완료',
     };
     if (value.origin) $('relation-origin').value = value.origin;
     if (value.limit) $('relation-limit').value = value.limit;
@@ -152,12 +156,15 @@ export function createRelationsUI({
     const n = (v) => Number(v ?? 0).toLocaleString('ko-KR');
     $('relation-count').textContent =
       `원본 ${n(value.sourceRows)}행 · 착지 ${n(value.stops)}개 · 주소 ${n(value.geoDone)}/${n(value.geoTotal)} · 후보 ${n(value.candidates)}구간 · 완료 ${n(value.completed)} · 캐시 ${n(value.cached)} · 실패 ${n(value.failed)} · 보류 ${n(value.deferred)} · 도로 요청 ${n(value.directionsAttempts)}/${n(value.directionsBudget)} · 주소 요청 ${n(value.geocodingAttempts)}/${n(value.geocodingBudget)}`;
-    const issues = value.geoIssues ?? [];
+    const issues = [...(value.geoIssues ?? []), ...(value.routeIssues ?? [])];
     $('relation-issues').hidden = !issues.length;
     $('relation-issue-list').replaceChildren();
     for (const issue of issues) {
       const li = document.createElement('li');
-      li.textContent = issue.address + ' · ' + issue.error;
+      li.textContent =
+        (issue.address || [issue.from, issue.to].filter(Boolean).join(' → ')) +
+        ' · ' +
+        issue.error;
       $('relation-issue-list').append(li);
     }
     $('relation-results').replaceChildren();
@@ -275,6 +282,7 @@ export function createRelationsUI({
     $('relation-budget').value = '25000';
     $('relation-limit').value = '50';
     invalidate();
+    if (await continueDatabase()) return;
     await previewSource();
     // Reserve center legs before distributing the remaining request budget equally.
     const limit = Math.max(
@@ -284,6 +292,46 @@ export function createRelationsUI({
     $('relation-limit').value = String(limit);
     message('DB 전체 일괄 조사 중');
     await create();
+  }
+  async function continueDatabase() {
+    const { data, error } = await supabase
+      .from('naver_api_jobs')
+      .select('id,status,state,directions_attempts')
+      .eq('owner_id', profile.id)
+      .eq('center_code', '002')
+      .eq('state->>kind', 'collection')
+      .order('created_at', { ascending: false })
+      .range(0, 9);
+    if (error) throw Error('기존 일괄 조사 작업을 확인하지 못했습니다.');
+    const normalize = (value) =>
+      String(value ?? '')
+        .normalize('NFKC')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const origin = normalize($('relation-origin').value);
+    const saved = (data || []).find(
+      (row) =>
+        ['queued', 'running', 'paused', 'attention'].includes(row.status) &&
+        row.directions_attempts < 25000 &&
+        normalize(row.state?.origin) === origin &&
+        Array.isArray(row.state?.groups) &&
+        row.state.groups.length &&
+        row.state.groups.every(
+          (group) =>
+            Array.isArray(group.sources) &&
+            group.sources.length &&
+            group.sources.every(
+              (source) => source.source === 'delivery_points',
+            ),
+        ),
+    );
+    if (!saved) return false;
+    render(await call('status', { jobId: saved.id }));
+    if (job.status === 'completed' && !job.deferred) return false;
+    $('relation-budget').value = '25000';
+    if (['queued', 'running'].includes(job.status)) await collect();
+    else await resume();
+    return true;
   }
   async function resume() {
     render(

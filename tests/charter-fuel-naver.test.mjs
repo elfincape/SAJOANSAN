@@ -59,6 +59,8 @@ assert.equal(leg.distance_meters,12345);assert.equal(leg.duration_seconds,654.32
 assert.notEqual(coordinateKey(p,q),coordinateKey(q,p));
 const beforeSame=pairCalls.length;assert.equal((await queryLeg(p,p,env,pairFetch)).distance_meters,0);assert.equal(pairCalls.length,beforeSame);
 for(const status of [401,403,429])await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response('',{status})),e=>e.status===status);
+for(const status of [200,400])for(const code of [1,2,3,4,5])await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({code,message:'provider message'}),{status})),e=>e.status===422&&e.providerCode===code&&e.message.includes('네이버 코드 '+code));
+await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({error:{errorCode:'100',message:'fake-secret'}}),{status:400})),e=>e.status===400&&e.message.includes('HTTP 400')&&e.message.includes('100')&&!e.message.includes('fake-secret'));
 await assert.rejects(()=>geocodeAddress('ambiguous',env,async()=>response({status:'OK',meta:{totalCount:2},addresses:[{},{}]})),e=>e.status===422);
 await assert.rejects(()=>queryLeg(p,q,env,async()=>response({code:0,route:{traoptimal:[{summary:{distance:-1,duration:10}}]}})),/값/);
 assert(!JSON.stringify(leg).includes('fake-secret'));
@@ -85,6 +87,7 @@ assert(relationCalls.every(url=>url.startsWith('https://db.test/')));
 console.log('Collector authentication, center edit scope, zero-call preview and candidate upper bounds passed');
 
 const collectorStore={jobs:[],addresses:[],legs:[],geo:0,driving:0,cancelDuringGeo:false,providerCode:200};
+let routeFailureOnce=false;
 const collectorFetch=async(url,init={})=>{
  const u=new URL(url),payload=init.body?JSON.parse(init.body):null,path=u.pathname;
  if(path.endsWith('/auth/v1/user'))return response({id:'user'});
@@ -94,6 +97,7 @@ const collectorFetch=async(url,init={})=>{
   const geo=path.includes('geocode');if(geo)collectorStore.geo++;else collectorStore.driving++;
   if(collectorStore.cancelDuringGeo&&geo){collectorStore.jobs.at(-1).status='paused';collectorStore.cancelDuringGeo=false;}
   if(collectorStore.providerCode!==200)return new Response('',{status:collectorStore.providerCode});
+  if(!geo&&routeFailureOnce){routeFailureOnce=false;return new Response(JSON.stringify({code:1,message:'same road point'}),{status:400});}
   if(geo){const address=u.searchParams.get('query'),x=address.includes('산단로')?127:address.includes('A')?127.1:127.2;return response({status:'OK',meta:{totalCount:1},addresses:[{x:String(x),y:'37',roadAddress:address}]});}
   return response({code:0,route:{traoptimal:[{summary:{distance:1000,duration:60000}}]}});
  }
@@ -161,3 +165,8 @@ sameBuilding=await invokeCollector({action:'batch',center:'002',jobId:sameBuildi
 assert.equal(sameBuilding.stops,2,'Provider-standard address/coordinates alone do not establish the same physical stop');
 assert.equal(sameBuilding.candidates,4);assert.equal(sameBuilding.origin,'경기도 평택시 산단로 263');
 assert.equal((await batchHandler(relationReq({action:'resume',center:'002',jobId:collected.id,directionsBudget:60,expectedUpdatedAt:'1970-01-01T00:00:00Z'}))).status,409,'A stale tab cannot overwrite the latest saved budget');
+let routeFailureJob=await invokeCollector({action:'create',center:'002',rows:[{address:'route error A'},{address:'route error B'}],directionsBudget:10});routeFailureOnce=true;
+for(let i=0;i<5&&routeFailureJob.status!=='completed';i++)routeFailureJob=await invokeCollector({action:'batch',center:'002',jobId:routeFailureJob.id});
+assert.equal(routeFailureJob.status,'completed');assert.equal(routeFailureJob.failed,1);assert.equal(routeFailureJob.completed,3);assert.equal(routeFailureJob.routeIssues.length,1);assert(routeFailureJob.routeIssues[0].error.includes('네이버 코드 1'));
+assert.equal(routeFailureJob.processed,4,'A route-specific HTTP 400 must not stop the remaining edges');
+console.log('Documented HTTP 400 route failures are retained as issues and bulk collection continues without invented distances');

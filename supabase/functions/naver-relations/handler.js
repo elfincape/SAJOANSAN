@@ -11,6 +11,7 @@ function summary(job){
  return {id:job.id,status:job.status,error:job.error||'',updatedAt:job.updated_at,
   phase:s.phase,stops:s.phase==='directions'?Math.max(0,points.length-1):s.groups?.length??0,sourceRows:s.sourceRows??0,geoDone:s.geoCursor??0,geoTotal:(s.groups?.length??0)+1,
   geoIssues:s.geoIssues??[],candidates:s.edges?.length??0,processed:s.edgeCursor??0,completed:s.completed??0,cached:s.cached??0,failed:s.failed??0,deferred:s.deferred??0,
+  routeIssues:(s.routeIssues??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
   directionsAttempts:job.directions_attempts,directionsBudget:job.directions_budget,geocodingAttempts:job.geocoding_attempts,geocodingBudget:job.geocoding_budget,
   lastResults:(s.lastResults??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
   origin:s.origin,allowanceVerified:false,policy:'neighbors-v1',limit:s.limit??50};
@@ -154,7 +155,9 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
       state.edgeCursor++;processed++;
      }catch(e){
       if(e.status!==422)throw e;
-      state.failed++;remember({fromId:from.id,toId:to.id,reason,error:e.message});state.edgeCursor++;processed++;
+      const routeIssue={fromId:from.id,toId:to.id,reason,error:e.message};
+      state.routeIssues=[...(state.routeIssues??[]),routeIssue].slice(-500);
+      state.failed++;remember(routeIssue);state.edgeCursor++;processed++;
      }
     }
    }

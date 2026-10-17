@@ -30,13 +30,15 @@ assert(relationCode.includes('naver_api_cancel'));assert(relationCode.includes('
 console.log('Integrated route collection controls, safe pilot default, stop/resume and dated estimates passed');
 
 const relationDom=new JSDOM(dispatchHtml,{url:'http://127.0.0.1:8772/admin/pyeongtaek-dispatch.html?center=pyeongtaek&view=roads'}),relationDocument=relationDom.window.document;
-let relationRequests=[],bulkBatches=0;
+let relationRequests=[],bulkBatches=0,resumableJobs=[],resumeExisting=false;
 const relationResult={id:'test-route-job',updatedAt:'2026-10-17T00:00:00Z',status:'completed',stops:2,sourceRows:3,geoDone:3,geoTotal:3,candidates:4,completed:4,cached:1,failed:0,deferred:0,directionsAttempts:3,directionsBudget:60,geocodingAttempts:3,geocodingBudget:2000,lastResults:[{from:'주소 A',to:'주소 B',reason:'nearby',distanceMeters:1234,durationSeconds:123,measuredAt:'2026-10-17T00:00:00Z',cached:true}]};
 const relationClient={functions:{invoke:async(name,{body})=>{
  assert.equal(name,'naver-relations');assert.equal(body.center,'002');relationRequests.push(body);
+ if(resumeExisting&&body.action==='status')return {data:{...relationResult,status:'attention'}};
+ if(resumeExisting&&body.action==='resume')return {data:{...relationResult,status:'queued'}};
  if(body.action==='batch'&&bulkBatches>0){bulkBatches--;return {data:{...relationResult,status:bulkBatches?'queued':'completed'}};}
  return {data:body.action==='preview'?{stops:body.directionsBudget===25000?500:2,sourceRows:3,invalidRows:0,estimatedCandidates:4,directionsBudget:body.directionsBudget}:body.action==='create'?{...relationResult,status:'queued'}:relationResult};
-}},rpc:async(name)=>{assert.equal(name,'naver_api_cancel');return {data:null};}};
+}},from:()=>{const q={select:()=>q,eq:()=>q,order:()=>q,range:async()=>({data:resumableJobs})};return q;},rpc:async(name)=>{assert.equal(name,'naver_api_cancel');return {data:null};}};
 const destinationRecords=[{id:'dp-a',code:'P001',name:'알파',address:'주소 A',center_code:'002',dispatch_profile:{otd:'09:00 이전',mode:'unmanned'}},{id:'dp-b',code:'P002',name:'베타',address:'주소 B',center_code:'002'},{id:'dp-empty',code:'NOADDR',name:'주소 없음',address:'',center_code:'002'},{id:'dp-other',code:'OTHER',name:'타센터',address:'주소 A',center_code:'001'}];
 const relationContext={getDestinations:()=>destinationRecords,requireRole:async()=>({id:'test-user'}),supabase:relationClient,menuPermissions:async()=>({access:{delivery_points:{edit_centers:['002']}}}),permissionAllowed,excelAddresses:base.excelAddresses,XLSX,ExcelJS,document:relationDocument,location:relationDom.window.location,URL,Blob,setTimeout:fn=>{fn();return 0;},addEventListener:()=>{}};relationContext.globalThis=relationContext;
 await vm.runInNewContext(relationCode.replace(/^import .*;\r?\n/gm,'').replace('export function createRelationsUI','function createRelationsUI')+'\ncreateRelationsUI({actor:{id:"test-user"},getDestinations,permissions:{access:{delivery_points:{edit_centers:["002"]}}}});',relationContext);
@@ -72,6 +74,15 @@ assert.equal(bulkCreate.directionsBudget,25000);assert.equal(bulkCreate.limit,49
 assert.equal(bulkRequests.filter(r=>r.action==='batch').length,3,'One click automatically continues multiple batches');
 assert.equal(relationDocument.getElementById('relation-source-label').textContent,'평택 납품정보 DB 전체');
 console.log('One-click whole-DB collection ignores manual selections/files, reserves center budget and runs all batches automatically');
+resumableJobs=[{id:relationResult.id,status:'attention',directions_attempts:728,state:{origin:'경기도 평택시 산단로 263',groups:[{sources:[{source:'delivery_points'}]}]}}];resumeExisting=true;
+const beforeResume=relationRequests.length;await relationDocument.getElementById('relation-bulk').onclick();const resumedRequests=relationRequests.slice(beforeResume);
+assert.equal(resumedRequests.filter(r=>r.action==='create').length,0,'A stopped DB collection must not be recreated');
+assert(resumedRequests.some(r=>r.action==='resume'&&r.jobId===relationResult.id));assert(resumedRequests.some(r=>r.action==='batch'));
+resumableJobs=[];resumeExisting=false;
+Object.assign(relationResult,{failed:1,routeIssues:[{from:'주소 A',to:'주소 B',error:'도로 지점이 같습니다. (네이버 코드 1)'}]});
+await relationDocument.getElementById('relation-start').onclick();assert(relationDocument.getElementById('relation-issue-list').textContent.includes('네이버 코드 1'));assert(relationDocument.getElementById('relation-status').textContent.includes('확인 필요 구간'));
+Object.assign(relationResult,{failed:0,routeIssues:[]});
+console.log('Stopped whole-DB jobs resume without resetting cached progress; route-specific issues remain visible');
 console.log('Collector UI modes, no automatic live call, preview/create/batch, stale estimate display and customer/volume/course/OTD file preservation passed');
 Object.assign(relationResult,{error:'요청 한도 도달',deferred:100,directionsBudget:25000,origin:'저장된 센터 주소',limit:25});
 await relationDocument.getElementById('relation-start').onclick();
