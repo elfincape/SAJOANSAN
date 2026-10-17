@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {PRIVATE_FEATURE_DEFAULTS,isPrivateFeatureOwner,loadPrivateFeatures,savePrivateFeatures} from '../repo-root/js/private-features.js';
+import {getAdminMenus} from '../repo-root/js/admin-menu.js';
 
 const values=new Map();
 globalThis.localStorage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
@@ -19,9 +20,12 @@ for(const key of ['routes','deliveryPoints','drivers','vehicles','companies','di
 }
 
 const hub=readFileSync(new URL('../repo-root/admin/index.html',import.meta.url),'utf8');
-assert.match(hub,/isPrivateFeatureOwner\(profile\)/);
-assert.match(hub,/href:'\/admin\/settings\.html'/);
-assert.match(hub,/\.filter\(menu => !menu\.feature \|\| privateFeatures\[menu\.feature\]\)/);
+assert.match(hub,/getAdminMenus\(profile\)/);
+assert.equal(getAdminMenus(owner).some(menu=>menu.href==='/admin/settings.html'),true);
+assert.equal(getAdminMenus(other).some(menu=>menu.href==='/admin/settings.html'),false);
+savePrivateFeatures(owner,{routes:false});
+assert.equal(getAdminMenus(owner).some(menu=>menu.feature==='routes'),false);
+assert.equal(getAdminMenus(other).some(menu=>menu.feature==='routes'),true);
 
 const settings=readFileSync(new URL('../repo-root/admin/settings.html',import.meta.url),'utf8');
 assert.match(settings,/isPrivateFeatureOwner\(profile\)/);

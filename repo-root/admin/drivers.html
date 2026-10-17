@@ -8,8 +8,10 @@
   <link rel="stylesheet" href="/css/common.css">
   <link rel="stylesheet" href="/css/driver-documents.css">
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui drivers-page bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell drivers-page bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
     <div class="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -24,14 +26,14 @@
   <main class="flex-1 max-w-[1800px] w-full mx-auto px-4 py-3">
     <div class="driver-management-layout">
 
-      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+      <section class="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;" aria-label="기사 목록">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="이름/연락처 검색"
+          <input id="search-input" type="search" placeholder="이름/연락처 검색" aria-label="기사 이름, 연락처 검색"
                  class="app-input flex-1 min-w-[180px]">
-          <select id="filter-company" class="app-select w-44">
+          <select id="filter-company" class="app-select w-44" aria-label="운수사 필터">
             <option value="">운수사(전체)</option>
           </select>
-          <select id="sort-key" class="app-select w-28">
+          <select id="sort-key" class="app-select w-28" aria-label="기사 정렬 기준">
             <option value="name">이름순</option>
             <option value="company">운수사순</option>
             <option value="updated">수정 최신순</option>
@@ -66,12 +68,12 @@
           </div>
         </div>
         <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
-          <span id="result-count"></span>
-          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+          <span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span>
+          <span id="loading-indicator" class="hidden" role="status" aria-live="polite">불러오는 중...</span>
         </div>
       </section>
 
-      <section class="driver-editor border border-zinc-700 rounded-lg bg-zinc-800/30">
+      <section class="work-editor driver-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" class="text-sm font-semibold">새 기사</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
@@ -81,30 +83,30 @@
         <form id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
-            <label class="app-label">이름 *</label>
+            <label class="app-label" for="f-name">이름 *</label>
             <input id="f-name" class="app-input" required>
           </div>
           <div>
-            <label class="app-label">연락처 (휴대폰)</label>
+            <label class="app-label" for="f-phone">연락처 (휴대폰)</label>
             <input id="f-phone" class="app-input" placeholder="예: 010-1234-5678">
           </div>
           <div>
-            <label class="app-label">소속 운수사</label>
+            <label class="app-label" for="f-company">소속 운수사</label>
             <select id="f-company" class="app-select">
               <option value="">선택 안 함</option>
             </select>
           </div>
           <div>
-            <label class="app-label">비고</label>
+            <label class="app-label" for="f-memo">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
           </div>
           <div>
             <label for="f-health-expiry" class="app-label">보건증 만료일</label>
-            <input id="f-health-expiry" type="date" class="app-input">
-            <p id="health-schema-note" class="text-xs text-amber-300 mt-1"></p>
-            <p class="text-xs text-zinc-400 mt-1">한국 시간 기준 · 만료일이 오늘부터 1개월 미만이면 우선 표시됩니다.</p>
+            <input id="f-health-expiry" type="date" class="app-input" aria-describedby="health-schema-note health-expiry-help">
+            <p id="health-schema-note" class="text-xs text-amber-300 mt-1" role="status" aria-live="polite"></p>
+            <p id="health-expiry-help" class="text-xs text-zinc-400 mt-1">한국 시간 기준 · 만료일이 오늘부터 1개월 미만이면 우선 표시됩니다.</p>
           </div>
-          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
@@ -345,14 +347,14 @@
           if (health.urgent) tr.classList.add(health.className);
           tr.innerHTML = `
             <td>${documentChecksHtml(state.documentRows.get(r.id))}</td>
-            <td>${escapeHtml(r.name)}</td>
+            <td><button type="button" class="text-left hover:underline" aria-label="${escapeHtml(r.name)} 편집">${escapeHtml(r.name)}</button></td>
             <td>${escapeHtml(formatPhone(r.phone))}</td>
             <td>${escapeHtml(co?.name || '')}</td>
             <td>${healthBadge(r.health_certificate_expires_on)}</td>
             <td class="text-right">${c.primary}</td>
             <td class="text-right">${c.secondary}</td>
           `;
-          tr.addEventListener('click', () => selectRow(r.id));
+          tr.addEventListener('click', () => selectRow(r.id, true));
           frag.appendChild(tr);
         }
         tbody.appendChild(frag);
@@ -364,11 +366,14 @@
             : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
     }
 
-    function selectRow(id) {
+    function selectRow(id, focusEditor = false) {
       state.selectedId = id;
       renderList();
       const r = state.rows.find(x => x.id === id);
-      if (r) rowToForm(r);
+      if (r) {
+        rowToForm(r);
+        if (focusEditor) $('f-name').focus();
+      }
     }
     function resetForm() { state.selectedId = null; rowToForm(null); }
 

@@ -390,13 +390,13 @@ function populateMultiSelect(key, options) {
   };
 
   root.innerHTML = `
-    <button type="button" class="ms-button app-input text-left flex items-center justify-between gap-2">
+    <button type="button" aria-expanded="false" aria-controls="filter-menu-${key}" class="ms-button app-input text-left flex items-center justify-between gap-2">
       <span class="ms-label truncate">${labelMap[key] || key}</span>
       <span class="text-zinc-500 text-xs">▾</span>
     </button>
-    <div class="ms-menu hidden absolute mt-1 z-40 w-72 max-h-72 overflow-auto
+    <div id="filter-menu-${key}" class="ms-menu hidden absolute mt-1 z-40 w-72 max-h-72 overflow-auto
                 bg-zinc-800 border border-zinc-700 rounded-md shadow-xl p-2 space-y-1">
-      <input type="text" placeholder="검색" class="ms-search app-input mb-1 text-xs">
+      <input type="text" aria-label="${labelMap[key] || key} 필터 검색" placeholder="검색" class="ms-search app-input mb-1 text-xs">
       <div class="ms-options space-y-0.5"></div>
     </div>`;
   root.classList.add('relative');
@@ -448,15 +448,36 @@ function populateMultiSelect(key, options) {
 
   btn.addEventListener('click', () => {
     document.querySelectorAll('.ms-menu').forEach(m => {
-      if (m !== menu) m.classList.add('hidden');
+      if (m !== menu) {
+        m.classList.add('hidden');
+        m.parentElement.querySelector('.ms-button')?.setAttribute('aria-expanded', 'false');
+      }
     });
     menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+    if (!menu.classList.contains('hidden')) {
+      menu.style.left = '';
+      const bounds = menu.getBoundingClientRect();
+      menu.style.left = bounds.right > innerWidth - 16 ? `${innerWidth - 16 - bounds.right}px` : '';
+      search.focus();
+    }
   });
 
   search.addEventListener('input', () => renderOptions(search.value));
 
   document.addEventListener('click', e => {
-    if (!root.contains(e.target)) menu.classList.add('hidden');
+    if (!root.contains(e.target)) {
+      menu.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  root.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !menu.classList.contains('hidden')) {
+      menu.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.focus();
+      event.stopPropagation();
+    }
   });
 }
 
@@ -1379,10 +1400,10 @@ function openColumnConfig() {
 
       return `
         <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700 rounded px-2 py-1.5" data-key="${escapeAttr(k)}" data-idx="${i}">
-          <input type="checkbox" data-action="toggle" ${checked} class="accent-emerald-500">
+          <input type="checkbox" aria-label="${escapeAttr(c.label)} 표시" data-action="toggle" ${checked} class="accent-emerald-500">
           <span class="flex-1 text-sm">${escapeHtml(c.label)}</span>
-          <button data-action="up"   class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===0 ? 'disabled' : ''}>↑</button>
-          <button data-action="down" class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===work.order.length-1 ? 'disabled' : ''}>↓</button>
+          <button data-action="up" aria-label="${escapeAttr(c.label)} 위로 이동" title="위로 이동" class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===0 ? 'disabled' : ''}>↑</button>
+          <button data-action="down" aria-label="${escapeAttr(c.label)} 아래로 이동" title="아래로 이동" class="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded" ${i===work.order.length-1 ? 'disabled' : ''}>↓</button>
         </div>`;
     }).join('');
 

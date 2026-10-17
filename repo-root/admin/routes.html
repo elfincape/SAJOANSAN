@@ -32,8 +32,10 @@
     }
   </style>
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <!-- 헤더 -->
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
@@ -61,7 +63,6 @@
 
     <div class="route-filter-summary">
       <span id="filter-summary" role="status" aria-live="polite">전체 코스</span>
-      <span>열 제목을 눌러 정렬 · Shift로 추가 정렬</span>
     </div>
     <div id="route-grid" aria-label="코스 목록"></div>
 
@@ -119,12 +120,12 @@
     const compactGrid = window.matchMedia('(max-width: 760px)');
     const gridApi = createGrid($('route-grid'), {
       theme: themeQuartz.withParams({
-        accentColor: '#087f72',
+        accentColor: '#087f5b',
         backgroundColor: '#ffffff',
-        borderColor: '#d8e2e8',
-        foregroundColor: '#203443',
-        headerBackgroundColor: '#edf2f5',
-        rowHoverColor: '#edf6f2'
+        borderColor: '#d7dde2',
+        foregroundColor: '#20252b',
+        headerBackgroundColor: '#f1f3f5',
+        rowHoverColor: '#f0f7f3'
       }),
       columnDefs: [
         { field: 'company', headerName: '운수사', width: 160, minWidth: 140, sort: 'asc', sortIndex: 0 },

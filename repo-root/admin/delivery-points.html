@@ -7,8 +7,10 @@
   <title>납품처 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <!-- 헤더 -->
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
@@ -26,21 +28,21 @@
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(420px,520px)] gap-4">
 
       <!-- ===== 좌측: 목록 ===================================== -->
-      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col"
-               style="min-height: 70vh;">
+      <section class="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col"
+               style="min-height: 70vh;" aria-label="납품처 목록">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="코드/이름/주소 검색"
+          <input id="search-input" type="search" placeholder="코드/이름/주소 검색" aria-label="납품처 코드, 이름, 주소 검색"
                  class="app-input flex-1 min-w-[180px]">
-          <select id="filter-region" class="app-select w-32">
+          <select id="filter-region" class="app-select w-32" aria-label="지역 필터">
             <option value="">지역(전체)</option>
           </select>
-          <select id="filter-method" class="app-select w-32">
+          <select id="filter-method" class="app-select w-32" aria-label="납품방식 필터">
             <option value="">납품방식(전체)</option>
             <option value="대면">대면</option>
             <option value="검수">검수</option>
             <option value="무인">무인</option>
           </select>
-          <select id="sort-key" class="app-select w-28">
+          <select id="sort-key" class="app-select w-28" aria-label="납품처 정렬 기준">
             <option value="code">코드순</option>
             <option value="name">이름순</option>
           </select>
@@ -69,13 +71,13 @@
         </div>
 
         <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
-          <span id="result-count"></span>
-          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+          <span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span>
+          <span id="loading-indicator" class="hidden" role="status" aria-live="polite">불러오는 중...</span>
         </div>
       </section>
 
       <!-- ===== 우측: 폼 ===================================== -->
-      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+      <section class="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" class="text-sm font-semibold">새 납품처</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
@@ -88,17 +90,17 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">코드</label>
+              <label class="app-label" for="f-code">코드</label>
               <input id="f-code" class="app-input" placeholder="예: A001">
             </div>
             <div>
-              <label class="app-label">이름 *</label>
+              <label class="app-label" for="f-name">이름 *</label>
               <input id="f-name" class="app-input" required>
             </div>
           </div>
 
           <div>
-            <label class="app-label">주소</label>
+            <label class="app-label" for="f-address">주소</label>
             <div class="flex gap-2">
               <input id="f-address" class="app-input flex-1">
               <button type="button" id="btn-extract-region" class="btn btn-ghost text-xs whitespace-nowrap">지역 자동추출</button>
@@ -107,13 +109,13 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">지역</label>
+              <label class="app-label" for="f-region">지역</label>
               <input id="f-region" class="app-input" placeholder="예: 서울 강남구">
             </div>
             <div>
-              <label class="app-label">납품마감</label>
-              <input id="f-deadline" class="app-input biz-time" placeholder="예: 22:00 또는 02:30">
-              <p class="text-[10px] text-zinc-500 mt-1">00:00~23:59 범위. 비워두면 마감 없음.</p>
+              <label class="app-label" for="f-deadline">납품마감</label>
+              <input id="f-deadline" class="app-input biz-time" placeholder="예: 22:00 또는 02:30" aria-describedby="deadline-help">
+              <p id="deadline-help" class="text-[10px] text-zinc-500 mt-1">00:00~23:59 범위. 비워두면 마감 없음.</p>
             </div>
           </div>
 
@@ -159,11 +161,11 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">열쇠보관장소</label>
+              <label class="app-label" for="f-security-key-location">열쇠보관장소</label>
               <input id="f-security-key-location" class="app-input" placeholder="예: 경비실, 출입문 상단, 키박스">
             </div>
             <div>
-              <label class="app-label">비밀번호</label>
+              <label class="app-label" for="f-security-password">비밀번호</label>
               <input id="f-security-password" class="app-input" placeholder="보안키/키박스/출입문 비밀번호">
             </div>
           </div>
@@ -172,33 +174,33 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">대표자명</label>
+              <label class="app-label" for="f-rep-name">대표자명</label>
               <input id="f-rep-name" class="app-input">
             </div>
             <div>
-              <label class="app-label">대표번호</label>
+              <label class="app-label" for="f-rep-phone">대표번호</label>
               <input id="f-rep-phone" class="app-input" placeholder="예: 02-1234-5678">
             </div>
             <div>
-              <label class="app-label">담당자명</label>
+              <label class="app-label" for="f-mgr-name">담당자명</label>
               <input id="f-mgr-name" class="app-input">
             </div>
             <div>
-              <label class="app-label">담당자 사무실</label>
+              <label class="app-label" for="f-mgr-office">담당자 사무실</label>
               <input id="f-mgr-office" class="app-input">
             </div>
             <div class="col-span-2">
-              <label class="app-label">담당자 휴대폰</label>
+              <label class="app-label" for="f-mgr-mobile">담당자 휴대폰</label>
               <input id="f-mgr-mobile" class="app-input">
             </div>
           </div>
 
           <div class="space-y-2">
             <div class="flex items-center justify-between gap-2">
-              <label class="app-label mb-0">납품처 사진</label>
-              <span id="f-photo-count" class="text-[11px] text-zinc-500">0/6</span>
+              <label class="app-label mb-0" for="f-photo-input">납품처 사진</label>
+              <span id="f-photo-count" class="text-[11px] text-zinc-500" role="status" aria-live="polite" aria-atomic="true">0/6</span>
             </div>
-            <div id="f-photo-dropzone" tabindex="0" class="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+            <div id="f-photo-dropzone" tabindex="0" role="region" aria-label="납품처 사진 붙여넣기" class="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-600 bg-zinc-900/40 px-3 py-4 text-center text-xs text-zinc-400 hover:border-emerald-500 hover:text-emerald-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
               <input id="f-photo-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" multiple class="mt-3 block w-full max-w-xs text-xs text-zinc-300 file:mr-3 file:rounded file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-xs file:text-zinc-100 hover:file:bg-zinc-600" onchange="window.__handleDeliveryPointPhotoInput && window.__handleDeliveryPointPhotoInput(this);">
               <span class="font-semibold text-zinc-200">이미지 붙여넣기</span>
               <span class="mt-1 text-emerald-300">이 영역을 클릭한 뒤 Ctrl+V로 사진을 붙여넣으세요.</span>
@@ -208,11 +210,11 @@
           </div>
 
           <div>
-            <label class="app-label">비고</label>
+            <label class="app-label" for="f-memo">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
           </div>
 
-          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
@@ -341,13 +343,13 @@
           tr.classList.add('cursor-pointer');
           tr.innerHTML = `
             <td>${escapeHtml(r.code || '')}</td>
-            <td>${escapeHtml(r.name || '')}</td>
+            <td><button type="button" class="text-left hover:underline" aria-label="${escapeHtml(r.name || '(이름 없음)')} 편집">${escapeHtml(r.name || '(이름 없음)')}</button></td>
             <td>${r.route_stops.length ? '배정' : '미지정'}</td>
             <td>${escapeHtml(r.region || '')}</td>
             <td>${escapeHtml(r.delivery_method || '')}</td>
             <td class="biz-time">${escapeHtml(bizMinToDisplay(r.deadline_business_min))}</td>
           `;
-          tr.addEventListener('click', () => selectRow(r.id));
+          tr.addEventListener('click', () => selectRow(r.id, true));
           frag.appendChild(tr);
         }
         tbody.appendChild(frag);
@@ -471,6 +473,7 @@
         state.selectedId = null;
         renderList();
         resetForm();
+        $('f-name').focus();
       });
 
       $('btn-cancel').addEventListener('click', () => {
@@ -555,11 +558,14 @@
     // -------------------------------------------------------------------------
     // 행 선택 / 폼 초기화
     // -------------------------------------------------------------------------
-    function selectRow(id) {
+    function selectRow(id, focusEditor = false) {
       state.selectedId = id;
       renderList();
       const r = state.rows.find(x => x.id === id);
-      if (r) rowToForm(r);
+      if (r) {
+        rowToForm(r);
+        if (focusEditor) $('f-name').focus();
+      }
     }
 
     function resetForm() {
@@ -817,7 +823,7 @@
           <button type="button" data-photo-view="${idx}" class="block h-24 w-full">
             <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
           </button>
-          <button type="button" data-photo-delete="${idx}" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
+          <button type="button" data-photo-delete="${idx}" aria-label="납품처 사진 ${idx + 1} 삭제" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
         </div>`).join('');
       grid.querySelectorAll('[data-photo-view]').forEach(btn => {
         btn.addEventListener('click', () => openPhotoPreview(state.draftPhotos[Number(btn.dataset.photoView)]));

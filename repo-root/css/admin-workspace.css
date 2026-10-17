@@ -1,0 +1,777 @@
+body.workspace-ui.work-shell {
+  --work-nav-width: 228px;
+  --bg: #f6f7f8;
+  --bg-page: #f6f7f8;
+  --bg-soft: #f2f4f5;
+  --bg-softer: #e9edef;
+  --panel: #fff;
+  --fg: #20252b;
+  --text: #20252b;
+  --fg-mute: #626d78;
+  --muted: #626d78;
+  --border: #d7dde2;
+  --border-soft: #e7ebee;
+  --accent: #087f5b;
+  --green: #087f5b;
+  --ui-focus: #087f5b;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--fg);
+  letter-spacing: 0;
+}
+
+body.workspace-ui.work-shell:has(#app) {
+  padding: 0;
+}
+
+.workspace-ui.work-shell:not(.portal-shell)
+  [role='dialog'][aria-modal='true']
+  > div {
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.sample, .empty, .column-choices) {
+  background: #f2f4f5;
+  color: #626d78;
+  border-color: #d7dde2;
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.number, .step-badge) {
+  background: #e6f3ed;
+  color: #165e3b;
+  border-color: #aacaba;
+}
+.workspace-ui.work-shell:not(.portal-shell) .drop-card {
+  background: #fff;
+  border-color: #b8c5bf;
+  box-shadow: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) .drop-card.dragover {
+  background: #e6f3ed;
+  border-color: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-ok, .true-cell, .good, .diff-new) {
+  color: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-warn, .false-cell, .warn) {
+  color: #99621c;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-error, .cell-false, .diff-old) {
+  color: #b42332;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .feature-switch[aria-checked='true'] {
+  background: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .file-label
+  input::file-selector-button {
+  background: #f0f4f2;
+  color: #265b43;
+  border-color: #c7d8cd;
+}
+
+@media (max-width: 640px) {
+  .workspace-ui.work-shell:not(.portal-shell) .work-list {
+    min-height: 240px !important;
+  }
+}
+
+.workspace-ui.work-shell:not(.portal-shell) :where(h1, h2, h3, h4) {
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-ui.work-shell:not(.portal-shell) :where(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(button, a, input, select, textarea, summary):focus-visible {
+  outline-color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input, select, textarea):not([type='checkbox']):not(
+    [type='radio']
+  ):not([type='hidden']) {
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input, textarea)::placeholder {
+  color: #7b8590;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn {
+  border-radius: 6px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: normal;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.btn-primary, .primary) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.btn-primary, .primary):hover {
+  background: #076b4d;
+  border-color: #076b4d;
+  color: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-ghost {
+  background: #fff;
+  border-color: var(--border);
+  color: #48515b;
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-ghost:hover {
+  background: #f0f4f2;
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-danger {
+  background: #fff4f4;
+  border-color: #ebc7ca;
+  color: #b42332;
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-danger:hover {
+  background: #ffe6e7;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(button, input, select, textarea):disabled {
+  opacity: 0.55;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(.muted, .hint, .note, .footer-note, .app-label) {
+  color: var(--muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) .app-label {
+  font-size: 12px;
+  font-weight: 550;
+  margin-bottom: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .issue {
+  color: #99621c;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) > header,
+.workspace-ui.work-shell:not(.portal-shell) #app > header {
+  height: auto;
+  min-height: 64px;
+  margin-left: var(--work-nav-width);
+  width: calc(100% - var(--work-nav-width));
+  padding: 0;
+  background: #fff;
+  color: var(--fg);
+  border-color: var(--border-soft);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) > header > div,
+.workspace-ui.work-shell:not(.portal-shell) #app > header > div {
+  max-width: none;
+  min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+}
+.workspace-ui.work-shell:not(.portal-shell) > header :is(h1, strong),
+.workspace-ui.work-shell:not(.portal-shell) #app > header .font-semibold {
+  font-size: 18px;
+  font-weight: 650;
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header .btn {
+  color: #48515b;
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header .btn:hover {
+  color: var(--fg);
+  background: #f0f4f2;
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header #user-badge {
+  color: var(--muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) #user-badge {
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) > main {
+  width: calc(100% - var(--work-nav-width));
+  max-width: none;
+  min-width: 0;
+  margin: 0 0 0 var(--work-nav-width);
+  padding: 24px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  :where(
+    section,
+    article,
+    fieldset,
+    aside,
+    .grid,
+    .toolbar,
+    .fields,
+    .edit-grid
+  ) {
+  min-width: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  > :is(section.panel, section[class*='border'], .feature-panel),
+.workspace-ui.work-shell:not(.portal-shell) > main > fieldset > section.panel {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 20px 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  > :is(section.panel, section[class*='border']):first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  :is(
+    .panel,
+    .card,
+    .feature-panel,
+    .mode-card,
+    .table-wrap,
+    .table-scroll,
+    .data-table,
+    .metric,
+    dialog
+  ) {
+  border-color: var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.feature-panel, .mode-card, .file-label, .metric) {
+  background: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) .mode-card:has(input:checked) {
+  border-color: #91bea8;
+  background: #eef7f2;
+}
+.workspace-ui.work-shell:not(.portal-shell) .file-card {
+  box-shadow: none;
+  padding: 16px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-list,
+.workspace-ui.work-shell:not(.portal-shell) .work-editor {
+  background: #fff;
+  border-color: var(--border);
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-editor {
+  align-self: start;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-form-actions {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  z-index: 2;
+}
+.workspace-ui.work-shell:not(.portal-shell) :where(h2, h3) {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.workspace-ui.work-shell:not(.portal-shell) .table-wrap,
+.workspace-ui.work-shell:not(.portal-shell) .table-scroll,
+.workspace-ui.work-shell:not(.portal-shell) .scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) table {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.workspace-ui.work-shell:not(.portal-shell) table :is(th, td) {
+  border-color: var(--border-soft);
+}
+.workspace-ui.work-shell:not(.portal-shell) table th {
+  background: #f1f3f5;
+  color: #56616c;
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody td {
+  background: #fff;
+  font-size: 13px;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr:nth-child(even) td {
+  background: #fafbfc;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr:hover td {
+  background: #f0f7f3;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr.selected td {
+  background: #e6f3ed;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-section-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 20px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.work-section-navigation a {
+  text-decoration: none;
+  color: #56616c;
+  padding: 4px 0;
+}
+.work-section-navigation a:hover {
+  color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell) > main section[id] {
+  scroll-margin-top: 88px;
+}
+.workspace-ui.work-shell:not(.portal-shell) [role='dialog'][aria-modal='true'] {
+  background: #20252b80;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(dialog:not(.work-navigation), [role='dialog'] > div) {
+  background: #fff;
+  color: var(--fg);
+  border-color: var(--border);
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) dialog::backdrop {
+  background: #20252b80;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) .work-navigation {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--work-nav-width);
+  height: 100dvh;
+  max-height: none;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #202422;
+  color: #e8edeb;
+  z-index: 50;
+  overflow: auto;
+  scrollbar-gutter: auto;
+  scrollbar-color: #56605b #202422;
+}
+.work-navigation:not([open]) {
+  display: none;
+}
+.work-navigation[open] {
+  display: flex;
+  flex-direction: column;
+}
+.work-navigation .work-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  min-height: 85px;
+  border-bottom: 1px solid #3a403d;
+}
+.work-brand > a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 650;
+  font-size: 20px;
+}
+.work-brand small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #a8b3ad;
+  margin-top: 3px;
+}
+.work-navigation .work-center {
+  display: grid;
+  gap: 4px;
+  margin: 16px 16px 8px;
+  padding: 0 4px 16px;
+  border-bottom: 1px solid #3a403d;
+}
+.work-center > span {
+  font-size: 11px;
+  color: #a8b3ad;
+}
+.work-center > strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+.work-center > a {
+  justify-self: start;
+  color: #a9d8be;
+  font-size: 11px;
+  text-underline-offset: 3px;
+}
+.work-navigation nav {
+  flex: 1;
+  padding: 4px 12px 16px;
+}
+.work-nav-group {
+  padding: 6px 0;
+}
+.work-nav-group + .work-nav-group {
+  border-top: 1px solid #343b37;
+}
+.work-nav-group > summary {
+  padding: 10px 10px 6px;
+  color: #a8b3ad;
+  font-size: 11px;
+  cursor: pointer;
+}
+.work-nav-group a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: #d0d9d3;
+  font-size: 12px;
+  text-decoration: none;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+.work-nav-group a:hover {
+  background: #303933;
+  color: #fff;
+}
+.work-navigation a[aria-current='page'] {
+  background: #d9eee2;
+  color: #165e3b;
+  font-weight: 600;
+}
+.work-nav-icon {
+  display: inline-flex;
+  flex: 0 0 17px;
+}
+.work-nav-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.work-nav-footer {
+  padding: 14px 20px;
+  border-top: 1px solid #3a403d;
+  font-size: 11px;
+  color: #a8b3ad;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-nav-toggle,
+.workspace-ui.work-shell:not(.portal-shell) .work-nav-close {
+  display: none;
+}
+.work-skip {
+  position: fixed;
+  left: 250px;
+  top: -100px;
+  z-index: 10000;
+  background: #fff;
+  color: var(--accent);
+  padding: 10px 16px;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+}
+.work-skip:focus {
+  top: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #center-switcher > div {
+  border-color: var(--border);
+  background: #f4f6f5;
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #center-switcher button {
+  min-height: 30px;
+  min-width: 46px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: #56616c;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  #center-switcher
+  button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading {
+  margin: 0 0 20px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading h2 {
+  margin: 0;
+  font-size: 25px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading p:empty {
+  display: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-controls {
+  padding: 16px 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-color: var(--border);
+  background: transparent;
+  gap: 16px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-search {
+  width: min(100%, 420px);
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-categories {
+  gap: 4px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-categories button {
+  border-radius: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  background: #fff;
+  border-color: var(--border);
+  color: #626d78;
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .hub-categories
+  button[aria-pressed='true'] {
+  background: #e6f3ed;
+  border-color: #aacaba;
+  color: #165e3b;
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a {
+  padding: 16px 30px 16px 16px;
+  min-height: 98px;
+  border-radius: 6px;
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a h3 {
+  color: var(--fg);
+  font-size: 14px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) #app {
+  width: calc(100% - var(--work-nav-width));
+  height: 100dvh;
+  min-height: 0;
+  margin-left: var(--work-nav-width);
+  background: #fff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header {
+  margin-left: 0;
+  width: 100%;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-query {
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  padding: 16px 24px 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-query #search-input {
+  min-height: 38px;
+  font-size: 13px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-details {
+  padding: 0 24px 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .dashboard-filter-details
+  > summary {
+  color: #626d78;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-controls {
+  gap: 8px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .view-toggle {
+  min-height: 34px;
+  color: #626d78;
+  background: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) .view-toggle[aria-pressed='true'] {
+  background: #e6f3ed;
+  color: #165e3b;
+}
+.workspace-ui.work-shell:not(.portal-shell) .ms-menu {
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 8px 24px #20252b15;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) #table-area {
+  padding: 0;
+  border-top: 1px solid var(--border);
+  min-height: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view table th {
+  padding-block: 10px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view table td {
+  padding-block: 8px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #group-view {
+  padding: 16px 24px;
+  background: var(--bg-page);
+}
+.workspace-ui.work-shell:not(.portal-shell) #route-grid {
+  --ag-accent-color: #087f5b;
+  --ag-background-color: #fff;
+  --ag-header-background-color: #f1f3f5;
+  --ag-border-color: #d7dde2;
+  --ag-foreground-color: #20252b;
+}
+.workspace-ui.work-shell:not(.portal-shell) .drag-handle:hover {
+  color: var(--accent);
+}
+
+body.workspace-ui.work-shell:not(.portal-shell).work-embedded {
+  --work-nav-width: 0px;
+}
+@media (max-width: 1280px) {
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    > main
+    > .grid:has(> .work-editor) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1000px) {
+  body.workspace-ui.work-shell {
+    --work-nav-width: 0px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .work-navigation {
+    width: 252px;
+    max-width: calc(100vw - 40px);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .work-nav-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    padding: 0;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .work-nav-close {
+    display: inline-flex;
+    margin-left: auto;
+    background: transparent;
+    color: #d0d9d3;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    border: 1px solid #48524b;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .work-skip {
+    left: 16px;
+  }
+}
+@media (max-width: 640px) {
+  .workspace-ui.work-shell:not(.portal-shell) > main {
+    padding: 18px 14px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > header > div,
+  .workspace-ui.work-shell:not(.portal-shell) #app > header > div {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > header :is(h1, strong) {
+    font-size: 16px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :is(.btn, .primary, .hub-categories button) {
+    min-height: 42px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #center-switcher button {
+    min-height: 36px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid > a {
+    min-height: 88px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .hub-heading h2 {
+    font-size: 22px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :where(.toolbar, .fields, .filters, .edit-grid, .file-grid, .import-grid) {
+    max-width: 100%;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :is(.file-grid, .import-grid, .mode-options) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .toolbar label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > main > .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-query {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 14px 8px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-query #search-input {
+    grid-column: 1/-1;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-details {
+    padding: 0 14px 10px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    .dashboard-filter-controls
+    > [data-multi] {
+    flex: 1 1 135px;
+    min-width: 0;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #group-view {
+    padding: 12px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .ms-menu {
+    width: min(280px, calc(100vw - 32px));
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .work-section-navigation {
+    gap: 4px 12px;
+  }
+}

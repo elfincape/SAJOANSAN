@@ -73,7 +73,7 @@ export function forceCenterSelectionFromUrl() {
 
 export function withCenterParam(href, center = getRequiredCenter()) {
   const url = new URL(href, location.origin);
-  url.searchParams.set('center', center.slug);
+  url.searchParams.set('center', url.pathname.startsWith('/portal/') ? center.code : center.slug);
   url.searchParams.delete('center_code');
   url.searchParams.delete('selectCenter');
   return url.pathname + url.search + url.hash;
@@ -171,9 +171,9 @@ export function mountHeaderCenterSwitcher(onChange) {
 export function renderCenterSwitcher(host, { onChange } = {}) {
   const selected = getRequiredCenter();
   host.innerHTML = `
-    <div class="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/70 p-1" title="센터 전환">
+    <div class="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/70 p-1" role="group" aria-label="작업 센터" title="센터 전환">
       ${CENTERS.map(c => `
-        <button type="button" data-center-code="${c.code}"
+        <button type="button" data-center-code="${c.code}" aria-pressed="${c.code === selected.code}"
                 class="px-2.5 py-1 text-xs rounded ${c.code === selected.code ? 'bg-emerald-600 text-white' : 'text-zinc-300 hover:bg-zinc-700'}">
           ${c.shortName}
         </button>

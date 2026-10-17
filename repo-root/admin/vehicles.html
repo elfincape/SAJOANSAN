@@ -7,8 +7,10 @@
   <title>차량 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
     <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -23,14 +25,14 @@
   <main class="flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)] gap-4">
 
-      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+      <section class="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;" aria-label="차량 목록">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="차량번호 검색"
+          <input id="search-input" type="search" placeholder="차량번호 검색" aria-label="차량번호 검색"
                  class="app-input flex-1 min-w-[180px]">
-          <select id="filter-company" class="app-select w-44">
+          <select id="filter-company" class="app-select w-44" aria-label="운수사 필터">
             <option value="">운수사(전체)</option>
           </select>
-          <select id="sort-key" class="app-select w-28">
+          <select id="sort-key" class="app-select w-28" aria-label="차량 정렬 기준">
             <option value="plate">차량번호순</option>
             <option value="tonnage">톤수순</option>
             <option value="company">운수사순</option>
@@ -57,12 +59,12 @@
           </div>
         </div>
         <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
-          <span id="result-count"></span>
-          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+          <span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span>
+          <span id="loading-indicator" class="hidden" role="status" aria-live="polite">불러오는 중...</span>
         </div>
       </section>
 
-      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+      <section class="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" class="text-sm font-semibold">새 차량</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
@@ -72,32 +74,32 @@
         <form id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
-            <label class="app-label">차량번호 *</label>
-            <input id="f-plate" class="app-input" required placeholder="예: 12가3456">
-            <p class="text-[10px] text-zinc-500 mt-1">차량번호는 중복될 수 없습니다.</p>
+            <label class="app-label" for="f-plate">차량번호 *</label>
+            <input id="f-plate" class="app-input" required placeholder="예: 12가3456" aria-describedby="plate-help">
+            <p id="plate-help" class="text-[10px] text-zinc-500 mt-1">차량번호는 중복될 수 없습니다.</p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">톤수</label>
-              <input id="f-tonnage-text" class="app-input" placeholder='예: "3.5톤"'>
-              <p class="text-[10px] text-zinc-500 mt-1">숫자가 포함되면 자동으로 톤수 값에 반영됩니다.</p>
+              <label class="app-label" for="f-tonnage-text">톤수</label>
+              <input id="f-tonnage-text" class="app-input" placeholder='예: "3.5톤"' aria-describedby="tonnage-help">
+              <p id="tonnage-help" class="text-[10px] text-zinc-500 mt-1">숫자가 포함되면 자동으로 톤수 값에 반영됩니다.</p>
             </div>
             <div>
-              <label class="app-label">팔레트 적재량</label>
+              <label class="app-label" for="f-pallet">팔레트 적재량</label>
               <input id="f-pallet" type="number" min="0" step="1" class="app-input" placeholder="예: 16">
             </div>
           </div>
           <div>
-            <label class="app-label">소속 운수사</label>
+            <label class="app-label" for="f-company">소속 운수사</label>
             <select id="f-company" class="app-select">
               <option value="">선택 안 함</option>
             </select>
           </div>
           <div>
-            <label class="app-label">비고</label>
+            <label class="app-label" for="f-memo">비고</label>
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
           </div>
-          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
@@ -230,14 +232,14 @@
           if (r.id === state.selectedId) tr.classList.add('selected');
           tr.classList.add('cursor-pointer');
           tr.innerHTML = `
-            <td>${escapeHtml(r.plate_number || '')}</td>
+            <td><button type="button" class="text-left hover:underline" aria-label="${escapeHtml(r.plate_number || '(번호 없음)')} 편집">${escapeHtml(r.plate_number || '(번호 없음)')}</button></td>
             <td class="text-right">${r.tonnage != null ? r.tonnage + 't' : ''}</td>
             <td class="text-right">${r.pallet_capacity ?? ''}</td>
             <td>${escapeHtml(co?.name || '')}</td>
             <td class="text-right">${c.primary}</td>
             <td class="text-right">${c.secondary}</td>
           `;
-          tr.addEventListener('click', () => selectRow(r.id));
+          tr.addEventListener('click', () => selectRow(r.id, true));
           frag.appendChild(tr);
         }
         tbody.appendChild(frag);
@@ -249,11 +251,14 @@
             : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
     }
 
-    function selectRow(id) {
+    function selectRow(id, focusEditor = false) {
       state.selectedId = id;
       renderList();
       const r = state.rows.find(x => x.id === id);
-      if (r) rowToForm(r);
+      if (r) {
+        rowToForm(r);
+        if (focusEditor) $('f-plate').focus();
+      }
     }
     function resetForm() { state.selectedId = null; rowToForm(null); }
 

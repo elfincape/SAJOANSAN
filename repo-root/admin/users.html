@@ -7,8 +7,10 @@
   <title>사용자 관리 · 코스표 관리 시스템</title>
   <link rel="stylesheet" href="/css/common.css">
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
     <div class="max-w-[1300px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -31,16 +33,16 @@
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] gap-4">
 
       <!-- 좌측: 사용자 목록 -->
-      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+      <section class="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;" aria-label="사용자 목록">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="아이디/이메일/이름 검색"
+          <input id="search-input" type="search" placeholder="아이디/이메일/이름 검색" aria-label="사용자 아이디, 이메일, 이름 검색"
                  class="app-input flex-1 min-w-[180px]">
-          <select id="filter-role" class="app-select w-32">
+          <select id="filter-role" class="app-select w-32" aria-label="역할 필터">
             <option value="">역할(전체)</option>
             <option value="admin">admin</option>
             <option value="editor">editor</option>
           </select>
-          <select id="filter-active" class="app-select w-28">
+          <select id="filter-active" class="app-select w-28" aria-label="계정 활성 상태 필터">
             <option value="">상태(전체)</option>
             <option value="active">활성</option>
             <option value="inactive">비활성</option>
@@ -66,13 +68,13 @@
           </div>
         </div>
         <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
-          <span id="result-count"></span>
-          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+          <span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span>
+          <span id="loading-indicator" class="hidden" role="status" aria-live="polite">불러오는 중...</span>
         </div>
       </section>
 
       <!-- 우측: 폼 -->
-      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+      <section class="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" class="text-sm font-semibold">신규 계정 생성</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
@@ -87,35 +89,35 @@
           <input type="hidden" id="f-email">
           <div>
             <label class="app-label" for="f-username">로그인 아이디 *</label>
-            <input id="f-username" class="app-input" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="ansan01">
-            <p class="text-xs text-zinc-500 mt-1">3~32자, 영문·숫자·한글·밑줄·마침표·하이픈. 영문 대소문자를 구분하지 않습니다.</p>
+            <input id="f-username" class="app-input" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="ansan01" aria-describedby="username-help" aria-required="true">
+            <p id="username-help" class="text-xs text-zinc-500 mt-1">3~32자, 영문·숫자·한글·밑줄·마침표·하이픈. 영문 대소문자를 구분하지 않습니다.</p>
           </div>
           <div id="new-password-field">
             <label class="app-label" for="f-password">비밀번호 *</label>
-            <input id="f-password" type="password" class="app-input" autocomplete="new-password" minlength="8" maxlength="256" placeholder="8자 이상">
+            <input id="f-password" type="password" class="app-input" autocomplete="new-password" minlength="8" maxlength="256" placeholder="8자 이상" aria-required="true">
           </div>
           <div>
-            <label class="app-label">표시이름</label>
+            <label class="app-label" for="f-name">표시이름</label>
             <input id="f-name" class="app-input">
           </div>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="app-label">역할 *</label>
+              <label class="app-label" for="f-role">역할 *</label>
               <select id="f-role" class="app-select">
                 <option value="editor">editor</option>
                 <option value="admin">admin</option>
               </select>
             </div>
             <div>
-              <label class="app-label">상태</label>
+              <span class="app-label">상태</span>
               <label class="cb mt-1.5"><input type="checkbox" id="f-active" checked> 활성</label>
             </div>
           </div>
 
-          <div id="self-warn" class="hidden text-xs text-amber-300 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2"></div>
+          <div id="self-warn" class="hidden text-xs text-amber-300 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2" role="status" aria-live="polite" aria-atomic="true"></div>
 
-          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save"   class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
@@ -237,14 +239,14 @@
                   : '<span class="text-rose-400 text-xs">비활성</span>'}</td>
             <td class="text-xs text-zinc-400">${r.updated_at ? new Date(r.updated_at).toLocaleString('ko-KR') : ''}</td>
             <td class="text-right whitespace-nowrap">
-              <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${r.id}">편집</button>
+              <button type="button" class="btn btn-ghost text-xs" data-act="edit" data-id="${r.id}" aria-label="${escapeHtml(r.username || r.display_name || r.email || '사용자')} 편집">편집</button>
               <button class="btn btn-ghost text-xs ${r.active ? 'text-rose-300' : 'text-emerald-300'}"
-                      data-act="toggle" data-id="${r.id}">${r.active ? '비활성화' : '활성화'}</button>
+                      type="button" data-act="toggle" data-id="${r.id}" aria-label="${escapeHtml(r.username || r.display_name || r.email || '사용자')} ${r.active ? '비활성화' : '활성화'}">${r.active ? '비활성화' : '활성화'}</button>
             </td>
           `;
           tr.addEventListener('click', (e) => {
             if (e.target.closest('button[data-act]')) return;
-            selectRow(r.id);
+            selectRow(r.id, true);
           });
           frag.appendChild(tr);
         }
@@ -254,7 +256,7 @@
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = b.dataset.id;
-            if (b.dataset.act === 'edit')   selectRow(id);
+            if (b.dataset.act === 'edit')   selectRow(id, true);
             if (b.dataset.act === 'toggle') toggleActive(id);
           });
         });
@@ -280,11 +282,14 @@
     // -------------------------------------------------------------------------
     // 행 선택 / 폼
     // -------------------------------------------------------------------------
-    function selectRow(id) {
+    function selectRow(id, focusEditor = false) {
       state.selectedId = id;
       renderList();
       const r = state.rows.find(x => x.id === id);
-      if (r) rowToForm(r);
+      if (r) {
+        rowToForm(r);
+        if (focusEditor) $('f-username').focus();
+      }
     }
     function resetForm() {
       state.selectedId = null;

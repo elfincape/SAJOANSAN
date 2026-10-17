@@ -15,7 +15,7 @@ function mount(hrefs,current='/admin/?center=ansan'){
  return {links,sandbox,install:context=>sandbox.installMenuPermissions(context,{role:'admin'}),refresh:()=>observer()};
 }
 const permitted=center=>({read:true,edit:true,read_centers:[center],edit_centers:[center]});
-const hub=readFileSync(new URL('../repo-root/admin/index.html',import.meta.url),'utf8');
+const hub=readFileSync(new URL('../repo-root/js/admin-menu.js',import.meta.url),'utf8');
 const paths=[...new Set([...hub.matchAll(/href:\s*['"]([^'"]+)['"]/g)].map(match=>match[1]))].filter(path=>path.startsWith('/admin/'));
 for(const [slug,code] of [['ansan','001'],['pyeongtaek','002']]){
  const hrefs=paths.map(path=>path+'?center='+slug);

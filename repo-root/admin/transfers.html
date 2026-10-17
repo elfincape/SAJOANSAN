@@ -8,9 +8,11 @@
   <link rel="stylesheet" href="/css/common.css">
   <script type="module" src="/js/exceljs-global.js"></script>
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
 
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
 <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
   <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -24,109 +26,109 @@
 
 <main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-4 space-y-4">
 
-  <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
+  <section class="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30 p-4" aria-label="이배송 입력">
 
     <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
       <div>
-        <label class="app-label">센터</label>
+        <label class="app-label" for="f-center">센터</label>
         <input id="f-center" class="app-input" value="안산사조센터">
       </div>
 
       <div>
-        <label class="app-label">일자</label>
+        <label class="app-label" for="f-date">일자</label>
         <input id="f-date" type="date" class="app-input">
       </div>
 
       <div>
-        <label class="app-label">운수사</label>
+        <label class="app-label" for="f-company">운수사</label>
         <select id="f-company" class="app-select"></select>
       </div>
 
       <div>
-        <label class="app-label">코스번호</label>
+        <label class="app-label" for="f-route">코스번호</label>
         <select id="f-route" class="app-select"></select>
       </div>
 
       <div>
-        <label class="app-label">기사명</label>
+        <label class="app-label" for="f-driver">기사명</label>
         <select id="f-driver" class="app-select"></select>
       </div>
 
       <div>
-        <label class="app-label">차량번호</label>
+        <label class="app-label" for="f-vehicle">차량번호</label>
         <select id="f-vehicle" class="app-select"></select>
       </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mt-3">
       <div>
-        <label class="app-label">연락처</label>
+        <label class="app-label" for="f-phone">연락처</label>
         <input id="f-phone" class="app-input">
       </div>
 
       <div>
-        <label class="app-label">상차리스트</label>
+        <label class="app-label" for="f-photo1">상차리스트</label>
         <input id="f-photo1" type="file" accept="image/*" class="app-input text-xs">
         <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
-             tabindex="0" data-photo="1">
+             tabindex="0" data-photo="1" role="region" aria-label="상차리스트 사진 붙여넣기">
           <div class="photo-preview text-xs text-zinc-500 text-center py-6">
             클릭 후 Ctrl+V로 붙여넣기
           </div>
         </div>
-        <button type="button" data-clear-photo="1" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
+        <button type="button" data-clear-photo="1" aria-label="상차리스트 사진 삭제" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
           사진 삭제
         </button>
       </div>
 
       <div>
-        <label class="app-label">상차사진</label>
+        <label class="app-label" for="f-photo2">상차사진</label>
         <input id="f-photo2" type="file" accept="image/*" class="app-input text-xs">
         <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
-             tabindex="0" data-photo="2">
+             tabindex="0" data-photo="2" role="region" aria-label="상차사진 붙여넣기">
           <div class="photo-preview text-xs text-zinc-500 text-center py-6">
             클릭 후 Ctrl+V로 붙여넣기
           </div>
         </div>
-        <button type="button" data-clear-photo="2" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
+        <button type="button" data-clear-photo="2" aria-label="상차사진 삭제" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
           사진 삭제
         </button>
       </div>
 
       <div>
-        <label class="app-label">추가파레트 1</label>
+        <label class="app-label" for="f-photo3">추가파레트 1</label>
         <input id="f-photo3" type="file" accept="image/*" class="app-input text-xs">
         <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
-             tabindex="0" data-photo="3">
+             tabindex="0" data-photo="3" role="region" aria-label="추가파레트 1 사진 붙여넣기">
           <div class="photo-preview text-xs text-zinc-500 text-center py-6">
             클릭 후 Ctrl+V로 붙여넣기
           </div>
         </div>
-        <button type="button" data-clear-photo="3" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
+        <button type="button" data-clear-photo="3" aria-label="추가파레트 1 사진 삭제" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
           사진 삭제
         </button>
       </div>
 
       <div>
-        <label class="app-label">추가파레트 2</label>
+        <label class="app-label" for="f-photo4">추가파레트 2</label>
         <input id="f-photo4" type="file" accept="image/*" class="app-input text-xs">
         <div class="paste-zone mt-1 border border-dashed border-zinc-600 rounded-md bg-zinc-900/50 p-2 min-h-[84px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
-             tabindex="0" data-photo="4">
+             tabindex="0" data-photo="4" role="region" aria-label="추가파레트 2 사진 붙여넣기">
           <div class="photo-preview text-xs text-zinc-500 text-center py-6">
             클릭 후 Ctrl+V로 붙여넣기
           </div>
         </div>
-        <button type="button" data-clear-photo="4" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
+        <button type="button" data-clear-photo="4" aria-label="추가파레트 2 사진 삭제" class="mt-1 text-[11px] text-zinc-400 hover:text-rose-300">
           사진 삭제
         </button>
       </div>
     </div>
 
     <div class="mt-3">
-      <label class="app-label">비고</label>
+      <label class="app-label" for="f-memo">비고</label>
       <input id="f-memo" class="app-input">
     </div>
 
-    <div class="flex items-center gap-2 mt-4">
+    <div class="work-form-actions flex items-center gap-2 mt-4">
       <button id="btn-add" class="btn btn-primary">행 추가</button>
       <button id="btn-clear-form" class="btn btn-ghost">입력 초기화</button>
       <div class="flex-1"></div>
@@ -134,10 +136,10 @@
     </div>
   </section>
 
-  <section class="border border-zinc-700 rounded-lg overflow-hidden">
+  <section class="work-list border border-zinc-700 rounded-lg overflow-hidden" aria-label="이배송 목록">
     <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex items-center gap-2 flex-wrap">
       <span class="text-sm font-semibold">이배송 목록</span>
-      <span id="row-count" class="text-xs text-zinc-400"></span>
+      <span id="row-count" class="text-xs text-zinc-400" role="status" aria-live="polite" aria-atomic="true"></span>
       <div class="flex-1"></div>
 
       <button id="btn-reload-db" class="btn btn-ghost text-xs">DB 새로고침</button>
@@ -150,7 +152,7 @@
       <table class="app-table">
         <thead>
           <tr>
-            <th><input id="chk-all" type="checkbox"></th>
+            <th><input id="chk-all" type="checkbox" aria-label="이배송 전체 선택"></th>
             <th>순서</th>
             <th>센터</th>
             <th>일자</th>
@@ -177,7 +179,7 @@
   <section class="border border-zinc-700 rounded-lg bg-zinc-800/30 p-4">
     <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
       <div>
-        <label class="app-label">다운로드 파일명</label>
+        <label class="app-label" for="f-filename">다운로드 파일명</label>
         <input id="f-filename" class="app-input" placeholder="이배송_202604">
       </div>
       <button id="btn-download" class="btn btn-primary">엑셀 다운로드</button>
@@ -395,7 +397,10 @@ function bindEvents() {
   $('f-driver').addEventListener('change', syncPhoneFromDriver);
 
   $('btn-add').addEventListener('click', addRow);
-  $('btn-clear-form').addEventListener('click', clearForm);
+  $('btn-clear-form').addEventListener('click', () => {
+    clearForm();
+    $('f-date').focus();
+  });
   $('btn-save-db').addEventListener('click', saveDb);
   $('btn-download').addEventListener('click', downloadExcel);
   $('btn-reload-db').addEventListener('click', reloadDbRows);
@@ -530,7 +535,7 @@ function renderRows() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="checkbox" class="row-check" data-idx="${i}"></td>
+      <td><input type="checkbox" class="row-check" data-idx="${i}" aria-label="이배송 ${i + 1}행 선택"></td>
       <td>${i + 1}</td>
       <td>${escapeHtml(r.center)}</td>
       <td>${escapeHtml(formatDateKr(r.delivery_date))}</td>
@@ -543,8 +548,8 @@ function renderRows() {
       <td>${escapeHtml(r.memo || '')}</td>
       <td class="${savedClass} text-xs">${savedText}</td>
       <td class="text-right">
-        <button class="btn btn-ghost text-xs" data-edit="${i}">수정</button>
-        <button class="btn btn-ghost text-xs text-rose-400" data-del="${i}">삭제</button>
+        <button type="button" class="btn btn-ghost text-xs" data-edit="${i}" aria-label="이배송 ${i + 1}행 수정">수정</button>
+        <button type="button" class="btn btn-ghost text-xs text-rose-400" data-del="${i}" aria-label="이배송 ${i + 1}행 삭제">삭제</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -581,6 +586,7 @@ function loadRowToForm(idx) {
   state.formPhotos = [...(r.photos || [null, null, null, null])];
   state.photoTouched = [false, false, false, false];
   renderPhotoPreview();
+  $('f-date').focus();
 }
 
 async function deleteOneRow(idx) {
@@ -856,7 +862,7 @@ function setFormPhoto(index, dataUrl, options = {}) {
 
   preview.innerHTML = `
     <div class="flex items-center gap-2">
-      <img src="${dataUrl}" class="w-16 h-16 object-cover rounded border border-zinc-700">
+      <img src="${dataUrl}" alt="${escapeHtml(photoLabel(index))}" class="w-16 h-16 object-cover rounded border border-zinc-700">
       <div class="text-xs text-zinc-300">
         <div>${escapeHtml(photoLabel(index))}</div>
         <div class="text-zinc-500">${formatBytes(dataUrlBytes(dataUrl))}</div>

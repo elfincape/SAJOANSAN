@@ -8,8 +8,10 @@
   <link rel="stylesheet" href="/css/common.css">
   <link rel="stylesheet" href="/css/driver-documents.css">
 <link rel="stylesheet" href="/css/workspace-ui.css">
+<link rel="stylesheet" href="/css/admin-workspace.css">
+<script type="module" src="/js/admin-workspace.js"></script>
 </head>
-<body class="workspace-ui bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+<body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
     <div class="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -25,11 +27,11 @@
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] gap-4">
 
       <!-- 좌측 목록 -->
-      <section class="border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;">
+      <section class="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="min-height: 60vh;" aria-label="운수사 목록">
         <div class="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="이름 검색"
+          <input id="search-input" type="search" placeholder="이름 검색" aria-label="운수사 이름 검색"
                  class="app-input flex-1 min-w-[180px]">
-          <select id="sort-key" class="app-select w-28">
+          <select id="sort-key" class="app-select w-28" aria-label="운수사 정렬 기준">
             <option value="name">이름순</option>
             <option value="updated">수정 최신순</option>
           </select>
@@ -55,13 +57,13 @@
         </div>
 
         <div class="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">
-          <span id="result-count"></span>
-          <span id="loading-indicator" class="hidden">불러오는 중...</span>
+          <span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span>
+          <span id="loading-indicator" class="hidden" role="status" aria-live="polite">불러오는 중...</span>
         </div>
       </section>
 
       <!-- 우측 폼 -->
-      <section class="border border-zinc-700 rounded-lg bg-zinc-800/30">
+      <section class="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
         <div class="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" class="text-sm font-semibold">새 운수사</h2>
           <span id="form-mode-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">신규</span>
@@ -71,15 +73,15 @@
         <form id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
-            <label class="app-label">이름 *</label>
-            <input id="f-name" class="app-input" required>
-            <p class="text-[10px] text-zinc-500 mt-1">운수사 이름은 중복될 수 없습니다.</p>
+            <label class="app-label" for="f-name">이름 *</label>
+            <input id="f-name" class="app-input" required aria-describedby="name-help">
+            <p id="name-help" class="text-[10px] text-zinc-500 mt-1">운수사 이름은 중복될 수 없습니다.</p>
           </div>
           <div>
-            <label class="app-label">비고</label>
+            <label class="app-label" for="f-memo">비고</label>
             <textarea id="f-memo" rows="3" class="app-textarea"></textarea>
           </div>
-          <div class="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
             <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
@@ -206,13 +208,13 @@
           if (r.id === state.selectedId) tr.classList.add('selected');
           tr.classList.add('cursor-pointer');
           tr.innerHTML = `
-            <td>${escapeHtml(r.name)}</td>
+            <td><button type="button" class="text-left hover:underline" aria-label="${escapeHtml(r.name)} 편집">${escapeHtml(r.name)}</button></td>
             <td class="text-right">${c.drivers}</td>
             <td class="text-right">${c.vehicles}</td>
             <td class="text-right">${c.routes}</td>
             <td class="muted">${escapeHtml(r.memo || '')}</td>
           `;
-          tr.addEventListener('click', () => selectRow(r.id));
+          tr.addEventListener('click', () => selectRow(r.id, true));
           frag.appendChild(tr);
         }
         tbody.appendChild(frag);
@@ -224,11 +226,14 @@
             : `총 ${state.filtered.length}건 (전체 ${state.rows.length}건 중)`);
     }
 
-    function selectRow(id) {
+    function selectRow(id, focusEditor = false) {
       state.selectedId = id;
       renderList();
       const r = state.rows.find(x => x.id === id);
-      if (r) rowToForm(r);
+      if (r) {
+        rowToForm(r);
+        if (focusEditor) $('f-name').focus();
+      }
     }
     function resetForm() {
       state.selectedId = null;

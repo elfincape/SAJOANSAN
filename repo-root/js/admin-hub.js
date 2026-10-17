@@ -12,6 +12,18 @@ const categoryPaths = {
   system: ['notion-health', 'users', 'audit-log', 'settings'],
 };
 
+export function categoryForPath(href) {
+  const path = new URL(href, location.origin).pathname
+    .split('/')
+    .pop()
+    .replace(/\.html$/, '');
+  return (
+    Object.keys(categoryPaths).find((key) =>
+      categoryPaths[key].includes(path),
+    ) || 'work'
+  );
+}
+
 export async function mountAdminHub(grid) {
   const input = document.getElementById('menu-search');
   const controls = document.getElementById('hub-categories');
@@ -42,16 +54,10 @@ export async function mountAdminHub(grid) {
   let selected = 'all';
 
   for (const item of items) {
-    const path = new URL(item.href).pathname
-      .split('/')
-      .pop()
-      .replace(/\.html$/, '');
     item.dataset.category =
       item.id === 'permission-center-card'
         ? 'system'
-        : Object.keys(categoryPaths).find((key) =>
-            categoryPaths[key].includes(path),
-          ) || 'work';
+        : categoryForPath(item.href);
     item.classList.add('hub-tool');
   }
 

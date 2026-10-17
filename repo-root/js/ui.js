@@ -63,6 +63,7 @@ let _activeModal = null;
 // content: HTML 문자열 또는 DOM 노드
 // options: { width: 'sm'|'md'|'lg'|'xl', dismissable: true }
 export function openModal(content, options = {}) {
+  const returnFocus = document.activeElement;
   closeModal(); // 이전 모달 정리
 
   const { width = 'md', dismissable = true } = options;
@@ -92,11 +93,28 @@ export function openModal(content, options = {}) {
 
   overlay.appendChild(panel);
   root.appendChild(overlay);
+  const heading = panel.querySelector('h1,h2,h3');
+  overlay.setAttribute('aria-label', heading?.textContent.trim() || '작업 창');
+  panel.tabIndex = -1;
+  overlay._returnFocus = returnFocus;
+  overlay.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(panel.querySelectorAll('a[href],button,input:not([type="hidden"]),select,textarea,[tabindex="0"]'))
+      .filter(element => !element.disabled && element.getClientRects().length);
+    if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panel)) {
+      event.preventDefault(); first.focus();
+    }
+  });
 
   // 등장 애니메이션
   requestAnimationFrame(() => {
     overlay.classList.remove('opacity-0');
     panel.classList.remove('scale-95');
+    if (!panel.contains(document.activeElement)) panel.focus();
   });
 
   if (dismissable) {
@@ -116,6 +134,7 @@ export function closeModal() {
   if (!_activeModal) return;
   const m = _activeModal;
   _activeModal = null;
+  if (m._returnFocus?.isConnected) m._returnFocus.focus();
 
   if (m._escHandler) {
     document.removeEventListener('keydown', m._escHandler);
