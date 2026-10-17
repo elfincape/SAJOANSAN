@@ -74,13 +74,20 @@ async function fetcher(url, options) {
   if (url.includes('/onedrive_locks?')) {
     assert.equal(options.headers.Authorization, 'Bearer server-only');
     if (options.method === 'DELETE') {
-      if (url.includes('holder=eq.') || url.includes('&or=')) lock = false;
+      if (
+        url.includes('&holder=eq.' + leaseHolder) ||
+        (url.includes('&or=') && url.includes(leaseHolder))
+      )
+        lock = false;
       return new Response(null, { status: 204 });
     }
     if (options.method === 'POST') {
       if (busy || lock) return json([]);
       lock = true;
       leaseHolder = JSON.parse(options.body).holder;
+      assert.ok(
+        Date.parse(JSON.parse(options.body).expires_at) > Date.now() + 40000,
+      );
       return json([{ name: 'private-mail-pop-diagnostic' }]);
     }
     if (options.method === 'PATCH') {
@@ -286,6 +293,29 @@ assert.equal(
 );
 owner = true;
 console.log('PASS authenticated single-use Node delegation and lease cleanup');
+
+const interrupted = makeDiagnosticHandler(env, network, {
+  fetcher,
+  delegate: async ({ holder }) => {
+    assert.equal(
+      (
+        await interrupted(
+          req(true, JSON.stringify({ action: 'claim', holder })),
+        )
+      ).status,
+      200,
+    );
+    throw Error('delegation timed out while worker may still be running');
+  },
+});
+assert.equal((await interrupted(req())).status, 503);
+assert.equal(
+  lock,
+  true,
+  'claimed lease must survive uncertain delegation failure',
+);
+assert.equal((await delegated(req())).status, 409);
+lock = false;
 
 const { handleNodeDiagnostic } =
   await import('../server/private-mail-probe.mjs');

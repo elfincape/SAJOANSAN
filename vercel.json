@@ -2,5 +2,6 @@
   "framework": null,
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
-  "outputDirectory": "repo-root/dist"
+  "outputDirectory": "repo-root/dist",
+  "functions": { "api/private-mail-diagnostic.mjs": { "maxDuration": 30 } }
 }

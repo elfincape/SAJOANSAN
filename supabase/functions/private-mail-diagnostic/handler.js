@@ -268,7 +268,8 @@ export function makeDiagnosticHandler(
       .get('authorization')
       ?.match(/^Bearer (.+)$/i)?.[1];
     if (!token) return json({ error: '로그인이 필요합니다.' }, 401);
-    let holder;
+    let holder,
+      completed = false;
     try {
       if (!root || !anon || !service)
         return json({ error: '진단 서버 설정을 확인해 주세요.' }, 503);
@@ -301,7 +302,10 @@ export function makeDiagnosticHandler(
             '&expires_at=gt.' +
             encodeURIComponent(new Date().toISOString()),
           'PATCH',
-          { holder: claimedDiagnosticLease(body.holder) },
+          {
+            holder: claimedDiagnosticLease(body.holder),
+            expires_at: new Date(Date.now() + 45000).toISOString(),
+          },
         );
         return json(
           { claimed: claimed.length === 1 },
@@ -331,14 +335,14 @@ export function makeDiagnosticHandler(
         );
       holder = candidate;
       // Never read input targets or send POP commands. A successful greeting is the end.
-      return json(
-        delegate
-          ? await delegate({ token, holder })
-          : await probePopConnection(network, {
-              timeoutMs,
-              region: env.SB_REGION,
-            }),
-      );
+      const result = delegate
+        ? await delegate({ token, holder })
+        : await probePopConnection(network, {
+            timeoutMs,
+            region: env.SB_REGION,
+          });
+      completed = true;
+      return json(result);
     } catch {
       return json(
         {
@@ -351,11 +355,13 @@ export function makeDiagnosticHandler(
         await lockRequest(
           'name=eq.' +
             LOCK +
-            '&or=(holder.eq.' +
-            holder +
-            ',holder.eq.' +
-            claimedDiagnosticLease(holder) +
-            ')',
+            (completed
+              ? '&or=(holder.eq.' +
+                holder +
+                ',holder.eq.' +
+                claimedDiagnosticLease(holder) +
+                ')'
+              : '&holder=eq.' + holder),
           'DELETE',
         ).catch(() => {});
     }

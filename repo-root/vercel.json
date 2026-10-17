@@ -2,5 +2,6 @@
   "framework": null,
   "installCommand": "cd .. && npm ci",
   "buildCommand": "cd .. && npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "functions": { "api/private-mail-diagnostic.mjs": { "maxDuration": 30 } }
 }
