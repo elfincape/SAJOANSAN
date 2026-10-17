@@ -40,6 +40,12 @@ denied.install({access:{}});
 assert.equal(denied.links[0].hidden,true);
 console.log('PASS: existing hub menus, both center slugs, center codes, inherited center, denied/cross-center access and restored visibility');
 
+const dispatch=mount(['/admin/pyeongtaek-dispatch.html?center=pyeongtaek','/admin/pyeongtaek-dispatch.html?center=ansan']);
+assert.equal(dispatch.sandbox.resourceForPath('/admin/pyeongtaek-dispatch.html'),'charter');
+dispatch.install({access:{charter:permitted('002')}});
+assert.deepEqual(dispatch.links.map(link=>link.hidden),[false,true]);
+console.log('PASS: provisional dispatch follows center-scoped charter permissions');
+
 globalThis.location={origin:'https://sajoansan.vercel.app'};
 const {decorateCenterLinks}=await loadModule('../repo-root/js/center.js');
 const fixedLinks=[{dataset:{fixedCenter:'true'},href:'/admin/charter-fuel-estimator.html?center=pyeongtaek'},{dataset:{},href:'/admin/drivers.html'}].map(a=>Object.assign(a,{getAttribute(){return this.href;},setAttribute(key,value){this.href=value;}}));

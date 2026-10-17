@@ -3,7 +3,7 @@ import {
   loadPrivateFeatures,
 } from './private-features.js';
 
-export function getAdminMenus(profile) {
+export function getAdminMenus(profile, centerCode) {
   // 메뉴 정의
   const isAdmin = profile.role === 'admin';
   const isPrivateOwner = isPrivateFeatureOwner(profile);
@@ -80,6 +80,12 @@ export function getAdminMenus(profile) {
       icon: iconParser(),
       color: 'sky',
     },
+    ...(centerCode === '002' ? [{
+      href: '/admin/pyeongtaek-dispatch.html',
+      title: '평택 가배차',
+      desc: '당일 물량 · 고정차 배정 · 임시차 초안',
+      color: 'emerald',
+    }] : []),
     {
       href: '/admin/charter-fuel-estimator.html',
       title: '착지별 주행거리 계산',

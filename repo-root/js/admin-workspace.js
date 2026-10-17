@@ -84,7 +84,7 @@ function mountWorkspace() {
       system: '시스템',
     };
     const menus = selected
-      ? getAdminMenus(profile).filter((menu) => {
+      ? getAdminMenus(profile, selected.code).filter((menu) => {
           if (menu.href === '/portal/') return false;
           const resource = resourceForPath(menu.href);
           return (

@@ -84,7 +84,7 @@
     document.querySelector('a[href="/"]').href = withCenterParam('/', center);
     document.getElementById('logout-btn').addEventListener('click', signOut);
 
-    const menus = getAdminMenus(profile);
+    const menus = getAdminMenus(profile, center.code);
 
     const grid = document.getElementById('menu-grid');
     grid.innerHTML = menus.map(m => {

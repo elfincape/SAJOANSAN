@@ -1,0 +1,220 @@
+#dispatch-app {
+  padding: 20px;
+  color: var(--theme-text);
+}
+#dispatch-app:not(.app-main) {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+#dispatch-app [hidden] {
+  display: none !important;
+}
+#dispatch-app * {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+#dispatch-app h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+#dispatch-app h3 {
+  font-size: 18px;
+  font-weight: 650;
+  margin: 14px 0;
+}
+#dispatch-app h4 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 20px 0 8px;
+}
+#dispatch-app p {
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.pd-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.pd-heading > label {
+  margin-left: auto;
+}
+#dispatch-app label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  min-width: 0;
+}
+#dispatch-app input:not([type='checkbox']),
+#dispatch-app select,
+#dispatch-app textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  padding: 6px 8px;
+  font: inherit;
+}
+#dispatch-app input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--theme-accent);
+}
+#dispatch-app button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-height: 36px;
+}
+#dispatch-app button:disabled,
+#dispatch-app input:disabled,
+#dispatch-app select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+#dispatch-app :focus-visible {
+  outline: 2px solid var(--theme-info);
+  outline-offset: 2px;
+}
+.pd-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-bottom: 1px solid var(--theme-border);
+  margin-top: 20px;
+}
+.pd-stages button {
+  padding: 12px 6px;
+  border-bottom: 3px solid transparent;
+  font-size: 14px;
+}
+.pd-stages button[aria-current='step'] {
+  border-color: var(--theme-accent);
+  color: var(--theme-accent);
+  font-weight: 700;
+  background: var(--theme-selected);
+}
+.pd-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.pd-scroll {
+  overflow: auto;
+  max-height: 560px;
+  border-top: 1px solid var(--theme-border);
+  margin: 10px 0;
+}
+#dispatch-app table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+#dispatch-app th,
+#dispatch-app td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--theme-border-soft);
+  vertical-align: top;
+  min-width: 85px;
+  max-width: 350px;
+  overflow-wrap: anywhere;
+}
+#dispatch-app th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--theme-soft);
+  white-space: nowrap;
+}
+#dispatch-app td input:not([type='checkbox']),
+#dispatch-app td select {
+  min-width: 100px;
+}
+#dispatch-app td .pd-icon {
+  width: 34px;
+  min-height: 34px;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  margin-right: 4px;
+}
+#dispatch-app tbody tr:nth-child(even) {
+  background: var(--theme-stripe);
+}
+.pd-totals {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--theme-border);
+  font-variant-numeric: tabular-nums;
+}
+#dispatch-app #pd-fixed th:first-child,
+#dispatch-app #pd-fixed td:first-child,
+#dispatch-app #pd-temporary th:first-child,
+#dispatch-app #pd-temporary td:first-child,
+#dispatch-app #pd-legs th:first-child,
+#dispatch-app #pd-legs td:first-child {
+  min-width: 180px;
+}
+.pd-badge {
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
+  font-size: 12px;
+}
+.pd-issues {
+  color: var(--theme-warn);
+  max-height: 220px;
+  overflow: auto;
+}
+.pd-issues li {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+#pd-status[data-error='true'] {
+  color: var(--theme-danger);
+}
+.pd-muted {
+  color: var(--theme-muted);
+}
+.pd-footer {
+  border-top: 1px solid var(--theme-border);
+  padding-top: 12px;
+  justify-content: space-between;
+}
+#dispatch-app details {
+  border-top: 1px solid var(--theme-border-soft);
+  padding: 12px 0;
+}
+#dispatch-app summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  #dispatch-app {
+    padding: 12px;
+  }
+  .pd-heading > label {
+    margin-left: 0;
+    width: 100%;
+  }
+  .pd-stages {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .pd-stages button {
+    font-size: 12px;
+    padding: 9px 3px;
+  }
+  .pd-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pd-toolbar .btn {
+    flex-grow: 1;
+  }
+}

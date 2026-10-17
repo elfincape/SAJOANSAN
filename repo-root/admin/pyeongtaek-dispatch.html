@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>평택 가배차</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="/css/common.css" />
+    <link rel="stylesheet" href="/css/workspace-ui.css" />
+    <link rel="stylesheet" href="/css/admin-workspace.css" />
+    <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/pyeongtaek-dispatch.css" />
+    <script type="module" src="/js/theme.js"></script>
+    <script type="module" src="/js/admin-workspace.js"></script>
+  </head>
+  <body class="workspace-ui work-shell">
+    <header>
+      <a href="/admin/?center=pyeongtaek">관리 허브</a>
+      <h1>평택 가배차</h1>
+    </header>
+    <main id="dispatch-app">
+      <div class="pd-toolbar pd-heading">
+        <h2>평택 가배차</h2>
+        <span id="pd-state" class="pd-badge">진행 중</span
+        ><span id="pd-access"></span
+        ><label>배차 기준일<input id="pd-date" type="date" required /></label>
+      </div>
+      <p id="pd-status" role="status" aria-live="polite">로그인 확인 중</p>
+      <div id="pd-work" hidden>
+        <nav class="pd-stages" aria-label="가배차 단계">
+          <button data-stage="0" aria-current="step">1 물량표</button
+          ><button data-stage="1">2 고정차</button
+          ><button data-stage="2">3 초안</button
+          ><button data-stage="3">4 상세 조정</button
+          ><button data-stage="4">5 저장·출력</button>
+        </nav>
+        <p id="pd-totals" class="pd-totals"></p>
+        <section data-panel="0" aria-labelledby="pd-import-title">
+          <h3 id="pd-import-title">물량표</h3>
+          <div class="pd-fields">
+            <label
+              >파일<input
+                id="pd-file"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                data-edit /></label
+            ><label>시트<select id="pd-sheet" data-edit></select></label
+            ><label
+              >제목 행<input
+                id="pd-header"
+                type="number"
+                min="1"
+                step="1"
+                value="1"
+                data-edit
+            /></label>
+          </div>
+          <div id="pd-mapping" class="pd-fields"></div>
+          <div class="pd-toolbar">
+            <button id="pd-preview" class="btn btn-ghost" data-edit>
+              미리보기</button
+            ><button id="pd-import" class="btn btn-primary" data-edit>
+              선택일 물량 반영</button
+            ><button id="pd-clear" class="btn btn-ghost" data-edit>
+              물량 비우기
+            </button>
+          </div>
+          <p id="pd-preview-count"></p>
+          <div id="pd-import-issues" class="pd-issues"></div>
+          <div id="pd-preview-table" class="pd-scroll"></div>
+          <details>
+            <summary>반영된 원본</summary>
+            <div id="pd-source-table" class="pd-scroll"></div>
+          </details>
+        </section>
+        <section data-panel="1" hidden aria-labelledby="pd-drivers-title">
+          <div class="pd-toolbar">
+            <h3 id="pd-drivers-title">당일 고정기사</h3>
+            <button id="pd-context" class="btn btn-ghost">
+              기준자료 다시 읽기
+            </button>
+          </div>
+          <div id="pd-context-issues" class="pd-issues"></div>
+          <div id="pd-drivers" class="pd-scroll"></div>
+          <details>
+            <summary>당일 배차 설정</summary>
+            <div id="pd-settings" class="pd-fields"></div>
+          </details>
+          <button id="pd-create" class="btn btn-primary" data-edit>
+            가배차 초안 생성
+          </button>
+        </section>
+        <section data-panel="2" hidden aria-labelledby="pd-draft-title">
+          <div class="pd-toolbar">
+            <h3 id="pd-draft-title">배정 초안</h3>
+            <button id="pd-adjust" class="btn btn-ghost">상세 조정</button>
+          </div>
+          <div id="pd-draft-issues" class="pd-issues"></div>
+          <h4>고정차</h4>
+          <div id="pd-fixed" class="pd-scroll"></div>
+          <h4>임시차</h4>
+          <div id="pd-temporary" class="pd-scroll"></div>
+          <h4>미배정</h4>
+          <div id="pd-unassigned" class="pd-scroll"></div>
+        </section>
+        <section data-panel="3" hidden aria-labelledby="pd-detail-title">
+          <div class="pd-toolbar">
+            <h3 id="pd-detail-title">상세 조정</h3>
+            <button id="pd-add-route" class="btn btn-ghost" data-edit>
+              임시차 추가</button
+            ><button
+              id="pd-delete-route"
+              class="btn btn-ghost"
+              data-edit
+              hidden
+            >
+              선택 임시차 삭제</button
+            ><button id="pd-recalculate" class="btn btn-ghost" data-edit>
+              시간 재계산
+            </button>
+          </div>
+          <label>차량·코스<select id="pd-route"></select></label>
+          <div id="pd-route-fields" class="pd-fields"></div>
+          <div id="pd-stops" class="pd-scroll"></div>
+          <h4>미배정 착지 이동</h4>
+          <div id="pd-move-unassigned" class="pd-scroll"></div>
+          <details>
+            <summary>도로 구간</summary>
+            <div class="pd-toolbar">
+              <button id="pd-refresh" class="btn btn-ghost" data-edit>
+                저장 구간 다시 읽기</button
+              ><a
+                class="btn btn-ghost"
+                href="/admin/naver-shortest-distance.html?center=pyeongtaek&amp;mode=relations"
+                target="_blank"
+                rel="noopener"
+                data-fixed-center="true"
+                >구간 수집기 열기</a
+              >
+            </div>
+            <div id="pd-legs" class="pd-scroll"></div>
+            <div class="pd-fields">
+              <label
+                >출발 주소<input
+                  id="pd-pair-from"
+                  maxlength="300"
+                  data-edit /></label
+              ><label
+                >도착 주소<input id="pd-pair-to" maxlength="300" data-edit
+              /></label>
+            </div>
+            <p>
+              센터 월 합산 도로 25,000회·주소 2,000회 한도 적용. 네이버 계정
+              무료 잔여량 미확인.
+            </p>
+            <button id="pd-pair" class="btn btn-ghost" data-edit>
+              단일 구간 조회·저장</button
+            ><button id="pd-stop-query" class="btn btn-ghost" hidden>
+              조회 중지
+            </button>
+          </details>
+        </section>
+        <section data-panel="4" hidden aria-labelledby="pd-save-title">
+          <h3 id="pd-save-title">저장·출력</h3>
+          <label
+            >변경 이유<textarea
+              id="pd-reason"
+              rows="2"
+              maxlength="2000"
+              data-edit
+            ></textarea>
+          </label>
+          <div class="pd-toolbar">
+            <button id="pd-save" class="btn btn-primary" data-edit>
+              현재 버전 저장</button
+            ><button id="pd-save-copy" class="btn btn-ghost" data-edit>
+              새 스냅샷 저장</button
+            ><button id="pd-export" class="btn btn-ghost">엑셀 다운로드</button
+            ><button id="pd-list" class="btn btn-ghost">
+              저장 목록 새로고침
+            </button>
+          </div>
+          <p id="pd-saved-info"></p>
+          <div id="pd-snapshots" class="pd-scroll"></div>
+          <details>
+            <summary>조정 이력</summary>
+            <div id="pd-history"></div>
+          </details>
+        </section>
+        <div class="pd-toolbar pd-footer">
+          <button id="pd-back" class="btn btn-ghost">이전</button
+          ><button id="pd-next" class="btn btn-ghost">다음</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/js/pyeongtaek-dispatch-ui.js"></script>
+  </body>
+</html>
