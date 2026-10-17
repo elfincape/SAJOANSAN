@@ -18,6 +18,8 @@ export class ReadOnlyPop {
   #maxBytes;
   #timeout;
   constructor(transport, { maxBytes = LIMIT, timeoutMs = 3000 } = {}) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > LIMIT)
+      throw Error('CONFIG_REQUIRED');
     this.#transport = transport;
     this.#maxBytes = maxBytes;
     this.#timeout = timeoutMs;
@@ -81,17 +83,36 @@ export class ReadOnlyPop {
         if (!/^\+OK(?: |$)/.test((await this.#line()).toString('ascii')))
           throw Error('POP_REJECTED');
         if (!multiline) return;
-        const lines = [];
-        let size = 0;
+        const blocks = [],
+          crlf = Buffer.from('\r\n');
+        let size = 0,
+          used = 0,
+          block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
+        const append = (part) => {
+          let offset = 0;
+          while (offset < part.length) {
+            if (used === block.length) {
+              blocks.push(block);
+              block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
+              used = 0;
+            }
+            const count = Math.min(block.length - used, part.length - offset);
+            part.copy(block, used, offset, offset + count);
+            used += count;
+            offset += count;
+          }
+        };
         for (;;) {
           let line = await this.#line();
-          if (line.equals(Buffer.from('.'))) break;
+          if (line.length === 1 && line[0] === 46) break;
           if (line[0] === 46) line = line.subarray(1);
           size += line.length + 2;
           if (size > this.#maxBytes) throw Error('LIMIT_REACHED');
-          lines.push(line, Buffer.from('\r\n'));
+          append(line);
+          append(crlf);
         }
-        return Buffer.concat(lines, size);
+        blocks.push(block.subarray(0, used));
+        return Buffer.concat(blocks, size);
       });
     } catch (error) {
       if (error.message !== 'POP_REJECTED') this.close();
@@ -320,6 +341,6 @@ export async function syncBatch({
   } catch {
     controller.abort();
     pop.close();
-    throw Error('SYNC_FAILED');
+    throw Object.assign(Error('SYNC_FAILED'), { counts: { ...counts } });
   }
 }

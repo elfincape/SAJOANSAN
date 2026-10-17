@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { ReadOnlyPop, syncBatch } from '../server/private-mail-collector.mjs';
 const writes = [];
 let input = Buffer.from('+OK ready\r\n');
@@ -131,6 +132,40 @@ console.log(
   'PASS batch deadline aborts stalled bridge and closes POP transport',
 );
 
+let progressLookups = 0;
+await assert.rejects(
+  () =>
+    syncBatch({
+      pop: {
+        ...deadlinePop,
+        uidl: async () => [
+          [1, 'unfinished'],
+          [2, 'completed'],
+        ],
+        list: async () =>
+          new Map([
+            [1, 10],
+            [2, 10],
+          ]),
+      },
+      bridge: {
+        seen: async () =>
+          ++progressLookups === 1 ? true : new Promise(() => {}),
+      },
+      cutoff: new Date(),
+      packageMessage: async () => ({}),
+      seconds: 0.02,
+    }),
+  (error) => {
+    assert.equal(
+      error.counts?.cursor,
+      createHash('sha256').update('completed').digest('hex'),
+    );
+    assert.equal(error.counts?.saved, 0);
+    return error.message === 'SYNC_FAILED';
+  },
+);
+
 let parseAttempts = 0,
   postMalformedSaved = 0;
 const malformedPop = {
@@ -166,4 +201,40 @@ assert.equal(malformedCounts.undated, 1);
 assert.equal(postMalformedSaved, 1);
 console.log(
   'PASS malformed MIME does not block later messages; original POP mail is retained',
+);
+
+let manyLines = Buffer.from('+OK\r\n' + '\r\n'.repeat(300000) + '.\r\n');
+const shortLines = new ReadOnlyPop({
+  write: async () => {},
+  close() {},
+  read: async (buffer) => {
+    const n = Math.min(buffer.length, manyLines.length);
+    if (!n) return null;
+    buffer.set(manyLines.subarray(0, n));
+    manyLines = manyLines.subarray(n);
+    return n;
+  },
+});
+const bufferFrom = Buffer.from;
+let separators = 0;
+const initialRSS = process.memoryUsage().rss;
+try {
+  Buffer.from = function (value, ...args) {
+    if (value === '\r\n') separators++;
+    return bufferFrom(value, ...args);
+  };
+  assert.equal((await shortLines.retr(1)).length, 600000);
+} finally {
+  Buffer.from = bufferFrom;
+}
+assert.ok(
+  separators <= 1,
+  'POP response cannot retain a separate Buffer per line',
+);
+console.log(
+  JSON.stringify({
+    pass: '300000 empty POP lines use bounded 64KiB blocks',
+    separators,
+    rssDelta: process.memoryUsage().rss - initialRSS,
+  }),
 );

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   packageMessage,
   safeName,
@@ -171,6 +172,9 @@ let authId = ownerId,
   profileActive = true,
   rpcCalls = 0;
 const edgeFetch = async (url) => {
+  if (url.includes('rpc/onedrive_acquire')) return Response.json(true);
+  if (url.includes('onedrive_locks?'))
+    return new Response(null, { status: 204 });
   if (url.endsWith('/auth/v1/user')) return Response.json({ id: authId });
   if (url.includes('user_profiles?'))
     return Response.json([
@@ -262,3 +266,65 @@ assert.equal(
 );
 assert.equal(listCalls, 0);
 console.log('PASS explicit login-only mode sends no UIDL/RETR');
+
+let progressChecks = 0,
+  persistedCursor;
+const progressResponse = await handleOwnerCollect(request(), {
+  env,
+  fetcher: async (url, options) => {
+    const body = JSON.parse(options.body);
+    if (body.operation === 'seen')
+      return ++progressChecks === 1
+        ? Response.json({ seen: true })
+        : new Response('{}', { status: 503 });
+    if (body.operation === 'end') persistedCursor = body.cursor;
+    return fetcher(url, options);
+  },
+  connect: async () => ({
+    ...(await connect()),
+    uidl: async () => [
+      [1, 'unfinished'],
+      [2, 'completed'],
+    ],
+    list: async () =>
+      new Map([
+        [1, 10],
+        [2, 10],
+      ]),
+  }),
+});
+assert.equal(progressResponse.status, 503);
+assert.equal(
+  persistedCursor,
+  createHash('sha256').update('completed').digest('hex'),
+);
+console.log(
+  'PASS failed collection persists only the last completed UIDL cursor',
+);
+
+failIngest = false;
+let finalizationAttempts = 0,
+  receiptConnections = 0;
+const retryResponse = await handleOwnerCollect(request(), {
+  env,
+  fetcher: async (url, options) => {
+    if (
+      options.headers['Content-Type'] === 'application/json' &&
+      JSON.parse(options.body).operation === 'end'
+    ) {
+      if (++finalizationAttempts === 1)
+        return new Response('{}', { status: 409 });
+    }
+    return fetcher(url, options);
+  },
+  connect: async () => {
+    receiptConnections++;
+    return connect();
+  },
+});
+assert.equal(retryResponse.status, 200);
+assert.equal(finalizationAttempts, 2);
+assert.equal(receiptConnections, 1);
+console.log(
+  'PASS busy finalization retries only end, never POP login or message ingestion',
+);

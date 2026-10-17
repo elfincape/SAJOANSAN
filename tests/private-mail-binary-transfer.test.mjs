@@ -215,3 +215,136 @@ console.log(
     maxInFlight,
   }),
 );
+
+// A lease revoked while the request body is read cannot authorize later Graph writes.
+box.lease_until = new Date(Date.now() + 600000).toISOString();
+const validMetadata = {
+  ...metadata,
+  lease: box.lease,
+  content_hash: file.content_hash,
+};
+const beforeStalePut = puts;
+const staleBody = new ReadableStream({
+  async pull(controller) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    box.lease = '00000000-0000-4000-8000-000000000009';
+    controller.enqueue(file.bytes);
+    controller.close();
+  },
+});
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-sync',
+      new Request('https://db.test/file', {
+        method: 'POST',
+        duplex: 'half',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Mail-Metadata': encodeURIComponent(JSON.stringify(validMetadata)),
+        },
+        body: staleBody,
+      }),
+      { id: owner },
+      ctx,
+    ),
+  /수집 잠금/,
+);
+assert.equal(puts, beforeStalePut);
+
+box.lease = validMetadata.lease;
+let lockHeld = false,
+  releaseUpload,
+  signalUpload,
+  releases = 0;
+const uploading = new Promise((resolve) => {
+  signalUpload = resolve;
+});
+const originalGraph = ctx.graph,
+  originalDB = ctx.db;
+ctx.withLock = async (fn) => {
+  if (lockHeld) throw fail('CONNECTION_BUSY', 409);
+  lockHeld = true;
+  try {
+    return await fn(lease);
+  } finally {
+    lockHeld = false;
+  }
+};
+ctx.db = async (path, options = {}) => {
+  if (path.startsWith('private_mailboxes?') && options.method === 'PATCH') {
+    releases++;
+    Object.assign(box, options.body);
+    return [];
+  }
+  return originalDB(path, options);
+};
+ctx.graph = async (path, access, options = {}) => {
+  if (options.method === 'PUT')
+    await new Promise((resolve) => {
+      releaseUpload = resolve;
+      signalUpload();
+    });
+  return originalGraph(path, access, options);
+};
+const small = message.files.find((f) => f.kind === 'text');
+const uploadMetadata = {
+  ...validMetadata,
+  uidl: 'e'.repeat(64),
+  index: 1,
+  kind: small.kind,
+  name: small.name,
+  content_hash: small.content_hash,
+  byte_size: small.byte_size,
+};
+const storageRequest = handlePrivateMail(
+  'private-mail-sync',
+  new Request('https://db.test/file', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Mail-Metadata': encodeURIComponent(JSON.stringify(uploadMetadata)),
+    },
+    body: small.bytes,
+  }),
+  { id: owner },
+  ctx,
+);
+await uploading;
+const endRequest = () =>
+  handlePrivateMail(
+    'private-mail-sync',
+    new Request('https://db.test/end', {
+      method: 'POST',
+      body: JSON.stringify({
+        operation: 'end',
+        mailbox: id,
+        lease: box.lease,
+        counts: {},
+      }),
+    }),
+    { id: owner },
+    ctx,
+  );
+await assert.rejects(endRequest, /CONNECTION_BUSY/);
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-sync',
+      new Request('https://db.test/begin', {
+        method: 'POST',
+        body: JSON.stringify({ operation: 'begin', mailbox: id }),
+      }),
+      { id: owner },
+      ctx,
+    ),
+  /CONNECTION_BUSY/,
+);
+assert.equal(releases, 0);
+releaseUpload();
+await storageRequest;
+await endRequest();
+assert.equal(releases, 1);
+console.log(
+  'PASS mailbox begin/end cannot race active Graph writes; revoked body-reading leases are fenced',
+);

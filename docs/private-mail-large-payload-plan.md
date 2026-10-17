@@ -1,4 +1,4 @@
-# Payload review and implemented binary transfer (not deployed)
+# Payload review and implemented binary transfer (receipt disabled by default)
 
 ## Corrected constraint
 

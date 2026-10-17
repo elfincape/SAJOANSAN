@@ -84,7 +84,10 @@ export function ownerBridge(authorization, fetcher = fetch) {
       ]),
       redirect: 'error',
     });
-    if (!response.ok) throw Error('BRIDGE_REJECTED');
+    if (!response.ok)
+      throw Object.assign(Error('BRIDGE_REJECTED'), {
+        status: response.status,
+      });
     return response.json();
   }
   return {
@@ -145,14 +148,24 @@ export function ownerBridge(authorization, fetcher = fetch) {
       };
       return call('finish', { message: metadata }, signal);
     },
-    end(counts, error) {
-      return call('end', {
+    async end(counts, error) {
+      const payload = {
         counts: Object.fromEntries(
           Object.entries(counts || {}).filter(([k]) => k !== 'cursor'),
         ),
         cursor: counts?.cursor ?? null,
         error: error ? 'SYNC_FAILED' : null,
-      });
+      };
+      const signal = AbortSignal.timeout(20000);
+      for (;;) {
+        try {
+          return await call('end', payload, signal);
+        } catch (failure) {
+          if (failure.status !== 409 || signal.aborted) throw failure;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          signal.throwIfAborted();
+        }
+      }
     },
   };
 }
@@ -212,7 +225,8 @@ export async function handleOwnerCollect(
         batch: 1,
         seconds: 40,
       });
-  } catch {
+  } catch (failure) {
+    if (failure?.counts) counts = failure.counts;
     error = true;
   } finally {
     pop?.close();

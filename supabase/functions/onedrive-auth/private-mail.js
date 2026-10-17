@@ -171,8 +171,28 @@ export async function handlePrivateMail(action, req, user, ctx) {
         409,
       );
   }
+  async function fenceMailbox(box, lease) {
+    const live = (
+      await db(
+        'private_mailboxes?select=id,owner_id,enabled,lease,lease_until,drive_id,folder_id&id=eq.' +
+          box.id,
+      )
+    )[0];
+    if (
+      !live ||
+      !live.enabled ||
+      live.owner_id !== box.owner_id ||
+      live.lease !== lease ||
+      !Number.isFinite(Date.parse(live.lease_until)) ||
+      Date.parse(live.lease_until) <= Date.now() ||
+      live.drive_id !== box.drive_id ||
+      live.folder_id !== box.folder_id
+    )
+      throw fail('수집 잠금이 만료되었습니다.', 409);
+  }
   async function transferFile(box, file, bytes, holder, env, driveOwner) {
     await renew(holder);
+    await fenceMailbox(box, body.lease);
     const parent = await (
       await graph(
         '/drives/' +
@@ -199,6 +219,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       enc(file.file_name);
     const old = await graph(path, env.access, { allowMissing: true });
     if (!old && !bytes) throw fail('FILE_NOT_UPLOADED', 409);
+    await fenceMailbox(box, body.lease);
     const item = old
       ? await old.json()
       : await (
@@ -369,10 +390,12 @@ export async function handlePrivateMail(action, req, user, ctx) {
     if (body.operation === 'begin') {
       if (!box.enabled) throw fail('수집이 활성화되지 않았습니다.', 409);
       const lease = crypto.randomUUID();
-      const rows = await db('rpc/private_mail_begin', {
-        method: 'POST',
-        body: { p_id: box.id, p_lease: lease },
-      });
+      const rows = await withLock(() =>
+        db('rpc/private_mail_begin', {
+          method: 'POST',
+          body: { p_id: box.id, p_lease: lease },
+        }),
+      );
       if (!rows.length) throw fail('이미 수집 중입니다.', 409);
       return json({
         lease,
@@ -404,23 +427,26 @@ export async function handlePrivateMail(action, req, user, ctx) {
           throw fail('수집 집계가 올바르지 않습니다.');
         counts[key] = n;
       }
-      await db(
-        'private_mailboxes?id=eq.' + box.id + '&lease=eq.' + body.lease,
-        {
-          method: 'PATCH',
-          body: {
-            lease: null,
-            lease_until: null,
-            status: body.error ? 'error' : 'ready',
-            last_error: body.error ? 'SYNC_FAILED' : null,
-            last_counts: counts,
-            scan_cursor: body.cursor ?? null,
-            ...(!body.error
-              ? { last_success_at: new Date().toISOString() }
-              : {}),
+      await withLock(async () => {
+        await fenceMailbox(box, body.lease);
+        return db(
+          'private_mailboxes?id=eq.' + box.id + '&lease=eq.' + body.lease,
+          {
+            method: 'PATCH',
+            body: {
+              lease: null,
+              lease_until: null,
+              status: body.error ? 'error' : 'ready',
+              last_error: body.error ? 'SYNC_FAILED' : null,
+              last_counts: counts,
+              scan_cursor: body.cursor ?? null,
+              ...(!body.error
+                ? { last_success_at: new Date().toISOString() }
+                : {}),
+            },
           },
-        },
-      );
+        );
+      });
       return json({ ok: true });
     }
     if (body.operation === 'file') {
@@ -631,6 +657,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       const manifest = [];
       for (const file of files) {
         await renew(holder);
+        await fenceMailbox(box, body.lease);
         const path =
           '/drives/' +
           enc(box.drive_id) +

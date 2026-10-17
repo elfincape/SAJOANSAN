@@ -19,7 +19,8 @@ Node checks all activation/password/region gates before any network request.
 The fixed POP host/account and validated Node TLS defaults are preserved. DELE is
 not in the command whitelist. CRLF/NUL injection, fragmented lines, dot stuffing,
 malformed UIDL, oversized responses and operation deadlines are bounded. Failed
-storage does not advance the persisted cursor; deterministic files and UIDL checks
+storage never advances past unfinished ingestion; completed scan progress survives
+failures. Deterministic files and UIDL checks
 make retries safe. Malformed MIME/date messages are skipped and counted in undated
 so one hostile message cannot starve later mail; originals remain on POP.
 
@@ -33,10 +34,18 @@ No shared search or AI indexing path was added.
 Receipt maxDuration is locally 90 seconds (region unchanged). Initial range is the mailbox's existing fixed 60-day cutoff; callers cannot change
 it in the request. Each click saves at most one message, scans for up to 40 seconds
 and resumes via UIDL-hash cursor. Node transport commands have three-second limits.
-Metadata bridge calls have an eight-second limit (binary file calls thirty seconds) and use the batch AbortSignal. No automatic
-retry or schedule was added; a user may retry after an error. All secrets/errors/
+Metadata bridge calls have an eight-second limit (binary file calls thirty seconds) and use the batch AbortSignal. Only busy finalization (`end`, HTTP 409) retries,
+under a twenty-second total deadline; POP login and file ingestion never retry automatically.
+No schedule was added; a user may retry collection after an error. All secrets/errors/
 message content are excluded from result/logging. A mailbox lease remains the
 server-side authority if a timed-out upload is still completing.
+
+Storage revalidates the current mailbox lease, owner and destination after body
+reading and before Graph writes. Mailbox begin/end use the existing OneDrive lock,
+so they cannot rotate/release a lease during an active write. Multiline POP data
+uses bounded 64KiB blocks rather than retaining two Buffers per response line.
+Fake-only regressions cover revoked body-reading leases, paused Graph PUT and
+begin/end exclusion, cursor persistence, finalization retry and 300,000 empty lines.
 
 The binary route supports raw EML up to 10MiB, each file up to 10MiB and aggregate
 raw+decoded files up to 20MiB. Files are sent sequentially as binary to Edge, then a
@@ -47,7 +56,7 @@ Larger mail remains on POP and is counted as oversized. These are bounded in-mem
 MIME limits, not constant-memory streaming or proof of production throughput.
 
 The owner UI adds folder inspect/connect controls and a manual receipt button; no password field or browser secret
-storage exists. Local code has not been deployed or pushed to main. The active
+storage exists. Receipt is disabled until every server activation gate passes. The active
 production diagnostic is preserved. No credentials or activation flags were set.
 
 ## Exact final settings, not set by this task
