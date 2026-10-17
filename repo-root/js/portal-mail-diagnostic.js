@@ -32,9 +32,6 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
           ? 'DNS·TCP·TLS·POP 인사말 확인 완료. 메일 계정 로그인은 하지 않았습니다.'
           : '클라우드 연결 진단에 실패했습니다. 실패한 단계를 확인해 주세요.';
         for (const [key, label] of [
-          ['execution_platform', '실행 환경'],
-          ['tls_protocol', 'TLS 버전'],
-          ['tls_cipher', 'TLS 암호군'],
           ['dns', 'DNS 확인'],
           ['tcp', 'TCP 995 연결'],
           ['tls', 'TLS 연결/검증'],
@@ -58,6 +55,9 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
             ),
           );
         for (const [key, label] of [
+          ['execution_platform', '실행 환경'],
+          ['tls_protocol', 'TLS 버전'],
+          ['tls_cipher', 'TLS 암호군'],
           ['tls_phase', 'TLS 실패 지점'],
           ['tls_error', 'TLS 오류 분류'],
           ['execution_region', '실행 지역'],
@@ -69,7 +69,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
                 label +
                   ' · ' +
                   String(result[key])
-                    .replace(/[^A-Za-z0-9_-]/g, '')
+                    .replace(/[^A-Za-z0-9_.-]/g, '')
                     .slice(0, 40),
               ),
             );

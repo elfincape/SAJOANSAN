@@ -48,6 +48,13 @@ try {
               }
             : {}),
           execution_region: 'ap-northeast-2',
+          execution_platform: 'vercel-node',
+          ...(!tlsFailure
+            ? {
+                tls_protocol: 'TLSv1.2',
+                tls_cipher: 'TLS_RSA_WITH_AES_256_GCM_SHA384',
+              }
+            : {}),
           stages: {
             dns: 'ok',
             tcp: 'ok',
@@ -93,6 +100,11 @@ try {
     document.querySelector('#mail-connection-diagnostic button').click(),
   );
   await page.getByText('TLS 연결/검증 · 성공', { exact: true }).waitFor();
+  await page.getByText('실행 환경 · vercel-node', { exact: true }).waitFor();
+  await page.getByText('TLS 버전 · TLSv1.2', { exact: true }).waitFor();
+  await page
+    .getByText('TLS 암호군 · TLS_RSA_WITH_AES_256_GCM_SHA384', { exact: true })
+    .waitFor();
   assert.equal(calls, 1);
   assert.equal(await button.isDisabled(), false);
   for (const width of [1440, 390]) {
