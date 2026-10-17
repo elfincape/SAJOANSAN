@@ -54,6 +54,7 @@ node node_modules/vite/bin/vite.js build
 
 완료 후 정리: 사용자 결과 확인 뒤 함수 `private-mail-diagnostic`과
 `api/private-mail-diagnostic.mjs`, `server/private-mail-probe.mjs`를 삭제하고,
+배포 루트가 repo-root인 경우의 `repo-root/api/private-mail-diagnostic.mjs`도 제거한다.
 진단 UI/API 모듈과 portal-screen/portal-mail의 임시 소유자 접근 예외를 제거한다.
 기존 받은 메일 화면·owner RLS·OneDrive 코드는 유지한다. 종료된 진단 잠금 행이
 남았다면 이름과 만료 조건으로만 제거한다. secret/권한/cron 복구는 필요 없다.
