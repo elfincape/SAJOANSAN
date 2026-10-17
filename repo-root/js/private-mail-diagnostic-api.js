@@ -53,3 +53,27 @@ export async function runMailCollection(mode = 'collect') {
     );
   return response.json();
 }
+
+export async function configurePrivateMailFolder(url, configure = true) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session || session.user?.id !== MAIL_DIAGNOSTIC_OWNER_ID)
+    throw Error('본인 계정으로 다시 로그인해 주세요.');
+  const response = await fetch(
+    SUPABASE_URL + '/functions/v1/onedrive-auth/private-mail-folder',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + session.access_token,
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url, configure }),
+      signal: AbortSignal.timeout(60000),
+    },
+  );
+  if (!response.ok)
+    throw Error('메일 폴더의 소유자와 비공개 권한을 확인하지 못했습니다.');
+  return response.json();
+}

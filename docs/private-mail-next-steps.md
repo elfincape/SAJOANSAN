@@ -38,9 +38,9 @@ retry or schedule was added; a user may retry after an error. All secrets/errors
 message content are excluded from result/logging. A mailbox lease remains the
 server-side authority if a timed-out upload is still completing.
 
-For Vercel payload limits, this initial route accepts raw EML up to 1MiB and total
+As a provisional conservative cap, this initial route accepts raw EML up to 1MiB and total
 JSON packages up to 3MiB. Larger mail is skipped/counts as oversized and retained
-on POP. Full large-attachment archival requires a later streamed upload path;
+on POP. This cap is insufficient for completion. Full large-attachment archival requires a later binary/streamed upload path;
 the Python worker's 10MiB limits cannot be claimed for this route. HTML remains
 stored untrusted and is rendered only through the existing safe viewer.
 
@@ -106,3 +106,6 @@ After permitted code deployment, region and private destination setup, owner dir
 password entry and explicit receipt enablement, first perform a login-only check,
 then a small one-shot import. This task did neither. Validate originals, duplicates,
 privacy and owner isolation before considering unattended scheduling.
+
+Detailed payload correction and minimum binary/chunk plan: private-mail-large-payload-plan.md.
+New local private-mail-folder now provides supported owner-session inspection and disabled-mailbox configuration; actual invocation awaits code deployment and an available authenticated app session.

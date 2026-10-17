@@ -166,6 +166,118 @@ export async function handlePrivateMail(action, req, user, ctx) {
   if (length > 30 * 1024 * 1024)
     throw fail('메일 크기 제한을 초과했습니다.', 413);
   const body = await readBody(req, fail);
+  if (action === 'private-mail-folder') {
+    if (body.configure !== undefined && typeof body.configure !== 'boolean')
+      throw fail('CONFIGURE_FLAG_REJECTED');
+    if (user.id !== '2a828c2d-9a6f-40d4-8e13-336b591811cc')
+      throw fail('OWNER_REQUIRED', 403);
+    let source;
+    try {
+      source = new URL(body.url);
+    } catch {
+      throw fail('FOLDER_URL_REQUIRED');
+    }
+    if (
+      source.protocol !== 'https:' ||
+      !['1drv.ms', 'onedrive.live.com'].includes(source.hostname) ||
+      source.username ||
+      source.password ||
+      source.port ||
+      source.hash ||
+      source.href.length > 2048
+    )
+      throw fail('FOLDER_URL_REJECTED');
+    return withLock(async () => {
+      const connection = (
+        await db('onedrive_connection?select=connected_by&id=eq.true')
+      )[0];
+      if (connection?.connected_by !== user.id)
+        throw fail('OWNER_CONNECTION_REQUIRED', 409);
+      const env = await environment();
+      const encoded =
+        'u!' +
+        btoa(String.fromCharCode(...new TextEncoder().encode(source.href)))
+          .replaceAll('+', '-')
+          .replaceAll('/', '_')
+          .replace(/=+$/, '');
+      // Never redeem sharing grants or modify permissions. Existing owner access only.
+      const item = await (
+        await graph(
+          '/shares/' +
+            enc(encoded) +
+            '/driveItem?$select=id,name,folder,parentReference',
+          env.access,
+        )
+      ).json();
+      const driveId = item.parentReference?.driveId;
+      if (
+        !item.folder ||
+        !item.id ||
+        typeof driveId !== 'string' ||
+        driveId.toLowerCase() !== env.driveId.toLowerCase()
+      )
+        throw fail('OWNER_FOLDER_REQUIRED', 409);
+      const box = { drive_id: driveId, folder_id: item.id };
+      let owner;
+      try {
+        owner = await privateDestination(box, env);
+      } catch (error) {
+        if (!body.configure && error.status === 409)
+          return json({
+            folder_id: item.id,
+            drive_id: driveId,
+            name: String(item.name || '').slice(0, 200),
+            private: false,
+            reason: 'PRIVACY_NOT_VERIFIED',
+          });
+        throw error;
+      }
+      const result = {
+        folder_id: item.id,
+        drive_id: driveId,
+        name: String(item.name || '').slice(0, 200),
+        drive_owner_id: owner,
+        private: true,
+      };
+      if (!body.configure) return json(result);
+      const rows = await db(
+        'private_mailboxes?select=id,drive_id,folder_id,enabled&owner_id=eq.' +
+          user.id +
+          '&account=eq.jhs96%40eangroup.kr',
+      );
+      if (rows.length) {
+        const old = rows[0];
+        if (old.drive_id !== driveId || old.folder_id !== item.id)
+          throw fail('EXISTING_MAILBOX_DESTINATION_CONFLICT', 409);
+        return json({
+          ...result,
+          mailbox: old.id,
+          configured: true,
+          enabled: old.enabled,
+        });
+      }
+      const inserted = await db('private_mailboxes', {
+        method: 'POST',
+        body: {
+          owner_id: user.id,
+          account: 'jhs96@eangroup.kr',
+          drive_id: driveId,
+          folder_id: item.id,
+          initial_days: 60,
+          enabled: false,
+          status: 'disabled',
+        },
+        prefer: 'return=representation',
+      });
+      if (inserted.length !== 1) throw fail('MAILBOX_CONFIG_FAILED', 409);
+      return json({
+        ...result,
+        mailbox: inserted[0].id,
+        configured: true,
+        enabled: false,
+      });
+    });
+  }
   const mailbox = async (id, token) => {
     if (!uuid(id)) throw fail('메일함 식별자가 필요합니다.');
     const box = (
