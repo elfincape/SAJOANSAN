@@ -190,6 +190,7 @@
 }
 .pd-source-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   border-bottom: 1px solid var(--theme-border);
   margin: 12px 0;
@@ -218,6 +219,27 @@
 #pd-profiles-panel td small {
   display: block;
   color: var(--theme-warn);
+}
+#relations-panel {
+  min-width: 0;
+}
+#relations-panel .pd-fields {
+  margin: 12px 0;
+}
+#relation-source-label,
+#relation-status,
+#relation-count {
+  overflow-wrap: anywhere;
+}
+#relation-results td {
+  white-space: normal;
+  min-width: 110px;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+#relation-issue-list {
+  max-height: 240px;
+  overflow: auto;
 }
 #dispatch-app details {
   border-top: 1px solid var(--theme-border-soft);

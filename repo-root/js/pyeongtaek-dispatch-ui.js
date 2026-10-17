@@ -21,9 +21,11 @@ import {
 } from './pyeongtaek-dispatch-model.js';
 import './exceljs-global.js';
 import { createProfilesUI } from './pyeongtaek-dispatch-profiles-ui.js';
+import { createRelationsUI } from './naver-relations-ui.js';
 
 const $ = (id) => document.getElementById('pd-' + id);
 const clone = (value) => structuredClone(value);
+let relations;
 const state = {
   date: new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
@@ -225,13 +227,14 @@ function discard() {
 }
 function controls() {
   for (const el of $('work').querySelectorAll('button,input,select,textarea')) {
-    if (el.closest('#pd-profiles-panel')) continue;
+    if (el.closest('#pd-profiles-panel,#relations-panel')) continue;
     el.disabled =
       state.busy ||
       !state.ready ||
       (el.hasAttribute('data-edit') && !state.editable);
   }
   profiles.controls();
+  relations?.setBlocked(state.busy || !state.ready);
   $('date').disabled = state.busy || !state.ready;
   for (const id of [
     'save',
@@ -917,7 +920,7 @@ async function refreshLegs() {
   state.context.legs = c.legs;
   state.context.issues = c.issues;
   issues($('context-issues'), c.issues);
-  recalc('저장 구간 갱신');
+  if (state.draft) recalc('저장 구간 갱신');
 }
 let queryStopped = false,
   queryJob = null;
@@ -1508,6 +1511,15 @@ async function initialize() {
   }
   state.editable = permissionAllowed(permissions, 'charter', 'edit', '002');
   profiles.setPermissions(permissions);
+  relations = createRelationsUI({
+    actor: profile,
+    permissions,
+    onBusyChange(value) {
+      state.busy = value;
+      controls();
+    },
+    onCollected: refreshLegs,
+  });
   state.ready = true;
   $('access').textContent = state.editable ? '' : '열람 전용';
   $('work').hidden = false;
@@ -1515,6 +1527,8 @@ async function initialize() {
     await context({ replaceDrivers: true });
     await snapshots();
     stage(0);
+    if (new URL(location.href).searchParams.get('view') === 'roads')
+      sourceTab('roads');
     message('기준일 물량표를 선택하거나 저장된 초안을 불러오세요.');
   });
 }
@@ -1559,14 +1573,19 @@ const profiles = createProfilesUI({
   },
 });
 function sourceTab(selected) {
-  for (const name of ['volume', 'profiles']) {
+  for (const name of ['volume', 'profiles', 'roads']) {
     const active = name === selected;
     $(name + '-tab').setAttribute('aria-selected', String(active));
     $(name + '-tab').tabIndex = active ? 0 : -1;
     $(name + '-panel').hidden = !active;
   }
 }
-for (const name of ['volume', 'profiles']) {
+$('open-roads').onclick = () => {
+  stage(0);
+  sourceTab('roads');
+};
+const sourceTabs = ['volume', 'profiles', 'roads'];
+for (const name of sourceTabs) {
   $(name + '-tab').onclick = () => sourceTab(name);
   $(name + '-tab').onkeydown = (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -1575,10 +1594,12 @@ for (const name of ['volume', 'profiles']) {
       event.key === 'Home'
         ? 'volume'
         : event.key === 'End'
-          ? 'profiles'
-          : name === 'volume'
-            ? 'profiles'
-            : 'volume';
+          ? 'roads'
+          : sourceTabs[
+              (sourceTabs.indexOf(name) +
+                (event.key === 'ArrowRight' ? 1 : sourceTabs.length - 1)) %
+                sourceTabs.length
+            ];
     sourceTab(next);
     $(next + '-tab').focus();
   };

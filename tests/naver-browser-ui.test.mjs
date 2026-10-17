@@ -16,15 +16,18 @@ console.log('Browser-only job submit, saved work reconnect, exact Naver display 
 
 dom.window.localStorage.removeItem('sajo.naver-browser.browser-user.job');await document.getElementById('restore-job').onclick();assert.equal(document.getElementById('origin').value,'경기도 안산시 단원구 성곡로 125');assert(document.getElementById('results').textContent.includes('15km'));assert.equal(document.querySelectorAll('#results tbody tr').length,2);console.log('Recent owned server job restores results without browser-local history');
 
-assert(document.getElementById('relations-panel'),'Collector is integrated into existing distance page');
-assert.equal(document.getElementById('relation-budget').value,'60');
-assert.equal(document.getElementById('relation-limit').max,'50');
+assert.equal(document.getElementById('relations-panel'),null,'Web distance-priority page must not contain the API collector');
+const dispatchHtml=fs.readFileSync(new URL('../repo-root/admin/pyeongtaek-dispatch.html',import.meta.url),'utf8');
+const dispatchDocument=new JSDOM(dispatchHtml).window.document;
+assert(dispatchDocument.getElementById('relations-panel'),'API collector belongs to provisional dispatch');
+assert.equal(dispatchDocument.getElementById('relation-budget').value,'60');
+assert.equal(dispatchDocument.getElementById('relation-limit').max,'50');
 const relationCode=fs.readFileSync(new URL('../repo-root/js/naver-relations-ui.js',import.meta.url),'utf8');
 assert(relationCode.includes('naver-relations'));assert(!relationCode.includes('SERVICE_ROLE'));
 assert(relationCode.includes('naver_api_cancel'));assert(relationCode.includes('measuredAt'));
 console.log('Integrated route collection controls, safe pilot default, stop/resume and dated estimates passed');
 
-const relationDom=new JSDOM(fs.readFileSync(new URL('../repo-root/admin/naver-shortest-distance.html',import.meta.url),'utf8'),{url:'http://127.0.0.1:8772/admin/naver-shortest-distance.html?center=pyeongtaek&mode=relations'}),relationDocument=relationDom.window.document;
+const relationDom=new JSDOM(dispatchHtml,{url:'http://127.0.0.1:8772/admin/pyeongtaek-dispatch.html?center=pyeongtaek&view=roads'}),relationDocument=relationDom.window.document;
 let relationRequests=[];
 const relationResult={id:'test-route-job',updatedAt:'2026-10-17T00:00:00Z',status:'completed',stops:2,sourceRows:3,geoDone:3,geoTotal:3,candidates:4,completed:4,cached:1,failed:0,deferred:0,directionsAttempts:3,directionsBudget:60,geocodingAttempts:3,geocodingBudget:2000,lastResults:[{from:'주소 A',to:'주소 B',reason:'nearby',distanceMeters:1234,durationSeconds:123,measuredAt:'2026-10-17T00:00:00Z',cached:true}]};
 const relationClient={functions:{invoke:async(name,{body})=>{
@@ -32,16 +35,14 @@ const relationClient={functions:{invoke:async(name,{body})=>{
  return {data:body.action==='preview'?{stops:2,sourceRows:3,invalidRows:0,estimatedCandidates:4,directionsBudget:body.directionsBudget}:body.action==='create'?{...relationResult,status:'queued'}:relationResult};
 }},rpc:async(name)=>{assert.equal(name,'naver_api_cancel');return {data:null};}};
 const relationContext={requireRole:async()=>({id:'test-user'}),supabase:relationClient,menuPermissions:async()=>({access:{delivery_points:{edit_centers:['002']}}}),permissionAllowed,excelAddresses:base.excelAddresses,XLSX,ExcelJS,document:relationDocument,location:relationDom.window.location,URL,Blob,setTimeout:fn=>{fn();return 0;},addEventListener:()=>{}};relationContext.globalThis=relationContext;
-await vm.runInNewContext(relationCode.replace(/^import .*;\r?\n/gm,''),relationContext);
+await vm.runInNewContext(relationCode.replace(/^import .*;\r?\n/gm,'').replace('export function createRelationsUI','function createRelationsUI')+'\ncreateRelationsUI({actor:{id:"test-user"},permissions:{access:{delivery_points:{edit_centers:["002"]}}}});',relationContext);
 assert.equal(relationDocument.getElementById('relations-panel').hidden,false);
-assert.equal(relationDocument.getElementById('relation-mode').getAttribute('aria-selected'),'true');
-assert.equal(relationDocument.getElementById('file').closest('section').hidden,true);
+assert.equal(relationRequests.length,0,'Opening collector must not start provider requests');
 await relationDocument.getElementById('relation-preview').onclick();assert.equal(relationDocument.getElementById('relation-start').disabled,false);
 await relationDocument.getElementById('relation-start').onclick();assert.equal(relationDocument.querySelectorAll('#relation-results tr').length,1);
 assert(relationDocument.getElementById('relation-results').textContent.includes('오래된 추정'));
 assert(relationDocument.getElementById('relation-count').textContent.includes('캐시 1'));
 assert.equal(relationDocument.getElementById('relation-stop').hidden,true);
-relationDocument.getElementById('distance-mode').onclick();assert.equal(relationDocument.getElementById('relations-panel').hidden,true);assert.equal(relationDocument.getElementById('file').closest('section').hidden,false);
 const dispatchWb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(dispatchWb,XLSX.utils.aoa_to_sheet([['코스','고객사','착지','주소','물량','OTD'],['평택97','한성','A','주소 A',20.9333,'03:00'],['평택97','오양','B','주소 A',10,'04:00']]),'Sheet1');const dispatchBytes=XLSX.write(dispatchWb,{type:'buffer',bookType:'xlsx'});
 Object.defineProperty(relationDocument.getElementById('relation-files'),'files',{value:[{name:'dispatch.xlsx',size:dispatchBytes.length,arrayBuffer:async()=>dispatchBytes}],configurable:true});
 await relationDocument.getElementById('relation-files').onchange();const uploaded=relationRequests.at(-1).rows;
@@ -74,14 +75,15 @@ if(process.env.ROUTE_UI_BROWSER==='1'){
  const {chromium}=await import('playwright'),browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_BROWSER_CHANNEL?{channel:process.env.PLAYWRIGHT_BROWSER_CHANNEL}:{})});
  try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/js/auth.js',route=>route.fulfill({contentType:'application/javascript',body:"export const requireRole=async()=>({id:'test',role:'admin',active:true,username:'테스트'});export const getCurrentProfile=requireRole;export const signOut=async()=>{};"}));
-  await page.route('**/js/supabase.js',route=>route.fulfill({contentType:'application/javascript',body:`export const supabase={rpc:async()=>({data:{access:{delivery_points:{read_centers:['001','002'],edit_centers:['002']}}}}),functions:{invoke:async(name,{body})=>({data:body.action==='preview'?{stops:500,sourceRows:750,invalidRows:0,estimatedCandidates:25500,directionsBudget:body.directionsBudget}:${JSON.stringify(relationResult)}})}};`}));
+  await page.route('**/js/auth.js*',route=>route.fulfill({contentType:'application/javascript',body:"export const requireAuth=async()=>({id:'test',role:'admin',active:true,username:'테스트'});export const requireRole=requireAuth;export const getCurrentProfile=requireAuth;export const signOut=async()=>{};"}));
+  await page.route('**/js/supabase.js*',route=>route.fulfill({contentType:'application/javascript',body:`const access={charter:{read_centers:['002'],edit_centers:['002']},delivery_points:{read_centers:['001','002'],edit_centers:['002']}};export const supabase={rpc:async(name)=>({data:name==='operations_resource_allowed'?true:{access}}),from:()=>{const q={select:()=>q,eq:()=>q,order:()=>q,range:async()=>({data:[]})};return q;},functions:{invoke:async(name,{body})=>({data:body.action==='preview'?{stops:500,sourceRows:750,invalidRows:0,estimatedCandidates:25500,directionsBudget:body.directionsBudget}:${JSON.stringify(relationResult)}})}};`}));
+  await page.route('**/@vite/client',route=>route.fulfill({contentType:'application/javascript',body:''}));
   await page.route('https://cdn.jsdelivr.net/npm/xlsx@*/**',route=>route.fulfill({contentType:'application/javascript',body:'window.XLSX={};'}));
   for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
-   await page.setViewportSize(viewport);await page.goto('http://127.0.0.1:8772/admin/naver-shortest-distance.html?center=pyeongtaek&mode=relations');
+   await page.setViewportSize(viewport);await page.goto((process.env.ROUTE_UI_BASE_URL||'http://127.0.0.1:8772')+'/admin/pyeongtaek-dispatch.html?center=pyeongtaek&view=roads');
    await page.locator('#relations-panel').waitFor({state:'visible'});await page.locator('#relation-preview').click();await page.locator('#relation-start').click();
    await page.locator('#relation-status').filter({hasText:'수집 완료'}).waitFor();
-   const bounds=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,heading:document.querySelector('#relations-panel h2').getBoundingClientRect().toJSON()}));
+   const bounds=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,heading:document.querySelector('#relations-panel h4').getBoundingClientRect().toJSON()}));
    assert(bounds.scroll<=bounds.width+1,`${name} page overflow: ${JSON.stringify(bounds)}`);
    assert(bounds.heading.width>0);await page.screenshot({path:`C:/Users/USER/Documents/New project/ui-references/workspace-artifacts/route-relations-${name}.png`,fullPage:true});
   }

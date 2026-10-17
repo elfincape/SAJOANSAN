@@ -240,6 +240,7 @@ function cacheFor(addresses = [], legs = []) {
   }
   for (const leg of legs) {
     if (leg.center_code && leg.center_code !== '002') continue;
+    if (leg.priority && leg.priority !== 'RECOMMEND') continue;
     const from = byId.get(String(leg.from_id)), to = byId.get(String(leg.to_id));
     if (leg.coords_key) {
       if (!from || !to || ![from.x, from.y, to.x, to.y].every(numeric)) continue;

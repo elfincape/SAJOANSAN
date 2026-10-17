@@ -62,3 +62,10 @@ Shared physical vehicles must not receive duplicate capacity through route alias
 - SQL is prepared at `repo-root/sql/pyeongtaek-dispatch-profiles.sql`: nullable JSONB on existing `delivery_points`, center/edit guards, validation, atomic sorted-lock bulk RPC and optimistic revisions. No legacy destination values are overwritten.
 - Initial migration attempts returned `cancelled`, including after explicit approval. On the user's subsequent apply instruction, removed unnecessary drop/recreate statements from the migration. Additive migration `pyeongtaek_dispatch_profiles` applied successfully to production Supabase.
 - Real-DB transactional checks passed create/update, stale rejection, atomic batch rollback, invalid-value and duplicate rejection, center isolation, direct-update revision/clear guards, legacy-field preservation, viewer edit denial and anonymous RPC denial. All synthetic users and destinations were rolled back. Security advisor has no finding for the new profile objects; existing unrelated findings remain.
+
+## API Collection Placement Correction
+
+- Moved the existing center-to-destination and directed destination-to-destination API collector into provisional dispatch's source-stage road tab. The collector still calls `naver-relations` with the provider's `RECOMMEND` / `traoptimal` option and stores distance/time in the existing API cache.
+- Removed collection controls from the Naver shortest-distance page. That page retains server-side Naver web distance-priority jobs and its original workbook flow. Old `mode=relations` URLs redirect to the dispatch road tab.
+- Collection uses destination edit permission independently of charter edit permission, locks concurrent in-page work, supports stop/resume and refreshes saved legs into the current draft. Planner ignores cache records with a different declared route priority.
+- Existing web-distance, collector/provider and menu tests passed. Playwright desktop/mobile collection checks and volume/profile/snapshot regressions passed with mocked provider responses; no live Naver API request was made. Lint/build and diff checks passed.
