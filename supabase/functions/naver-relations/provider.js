@@ -7,6 +7,20 @@ function point(p){
  return p.x+','+p.y;
 }
 export const coordinateKey=(from,to)=>point(from)+'>'+point(to)+'|diesel|1';
+function routeFailureBody(data){
+ const bodies=[data,data?.error?.details];
+ for(let body of bodies){
+  if(typeof body==='string'&&body.length<20000)try{body=JSON.parse(body);}catch{continue;}
+  const code=Number(body?.code);
+  if(Number.isInteger(code)&&Object.hasOwn(routeErrors,code))return {...body,code};
+ }
+ return null;
+}
+function providerDetail(data,env){
+ let text=JSON.stringify({code:data?.code,message:data?.message,errorMessage:data?.errorMessage,error:data?.error?{errorCode:data.error.errorCode,message:data.error.message,errorMessage:data.error.errorMessage,details:data.error.details}:undefined});
+ for(const key of ['NAVER_MAPS_CLIENT_ID','NAVER_MAPS_CLIENT_SECRET','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_ANON_KEY'])if(env[key])text=text.replaceAll(env[key],'[redacted]');
+ return text.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,1800);
+}
 async function request(path,params,env,fetcher,signal){
  if(!env.NAVER_MAPS_CLIENT_ID||!env.NAVER_MAPS_CLIENT_SECRET)throw fail('네이버 Maps 인증 설정이 없습니다.',503);
  const base=env.NAVER_MAPS_API_BASE||'https://maps.apigw.ntruss.com';
@@ -14,13 +28,14 @@ async function request(path,params,env,fetcher,signal){
  const res=await fetcher(base+path+'?'+new URLSearchParams(params),{headers:{'x-ncp-apigw-api-key-id':env.NAVER_MAPS_CLIENT_ID,'x-ncp-apigw-api-key':env.NAVER_MAPS_CLIENT_SECRET,Accept:'application/json'},signal});
  let data;try{data=await res.json();}catch{if(res.ok)throw fail('네이버 응답을 해석하지 못했습니다.');}
  // Directions returns documented route failures with HTTP 400 as well as 200.
- const routeFailure=path==='/map-direction/v1/driving'&&res.status===400&&Number.isInteger(data?.code)&&Object.hasOwn(routeErrors,data.code);
+ const detail=providerDetail(data,env),routeFailure=path==='/map-direction/v1/driving'&&res.status===400?routeFailureBody(data):null;
  if(!res.ok&&!routeFailure){
   const rawCode=data?.error?.errorCode;
   const providerCode=/^[a-z0-9_.-]{1,80}$/i.test(String(rawCode??''))?String(rawCode):null;
-  throw Object.assign(fail((res.status===401||res.status===403?'네이버 Maps 인증 또는 상품 설정을 확인해 주세요.':res.status===429?'네이버 Maps 이용 한도에 도달했습니다.':'네이버 구간 조회 연결 오류입니다.')+` (HTTP ${res.status}${providerCode?`, 코드 ${providerCode}`:''})`,res.status),{providerStatus:res.status,providerCode});
+  const quota=res.status===429||/quota\s*exceed|throttle\s*limited|rate\s*limited/i.test(detail),status=quota?429:res.status;
+  throw Object.assign(fail((status===401||status===403?'네이버 Maps 인증 또는 상품 설정을 확인해 주세요.':quota?'네이버 Maps 이용 한도에 도달했습니다.':status===400?'네이버 구간 요청이 거부되었습니다.':'네이버 구간 조회 연결 오류입니다.')+` (HTTP ${res.status}${providerCode?`, 코드 ${providerCode}`:''})`,status),{providerStatus:res.status,providerCode,providerDetail:detail});
  }
- return data;
+ return routeFailure?{...routeFailure,providerDetail:detail}:data;
 }
 export async function geocodeAddress(address,env,fetcher=fetch,signal=AbortSignal.timeout(10000)){
  const data=await request('/map-geocode/v2/geocode',{query:address,count:'2'},env,fetcher,signal);
@@ -35,7 +50,7 @@ export async function queryLeg(from,to,env,fetcher=fetch,signal=AbortSignal.time
  if(!option)throw fail('구간 조회 옵션을 확인해 주세요.',400);
  if(start===goal)return {distance_meters:0,duration_seconds:0,measured_at:new Date().toISOString()};
  const data=await request('/map-direction/v1/driving',{start,goal,option,fueltype:'diesel',cartype:'1'},env,fetcher,signal);
- if(Number.isInteger(data?.code)&&Object.hasOwn(routeErrors,data.code))throw Object.assign(fail(routeErrors[data.code]+` (네이버 코드 ${data.code})`,422),{providerCode:data.code});
+ if(Number.isInteger(data?.code)&&Object.hasOwn(routeErrors,data.code))throw Object.assign(fail(routeErrors[data.code]+` (네이버 코드 ${data.code})`,422),{providerCode:data.code,providerDetail:data.providerDetail??providerDetail(data,env)});
  const summary=data?.route?.[option]?.[0]?.summary;
  if(data?.code!==0||!summary)throw fail('네이버 경로 응답이 올바르지 않습니다.');
  if(!Number.isFinite(summary.distance)||summary.distance<0||!Number.isFinite(summary.duration)||summary.duration<0)throw fail('네이버 구간 거리·시간 값이 올바르지 않습니다.');

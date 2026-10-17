@@ -15,6 +15,7 @@ function summary(job){
   routeIssues:(s.routeIssues??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
   directionsAttempts:job.directions_attempts,directionsBudget:job.directions_budget,geocodingAttempts:job.geocoding_attempts,geocodingBudget:job.geocoding_budget,
   lastResults:(s.lastResults??[]).map(r=>({...r,from:byId.get(r.fromId)?.address??'',to:byId.get(r.toId)?.address??''})),
+  apiIssue:s.apiIssue?{...s.apiIssue,from:byId.get(s.apiIssue.fromId)?.address??'',to:byId.get(s.apiIssue.toId)?.address??''}:null,
   origin:s.origin,sameLocation:!!s.sameLocation,mergedEdges:s.mergedEdges??0,allowanceVerified:false,policy:'coordinates-v1',limit:s.limit??50};
 }
 export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
@@ -152,14 +153,17 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
        if(!saved)throw fail('작업 잠금이 갱신되었습니다. 다시 불러와 주세요.',409);
        leg=saved;
       }
-      if(fresh)state.cached++;state.completed++;
+      if(fresh)state.cached++;state.completed++;state.consecutiveRejections=0;state.apiIssue=null;
       remember({fromId:from.id,toId:to.id,reason,distanceMeters:Number(leg.distance_meters),durationSeconds:Number(leg.duration_seconds),measuredAt:leg.measured_at,cached:!!fresh});
       state.edgeCursor++;processed++;
      }catch(e){
-      if(e.status!==422)throw e;
-      const routeIssue={fromId:from.id,toId:to.id,reason,error:e.message};
+      const rejected=e.status===400&&e.providerStatus===400&&e.providerCode==='400';
+      if(e.status!==422&&!rejected){state.apiIssue={phase:state.phase,fromId:from.id,toId:to.id,error:e.message,providerStatus:e.providerStatus,providerCode:e.providerCode,providerDetail:e.providerDetail};throw e;}
+      const routeIssue={fromId:from.id,toId:to.id,reason,error:e.message,providerStatus:e.providerStatus,providerCode:e.providerCode,providerDetail:e.providerDetail,rejected};
       state.routeIssues=[...(state.routeIssues??[]),routeIssue].slice(-500);
       state.failed++;remember(routeIssue);state.edgeCursor++;processed++;
+      state.consecutiveRejections=rejected?(state.consecutiveRejections??0)+1:0;
+      if(state.consecutiveRejections>=3){state.apiIssue={...routeIssue,phase:state.phase};e.message='네이버가 연속 3개 구간의 요청을 거부해 수집을 중지했습니다. 오류 상세를 확인해 주세요.';throw e;}
      }
     }
    }
@@ -170,6 +174,7 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
   }catch(e){
    if(claimed&&state&&lock){
     try{
+     if(e.providerDetail)state.apiIssue={...state.apiIssue,phase:state.phase,error:e.message,providerStatus:e.providerStatus,providerCode:e.providerCode,providerDetail:e.providerDetail};
      state.deferred=state.phase==='directions'?Math.max(0,state.edges.length-state.edgeCursor):0;
      const code=e.status??502,status=code===409&&state.phase==='directions'?'completed':code===408?'queued':'attention';
      const res=await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/naver_api_release',{method:'POST',headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({p_job:claimed.id,p_lock:lock,p_state:state,p_status:status,p_error:e.status?e.message:'구간 조회가 중단되었습니다. 저장된 지점에서 재개할 수 있습니다.'}),signal:AbortSignal.timeout(10000)});

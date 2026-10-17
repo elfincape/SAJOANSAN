@@ -61,6 +61,9 @@ const beforeSame=pairCalls.length;assert.equal((await queryLeg(p,p,env,pairFetch
 for(const status of [401,403,429])await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response('',{status})),e=>e.status===status);
 for(const status of [200,400])for(const code of [1,2,3,4,5])await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({code,message:'provider message'}),{status})),e=>e.status===422&&e.providerCode===code&&e.message.includes('네이버 코드 '+code));
 await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({error:{errorCode:'100',message:'fake-secret'}}),{status:400})),e=>e.status===400&&e.message.includes('HTTP 400')&&e.message.includes('100')&&!e.message.includes('fake-secret'));
+await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({error:{errorCode:'400',message:'Bad Request',details:'road point rejected fake-secret'}}),{status:400})),e=>e.status===400&&!!e.providerDetail?.includes('road point rejected')&&!e.providerDetail.includes('fake-secret'));
+await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({error:{errorCode:'400',message:'Quota Exceeded'}}),{status:400})),e=>e.status===429);
+await assert.rejects(()=>queryLeg(p,q,env,async()=>new Response(JSON.stringify({error:{errorCode:'400',details:JSON.stringify({code:1,message:'same road point'})}}),{status:400})),e=>e.status===422&&e.providerCode===1);
 await assert.rejects(()=>geocodeAddress('ambiguous',env,async()=>response({status:'OK',meta:{totalCount:2},addresses:[{},{}]})),e=>e.status===422);
 await assert.rejects(()=>queryLeg(p,q,env,async()=>response({code:0,route:{traoptimal:[{summary:{distance:-1,duration:10}}]}})),/값/);
 assert(!JSON.stringify(leg).includes('fake-secret'));
@@ -87,7 +90,7 @@ assert(relationCalls.every(url=>url.startsWith('https://db.test/')));
 console.log('Collector authentication, center edit scope, zero-call preview and candidate upper bounds passed');
 
 const collectorStore={jobs:[],addresses:[],legs:[],geo:0,driving:0,cancelDuringGeo:false,providerCode:200};
-let routeFailureOnce=false;
+let routeFailureOnce=false,rejectedPairs=0;
 const collectorFetch=async(url,init={})=>{
  const u=new URL(url),payload=init.body?JSON.parse(init.body):null,path=u.pathname;
  if(path.endsWith('/auth/v1/user'))return response({id:'user'});
@@ -97,6 +100,7 @@ const collectorFetch=async(url,init={})=>{
   const geo=path.includes('geocode');if(geo)collectorStore.geo++;else collectorStore.driving++;
   if(collectorStore.cancelDuringGeo&&geo){collectorStore.jobs.at(-1).status='paused';collectorStore.cancelDuringGeo=false;}
   if(collectorStore.providerCode!==200)return new Response('',{status:collectorStore.providerCode});
+  if(!geo&&rejectedPairs>0){rejectedPairs--;return new Response(JSON.stringify({error:{errorCode:'400',message:'Bad Request',details:'road point rejected fake-secret'}}),{status:400});}
   if(!geo&&routeFailureOnce){routeFailureOnce=false;return new Response(JSON.stringify({code:1,message:'same road point'}),{status:400});}
   if(geo){const address=u.searchParams.get('query'),x=address.includes('산단로')?127:address.includes('A')?127.1:127.2;return response({status:'OK',meta:{totalCount:1},addresses:[{x:String(x),y:'37',roadAddress:address}]});}
   return response({code:0,route:{traoptimal:[{summary:{distance:1000,duration:60000}}]}});
@@ -189,3 +193,14 @@ assert.equal(migrated.candidates,2);assert.equal(migrated.processed,2);assert.eq
 assert.equal(collectorStore.driving,callsBeforeMigration,'Saved progress and a coordinate-equivalent alias cache need no repeat Naver call');
 assert.equal(legacyJob.state.aliases['창고 B'],warehousePoints[0].id);
 console.log('Legacy duplicate-coordinate jobs retain their completed prefix, remove self/duplicate legs and reuse alias-ID road measurements');
+
+for(const [label,count] of [['isolated',1],['consecutive',3]]){
+ const rows=Array.from({length:3},(_,i)=>({address:label+' '+i}));
+ collectorStore.addresses.push(...rows.map((r,i)=>({id:crypto.randomUUID(),center_code:'002',address_key:r.address,address:r.address,x:128+(label==='isolated'?0:0.5)+i/100,y:37,status:'ready'})));
+ let j=await invokeCollector({action:'create',center:'002',rows,directionsBudget:20});rejectedPairs=count;
+ for(let i=0;i<8&&['queued','running'].includes(j.status);i++)j=await invokeCollector({action:'batch',center:'002',jobId:j.id});
+ assert.equal(j.failed,count);assert.equal(j.routeIssues.length,count);assert(j.routeIssues[0].providerDetail.includes('road point rejected'));assert(!JSON.stringify(j).includes('fake-secret'));
+ if(count===1){assert.equal(j.status,'completed');assert.equal(j.completed,8);assert.equal(j.processed,9);}
+ else {assert.equal(j.status,'attention');assert.equal(j.directionsAttempts,3);assert.equal(j.processed,3);assert.equal(j.apiIssue.providerCode,'400');assert(j.error.includes('3개 구간'));}
+}
+console.log('Isolated gateway-400 pair rejection preserves diagnostics and continues; consecutive rejections stop at three without fabricated distances or secret leakage');

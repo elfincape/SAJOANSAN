@@ -81,7 +81,11 @@ assert(resumedRequests.some(r=>r.action==='resume'&&r.jobId===relationResult.id)
 resumableJobs=[];resumeExisting=false;
 Object.assign(relationResult,{failed:1,routeIssues:[{from:'주소 A',to:'주소 B',error:'도로 지점이 같습니다. (네이버 코드 1)'}]});
 await relationDocument.getElementById('relation-start').onclick();assert(relationDocument.getElementById('relation-issue-list').textContent.includes('네이버 코드 1'));assert(relationDocument.getElementById('relation-status').textContent.includes('확인 필요 구간'));
-Object.assign(relationResult,{failed:0,routeIssues:[]});
+Object.assign(relationResult,{apiIssue:{from:'주소 A',to:'주소 B',error:'요청 거부',providerDetail:'{"message":"<script>untrusted</script>"}'}});
+await relationDocument.getElementById('relation-start').onclick();
+assert(relationDocument.querySelector('#relation-issue-list details pre').textContent.includes('<script>untrusted</script>'));
+assert.equal(relationDocument.querySelectorAll('#relation-issue-list script').length,0,'Provider diagnostics must remain text, never executable HTML');
+Object.assign(relationResult,{failed:0,routeIssues:[],apiIssue:null});
 console.log('Stopped whole-DB jobs resume without resetting cached progress; route-specific issues remain visible');
 console.log('Collector UI modes, no automatic live call, preview/create/batch, stale estimate display and customer/volume/course/OTD file preservation passed');
 Object.assign(relationResult,{error:'요청 한도 도달',deferred:100,directionsBudget:25000,origin:'저장된 센터 주소',limit:25});

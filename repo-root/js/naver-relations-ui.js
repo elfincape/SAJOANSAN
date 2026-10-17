@@ -156,7 +156,7 @@ export function createRelationsUI({
     const n = (v) => Number(v ?? 0).toLocaleString('ko-KR');
     $('relation-count').textContent =
       `원본 ${n(value.sourceRows)}행 · 착지 ${n(value.stops)}개 · 주소 ${n(value.geoDone)}/${n(value.geoTotal)} · 후보 ${n(value.candidates)}구간 · 처리 ${n(value.processed)}구간 · 누적 완료 ${n(value.completed)} · 누적 캐시 ${n(value.cached)} · 누적 실패 ${n(value.failed)} · 보류 ${n(value.deferred)} · 도로 요청 ${n(value.directionsAttempts)}/${n(value.directionsBudget)} · 주소 요청 ${n(value.geocodingAttempts)}/${n(value.geocodingBudget)}`;
-    const issues = [...(value.geoIssues ?? []), ...(value.routeIssues ?? [])];
+    const issues = [...(value.geoIssues ?? []), ...(value.routeIssues ?? []), ...(value.apiIssue ? [value.apiIssue] : [])];
     $('relation-issues').hidden = !issues.length;
     $('relation-issue-list').replaceChildren();
     for (const issue of issues) {
@@ -166,6 +166,14 @@ export function createRelationsUI({
         ' · ' +
         issue.error;
       $('relation-issue-list').append(li);
+      if (issue.providerDetail) {
+        const details = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
+        summary.textContent = '네이버 응답 상세';
+        body.textContent = issue.providerDetail;
+        body.style.whiteSpace = 'pre-wrap';
+        body.style.overflowWrap = 'anywhere';
+        details.append(summary, body);li.append(details);
+      }
     }
     $('relation-results').replaceChildren();
     const criteria = {
