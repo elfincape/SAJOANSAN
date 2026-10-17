@@ -8,7 +8,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
     node('h3', '클라우드 메일 연결 진단'),
     node(
       'p',
-      '비밀번호 없이 Supabase에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
+      '비밀번호 없이 Vercel Node.js에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
     ),
   );
   const status = node(

@@ -46,6 +46,23 @@ node node_modules/vite/bin/vite.js build
 
 ## TLS failure classification
 
+The current button calls the same-origin `/api/private-mail-diagnostic` Vercel
+Node function. It uses the existing public Supabase configuration to validate
+the user's session through getUser and check the exact owner and active profile.
+No new Vercel secret or service role is required. The old protected Supabase
+diagnostic remains available for comparison but is no longer called by the UI.
+Node uses its default TLS security settings, normal certificate/hostname checks,
+and explicit SNI. No TLS version, cipher suite, trust store, or region override is
+configured. `X-Diagnostic-Region` shows the actual Vercel runtime region, otherwise
+unknown; static CDN location does not establish function location.
+
+The UI prevents duplicate clicks and a process-local lock rejects overlapping
+checks in one Node instance. This does not guarantee a global lock across Vercel
+instances. A future scheduled collector requires a durable distributed lease;
+this diagnostic is owner-only and on demand. Each network stage has a three-second
+deadline and the API has a 30-second maximum duration. Neither runtime invokes
+POP login, mail retrieval, deletion or any POP command.
+
 TLS uses the unchanged validated connection and handshake. Failures expose only
 TLS_SETUP or TLS_HANDSHAKE and one fixed category: TIMEOUT, CERT_HOSTNAME,
 CERT_VALIDITY, CERT_TRUST, CERT_OTHER, API_UNAVAILABLE, CONNECTION_CLOSED,
