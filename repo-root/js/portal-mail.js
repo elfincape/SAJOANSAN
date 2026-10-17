@@ -156,26 +156,138 @@ export function createPortalMail({ node, button, message, stamp, profile }) {
             node('h2', mail.subject || '(제목 없음)'),
             node('p', mail.sender + ' · ' + stamp(mail.sent_at)),
           );
+          const link = new URL(location.href);
+          link.searchParams.set('view', 'mail');
+          link.searchParams.set('message', row.id);
+          history.replaceState(history.state, '', link);
           const body =
-            mail.files.find((f) => f.kind === 'html') ||
-            mail.files.find((f) => f.kind === 'text');
+            mail.files.find((f) => f.kind === 'text') ||
+            mail.files.find((f) => f.kind === 'html');
+          const controls = node('div', undefined, 'private-mail-actions');
           const content = node('section');
-          detail.append(content);
+          detail.append(controls, content);
           if (body) {
             const blob = await privateMail.download(row.id, body.index);
             if (!active() || current !== selection) return;
+            const source = await blob.text();
+            if (!active() || current !== selection) return;
+            let text = source;
             if (body.kind === 'html') {
-              const frame = node('iframe');
-              frame.title = '메일 본문 · 외부 콘텐츠 차단';
-              frame.setAttribute('sandbox', '');
-              frame.referrerPolicy = 'no-referrer';
-              frame.className = 'private-mail-body';
-              frame.srcdoc = await blob.text();
-              content.append(frame);
-            } else
-              content.append(
-                node('pre', await blob.text(), 'private-mail-text'),
+              const parsed = new DOMParser().parseFromString(
+                source,
+                'text/html',
               );
+              parsed
+                .querySelectorAll('script,style,noscript,template')
+                .forEach((el) => el.remove());
+              parsed
+                .querySelectorAll('br,hr')
+                .forEach((el) => el.replaceWith('\n'));
+              parsed.querySelectorAll('td,th').forEach((el) => el.append('\t'));
+              parsed
+                .querySelectorAll('p,div,li,blockquote,pre,tr,h1,h2,h3,h4')
+                .forEach((el) => el.append('\n'));
+              text = parsed.body.textContent
+                .replace(/\n[ \t]+/g, '\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+            }
+            const readable = node('pre', undefined, 'private-mail-text');
+            readable.textContent = text;
+            content.append(readable);
+            const exported = [
+              '제목: ' + (mail.subject || '(제목 없음)'),
+              '발신자: ' + mail.sender,
+              '날짜: ' + mail.sent_at,
+              '출처: ' + link.href,
+              '첨부: ' +
+                (mail.files
+                  .filter((f) => f.kind === 'attachment')
+                  .map((f) => f.name)
+                  .join(', ') || '없음'),
+              '',
+              text,
+            ].join('\n');
+            const copy = (label, value) =>
+              button(
+                label,
+                async () => {
+                  try {
+                    await navigator.clipboard.writeText(value);
+                    if (active()) message(label + ' 완료');
+                  } catch {
+                    if (active())
+                      message(
+                        '복사하지 못했습니다. 본문 저장을 이용해 주세요.',
+                        true,
+                      );
+                  }
+                },
+                controls,
+              );
+            copy('본문 복사', exported);
+            copy('링크 복사', link.href);
+            button(
+              '본문 저장',
+              () => {
+                const url = URL.createObjectURL(
+                    new Blob([exported], { type: 'text/plain;charset=utf-8' }),
+                  ),
+                  a = node('a');
+                a.href = url;
+                a.download = 'mail-' + row.id + '.txt';
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              },
+              controls,
+            );
+            const formatted = mail.files.find((f) => f.kind === 'html');
+            if (formatted) {
+              let frame;
+              const toggle = button(
+                '서식 보기',
+                async () => {
+                  toggle.disabled = true;
+                  try {
+                    if (!frame) {
+                      const html =
+                        body.kind === 'html'
+                          ? source
+                          : await (
+                              await privateMail.download(
+                                row.id,
+                                formatted.index,
+                              )
+                            ).text();
+                      if (!active() || current !== selection) return;
+                      frame = node('iframe');
+                      frame.title = '메일 본문 · 외부 콘텐츠 차단';
+                      frame.setAttribute('sandbox', '');
+                      frame.referrerPolicy = 'no-referrer';
+                      frame.className = 'private-mail-body';
+                      frame.srcdoc = html;
+                      frame.hidden = true;
+                      content.append(frame);
+                    }
+                    readable.hidden = !readable.hidden;
+                    frame.hidden = !readable.hidden;
+                    toggle.textContent = readable.hidden
+                      ? '텍스트 보기'
+                      : '서식 보기';
+                    toggle.setAttribute(
+                      'aria-pressed',
+                      String(readable.hidden),
+                    );
+                  } catch (error) {
+                    if (active()) message(error.message, true);
+                  } finally {
+                    toggle.disabled = false;
+                  }
+                },
+                controls,
+              );
+              toggle.setAttribute('aria-pressed', 'false');
+            }
           } else content.append(node('p', '표시 가능한 본문이 없습니다.'));
           const downloads = node('section');
           detail.append(downloads);
@@ -221,6 +333,8 @@ export function createPortalMail({ node, button, message, stamp, profile }) {
         }
       }
       await load();
+      const requested = new URL(location.href).searchParams.get('message');
+      if (requested && active()) await show({ id: requested });
     } catch (error) {
       if (active()) {
         items.replaceChildren(
