@@ -11,6 +11,7 @@ const source = await readFile(
 );
 let owner = true,
   calls = 0,
+  collectCalls = 0,
   tlsFailure = false;
 const errors = [],
   unexpected = [];
@@ -30,6 +31,16 @@ try {
           "id: '" + (owner ? OWNER_ID : 'browser-test-user') + "'",
         ),
       });
+    if (url.pathname.endsWith('/private-mail-collect')) {
+      collectCalls++;
+      assert.equal(request.headers().authorization, 'Bearer mock-only');
+      assert.deepEqual(request.postDataJSON(), { mode: 'collect' });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, counts: { saved: 1, deferred: 3 } }),
+      });
+    }
     if (url.pathname.endsWith('/private-mail-diagnostic')) {
       calls++;
       assert.equal(request.method(), 'POST');
@@ -115,6 +126,19 @@ try {
       ),
     );
   }
+  assert.equal(collectCalls, 0);
+  const receive = page.getByRole('button', {
+    name: '메일 1회 수신',
+    exact: true,
+  });
+  await receive.click();
+  assert.equal(await receive.isDisabled(), true);
+  await page
+    .getByText('저장 1건 · 다음 배치 대기 3건. 목록을 새로고침해 주세요.', {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(collectCalls, 1);
   tlsFailure = true;
   await button.click();
   await page.getByText('TLS 연결/검증 · 실패', { exact: true }).waitFor();

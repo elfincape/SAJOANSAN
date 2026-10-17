@@ -187,6 +187,7 @@ export async function syncBatch({
   batch = 5,
   seconds = 20,
   cursor = null,
+  maxMessageBytes = 1024 * 1024,
 }) {
   if (
     !(cutoff instanceof Date) ||
@@ -197,7 +198,10 @@ export async function syncBatch({
     batch > 20 ||
     !Number.isFinite(seconds) ||
     seconds <= 0 ||
-    seconds > 240
+    seconds > 240 ||
+    !Number.isInteger(maxMessageBytes) ||
+    maxMessageBytes < 1 ||
+    maxMessageBytes > LIMIT
   )
     throw Error('CONFIG_REQUIRED');
   const counts = {
@@ -248,15 +252,22 @@ export async function syncBatch({
         counts.cursor = id;
         continue;
       }
-      if ((sizes.get(number) ?? LIMIT + 1) > LIMIT) {
+      if ((sizes.get(number) ?? maxMessageBytes + 1) > maxMessageBytes) {
         counts.oversized++;
         counts.cursor = id;
         continue;
       }
+      const stopOversized = () => {
+        counts.oversized++;
+        counts.cursor = id;
+        counts.deferred = entries.length - index - 1;
+        return counts;
+      };
       let header;
       try {
         header = await remaining(() => pop.top(number));
       } catch (error) {
+        if (error.message === 'LIMIT_REACHED') return stopOversized();
         if (error.message !== 'POP_REJECTED') throw error;
       }
       const date = header ? sentDate(header) : null;
@@ -265,8 +276,14 @@ export async function syncBatch({
         counts.cursor = id;
         continue;
       }
-      const raw = await remaining(() => pop.retr(number)),
-        sent = sentDate(raw);
+      let raw;
+      try {
+        raw = await remaining(() => pop.retr(number));
+      } catch (error) {
+        if (error.message === 'LIMIT_REACHED') return stopOversized();
+        throw error;
+      }
+      const sent = sentDate(raw);
       if (sent === null) {
         counts.undated++;
         counts.cursor = id;
@@ -277,9 +294,23 @@ export async function syncBatch({
         counts.cursor = id;
         continue;
       }
-      const message = await remaining(() =>
-        packageMessage(raw, Buffer.from(uidl), options),
-      );
+      let message;
+      try {
+        message = await remaining(() =>
+          packageMessage(raw, Buffer.from(uidl), options),
+        );
+      } catch (error) {
+        if (
+          !['LIMIT_REACHED', 'MIME_INVALID', 'MISSING_DATE'].includes(
+            error.message,
+          )
+        )
+          throw error;
+        if (error.message === 'LIMIT_REACHED') counts.oversized++;
+        else counts.undated++;
+        counts.cursor = id;
+        continue;
+      }
       await remaining(() => bridge.ingest(message, options));
       counts.saved++;
       counts.cursor = id;

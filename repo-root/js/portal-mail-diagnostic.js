@@ -1,4 +1,7 @@
-import { runMailConnectionDiagnostic } from './private-mail-diagnostic-api.js';
+import {
+  runMailConnectionDiagnostic,
+  runMailCollection,
+} from './private-mail-diagnostic-api.js';
 export { MAIL_DIAGNOSTIC_OWNER_ID } from './private-mail-diagnostic-api.js';
 
 export function mountMailDiagnostic({ host, node, button, isActive }) {
@@ -92,5 +95,35 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
     section,
   );
   section.append(status, results);
+  const receiptStatus = node(
+    'p',
+    '수신 설정을 완료한 뒤 한 번에 최대 2건씩 가져옵니다. 서버 원본은 삭제하지 않습니다.',
+  );
+  receiptStatus.setAttribute('role', 'status');
+  const receive = button(
+    '메일 1회 수신',
+    async () => {
+      if (receive.disabled) return;
+      receive.disabled = true;
+      receiptStatus.textContent = '메일 수신을 확인하는 중입니다…';
+      try {
+        const result = await runMailCollection();
+        if (isActive() && section.isConnected)
+          receiptStatus.textContent =
+            '저장 ' +
+            Number(result.counts?.saved || 0) +
+            '건 · 다음 배치 대기 ' +
+            Number(result.counts?.deferred || 0) +
+            '건. 목록을 새로고침해 주세요.';
+      } catch (error) {
+        if (isActive() && section.isConnected)
+          receiptStatus.textContent = error.message;
+      } finally {
+        receive.disabled = false;
+      }
+    },
+    section,
+  );
+  section.append(receiptStatus);
   host.append(section);
 }

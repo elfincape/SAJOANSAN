@@ -29,3 +29,27 @@ export async function runMailConnectionDiagnostic() {
   }
   return response.json();
 }
+
+export async function runMailCollection(mode = 'collect') {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session || session.user?.id !== MAIL_DIAGNOSTIC_OWNER_ID)
+    throw Error('본인 계정으로 다시 로그인해 주세요.');
+  const response = await fetch('/api/private-mail-collect', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + session.access_token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ mode }),
+    signal: AbortSignal.timeout(65000),
+  });
+  if (!response.ok)
+    throw Error(
+      response.status === 503
+        ? '메일 수신 설정 또는 실행 상태를 확인해 주세요.'
+        : '메일 수신 권한을 확인해 주세요.',
+    );
+  return response.json();
+}

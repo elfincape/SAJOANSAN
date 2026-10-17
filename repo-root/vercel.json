@@ -3,5 +3,12 @@
   "installCommand": "cd .. && npm ci",
   "buildCommand": "cd .. && npm run build",
   "outputDirectory": "dist",
-  "functions": { "api/private-mail-diagnostic.mjs": { "maxDuration": 30 } }
+  "functions": {
+    "api/private-mail-diagnostic.mjs": {
+      "maxDuration": 30
+    },
+    "api/private-mail-collect.mjs": {
+      "maxDuration": 60
+    }
+  }
 }

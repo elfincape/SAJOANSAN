@@ -130,3 +130,40 @@ assert.equal(deadlineClosed, true);
 console.log(
   'PASS batch deadline aborts stalled bridge and closes POP transport',
 );
+
+let parseAttempts = 0,
+  postMalformedSaved = 0;
+const malformedPop = {
+  uidl: async () => [
+    [1, 'valid'],
+    [2, 'malformed'],
+  ],
+  list: async () =>
+    new Map([
+      [1, 100],
+      [2, 100],
+    ]),
+  top: async () => Buffer.from('Date: Sat, 17 Oct 2026 00:00:00 +0000\r\n\r\n'),
+  retr: async () =>
+    Buffer.from('Date: Sat, 17 Oct 2026 00:00:00 +0000\r\n\r\n'),
+  close() {},
+};
+const malformedCounts = await syncBatch({
+  pop: malformedPop,
+  bridge: {
+    seen: async () => false,
+    ingest: async () => {
+      postMalformedSaved++;
+    },
+  },
+  cutoff: new Date('2026-08-18T00:00:00Z'),
+  packageMessage: async () => {
+    if (++parseAttempts === 1) throw Error('MIME_INVALID');
+    return {};
+  },
+});
+assert.equal(malformedCounts.undated, 1);
+assert.equal(postMalformedSaved, 1);
+console.log(
+  'PASS malformed MIME does not block later messages; original POP mail is retained',
+);

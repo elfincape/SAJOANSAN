@@ -176,6 +176,8 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return box;
   };
   if (action === 'private-mail-sync') {
+    if (ctx.ownerSync && body.operation === 'begin' && !body.mailbox)
+      body.mailbox = ctx.collectorMailboxId;
     if (!uuid(ctx.collectorMailboxId))
       throw fail('수집 대상 메일함 설정이 필요합니다.', 503);
     if (body.mailbox !== ctx.collectorMailboxId)
@@ -191,6 +193,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       if (!rows.length) throw fail('이미 수집 중입니다.', 409);
       return json({
         lease,
+        ...(ctx.ownerSync ? { mailbox: box.id } : {}),
         cutoff: rows[0].cutoff_at,
         cursor: rows[0].scan_cursor,
       });

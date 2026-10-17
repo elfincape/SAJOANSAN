@@ -1,94 +1,108 @@
-# Verified state and remaining receipt setup
+# Private mail: prepared Node receipt and activation prerequisites
 
-2026-10-17 user-provided production result (17:48:40 KST): DNS, TCP 995,
-certificate/hostname-validated TLS and POP greeting succeeded in Vercel Node,
-region iad1, TLSv1.2, TLS_RSA_WITH_AES_256_GCM_SHA384. This proves neither POP
-account authentication nor country-policy acceptance at login. Groupware UI
-showed Korea/Japan allowed and SMS/enable requirements; save/SMS completion is
-unverified. No login or password was used by this task.
+Based on user main d221851. Production user result at 2026-10-17 17:48:40 KST:
+DNS/TCP/TLS/POP greeting succeeded in vercel-node, iad1, TLSv1.2,
+TLS_RSA_WITH_AES_256_GCM_SHA384. No POP account login has been attempted.
 
-Read-only database checks found zero private_mailboxes and zero messages. The
-existing OneDrive connection belongs to the confirmed owner, with configured
-drive 6dace80ad4c07b59. Existing folder categories contain operational documents,
-not private mail. No private mail destination is registered. This is not a
-filesystem inspection and cannot prove a folder does not already exist in Drive.
+## Local implementation
 
-## Direct user input and security decisions (not performed)
+Owner-only POST /api/private-mail-collect (both repository-root deployment layouts)
+uses the current user's session, never a stored user token or new collector key.
+A new disabled private-mail-owner-sync action in the existing onedrive-auth Edge
+handler performs getUser/active profile/exact owner UUID validation and fixes the
+mailbox from server configuration. Existing private_mail_begin/publish RPCs supply
+the atomic mailbox lease and UIDL uniqueness. This reuses the collection lease;
+the diagnostic lease has a separate purpose and is unchanged. Concurrent/replayed
+begin is rejected by the existing live mailbox lease. Node has no service/Graph key.
 
-1. Resolve the login execution country before account authentication. Prefer a
-   narrowly scoped collector function in a currently allowed country if the
-   account supports it; changing Vercel execution region is an explicit security
-   decision, not part of the banner-only result. Do not expand country allowlists
-   automatically or assume a US greeting means US login is permitted. SMS and POP
-   enablement must be completed by the owner in the actual groupware settings.
-2. Proposed password storage: the owner enters MAIL_POP_PASSWORD directly into
-   the existing sajoansan Vercel project's Environment Variables UI, Type Secret,
-   Production only. No Preview/Development target, VITE_ prefix, client form,
-   chat, command-line value, or agent inspection. This grants the production
-   project runtime persistent POP access as jhs96@eangroup.kr at the fixed host;
-   project secrets are available to project server code, not only one function.
-   Do not create it until the persistent access/storage decision is confirmed.
-   Whether U+ offers a separate POP/app password remains unverified; use one only
-   if the provider explicitly supplies it. Never extract a webmail credential.
-3. Select/create a dedicated private folder in the existing connected OneDrive.
-   Record its drive/folder IDs in one owner-scoped disabled mailbox row, initial
-   import 60 days. Verify folder/item permissions using the existing Edge Graph
-   integration before enabling. No shared operations folder or shared search/AI
-   index. Existing OneDrive OAuth remains in Edge; do not copy it to Node or ask
-   for a new Graph scope without a demonstrated requirement. There is currently
-   no private-mail setup form: the operations connections form is not this setup.
-4. Existing private-mail-sync requires MAIL_COLLECTOR_KEY (32+ characters) and
-   MAIL_COLLECTOR_MAILBOX_ID in Edge. A new random collector key has NOT been
-   generated. Proposed persistent key is limited by server code to this single
-   mailbox and begin/seen/ingest/end; it is not a Supabase service key or Graph
-   token. A future Supabase scheduled request and Vercel worker need this scoped
-   server-only capability. Establish the final key delivery/rotation path before
-   storing it; no copying any token into chat or Git. Keep cron disabled.
+Node checks all activation/password/region gates before any network request.
+The fixed POP host/account and validated Node TLS defaults are preserved. DELE is
+not in the command whitelist. CRLF/NUL injection, fragmented lines, dot stuffing,
+malformed UIDL, oversized responses and operation deadlines are bounded. Failed
+storage does not advance the persisted cursor; deterministic files and UIDL checks
+make retries safe. Malformed MIME/date messages are skipped and counted in undated
+so one hostile message cannot starve later mail; originals remain on POP.
 
-## Verified navigation and limits
+postal-mime 4.0.7 (zero dependencies, pinned registry integrity) converts headers,
+charsets, nested RFC822 attachments, HTML/text and binary attachments. Original
+EML is byte-preserved after POP CRLF/dot normalization. MIME depth/header/part and
+attachment count/byte limits apply. Existing Edge sanitization, download owner/RLS
+checks, per-file privacy/hash checks and publish-after-all-files semantics remain.
+No shared search or AI indexing path was added.
 
-The production mail screen is https://sajoansan.vercel.app/portal/?view=mail .
-The diagnostic button already exists. No password-entry or collector setup route
-has been deployed. Provider dashboard paths below are intended navigation targets,
-not authenticated pages inspected by this task:
+Initial range is the mailbox's existing fixed 60-day cutoff; callers cannot change
+it in the request. Each click saves at most two messages, scans for up to 12 seconds
+and resumes via UIDL-hash cursor. Node transport commands have three-second limits.
+Bridge calls have an eight-second limit and use the batch AbortSignal. No automatic
+retry or schedule was added; a user may retry after an error. All secrets/errors/
+message content are excluded from result/logging. A mailbox lease remains the
+server-side authority if a timed-out upload is still completing.
 
-- Vercel: https://vercel.com/elfincapes-projects/sajoansan/settings/environment-variables
-- Edge secrets: https://supabase.com/dashboard/project/vvrppotrnpwrwpwqaiet/functions/secrets
+For Vercel payload limits, this initial route accepts raw EML up to 1MiB and total
+JSON packages up to 3MiB. Larger mail is skipped/counts as oversized and retained
+on POP. Full large-attachment archival requires a later streamed upload path;
+the Python worker's 10MiB limits cannot be claimed for this route. HTML remains
+stored untrusted and is rendered only through the existing safe viewer.
 
-Vercel's official Secret-variable instructions:
+The owner UI adds a manual receipt button; no password field or browser secret
+storage exists. Local code has not been deployed or pushed to main. The active
+production diagnostic is preserved. No credentials or activation flags were set.
+
+## Exact final settings, not set by this task
+
+Vercel project elfincapes-projects/sajoansan, Production only:
+- MAIL_POP_PASSWORD: the only new secret for manual receipt. Owner enters it
+  directly as Type Secret, never in chat, Git, a VITE_ variable or agent shell.
+  It grants persistent POP access as jhs96@eangroup.kr to this project runtime;
+  project environment secrets are accessible to project server code, not one
+  isolated function. A provider-specific app/POP password is preferred only if
+  the provider actually supports it (not yet verified).
+- MAIL_COLLECTION_ENABLED=yes: nonsecret explicit activation gate. Keep unset/no
+  until folder/privacy/region and a limited import are authorized.
+- VERCEL_REGION is a provider variable, never manually spoof it. The route requires
+  icn1 and rejects iad1 before using a password or making any network request.
+
+Existing onedrive-auth Edge function:
+- MAIL_OWNER_SYNC_ENABLED=yes: nonsecret server access activation, default off.
+- MAIL_OWNER_MAILBOX_ID: nonsecret fixed UUID of one owner-owned mailbox.
+No MAIL_COLLECTOR_KEY is needed for this manual JWT-based route; the legacy Python
+collector key path is unchanged. No OAuth or service key moves to Vercel. Unattended
+cron cannot use a stored/refreshing human JWT: its scoped service identity remains
+a separate future design/security decision. Cron remains disabled.
+
+## Region and folder prerequisites
+
+Vercel supports functions['api/private-mail-collect.mjs'].regions=['icn1'] without
+changing other functions' region settings. This setting was NOT applied. The repo
+currently sets diagnostic maxDuration only; its observed runtime is iad1. The
+project's authenticated dashboard/plan is unavailable here. Hobby allows a single
+Function region and Pro up to five, so coexistence of iad1/icn1 depends on the plan.
+Do not change the whole project region or expand U+ countries automatically.
+Changing only the collector to Seoul changes where POP authentication and password
+use occur; it does not prove U+'s IP-country classification, SMS or POP enablement.
+Official source: https://vercel.com/docs/functions/configuring-functions/region
+
+Read-only DB checks: zero mailboxes and messages. Existing OneDrive connection is
+the confirmed owner; configured drive is 6dace80ad4c07b59. No private-mail folder is
+registered. The user's candidate link redirects to official onedrive.live.com but
+anonymous reading returns 403. Folder ID/name/owner/permissions are unverified.
+No Graph connector or existing read-only arbitrary-folder inspection endpoint is
+available. Do not extract existing encrypted OAuth tokens, repurpose the operations
+folder setup form, redeem sharing grants, or upload until authenticated folder and
+item permission verification is available. Register only a dedicated private folder
+on that drive and one disabled owner mailbox with initial_days=60; new schema is not
+needed. Do not change sharing/permissions without separate authorization.
+
+## Direct user navigation
+
+Verified production app: https://sajoansan.vercel.app/portal/?view=mail
+Provider dashboard navigation (authenticated screens not inspected):
+- https://vercel.com/elfincapes-projects/sajoansan/settings/environment-variables
+- https://supabase.com/dashboard/project/vvrppotrnpwrwpwqaiet/functions/secrets
+Official Secret instructions:
 https://vercel.com/docs/environment-variables/sensitive-environment-variables
 
-## Local Node port status
-
-Based on user main d221851, a separate feat/mail-node-collector worktree adds an
-inert read-only POP protocol and bounded UIDL batch core. It has no API route,
-environment reader, network connection initializer, credential storage or cron.
-The command whitelist excludes DELE and rejects CRLF/NUL injection. Byte limits,
-dot unstuffing, UIDL validation, duplicate skipping, cursor/batch limits and
-partial-ingest failure handling are exercised against fake transport/bridge.
-A total batch deadline bounds every awaited POP/bridge/parser operation, closes
-the POP transport and aborts the shared signal. Future bridge/parser adapters
-must honor that signal; a timed-out upload must still obey the existing server
-lease/publish checks. CPU-bound MIME parsing also needs input limits.
-
-Remaining implementation before a production collector can run:
-
-- Integrate a reviewed Node MIME parser/packager equivalent to the Python worker,
-  preserving raw EML, charset handling, nested messages, attachment count/byte
-  limits, deterministic names and existing Edge HTML/attachment defenses.
-- Add TLS transport/write adapter based on the user's verified Node implementation
-  with existing certificate/hostname verification and bounded socket lifecycle.
-- Add mailbox-scoped bridge client and durable collection lease lifecycle using
-  existing private_mail_begin/publish functions, bounded retry, deadline-aware
-  cursor and end reporting. No new database tables are necessary.
-- Add a disabled server route, owner setup/status flow and fake MIME/Graph/partial
-  failure integration tests. Current 30-second diagnostics cannot be assumed to
-  support the Python worker's 240-second batch or existing 10MB/base64 payloads;
-  account for Vercel request/function limits and use smaller bounded transfers.
-- After region, private folder and secret decisions, do one explicit login-only
-  validation without fetching mail, then a small approved one-shot import. Check
-  original retention, dedup, owner isolation and file privacy. Only then separately
-  enable the proposed ten-minute recurring execution. No current cron is active.
-
-Do not report the Node collector complete: only the protocol/batch core is ported.
-The existing Python worker and its MIME package remain the functional reference.
+After permitted code deployment, region and private destination setup, owner direct
+password entry and explicit receipt enablement, first perform a login-only check,
+then a small one-shot import. This task did neither. Validate originals, duplicates,
+privacy and owner isolation before considering unattended scheduling.
