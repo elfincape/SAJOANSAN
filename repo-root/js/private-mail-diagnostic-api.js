@@ -67,12 +67,42 @@ export async function runMailCollection(mode = 'collect') {
     body: JSON.stringify({ mode }),
     signal: AbortSignal.timeout(95000),
   });
-  if (!response.ok)
-    throw Error(
-      response.status === 503
-        ? '메일 수신 설정 또는 실행 상태를 확인해 주세요.'
-        : '메일 수신 권한을 확인해 주세요.',
-    );
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    const allowed = new Set([
+      'COLLECTION_NOT_CONFIGURED',
+      'OWNER_SYNC_DISABLED',
+      'AUTH_REQUIRED',
+      'OWNER_CONNECTION_REQUIRED',
+      'MAILBOX_TARGET_REJECTED',
+      'OWNER_FOLDER_REQUIRED',
+      'DRIVE_OWNER_UNAVAILABLE',
+      'PERMISSIONS_INCOMPLETE',
+      'ANONYMOUS_LINK_PRESENT',
+      'ORGANIZATION_LINK_PRESENT',
+      'SHARING_LINK_PRESENT',
+      'INVITATION_PRESENT',
+      'PERMISSION_IDENTITY_UNAVAILABLE',
+      'OTHER_PRINCIPAL_PRESENT',
+      'MAILBOX_BUSY',
+      'FOLDER_CHECK_FAILED',
+      'BEGIN_FAILED',
+      'POP_CONNECTION_FAILED',
+      'POP_LOGIN_FAILED',
+      'COLLECTION_FAILED',
+      'FINALIZE_FAILED',
+    ]);
+    const code = allowed.has(failure.code) ? failure.code : 'REQUEST_FAILED';
+    const stages = {
+      configuration: '서버 설정',
+      begin: '메일함 준비',
+      connect: '메일 서버 연결',
+      login: '메일 로그인',
+      collect: '메일 저장',
+      finalize: '수신 상태 기록',
+    };
+    throw Error((stages[failure.stage] || '메일 수신') + ' 실패 · ' + code);
+  }
   return response.json();
 }
 

@@ -40,7 +40,11 @@ try {
         contentType: 'application/json',
         body: JSON.stringify(
           collectionFailure
-            ? { error: 'COLLECTION_NOT_CONFIGURED' }
+            ? {
+                error: 'PRIVATE_UPSTREAM_TEXT',
+                code: 'DRIVE_OWNER_UNAVAILABLE',
+                stage: 'begin',
+              }
             : { ok: true, counts: { saved: 1, deferred: 3 } },
         ),
       });
@@ -97,7 +101,7 @@ try {
   collectionFailure = true;
   await receive.click();
   await page
-    .getByText('메일을 가져오지 못했습니다.', { exact: true })
+    .getByText('메일함 준비 실패 · DRIVE_OWNER_UNAVAILABLE', { exact: true })
     .waitFor();
   assert.equal(collectCalls, 2);
   assert.equal(await receive.isDisabled(), false);

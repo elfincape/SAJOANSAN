@@ -455,15 +455,113 @@ export async function handlePrivateMail(action, req, user, ctx) {
       throw fail('수집 대상 메일함이 아닙니다.', 403);
     const box = await mailbox(body.mailbox);
     if (body.operation === 'begin') {
-      if (!box.enabled) throw fail('수집이 활성화되지 않았습니다.', 409);
       const lease = crypto.randomUUID();
-      const rows = await withLock(() =>
-        db('rpc/private_mail_begin', {
+      const rows = await withLock(async () => {
+        if (!box.enabled) {
+          if (
+            !ctx.ownerSync ||
+            user.id !== '2a828c2d-9a6f-40d4-8e13-336b591811cc'
+          )
+            throw fail('OWNER_SYNC_DISABLED', 403);
+          const current = await mailbox(body.mailbox);
+          if (current.account !== 'jhs96@eangroup.kr')
+            throw fail('MAILBOX_TARGET_REJECTED', 403);
+          if (
+            current.enabled ||
+            (current.lease_until &&
+              Date.parse(current.lease_until) > Date.now())
+          )
+            throw fail('MAILBOX_BUSY', 409);
+          let stage = 'folder';
+          try {
+            const connection = (
+              await db('onedrive_connection?select=connected_by&id=eq.true')
+            )[0];
+            if (connection?.connected_by !== user.id)
+              throw fail('OWNER_CONNECTION_REQUIRED', 409);
+            const env = await environment();
+            await privateDestination(current, env);
+            if (
+              !Number.isInteger(current.initial_days) ||
+              current.initial_days < 1 ||
+              current.initial_days > 365 ||
+              (current.cutoff_at &&
+                !Number.isFinite(Date.parse(current.cutoff_at)))
+            )
+              throw fail('MAILBOX_TARGET_REJECTED', 409);
+            stage = 'begin';
+            const now = Date.now();
+            // One conditional UPDATE acquires the lease and enables the verified
+            // mailbox together. No enabled-without-lease intermediate state.
+            const activated = await db(
+              'private_mailboxes?id=eq.' +
+                current.id +
+                '&owner_id=eq.' +
+                user.id +
+                '&account=eq.jhs96%40eangroup.kr&enabled=eq.false&drive_id=eq.' +
+                enc(current.drive_id) +
+                '&folder_id=eq.' +
+                enc(current.folder_id) +
+                '&initial_days=eq.' +
+                current.initial_days +
+                (current.cutoff_at
+                  ? '&cutoff_at=eq.' + enc(current.cutoff_at)
+                  : '&cutoff_at=is.null') +
+                '&or=(lease_until.is.null,lease_until.lt.' +
+                enc(new Date(now).toISOString()) +
+                ')',
+              {
+                method: 'PATCH',
+                prefer: 'return=representation',
+                body: {
+                  enabled: true,
+                  lease,
+                  lease_until: new Date(now + 600000).toISOString(),
+                  status: 'running',
+                  last_started_at: new Date(now).toISOString(),
+                  last_error: null,
+                  cutoff_at:
+                    current.cutoff_at ||
+                    new Date(
+                      now - current.initial_days * 86400000,
+                    ).toISOString(),
+                },
+              },
+            );
+            if (activated.length !== 1) throw fail('MAILBOX_BUSY', 409);
+            return activated;
+          } catch (error) {
+            const allowed = new Set([
+              'OWNER_CONNECTION_REQUIRED',
+              'MAILBOX_TARGET_REJECTED',
+              'OWNER_FOLDER_REQUIRED',
+              'DRIVE_OWNER_UNAVAILABLE',
+              'PERMISSIONS_INCOMPLETE',
+              'ANONYMOUS_LINK_PRESENT',
+              'ORGANIZATION_LINK_PRESENT',
+              'SHARING_LINK_PRESENT',
+              'INVITATION_PRESENT',
+              'PERMISSION_IDENTITY_UNAVAILABLE',
+              'OTHER_PRINCIPAL_PRESENT',
+              'MAILBOX_BUSY',
+            ]);
+            const code = allowed.has(error.message)
+              ? error.message
+              : stage === 'folder'
+                ? 'FOLDER_CHECK_FAILED'
+                : 'BEGIN_FAILED';
+            console.warn(
+              JSON.stringify({ event: 'private_mail', stage, code }),
+            );
+            throw fail(code, error.status === 403 ? 403 : 409);
+          }
+        }
+        return db('rpc/private_mail_begin', {
           method: 'POST',
           body: { p_id: box.id, p_lease: lease },
-        }),
-      );
-      if (!rows.length) throw fail('이미 수집 중입니다.', 409);
+        });
+      });
+      if (!rows.length) throw fail('MAILBOX_BUSY', 409);
       return json({
         lease,
         ...(ctx.ownerSync ? { mailbox: box.id } : {}),

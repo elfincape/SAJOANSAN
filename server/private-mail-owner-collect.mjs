@@ -8,6 +8,24 @@ import {
 const BRIDGE =
   'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-owner-sync';
 const SITE = 'https://sajoansan.vercel.app';
+const SAFE_CODES = new Set([
+  'OWNER_SYNC_DISABLED',
+  'AUTH_REQUIRED',
+  'OWNER_CONNECTION_REQUIRED',
+  'MAILBOX_TARGET_REJECTED',
+  'OWNER_FOLDER_REQUIRED',
+  'DRIVE_OWNER_UNAVAILABLE',
+  'PERMISSIONS_INCOMPLETE',
+  'ANONYMOUS_LINK_PRESENT',
+  'ORGANIZATION_LINK_PRESENT',
+  'SHARING_LINK_PRESENT',
+  'INVITATION_PRESENT',
+  'PERMISSION_IDENTITY_UNAVAILABLE',
+  'OTHER_PRINCIPAL_PRESENT',
+  'MAILBOX_BUSY',
+  'FOLDER_CHECK_FAILED',
+  'BEGIN_FAILED',
+]);
 export async function openPop() {
   const socket = tls.connect({
     host: 'mail.onnet21.com',
@@ -79,15 +97,18 @@ export function ownerBridge(authorization, fetcher = fetch) {
       },
       body,
       signal: AbortSignal.any([
-        AbortSignal.timeout(8000),
+        AbortSignal.timeout(operation === 'begin' ? 15000 : 8000),
         ...(signal ? [signal] : []),
       ]),
       redirect: 'error',
     });
-    if (!response.ok)
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
       throw Object.assign(Error('BRIDGE_REJECTED'), {
         status: response.status,
+        code: SAFE_CODES.has(failure.error) ? failure.error : undefined,
       });
+    }
     return response.json();
   }
   return {
@@ -176,6 +197,7 @@ export async function handleOwnerCollect(
     fetcher = fetch,
     connect = openPop,
     packager = packageMessage,
+    logger = (entry) => console.warn(entry),
   } = {},
 ) {
   const json = (data, status = 200) =>
@@ -197,14 +219,36 @@ export async function handleOwnerCollect(
     !env.MAIL_POP_PASSWORD ||
     /[\r\n\0]/.test(env.MAIL_POP_PASSWORD) ||
     env.MAIL_POP_PASSWORD.length > 1024
-  )
-    return json({ error: 'COLLECTION_NOT_CONFIGURED' }, 503);
+  ) {
+    logger(
+      JSON.stringify({
+        event: 'private_mail',
+        stage: 'configuration',
+        code: 'COLLECTION_NOT_CONFIGURED',
+      }),
+    );
+    return json(
+      {
+        error: 'COLLECTION_NOT_CONFIGURED',
+        code: 'COLLECTION_NOT_CONFIGURED',
+        stage: 'configuration',
+      },
+      503,
+    );
+  }
   const bridge = ownerBridge(authorization, fetcher);
-  let pop, info, counts, error;
+  let pop,
+    info,
+    counts,
+    error,
+    code,
+    stage = 'begin';
   try {
     info = await bridge.begin();
+    stage = 'connect';
     pop = await connect();
     await pop.greeting();
+    stage = 'login';
     await pop.login('jhs96@eangroup.kr', env.MAIL_POP_PASSWORD);
     if (mode === 'login')
       counts = {
@@ -215,7 +259,8 @@ export async function handleOwnerCollect(
         deferred: 0,
         cursor: info.cursor,
       };
-    else
+    else {
+      stage = 'collect';
       counts = await syncBatch({
         pop,
         bridge,
@@ -225,9 +270,18 @@ export async function handleOwnerCollect(
         batch: 1,
         seconds: 40,
       });
+    }
   } catch (failure) {
     if (failure?.counts) counts = failure.counts;
     error = true;
+    code = SAFE_CODES.has(failure?.code)
+      ? failure.code
+      : {
+          begin: 'BEGIN_FAILED',
+          connect: 'POP_CONNECTION_FAILED',
+          login: 'POP_LOGIN_FAILED',
+          collect: 'COLLECTION_FAILED',
+        }[stage];
   } finally {
     pop?.close();
     if (info)
@@ -235,13 +289,19 @@ export async function handleOwnerCollect(
         await bridge.end(counts || { cursor: info.cursor }, error);
       } catch {
         error = true;
+        if (!code) {
+          code = 'FINALIZE_FAILED';
+          stage = 'finalize';
+        }
       }
   }
+  if (error) logger(JSON.stringify({ event: 'private_mail', stage, code }));
   return error
-    ? json({ error: 'SYNC_FAILED' }, 503)
+    ? json({ error: 'SYNC_FAILED', code, stage }, 503)
     : json({
         ok: true,
         mode,
+        region: env.VERCEL_REGION,
         counts: Object.fromEntries(
           Object.entries(counts).filter(([key]) => key !== 'cursor'),
         ),

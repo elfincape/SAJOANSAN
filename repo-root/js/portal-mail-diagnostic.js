@@ -20,9 +20,9 @@ export function mountMailReceipt({ host, node, button, isActive }) {
             (result.counts?.deferred
               ? ' · 대기 ' + Number(result.counts.deferred) + '건'
               : '');
-      } catch {
+      } catch (error) {
         if (isActive() && status.isConnected)
-          status.textContent = '메일을 가져오지 못했습니다.';
+          status.textContent = error.message;
       } finally {
         receive.disabled = false;
       }
