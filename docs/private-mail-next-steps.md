@@ -1,5 +1,13 @@
 # Private mail: prepared Node receipt and activation prerequisites
 
+The normal mail workspace has no folder setup, connection probe or security
+instructions. It exposes only explicit receipt and ordinary message operations.
+An owner-selected folder on the configured drive may be registered as a disabled
+destination draft if Graph omits the drive owner ID. This does not verify privacy,
+enable receipt, grant access or upload mail. The response remains private=false
+with DRIVE_OWNER_UNAVAILABLE; an already enabled mailbox cannot use this path.
+Storage and downloads retain the complete owner and permission checks.
+
 Based on user main d221851. Production user result at 2026-10-17 17:48:40 KST:
 DNS/TCP/TLS/POP greeting succeeded in vercel-node, iad1, TLSv1.2,
 TLS_RSA_WITH_AES_256_GCM_SHA384. No POP account login has been attempted.

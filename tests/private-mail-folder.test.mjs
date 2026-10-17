@@ -7,6 +7,7 @@ let shared = false,
   fullDriveOwner,
   inserts = 0,
   existing = false,
+  existingEnabled = false,
   wrongDrive = false;
 const ctx = {
   db: async (path, options) => {
@@ -25,8 +26,8 @@ const ctx = {
             {
               id: 'old',
               drive_id: 'drive',
-              folder_id: 'different',
-              enabled: false,
+              folder_id: existingEnabled ? 'folder' : 'different',
+              enabled: existingEnabled,
             },
           ]
         : [];
@@ -182,6 +183,17 @@ await assert.rejects(
     ),
   /URL_REJECTED/,
 );
+missingOwner = true;
+const draft = await (await run(true)).json();
+assert.equal(draft.configured, true);
+assert.equal(draft.private, false);
+assert.equal(draft.reason, 'DRIVE_OWNER_UNAVAILABLE');
+assert.equal(draft.enabled, false);
+assert.equal(inserts, 2);
+existing = true;
+existingEnabled = true;
+await assert.rejects(() => run(true), /DRIVE_OWNER_UNAVAILABLE/);
+assert.equal(inserts, 2);
 console.log(
   'PASS authenticated private folder inspection/config: fixed owner, connected account, drive+permissions, no grants/upload, disabled mailbox only, conflicts/shared/foreign denied',
 );

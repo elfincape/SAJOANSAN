@@ -352,14 +352,21 @@ export async function handlePrivateMail(action, req, user, ctx) {
               ? error.message
               : 'PRIVACY_NOT_VERIFIED',
           });
-        throw error;
+        // Register only an inactive destination draft; all file operations still verify it.
+        if (
+          !body.configure ||
+          error.status !== 409 ||
+          error.message !== 'DRIVE_OWNER_UNAVAILABLE'
+        )
+          throw error;
       }
       const result = {
         folder_id: item.id,
         drive_id: driveId,
         name: String(item.name || '').slice(0, 200),
         drive_owner_id: owner,
-        private: true,
+        private: !!owner,
+        ...(!owner ? { reason: 'DRIVE_OWNER_UNAVAILABLE' } : {}),
       };
       if (!body.configure) return json(result);
       const rows = await db(
@@ -369,6 +376,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       );
       if (rows.length) {
         const old = rows[0];
+        if (!owner && old.enabled) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
         if (old.drive_id !== driveId || old.folder_id !== item.id)
           throw fail('EXISTING_MAILBOX_DESTINATION_CONFLICT', 409);
         return json({
