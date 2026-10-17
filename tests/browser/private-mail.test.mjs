@@ -4,7 +4,12 @@ import { chromium } from 'playwright';
 import { startBrowserServer } from '../helpers/browser-server.mjs';
 import { safeMailHtml } from '../../supabase/functions/onedrive-auth/private-mail.js';
 const server = await startBrowserServer();
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.BROWSER_EXECUTABLE
+    ? { executablePath: process.env.BROWSER_EXECUTABLE }
+    : {}),
+});
 const mock = await readFile(
   new URL('../fixtures/browser-supabase.mjs', import.meta.url),
   'utf8',
@@ -124,8 +129,8 @@ try {
     if (width < 1000)
       await page.waitForFunction(
         () =>
-          document.getElementById('portal-sidebar').getBoundingClientRect()
-            .right <= 1,
+          getComputedStyle(document.getElementById('app-sidebar')).display ===
+          'none',
       );
     await page.screenshot({
       path: new URL(
