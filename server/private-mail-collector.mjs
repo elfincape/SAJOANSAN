@@ -187,7 +187,7 @@ export async function syncBatch({
   batch = 5,
   seconds = 20,
   cursor = null,
-  maxMessageBytes = 1024 * 1024,
+  maxMessageBytes = 10 * 1024 * 1024,
 }) {
   if (
     !(cutoff instanceof Date) ||

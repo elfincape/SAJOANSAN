@@ -103,8 +103,47 @@ export function ownerBridge(authorization, fetcher = fetch) {
     async seen(uidl, { signal } = {}) {
       return (await call('seen', { uidl }, signal)).seen === true;
     },
-    ingest(message, { signal } = {}) {
-      return call('ingest', { message }, signal);
+    async ingest(message, { signal } = {}) {
+      for (const [index, file] of message.files.entries()) {
+        signal?.throwIfAborted();
+        const metadata = {
+          operation: 'file',
+          mailbox,
+          lease,
+          uidl: message.uidl,
+          hash: message.hash,
+          index,
+          kind: file.kind,
+          name: file.name,
+          byte_size: file.byte_size,
+          content_hash: file.content_hash,
+        };
+        const response = await fetcher(
+          BRIDGE.replace('private-mail-owner-sync', 'private-mail-owner-file'),
+          {
+            method: 'POST',
+            headers: {
+              Authorization: authorization,
+              'Content-Type': 'application/octet-stream',
+              'X-Mail-Metadata': encodeURIComponent(JSON.stringify(metadata)),
+            },
+            body: file.bytes,
+            signal: AbortSignal.any([
+              AbortSignal.timeout(30000),
+              ...(signal ? [signal] : []),
+            ]),
+            redirect: 'error',
+          },
+        );
+        if (!response.ok) throw Error('FILE_UPLOAD_FAILED');
+        // The response contains only a reference, never content or upload capabilities.
+        await response.json();
+      }
+      const metadata = {
+        ...message,
+        files: message.files.map(({ bytes, ...file }) => file),
+      };
+      return call('finish', { message: metadata }, signal);
     },
     end(counts, error) {
       return call('end', {
@@ -170,8 +209,8 @@ export async function handleOwnerCollect(
         cutoff: new Date(info.cutoff),
         cursor: info.cursor,
         packageMessage: packager,
-        batch: 2,
-        seconds: 12,
+        batch: 1,
+        seconds: 40,
       });
   } catch {
     error = true;

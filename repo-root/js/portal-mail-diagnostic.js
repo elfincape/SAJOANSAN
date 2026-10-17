@@ -1,6 +1,7 @@
 import {
   runMailConnectionDiagnostic,
   runMailCollection,
+  configurePrivateMailFolder,
 } from './private-mail-diagnostic-api.js';
 export { MAIL_DIAGNOSTIC_OWNER_ID } from './private-mail-diagnostic-api.js';
 
@@ -95,9 +96,50 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
     section,
   );
   section.append(status, results);
+  const folderInput = node('input');
+  folderInput.type = 'url';
+  folderInput.id = 'private-mail-folder-url';
+  folderInput.placeholder = 'OneDrive 폴더 링크';
+  folderInput.autocomplete = 'off';
+  const folderLabel = node('label', '메일 저장 폴더');
+  folderLabel.htmlFor = folderInput.id;
+  const folderStatus = node('p', '본인 OneDrive의 비공개 폴더만 연결합니다.');
+  folderStatus.setAttribute('role', 'status');
+  section.append(folderLabel, folderInput, folderStatus);
+  const folderAction = async (configure, control) => {
+    if (control.disabled) return;
+    control.disabled = true;
+    try {
+      const result = await configurePrivateMailFolder(
+        folderInput.value,
+        configure,
+      );
+      if (isActive() && section.isConnected)
+        folderStatus.textContent = result.private
+          ? configure
+            ? '메일 폴더를 연결했습니다. 수신은 아직 비활성 상태입니다.'
+            : '본인 전용 폴더 확인 완료: ' + String(result.name || '')
+          : '공유 또는 소유자 권한을 확인하지 못해 연결하지 않았습니다.';
+    } catch (error) {
+      if (isActive() && section.isConnected)
+        folderStatus.textContent = error.message;
+    } finally {
+      control.disabled = false;
+    }
+  };
+  const inspect = button(
+    '메일 폴더 확인',
+    () => folderAction(false, inspect),
+    section,
+  );
+  const configure = button(
+    '메일 폴더 연결',
+    () => folderAction(true, configure),
+    section,
+  );
   const receiptStatus = node(
     'p',
-    '수신 설정을 완료한 뒤 한 번에 최대 2건씩 가져옵니다. 서버 원본은 삭제하지 않습니다.',
+    '수신 설정을 완료한 뒤 한 번에 최대 1건씩 가져옵니다. 서버 원본은 삭제하지 않습니다.',
   );
   receiptStatus.setAttribute('role', 'status');
   const receive = button(

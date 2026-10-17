@@ -1,7 +1,7 @@
 import PostalMime from 'postal-mime';
 import { createHash } from 'node:crypto';
-export const RAW_LIMIT = 1024 * 1024;
-export const PACKAGE_LIMIT = 3 * 1024 * 1024;
+export const RAW_LIMIT = 10 * 1024 * 1024;
+export const PACKAGE_LIMIT = 64 * 1024;
 const digest = (data) => createHash('sha256').update(data).digest('hex');
 export function safeName(value) {
   const name =
@@ -34,16 +34,14 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
   signal?.throwIfAborted();
   const sent = Date.parse(mail.date);
   if (!Number.isFinite(sent)) throw Error('MISSING_DATE');
-  const files = [
-    { kind: 'eml', name: 'original.eml', data: raw.toString('base64') },
-  ];
+  const files = [{ kind: 'eml', name: 'original.eml', bytes: raw }];
   let total = raw.length;
   const add = (kind, name, data) => {
     if (!data.length) return;
     total += data.length;
     if (data.length > RAW_LIMIT || total > 2 * RAW_LIMIT || files.length >= 50)
       throw Error('LIMIT_REACHED');
-    files.push({ kind, name: safeName(name), data: data.toString('base64') });
+    files.push({ kind, name: safeName(name), bytes: data });
   };
   if (mail.text) add('text', 'text', Buffer.from(mail.text));
   if (mail.html) add('html', 'html', Buffer.from(mail.html));
@@ -57,7 +55,18 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
     sent: new Date(sent).toISOString(),
     files,
   };
-  if (Buffer.byteLength(JSON.stringify(result)) > PACKAGE_LIMIT)
+  for (const file of files) {
+    file.byte_size = file.bytes.length;
+    file.content_hash = digest(file.bytes);
+  }
+  if (
+    Buffer.byteLength(
+      JSON.stringify({
+        ...result,
+        files: files.map(({ bytes, ...metadata }) => metadata),
+      }),
+    ) > PACKAGE_LIMIT
+  )
     throw Error('LIMIT_REACHED');
   return result;
 }

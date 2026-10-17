@@ -30,21 +30,23 @@ attachment count/byte limits apply. Existing Edge sanitization, download owner/R
 checks, per-file privacy/hash checks and publish-after-all-files semantics remain.
 No shared search or AI indexing path was added.
 
-Initial range is the mailbox's existing fixed 60-day cutoff; callers cannot change
-it in the request. Each click saves at most two messages, scans for up to 12 seconds
+Receipt maxDuration is locally 90 seconds (region unchanged). Initial range is the mailbox's existing fixed 60-day cutoff; callers cannot change
+it in the request. Each click saves at most one message, scans for up to 40 seconds
 and resumes via UIDL-hash cursor. Node transport commands have three-second limits.
-Bridge calls have an eight-second limit and use the batch AbortSignal. No automatic
+Metadata bridge calls have an eight-second limit (binary file calls thirty seconds) and use the batch AbortSignal. No automatic
 retry or schedule was added; a user may retry after an error. All secrets/errors/
 message content are excluded from result/logging. A mailbox lease remains the
 server-side authority if a timed-out upload is still completing.
 
-As a provisional conservative cap, this initial route accepts raw EML up to 1MiB and total
-JSON packages up to 3MiB. Larger mail is skipped/counts as oversized and retained
-on POP. This cap is insufficient for completion. Full large-attachment archival requires a later binary/streamed upload path;
-the Python worker's 10MiB limits cannot be claimed for this route. HTML remains
-stored untrusted and is rendered only through the existing safe viewer.
+The binary route supports raw EML up to 10MiB, each file up to 10MiB and aggregate
+raw+decoded files up to 20MiB. Files are sent sequentially as binary to Edge, then a
+metadata-only finish independently verifies all files before publishing. Whole-message
+base64 JSON is no longer used by the Node path. Fake tests cover an exact 10MiB EML
+and a 7MiB attachment, a 10,044,570-byte binary request and a 772-byte manifest.
+Larger mail remains on POP and is counted as oversized. These are bounded in-memory
+MIME limits, not constant-memory streaming or proof of production throughput.
 
-The owner UI adds a manual receipt button; no password field or browser secret
+The owner UI adds folder inspect/connect controls and a manual receipt button; no password field or browser secret
 storage exists. Local code has not been deployed or pushed to main. The active
 production diagnostic is preserved. No credentials or activation flags were set.
 

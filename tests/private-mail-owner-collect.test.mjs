@@ -17,7 +17,7 @@ assert.ok(
     (f) => f.kind === 'attachment' && f.name.endsWith('evil.exe'),
   ),
 );
-assert.deepEqual(Buffer.from(packaged.files[0].data, 'base64'), raw);
+assert.deepEqual(packaged.files[0].bytes, raw);
 assert.ok(packaged.files.every((f) => !f.name.includes('/')));
 assert.equal(safeName('CON.txt'), '_CON.txt');
 await assert.rejects(
@@ -53,18 +53,29 @@ let calls = 0,
 const operations = [];
 const fetcher = async (url, options) => {
   calls++;
-  assert.equal(
-    url,
-    'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-owner-sync',
+  assert.ok(
+    url.endsWith('/private-mail-owner-sync') ||
+      url.endsWith('/private-mail-owner-file'),
   );
+  if (options.headers['Content-Type'] === 'application/octet-stream') {
+    assert.ok(Buffer.isBuffer(options.body));
+    const file = JSON.parse(
+      decodeURIComponent(options.headers['X-Mail-Metadata']),
+    );
+    assert.equal(file.byte_size, options.body.length);
+    assert.ok(!('data' in file));
+    operations.push('file');
+    if (denied || failIngest) return new Response('{}', { status: 403 });
+    return Response.json({ file: { item_id: 'mock' } });
+  }
   assert.equal(options.redirect, 'error');
   assert.equal(options.headers.Authorization, 'Bearer mock-owner');
   const b = JSON.parse(options.body);
   operations.push(b.operation);
   if (denied) return new Response('{}', { status: 403 });
-  if (failIngest && b.operation === 'ingest')
+  if (failIngest && b.operation === 'finish')
     return new Response('{}', { status: 503 });
-  if (b.operation === 'ingest') {
+  if (b.operation === 'finish') {
     saved++;
     assert.equal(b.message.uidl, packaged.uidl);
   }

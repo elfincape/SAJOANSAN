@@ -8,7 +8,7 @@
       "maxDuration": 30
     },
     "api/private-mail-collect.mjs": {
-      "maxDuration": 60
+      "maxDuration": 90
     }
   }
 }

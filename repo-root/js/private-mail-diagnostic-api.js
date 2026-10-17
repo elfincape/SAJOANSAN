@@ -43,7 +43,7 @@ export async function runMailCollection(mode = 'collect') {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ mode }),
-    signal: AbortSignal.timeout(65000),
+    signal: AbortSignal.timeout(95000),
   });
   if (!response.ok)
     throw Error(

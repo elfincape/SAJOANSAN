@@ -175,7 +175,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
         if(!env.MAIL_COLLECTOR_KEY||env.MAIL_COLLECTOR_KEY.length<32||token!==env.MAIL_COLLECTOR_KEY)throw fail('수집기 인증이 필요합니다.',403);
         return await handlePrivateMail(action,req,{}, {db,graph,connected,settings,withLock,json,fail,hash,fetcher,collectorMailboxId:env.MAIL_COLLECTOR_MAILBOX_ID});
       }
-      if(action==='private-mail-owner-sync'){
+      if(['private-mail-owner-sync','private-mail-owner-file'].includes(action)){
         const mailUser=await caller(req,false,true);
         if(env.MAIL_OWNER_SYNC_ENABLED!=='yes'||mailUser.id!=='2a828c2d-9a6f-40d4-8e13-336b591811cc'||!env.MAIL_OWNER_MAILBOX_ID)throw fail('OWNER_SYNC_DISABLED',403);
         return await handlePrivateMail('private-mail-sync',req,mailUser,{db,graph,connected,settings,withLock,json,fail,hash,fetcher,collectorMailboxId:env.MAIL_OWNER_MAILBOX_ID,ownerSync:true});

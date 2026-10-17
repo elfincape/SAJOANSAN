@@ -6,6 +6,15 @@ const uuid = (s) =>
     s || '',
   );
 const hex = (s) => /^[a-f0-9]{64}$/.test(s || '');
+const storedHash = (value) =>
+  btoa(
+    String.fromCharCode(
+      ...Uint8Array.from(value.match(/../g), (part) => parseInt(part, 16)),
+    ),
+  )
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '');
 const escape = (s) =>
   s
     .replaceAll('&', '&amp;')
@@ -162,10 +171,72 @@ export async function handlePrivateMail(action, req, user, ctx) {
         409,
       );
   }
+  async function transferFile(box, file, bytes, holder, env, driveOwner) {
+    await renew(holder);
+    const parent = await (
+      await graph(
+        '/drives/' +
+          enc(box.drive_id) +
+          '/items/' +
+          enc(box.folder_id) +
+          '?$select=id,folder,parentReference',
+        env.access,
+      )
+    ).json();
+    if (
+      !parent.folder ||
+      parent.id !== box.folder_id ||
+      String(parent.parentReference?.driveId).toLowerCase() !==
+        box.drive_id.toLowerCase()
+    )
+      throw fail('DESTINATION_REJECTED', 409);
+    const path =
+      '/drives/' +
+      enc(box.drive_id) +
+      '/items/' +
+      enc(box.folder_id) +
+      ':/' +
+      enc(file.file_name);
+    const old = await graph(path, env.access, { allowMissing: true });
+    if (!old && !bytes) throw fail('FILE_NOT_UPLOADED', 409);
+    const item = old
+      ? await old.json()
+      : await (
+          await graph(
+            path + ':/content?@microsoft.graph.conflictBehavior=fail',
+            env.access,
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: bytes,
+            },
+          )
+        ).json();
+    await privatePermissions(box, item.id, env, driveOwner);
+    await verify(
+      { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
+      item,
+      env.access,
+    );
+    return { ...file, item_id: item.id };
+  }
   const length = Number(req.headers.get('content-length') || 0);
   if (length > 30 * 1024 * 1024)
     throw fail('메일 크기 제한을 초과했습니다.', 413);
-  const body = await readBody(req, fail);
+  const binary =
+    ctx.ownerSync &&
+    req.headers.get('content-type') === 'application/octet-stream';
+  let body;
+  if (binary) {
+    const metadata = req.headers.get('x-mail-metadata') || '';
+    if (metadata.length > 8192) throw fail('METADATA_LIMIT', 413);
+    try {
+      body = JSON.parse(decodeURIComponent(metadata));
+    } catch {
+      throw fail('METADATA_INVALID');
+    }
+    if (body.operation !== 'file') throw fail('BINARY_OPERATION_REJECTED');
+  } else body = await readBody(req, fail);
   if (action === 'private-mail-folder') {
     if (body.configure !== undefined && typeof body.configure !== 'boolean')
       throw fail('CONFIGURE_FLAG_REJECTED');
@@ -352,6 +423,81 @@ export async function handlePrivateMail(action, req, user, ctx) {
       );
       return json({ ok: true });
     }
+    if (body.operation === 'file') {
+      if (
+        !binary ||
+        !ctx.ownerSync ||
+        !hex(body.uidl) ||
+        !hex(body.hash) ||
+        !Number.isInteger(body.index) ||
+        body.index < 0 ||
+        body.index >= 50 ||
+        !['eml', 'text', 'html', 'attachment'].includes(body.kind) ||
+        typeof body.name !== 'string' ||
+        body.name.length > 200 ||
+        !hex(body.content_hash) ||
+        !Number.isInteger(body.byte_size) ||
+        body.byte_size < 1 ||
+        body.byte_size > MAX
+      )
+        throw fail('FILE_METADATA_REJECTED');
+      if (body.kind === 'eml' && body.content_hash !== body.hash)
+        throw fail('EML_HASH_REJECTED');
+      const reader = req.body?.getReader();
+      if (!reader) throw fail('FILE_BODY_REQUIRED');
+      const bytes = new Uint8Array(body.byte_size);
+      let offset = 0,
+        timer;
+      const deadline = Date.now() + 30000;
+      try {
+        for (;;) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw fail('FILE_READ_TIMEOUT', 408);
+          const { value, done } = await Promise.race([
+            reader.read(),
+            new Promise((_, reject) => {
+              timer = setTimeout(
+                () => reject(fail('FILE_READ_TIMEOUT', 408)),
+                remaining,
+              );
+            }),
+          ]);
+          clearTimeout(timer);
+          if (done) break;
+          if (offset + value.length > bytes.length)
+            throw fail('FILE_SIZE_REJECTED', 413);
+          bytes.set(value, offset);
+          offset += value.length;
+        }
+      } catch (error) {
+        reader.cancel().catch(() => {});
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      if (offset !== bytes.length || (await sha(bytes)) !== body.content_hash)
+        throw fail('FILE_HASH_REJECTED');
+      const file = {
+        kind: body.kind,
+        original_name: mailFilename(body.name),
+        file_name: body.uidl + '_' + body.hash + '_' + body.index + '.bin',
+        byte_size: bytes.length,
+        content_hash: storedHash(body.content_hash),
+      };
+      return withLock(async (holder) => {
+        const env = await environment(),
+          driveOwner = await privateDestination(box, env);
+        const ref = await transferFile(
+          box,
+          file,
+          bytes,
+          holder,
+          env,
+          driveOwner,
+        );
+        return json({ file: ref });
+      });
+    }
     const m = body.message;
     const uidl = body.operation === 'seen' ? body.uidl : m?.uidl;
     if (!hex(uidl)) throw fail('UIDL 해시가 올바르지 않습니다.');
@@ -364,7 +510,10 @@ export async function handlePrivateMail(action, req, user, ctx) {
       )
     )[0];
     if (body.operation === 'seen') return json({ seen: !!existing });
-    if (body.operation !== 'ingest')
+    if (
+      !['ingest', 'finish'].includes(body.operation) ||
+      (body.operation === 'finish' && !ctx.ownerSync)
+    )
       throw fail('지원하지 않는 수집 작업입니다.');
     if (existing) return json({ id: existing.id, duplicate: true });
     if (
@@ -380,6 +529,62 @@ export async function handlePrivateMail(action, req, user, ctx) {
       m.files.length > 50
     )
       throw fail('메일 형식이 올바르지 않습니다.');
+    if (body.operation === 'finish') {
+      let total = 0;
+      const refs = [];
+      for (const [index, file] of m.files.entries()) {
+        if (
+          !['eml', 'text', 'html', 'attachment'].includes(file.kind) ||
+          typeof file.name !== 'string' ||
+          file.name.length > 200 ||
+          !Number.isInteger(file.byte_size) ||
+          file.byte_size < 1 ||
+          file.byte_size > MAX ||
+          !hex(file.content_hash) ||
+          file.bytes !== undefined ||
+          file.data !== undefined
+        )
+          throw fail('MANIFEST_REJECTED');
+        total += file.byte_size;
+        if (total > 2 * MAX) throw fail('MANIFEST_LIMIT', 413);
+        refs.push({
+          kind: file.kind,
+          original_name: mailFilename(file.name),
+          file_name: uidl + '_' + m.hash + '_' + index + '.bin',
+          byte_size: file.byte_size,
+          content_hash: storedHash(file.content_hash),
+        });
+      }
+      if (
+        refs.filter((f) => f.kind === 'eml').length !== 1 ||
+        refs.find((f) => f.kind === 'eml').content_hash !== storedHash(m.hash)
+      )
+        throw fail('EML_HASH_REJECTED');
+      return withLock(async (holder) => {
+        const env = await environment(),
+          driveOwner = await privateDestination(box, env),
+          manifest = [];
+        for (const file of refs)
+          manifest.push(
+            await transferFile(box, file, null, holder, env, driveOwner),
+          );
+        await renew(holder);
+        const id = await db('rpc/private_mail_publish', {
+          method: 'POST',
+          body: {
+            p_id: box.id,
+            p_lease: body.lease,
+            p_uidl: uidl,
+            p_hash: m.hash,
+            p_subject: m.subject,
+            p_sender: m.sender,
+            p_sent: m.sent,
+            p_files: manifest,
+          },
+        });
+        return json({ id });
+      });
+    }
     let total = 0;
     const files = [];
     for (const [index, file] of m.files.entries()) {

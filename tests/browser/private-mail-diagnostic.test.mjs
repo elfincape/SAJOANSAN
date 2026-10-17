@@ -12,6 +12,7 @@ const source = await readFile(
 let owner = true,
   calls = 0,
   collectCalls = 0,
+  folderCalls = 0,
   tlsFailure = false;
 const errors = [],
   unexpected = [];
@@ -31,6 +32,21 @@ try {
           "id: '" + (owner ? OWNER_ID : 'browser-test-user') + "'",
         ),
       });
+    if (url.pathname.endsWith('/private-mail-folder')) {
+      folderCalls++;
+      const body = request.postDataJSON();
+      assert.equal(body.url, 'https://1drv.ms/f/example');
+      assert.equal(request.headers().authorization, 'Bearer mock-only');
+      return route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          private: true,
+          name: 'Private mail',
+          configured: body.configure,
+          enabled: false,
+        }),
+      });
+    }
     if (url.pathname.endsWith('/private-mail-collect')) {
       collectCalls++;
       assert.equal(request.headers().authorization, 'Bearer mock-only');
@@ -126,6 +142,25 @@ try {
       ),
     );
   }
+  assert.equal(folderCalls, 0);
+  await page
+    .locator('#private-mail-folder-url')
+    .fill('https://1drv.ms/f/example');
+  await page
+    .getByRole('button', { name: '메일 폴더 확인', exact: true })
+    .click();
+  await page
+    .getByText('본인 전용 폴더 확인 완료: Private mail', { exact: true })
+    .waitFor();
+  await page
+    .getByRole('button', { name: '메일 폴더 연결', exact: true })
+    .click();
+  await page
+    .getByText('메일 폴더를 연결했습니다. 수신은 아직 비활성 상태입니다.', {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(folderCalls, 2);
   assert.equal(collectCalls, 0);
   const receive = page.getByRole('button', {
     name: '메일 1회 수신',

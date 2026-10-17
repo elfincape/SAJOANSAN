@@ -1,21 +1,23 @@
-# Payload review: minimum safe next change (not deployed)
+# Payload review and implemented binary transfer (not deployed)
 
 ## Corrected constraint
 
 Vercel's 4.5MB limit is for the HTTP request received by a function and the HTTP
 response returned by it. The owner invokes Node with a tiny mode JSON and receives
 counts only. POP socket input and Node's outbound fetch to Supabase are separate
-connections, not the user-facing Vercel payload. Therefore the current 1MiB cap is
+connections, not the user-facing Vercel payload. Therefore the previous 1MiB cap was
 a conservative implementation cap, NOT a necessary consequence of Vercel's 4.5MB
-limit. It is insufficient for the user's normal attachment workflow.
+limit. It was insufficient for the user's normal attachment workflow.
 
-Current code still enforces 1MiB/3MiB and is not considered finished. It has been
-preserved for review rather than silently raising limits with the same memory
-behavior. Existing Edge ingest caps an individual file at 10MiB, aggregate decoded
+The prior 1MiB/3MiB version was preserved in commit cb2198b. The current local
+code implements the sequential-binary phase below: 10MiB EML/20MiB aggregate,
+per-file authenticated upload plus independently verified metadata-only finish.
+Tests exercised an exact 10MiB EML and 7MiB attachment, maximum binary body
+10,044,570 bytes and metadata 772 bytes, one request at a time. The legacy JSON Edge ingest caps an individual file at 10MiB, aggregate decoded
 files at 20MiB and request JSON at 30MiB; it buffers JSON plus base64 strings plus
 decoded files. Original EML plus decoded attachments repeat much of the content.
 The shared storage verifier also downloads each file into arrayBuffer for hashing.
-Current receipt maxDuration is locally 60 seconds; production diagnostic is 30.
+Current receipt maxDuration is locally 90 seconds; production diagnostic is 30.
 Vercel Fluid compute documentation permits Hobby 300s and Pro/Enterprise 800s, but
 the current project's plan/Fluid setting has not been read and is not assumed.
 
@@ -30,7 +32,7 @@ https://supabase.com/docs/guides/functions/limits
    credential is needed for owner-invoked collection.
 2. Change Node packaging to return buffers/metadata, not base64. Retain one bounded
    raw EML and decoded MIME parts, capped at 10MiB raw/20MiB aggregate initially.
-   Release per-file buffers as soon as their upload/verification finishes. Postal
+   Keep buffers within the aggregate bound during upload. Postal
    MIME still materializes parsed parts; this is bounded processing, not a claim
    of constant-memory streaming MIME.
 3. Add an owner-only binary-file operation in the existing Edge bridge. Headers or
