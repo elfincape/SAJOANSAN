@@ -18,6 +18,8 @@ import {openTaskDesigner,cadenceLabels} from './portal-designer.js';
 import {periodBounds,shiftPeriod,calendarDates,calendarSegments,taskRunsOnDate,taskScheduleLabel,taskEnd,taskPeriod,overlapsPeriod,taskState,taskStateLabels} from './portal-task-views.js';
 import {setupDialogDismiss} from './portal-dialog.js';
 import {setupPortalSidebar} from './portal-sidebar.js';
+import {renderWorkspaceNavigation} from './workspace-navigation.js';
+import {getCenterByCode,withCenterParam} from './center.js';
 import {koreaDate,statusLabels,actionLabels} from './operations-view.js';
 import {finished,dispatchWarning,orderTasks,currentTemplates,collectInputs,surveyFields,surveyStages} from './portal-model.js';
 const $=id=>document.getElementById(id),api=createOperationsApi(supabase),profile=await requireAuth();
@@ -30,7 +32,17 @@ function centerName(code){return centerLabels[code]??state.context.centers.find(
 const viewResource=view=>({center:'tasks',surveys:'forms',briefing:'briefing',access:'members'})[view]??view;
 function allowed(resource,action='read',center){return permissionAllowed(state.permissions,resource,action,center);}
 function canWrite(code,resource='tasks'){return state.context.writable_centers.includes(code)&&allowed(resource,'edit',code)&&(!['hq','search','notifications','trash'].includes(state.view)||allowed(viewResource(state.view),'edit',code));}
-function updateNavigation(){for(const el of document.querySelectorAll('nav button[data-view]'))el.hidden=!allowed(viewResource(el.dataset.view),'read',el.dataset.center);$('hq-navigation').hidden=!allowed('hq')&&!allowed('briefing');$('audit-navigation').hidden=!allowed('audit');}
+function updateNavigation(){
+ for(const el of document.querySelectorAll('nav button[data-view]'))el.hidden=!allowed(viewResource(el.dataset.view),'read',el.dataset.center);
+ $('hq-navigation').hidden=!allowed('hq')&&!allowed('briefing');
+ const center=$('center').value,selected=getCenterByCode(center);
+ renderWorkspaceNavigation($('portal-workspace-navigation'),{profile,permissions:state.permissions,center});
+ $('audit-navigation').hidden=!selected||!allowed('audit','read',center);
+ if(selected)$('audit-navigation').href=withCenterParam('/admin/audit-log.html',selected);
+ const brand=document.querySelector('.sidebar-brand > a'),url=new URL('/portal/',location.origin);
+ if(center)url.searchParams.set('center',center);
+ brand.href=url.pathname+url.search;
+}
 
 function isHq(){return profile.role==='admin';}
 function stamp(value){return value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'';}
@@ -422,9 +434,9 @@ async function start(){
  buildCenterNavigation();updateNavigation();const requestedView=new URLSearchParams(location.search).get('view');if(requestedView&&allowed(viewResource(requestedView)))state.view=requestedView;
  if(!allowed(viewResource(state.view),'read',['center','surveys'].includes(state.view)?$('center').value:undefined)){const first=[...document.querySelectorAll('nav button[data-view]')].find(el=>!el.hidden);if(first){state.view=first.dataset.view;if(first.dataset.center)$('center').value=first.dataset.center;}}
 
- $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);state.selected=null;refresh();};
+ $('center').onchange=()=>{const url=new URL(location.href);url.searchParams.set('center',$('center').value);historyReplace(url);updateNavigation();state.selected=null;refresh();};
  $('refresh').onclick=refresh;$('mine').onchange=render;$('completed').onchange=refresh;
- document.querySelectorAll('nav button').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);}state.selected=null;if($('task-ticket-dialog').open)$('task-ticket-dialog').close();refresh();});await refresh();
+ document.querySelectorAll('nav button[data-view]').forEach(el=>el.onclick=()=>{if(state.busy)return;state.view=el.dataset.view;if(el.dataset.center){$('center').value=el.dataset.center;const url=new URL(location.href);url.searchParams.set('center',el.dataset.center);historyReplace(url);updateNavigation();}state.selected=null;if($('task-ticket-dialog').open)$('task-ticket-dialog').close();refresh();});await refresh();
  notificationTimer=setInterval(checkNotifications,30000);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNotifications();});
  addEventListener('pagehide',()=>clearInterval(notificationTimer),{once:true});

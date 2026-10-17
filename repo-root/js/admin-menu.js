@@ -11,7 +11,7 @@ export function getAdminMenus(profile) {
   return [
     {
       href: '/portal/',
-      title: '직원·HQ 업무 포털',
+      title: '업무 포털',
       desc: '오늘 할 일·업무 처리·인계·센터 업무조사',
       icon: iconLog(),
       color: 'emerald',

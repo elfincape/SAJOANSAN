@@ -1,5 +1,5 @@
 export function setupPortalSidebar(){
- const sidebar=document.getElementById('portal-sidebar'),toggle=document.getElementById('sidebar-toggle'),close=document.getElementById('sidebar-close'),backdrop=document.getElementById('sidebar-backdrop'),content=document.getElementById('portal-content'),mobile=matchMedia('(max-width: 760px)');
+ const sidebar=document.getElementById('portal-sidebar'),toggle=document.getElementById('sidebar-toggle'),close=document.getElementById('sidebar-close'),backdrop=document.getElementById('sidebar-backdrop'),content=document.getElementById('portal-content'),mobile=matchMedia('(max-width: 1000px)');
  let opened=false;
  function setOpen(value,restoreFocus=false){
   opened=value&&mobile.matches;document.body.classList.toggle('sidebar-open',opened);backdrop.hidden=!opened;toggle.setAttribute('aria-expanded',String(opened));
@@ -8,7 +8,7 @@ export function setupPortalSidebar(){
   else{sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');if(restoreFocus&&mobile.matches)toggle.focus();}
  }
  toggle.onclick=()=>setOpen(!opened);close.onclick=()=>setOpen(false,true);backdrop.onclick=()=>setOpen(false,true);
- sidebar.addEventListener('click',event=>{const item=event.target.closest('[data-view],nav a,.sidebar-footer a');if(!item)return;const wasOpen=opened;setOpen(false,!item.matches('[data-view]'));if(wasOpen&&item.matches('[data-view]'))document.getElementById('portal-title').focus();});
+ sidebar.addEventListener('click',event=>{const item=event.target.closest('[data-view],nav a[href]');if(!item)return;const wasOpen=opened;setOpen(false,!item.matches('[data-view]'));if(wasOpen&&item.matches('[data-view]'))document.getElementById('portal-title').focus();});
  document.addEventListener('keydown',event=>{
   if(!opened)return;if(event.key==='Escape'){event.preventDefault();setOpen(false,true);return;}
   if(event.key!=='Tab')return;

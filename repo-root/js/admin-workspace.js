@@ -4,6 +4,7 @@ import { categoryForPath } from './admin-hub.js';
 import { getSelectedCenter, withCenterParam } from './center.js';
 import { menuPermissions, resourceForPath } from './menu-permissions.js';
 import { permissionAllowed } from './portal-permissions.js';
+import { renderWorkspaceNavigation } from './workspace-navigation.js';
 
 const body = document.body;
 const params = new URLSearchParams(location.search);
@@ -32,8 +33,9 @@ function mountWorkspace() {
   sidebar.className = 'work-navigation';
   sidebar.setAttribute('aria-label', '업무 탐색');
   sidebar.innerHTML = `<div class="work-brand"><a href="/portal/">이안물류<small>통합 업무</small></a><button type="button" class="work-nav-close" aria-label="메뉴 닫기" title="메뉴 닫기">×</button></div>
+    <nav id="work-workspace-navigation" aria-label="주요 화면"></nav>
     <div class="work-center"><span>현재 센터</span><strong></strong><a href="/admin/?selectCenter=1" data-fixed-center="true">센터 변경</a></div>
-    <nav aria-label="업무 메뉴"></nav><div class="work-nav-footer">운영 관리</div>`;
+    <nav aria-label="업무 메뉴"></nav>`;
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'work-nav-toggle btn btn-ghost';
@@ -90,8 +92,12 @@ function mountWorkspace() {
   mountSectionNavigation(main);
   loadNavigation().catch((error) => {
     console.warn('[workspace] 메뉴를 불러오지 못했습니다:', error);
-    const nav = sidebar.querySelector('nav');
-    nav.replaceChildren(makeLink('/portal/', '업무 포털'));
+    renderWorkspaceNavigation(
+      sidebar.querySelector('#work-workspace-navigation'),
+      {
+        center: getSelectedCenter()?.code,
+      },
+    );
   });
 
   function updateCenter() {
@@ -118,32 +124,16 @@ function mountWorkspace() {
     const { profile, permissions } = navigationContext;
     const selected = getSelectedCenter();
     navigationCenter = selected?.code;
-    const nav = sidebar.querySelector('nav');
+    renderWorkspaceNavigation(
+      sidebar.querySelector('#work-workspace-navigation'),
+      {
+        profile,
+        permissions,
+        center: selected?.code,
+      },
+    );
+    const nav = sidebar.querySelector('nav[aria-label="업무 메뉴"]');
     nav.replaceChildren();
-    const quick = document.createElement('div');
-    quick.className = 'work-nav-group';
-    quick.append(makeLink('/portal/', '업무 포털'));
-    if (profile.role === 'editor' || profile.role === 'admin')
-      quick.append(makeLink('/', '코스표 대시보드'));
-    const canManage =
-      profile.role === 'editor' ||
-      profile.role === 'admin' ||
-      Object.entries(permissions.access || {}).some(
-        ([key, access]) =>
-          access.read &&
-          ![
-            'tasks',
-            'incidents',
-            'forms',
-            'search',
-            'notifications',
-            'hq',
-            'history',
-            'trash',
-          ].includes(key),
-      );
-    if (canManage) quick.append(makeLink('/admin/', '관리 허브'));
-    nav.append(quick);
     const groups = {
       work: '업무 처리',
       reference: '기준정보',
