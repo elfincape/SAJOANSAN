@@ -228,7 +228,8 @@
 }
 #relation-source-label,
 #relation-status,
-#relation-count {
+#relation-count,
+#relation-destination-info {
   overflow-wrap: anywhere;
 }
 #relation-results td {

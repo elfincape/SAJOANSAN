@@ -194,7 +194,37 @@
                 <summary>주소 확인 필요</summary>
                 <ul id="relation-issue-list"></ul>
               </details>
-              <details>
+              <details open>
+                <summary>납품처 DB 조회</summary>
+                <div class="pd-fields">
+                  <label
+                    >납품처 검색<input
+                      id="relation-destination-search"
+                      type="search"
+                      placeholder="코드·착지명·주소"
+                  /></label>
+                  <label
+                    >납품처<select id="relation-destination"></select
+                  ></label>
+                </div>
+                <p
+                  id="relation-destination-info"
+                  class="pd-muted"
+                  role="status"
+                ></p>
+                <div class="pd-toolbar">
+                  <button id="relation-center-pair" class="btn btn-ghost">
+                    센터 구간 조회
+                  </button>
+                  <button id="relation-select-from" class="btn btn-ghost">
+                    출발지 선택
+                  </button>
+                  <button id="relation-select-to" class="btn btn-ghost">
+                    도착지 선택
+                  </button>
+                </div>
+              </details>
+              <details id="relation-single-pair">
                 <summary>단일 구간 추가 조회</summary>
                 <div class="pd-fields">
                   <label

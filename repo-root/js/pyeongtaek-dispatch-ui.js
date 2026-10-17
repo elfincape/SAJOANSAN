@@ -463,6 +463,7 @@ async function context({ replaceDrivers = false } = {}) {
   const next = await loadDispatchContext(supabase);
   state.context = next;
   profiles.renderList();
+  relations?.refreshDestinations();
   if (replaceDrivers) state.drivers = clone(next.drivers);
   issues($('context-issues'), next.issues);
   render();
@@ -1514,6 +1515,7 @@ async function initialize() {
   relations = createRelationsUI({
     actor: profile,
     permissions,
+    getDestinations: () => state.context.destinations,
     onBusyChange(value) {
       state.busy = value;
       controls();
@@ -1552,6 +1554,7 @@ const profiles = createProfilesUI({
     const changed =
       signature(next.destinations) !== signature(state.context.destinations);
     state.context.destinations = next.destinations;
+    relations?.refreshDestinations();
     if (state.draft && changed) {
       state.needsRegeneration = true;
       touch('납품정보 DB 다시 읽기 · 초안 재생성 필요');
@@ -1565,6 +1568,7 @@ const profiles = createProfilesUI({
       );
       if (destination) destination.dispatch_profile = record.dispatch_profile;
     }
+    relations?.refreshDestinations();
     if (state.draft) {
       state.needsRegeneration = true;
       touch('납품정보 DB 변경 · 초안 재생성 필요');

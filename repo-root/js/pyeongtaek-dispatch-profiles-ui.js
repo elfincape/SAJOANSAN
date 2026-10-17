@@ -79,6 +79,7 @@ export function createProfilesUI({
   const problems = node('p', '', 'pd-issues');
   const search = node('input');
   search.type = 'search';
+  search.placeholder = '코드·착지명·주소';
   const list = node('div', null, 'pd-profile-list');
   const count = node('p', '', 'pd-muted');
   const mappingInputs = new Map();

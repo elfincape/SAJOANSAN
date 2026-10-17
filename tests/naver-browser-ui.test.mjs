@@ -34,10 +34,25 @@ const relationClient={functions:{invoke:async(name,{body})=>{
  assert.equal(name,'naver-relations');assert.equal(body.center,'002');relationRequests.push(body);
  return {data:body.action==='preview'?{stops:2,sourceRows:3,invalidRows:0,estimatedCandidates:4,directionsBudget:body.directionsBudget}:body.action==='create'?{...relationResult,status:'queued'}:relationResult};
 }},rpc:async(name)=>{assert.equal(name,'naver_api_cancel');return {data:null};}};
-const relationContext={requireRole:async()=>({id:'test-user'}),supabase:relationClient,menuPermissions:async()=>({access:{delivery_points:{edit_centers:['002']}}}),permissionAllowed,excelAddresses:base.excelAddresses,XLSX,ExcelJS,document:relationDocument,location:relationDom.window.location,URL,Blob,setTimeout:fn=>{fn();return 0;},addEventListener:()=>{}};relationContext.globalThis=relationContext;
-await vm.runInNewContext(relationCode.replace(/^import .*;\r?\n/gm,'').replace('export function createRelationsUI','function createRelationsUI')+'\ncreateRelationsUI({actor:{id:"test-user"},permissions:{access:{delivery_points:{edit_centers:["002"]}}}});',relationContext);
+const destinationRecords=[{id:'dp-a',code:'P001',name:'알파',address:'주소 A',center_code:'002',dispatch_profile:{otd:'09:00 이전',mode:'unmanned'}},{id:'dp-b',code:'P002',name:'베타',address:'주소 B',center_code:'002'},{id:'dp-empty',code:'NOADDR',name:'주소 없음',address:'',center_code:'002'},{id:'dp-other',code:'OTHER',name:'타센터',address:'주소 A',center_code:'001'}];
+const relationContext={getDestinations:()=>destinationRecords,requireRole:async()=>({id:'test-user'}),supabase:relationClient,menuPermissions:async()=>({access:{delivery_points:{edit_centers:['002']}}}),permissionAllowed,excelAddresses:base.excelAddresses,XLSX,ExcelJS,document:relationDocument,location:relationDom.window.location,URL,Blob,setTimeout:fn=>{fn();return 0;},addEventListener:()=>{}};relationContext.globalThis=relationContext;
+await vm.runInNewContext(relationCode.replace(/^import .*;\r?\n/gm,'').replace('export function createRelationsUI','function createRelationsUI')+'\ncreateRelationsUI({actor:{id:"test-user"},getDestinations,permissions:{access:{delivery_points:{edit_centers:["002"]}}}});',relationContext);
 assert.equal(relationDocument.getElementById('relations-panel').hidden,false);
+assert.equal(relationDocument.getElementById('relation-destination').options.length,3,'Only Pyeongtaek destinations');
+const search=relationDocument.getElementById('relation-destination-search');
+for(const [query,id] of [['p001','dp-a'],['베타','dp-b'],['주소 A','dp-a']]){search.value=query;search.oninput();assert.equal(relationDocument.getElementById('relation-destination').value,id);}
+assert(relationDocument.getElementById('relation-destination-info').textContent.includes('09:00 이전'));
 assert.equal(relationRequests.length,0,'Opening collector must not start provider requests');
+await relationDocument.getElementById('relation-center-pair').onclick();
+let selectedPair=relationRequests.findLast(r=>r.action==='create'&&r.kind==='single');assert.equal(selectedPair.origin,'경기도 평택시 산단로 263');assert.equal(selectedPair.rows[0].address,'주소 A');
+const beforeSelection=relationRequests.length;
+await relationDocument.getElementById('relation-select-from').onclick();search.value='P002';search.oninput();await relationDocument.getElementById('relation-select-to').onclick();
+assert.equal(relationRequests.length,beforeSelection,'Selecting DB records must not call Naver');
+await relationDocument.getElementById('relation-pair').onclick();selectedPair=relationRequests.findLast(r=>r.action==='create'&&r.kind==='single');assert.equal(selectedPair.origin,'주소 A');assert.equal(selectedPair.rows[0].address,'주소 B');
+search.value='NOADDR';search.oninput();assert.equal(relationDocument.getElementById('relation-center-pair').disabled,true);const beforeNoAddress=relationRequests.length;await relationDocument.getElementById('relation-center-pair').onclick();assert.equal(relationRequests.length,beforeNoAddress);
+search.value='not-found';search.oninput();assert.equal(relationDocument.getElementById('relation-destination').options.length,0);assert.equal(relationDocument.getElementById('relation-select-to').disabled,true);
+search.value='';search.oninput();
+console.log('DB code/name/address lookup, center route, destination pair, zero-call selection and missing-address guards passed');
 await relationDocument.getElementById('relation-preview').onclick();assert.equal(relationDocument.getElementById('relation-start').disabled,false);
 await relationDocument.getElementById('relation-start').onclick();assert.equal(relationDocument.querySelectorAll('#relation-results tr').length,1);
 assert(relationDocument.getElementById('relation-results').textContent.includes('오래된 추정'));

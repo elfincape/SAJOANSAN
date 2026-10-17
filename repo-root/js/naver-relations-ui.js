@@ -6,6 +6,7 @@ import { excelAddresses } from './destination-distance-model.js';
 export function createRelationsUI({
   actor,
   permissions,
+  getDestinations = () => [],
   onBusyChange = () => {},
   onCollected = async () => {},
 }) {
@@ -37,12 +38,85 @@ export function createRelationsUI({
       'relation-pair',
     ])
       $(id).disabled = unavailable;
+    for (const id of [
+      'relation-center-pair',
+      'relation-select-from',
+      'relation-select-to',
+    ])
+      $(id).disabled = unavailable || !selectedDestination()?.address?.trim();
     $('relation-start').disabled = unavailable || !preview;
     $('relation-resume').disabled =
       unavailable || !job || (job.status === 'completed' && !job.deferred);
     $('relation-stop').hidden = !busy || !activeJobId;
     $('relation-stop').disabled = stopped;
     $('relation-download').disabled = unavailable || !job?.completed;
+  }
+  function selectedDestination() {
+    return getDestinations().find(
+      (d) =>
+        d.center_code === '002' &&
+        String(d.id) === $('relation-destination').value,
+    );
+  }
+  function destinationInfo() {
+    const d = selectedDestination();
+    const p = d?.dispatch_profile;
+    const modes = {
+      unmanned: '무인',
+      attended: '유인',
+      yard: '야적',
+      unknown: '미확인',
+    };
+    $('relation-destination-info').textContent = d
+      ? [
+          d.code,
+          d.name,
+          d.address || '주소 미등록',
+          p
+            ? `OTD ${p.otd || '미지정'} · ${modes[p.mode] || '미확인'}`
+            : '납품정보 미등록',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : '검색 결과가 없습니다.';
+    controls();
+  }
+  function refreshDestinations() {
+    const selected = $('relation-destination').value;
+    const normalize = (v) =>
+      String(v ?? '')
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/\s+/g, '');
+    const query = normalize($('relation-destination-search').value);
+    const rows = getDestinations().filter(
+      (d) =>
+        d.center_code === '002' &&
+        normalize([d.code, d.name, d.address].join(' ')).includes(query),
+    );
+    $('relation-destination').replaceChildren(
+      ...rows.map((d) => {
+        const option = document.createElement('option');
+        option.value = d.id;
+        option.textContent = [d.code, d.name, d.address || '주소 미등록']
+          .filter(Boolean)
+          .join(' · ');
+        return option;
+      }),
+    );
+    if (rows.some((d) => String(d.id) === selected))
+      $('relation-destination').value = selected;
+    destinationInfo();
+  }
+  function selectDestination(side) {
+    const d = selectedDestination();
+    if (!d?.address?.trim())
+      throw Error('주소가 등록된 납품처를 선택해 주세요.');
+    $('relation-pair-' + side).value = d.address.trim();
+    $('relation-single-pair').open = true;
+    $('relation-pair-status').textContent =
+      [d.code, d.name].filter(Boolean).join(' · ') +
+      (side === 'from' ? ' · 출발지 선택됨' : ' · 도착지 선택됨');
   }
   function render(value) {
     job = value;
@@ -424,6 +498,20 @@ export function createRelationsUI({
     $('relation-resume').onclick = () => guarded(resume, true);
     $('relation-download').onclick = () => guarded(download);
     $('relation-pair').onclick = () => guarded(singlePair, true);
+    $('relation-destination-search').oninput = refreshDestinations;
+    $('relation-destination').onchange = destinationInfo;
+    $('relation-select-from').onclick = () =>
+      guarded(() => selectDestination('from'));
+    $('relation-select-to').onclick = () =>
+      guarded(() => selectDestination('to'));
+    $('relation-center-pair').onclick = () =>
+      guarded(async () => {
+        const origin = $('relation-origin').value.trim();
+        if (!origin) throw Error('센터 출발지 주소를 입력해 주세요.');
+        $('relation-pair-from').value = origin;
+        selectDestination('to');
+        await singlePair();
+      }, true);
     $('relation-stop').onclick = async () => {
       if (!activeJobId) return;
       stopped = true;
@@ -439,10 +527,11 @@ export function createRelationsUI({
     addEventListener('pagehide', () => {
       stopped = true;
     });
-    controls();
+    refreshDestinations();
   }
   initialize();
   return {
+    refreshDestinations,
     setBlocked(value) {
       blocked = value;
       controls();
