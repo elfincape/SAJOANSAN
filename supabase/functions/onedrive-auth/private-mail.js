@@ -1,4 +1,12 @@
 import { createOneDriveStorage } from './storage.js';
+import {
+  APPROVED_MAIL_TARGET,
+  createAnonymousDestinationCheck,
+  isMailDestinationItem,
+  validateMailPermissions,
+} from './private-mail-policy.js';
+const approvedAnonymousDestination =
+  createAnonymousDestinationCheck(APPROVED_MAIL_TARGET);
 const enc = encodeURIComponent,
   MAX = 10 * 1024 * 1024;
 const uuid = (s) =>
@@ -159,10 +167,10 @@ export async function handlePrivateMail(action, req, user, ctx) {
         box.drive_id.toLowerCase()
     )
       throw fail('OWNER_FOLDER_REQUIRED', 409);
-    await privatePermissions(box, box.folder_id, env, owner);
+    await privatePermissions(box, box.folder_id, env, owner, folder);
     return owner;
   }
-  async function privatePermissions(box, itemId, env, owner) {
+  async function privatePermissions(box, itemId, env, owner, item) {
     const permissions = await (
       await graph(
         '/drives/' +
@@ -173,48 +181,21 @@ export async function handlePrivateMail(action, req, user, ctx) {
         env.access,
       )
     ).json();
-    if (!Array.isArray(permissions.value))
-      throw fail('PERMISSIONS_INCOMPLETE', 409);
-    let missingIdentity = false;
-    for (const p of permissions.value) {
-      // A URL alone says nothing about access. Only Graph permission facets do.
-      if (p.link)
-        throw fail(
-          p.link.scope === 'anonymous'
-            ? 'ANONYMOUS_LINK_PRESENT'
-            : p.link.scope === 'organization'
-              ? 'ORGANIZATION_LINK_PRESENT'
-              : 'SHARING_LINK_PRESENT',
-          409,
-        );
-      if (p.invitation) throw fail('INVITATION_PRESENT', 409);
-      const identities = [
-        p.grantedToV2,
-        p.grantedTo,
-        ...(p.grantedToIdentitiesV2 || []),
-        ...(p.grantedToIdentities || []),
-      ].filter(Boolean);
-      if (
-        owner &&
-        identities.some(
-          (identity) => identity.user?.id && identity.user.id !== owner,
-        )
-      )
-        throw fail('OTHER_PRINCIPAL_PRESENT', 409);
-      if (
-        !identities.length ||
-        identities.some((identity) => !identity.user?.id)
-      )
-        missingIdentity = true;
-    }
-    // Known sharing takes precedence; unresolved metadata still prevents connection.
-    if (permissions['@odata.nextLink'])
-      throw fail('PERMISSIONS_INCOMPLETE', 409);
-    // Without the optional owner identity, only an explicitly complete empty
-    // sharing ACL can prove no other access. Never guess identities from IDs.
-    if (!owner && permissions.value.length)
-      throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
-    if (missingIdentity) throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
+    const approved = await approvedAnonymousDestination(user.id, box);
+    const localItem = isMailDestinationItem(box, itemId, item);
+    const anonymousAllowed = approved && localItem;
+    validateMailPermissions(permissions, owner, anonymousAllowed, fail);
+    if (
+      anonymousAllowed &&
+      permissions.value.some((p) => p.link?.scope === 'anonymous')
+    )
+      console.info(
+        JSON.stringify({
+          event: 'private_mail',
+          stage: 'destination',
+          code: 'APPROVED_ANONYMOUS_DESTINATION',
+        }),
+      );
   }
   async function fenceMailbox(box, lease) {
     const live = (
@@ -278,7 +259,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
             },
           )
         ).json();
-    await privatePermissions(box, item.id, env, driveOwner);
+    await privatePermissions(box, item.id, env, driveOwner, item);
     await verify(
       { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
       item,
@@ -845,7 +826,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
                 },
               )
             ).json();
-        await privatePermissions(box, item.id, env, driveOwner);
+        await privatePermissions(box, item.id, env, driveOwner, item);
         await verify(
           { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
           item,
@@ -935,7 +916,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
         env.access,
       )
     ).json();
-    await privatePermissions(box, item.id, env, driveOwner);
+    await privatePermissions(box, item.id, env, driveOwner, item);
     const bytes = await verify(
       { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
       item,
