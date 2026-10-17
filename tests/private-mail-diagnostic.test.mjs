@@ -3,6 +3,8 @@ import {
   makeDiagnosticHandler,
   probePopConnection,
   OWNER_ID,
+  claimedDiagnosticLease,
+  validDiagnosticLease,
 } from '../supabase/functions/private-mail-diagnostic/handler.js';
 const json = (value) => new Response(JSON.stringify(value));
 let authenticated = true,
@@ -10,6 +12,7 @@ let authenticated = true,
   active = true,
   busy = false,
   lock = false,
+  leaseHolder,
   networkCalls = 0,
   closed = 0,
   failTls = false,
@@ -71,12 +74,23 @@ async function fetcher(url, options) {
   if (url.includes('/onedrive_locks?')) {
     assert.equal(options.headers.Authorization, 'Bearer server-only');
     if (options.method === 'DELETE') {
-      if (url.includes('holder=eq.')) lock = false;
+      if (url.includes('holder=eq.') || url.includes('&or=')) lock = false;
       return new Response(null, { status: 204 });
     }
     if (options.method === 'POST') {
       if (busy || lock) return json([]);
       lock = true;
+      leaseHolder = JSON.parse(options.body).holder;
+      return json([{ name: 'private-mail-pop-diagnostic' }]);
+    }
+    if (options.method === 'PATCH') {
+      if (!lock || !url.includes('&holder=eq.' + leaseHolder + '&'))
+        return json([]);
+      leaseHolder = JSON.parse(options.body).holder;
+      assert.match(
+        leaseHolder,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
       return json([{ name: 'private-mail-pop-diagnostic' }]);
     }
   }
@@ -223,4 +237,125 @@ assert.equal(
 );
 console.log(
   'PASS TLS phase/category allowlist, region allowlist, no upstream error or stack disclosure',
+);
+
+let delegatedCalls = 0;
+assert.equal(
+  validDiagnosticLease(claimedDiagnosticLease(crypto.randomUUID())),
+  false,
+);
+const delegated = makeDiagnosticHandler(env, network, {
+  fetcher,
+  delegate: async ({ token, holder }) => {
+    assert.equal(token, 'user-session');
+    const claim = () =>
+      delegated(req(true, JSON.stringify({ action: 'claim', holder })));
+    assert.equal((await claim()).status, 200);
+    assert.equal((await claim()).status, 409);
+    assert.equal(
+      (
+        await delegated(
+          req(true, JSON.stringify({ action: 'claim', holder: 'invalid' })),
+        )
+      ).status,
+      400,
+    );
+    delegatedCalls++;
+    return {
+      ok: true,
+      stages: result.stages,
+      execution_platform: 'vercel-node',
+    };
+  },
+});
+const delegatedResult = await (await delegated(req())).json();
+assert.equal(delegatedCalls, 1);
+assert.equal(delegatedResult.execution_platform, 'vercel-node');
+assert.equal(lock, false);
+owner = false;
+assert.equal(
+  (
+    await delegated(
+      req(
+        true,
+        JSON.stringify({ action: 'claim', holder: crypto.randomUUID() }),
+      ),
+    )
+  ).status,
+  403,
+);
+owner = true;
+console.log('PASS authenticated single-use Node delegation and lease cleanup');
+
+const { handleNodeDiagnostic } =
+  await import('../server/private-mail-probe.mjs');
+let claims = 0,
+  nodeProbes = 0,
+  claimStatus = 200;
+const nodeRequest = (body, auth = true, method = 'POST') =>
+  new Request('https://sajoansan.vercel.app/api/private-mail-diagnostic', {
+    method,
+    headers: auth ? { Authorization: 'Bearer user-session' } : {},
+    ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
+  });
+const nodeOptions = {
+  fetcher: async (url, options) => {
+    claims++;
+    assert.ok(url.endsWith('/functions/v1/private-mail-diagnostic'));
+    assert.equal(options.headers.Authorization, 'Bearer user-session');
+    assert.equal(JSON.parse(options.body).action, 'claim');
+    return new Response(JSON.stringify({ claimed: claimStatus === 200 }), {
+      status: claimStatus,
+    });
+  },
+  network: {
+    ...network,
+    resolveDns: async (...args) => {
+      nodeProbes++;
+      return network.resolveDns(...args);
+    },
+  },
+  region: 'iad1',
+};
+assert.equal(
+  (await handleNodeDiagnostic(nodeRequest({}, false), nodeOptions)).status,
+  401,
+);
+assert.equal(
+  (await handleNodeDiagnostic(nodeRequest({ lease: 'bad' }), nodeOptions))
+    .status,
+  400,
+);
+assert.equal(
+  (await handleNodeDiagnostic(nodeRequest({}, true, 'GET'), nodeOptions))
+    .status,
+  405,
+);
+assert.equal(claims, 0);
+for (const status of [401, 403, 409]) {
+  claimStatus = status;
+  assert.equal(
+    (
+      await handleNodeDiagnostic(
+        nodeRequest({ lease: crypto.randomUUID() }),
+        nodeOptions,
+      )
+    ).status,
+    status,
+  );
+}
+assert.equal(nodeProbes, 0);
+claimStatus = 200;
+const nodeResult = await (
+  await handleNodeDiagnostic(
+    nodeRequest({ lease: crypto.randomUUID(), host: 'evil.test', port: 25 }),
+    nodeOptions,
+  )
+).json();
+assert.equal(nodeResult.ok, true);
+assert.equal(nodeResult.execution_platform, 'vercel-node');
+assert.equal(nodeResult.execution_region, 'iad1');
+assert.equal(nodeProbes, 1);
+console.log(
+  'PASS Node worker rejects missing/replayed/unauthorized leases before network access; fixed target preserved',
 );

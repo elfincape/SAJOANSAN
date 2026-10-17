@@ -3,6 +3,14 @@ const HOST = 'mail.onnet21.com',
   PORT = 995,
   SITE = 'https://sajoansan.vercel.app';
 const LOCK = 'private-mail-pop-diagnostic';
+export const validDiagnosticLease = (value) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+// The existing lock holder is UUID, so mark consumption with a distinct UUID.
+export const claimedDiagnosticLease = (holder) =>
+  holder.slice(0, 14) + '5' + holder.slice(15);
 
 // Inspect locally, but never return or log upstream messages, names, or stacks.
 function classifyTlsError(error) {
@@ -66,6 +74,12 @@ const REGIONS = new Set([
   'eu-west-2',
   'eu-west-3',
   'sa-east-1',
+  'iad1',
+  'icn1',
+  'hnd1',
+  'sfo1',
+  'sin1',
+  'fra1',
 ]);
 
 async function bounded(promise, ms, code) {
@@ -203,7 +217,7 @@ export async function probePopConnection(
 export function makeDiagnosticHandler(
   env,
   network,
-  { fetcher = fetch, timeoutMs = 3000 } = {},
+  { fetcher = fetch, timeoutMs = 3000, delegate } = {},
 ) {
   const root = env.SUPABASE_URL,
     anon = env.SUPABASE_ANON_KEY,
@@ -274,6 +288,26 @@ export function makeDiagnosticHandler(
       const rows = await profile.json();
       if (!rows.some((p) => p.id === OWNER_ID && p.active === true))
         return json({ error: '활성 본인 계정만 사용할 수 있습니다.' }, 403);
+      const body = await req.json().catch(() => ({}));
+      if (body?.action === 'claim') {
+        if (!validDiagnosticLease(body.holder))
+          return json({ error: '유효한 실행 잠금이 필요합니다.' }, 400);
+        // Atomically consume the lease before the Node worker opens any socket.
+        const claimed = await lockRequest(
+          'name=eq.' +
+            LOCK +
+            '&holder=eq.' +
+            body.holder +
+            '&expires_at=gt.' +
+            encodeURIComponent(new Date().toISOString()),
+          'PATCH',
+          { holder: claimedDiagnosticLease(body.holder) },
+        );
+        return json(
+          { claimed: claimed.length === 1 },
+          claimed.length === 1 ? 200 : 409,
+        );
+      }
       await lockRequest(
         'name=eq.' +
           LOCK +
@@ -298,7 +332,12 @@ export function makeDiagnosticHandler(
       holder = candidate;
       // Never read input targets or send POP commands. A successful greeting is the end.
       return json(
-        await probePopConnection(network, { timeoutMs, region: env.SB_REGION }),
+        delegate
+          ? await delegate({ token, holder })
+          : await probePopConnection(network, {
+              timeoutMs,
+              region: env.SB_REGION,
+            }),
       );
     } catch {
       return json(
@@ -310,7 +349,13 @@ export function makeDiagnosticHandler(
     } finally {
       if (holder)
         await lockRequest(
-          'name=eq.' + LOCK + '&holder=eq.' + holder,
+          'name=eq.' +
+            LOCK +
+            '&or=(holder.eq.' +
+            holder +
+            ',holder.eq.' +
+            claimedDiagnosticLease(holder) +
+            ')',
           'DELETE',
         ).catch(() => {});
     }

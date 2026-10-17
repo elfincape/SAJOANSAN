@@ -8,7 +8,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
     node('h3', '클라우드 메일 연결 진단'),
     node(
       'p',
-      '비밀번호 없이 Supabase에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
+      '비밀번호 없이 클라우드에서 DNS·TCP 995·TLS 연결/검증·POP 인사말만 확인합니다. 메일 로그인이나 수신은 시작하지 않습니다.',
     ),
   );
   const status = node(
@@ -32,6 +32,9 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
           ? 'DNS·TCP·TLS·POP 인사말 확인 완료. 메일 계정 로그인은 하지 않았습니다.'
           : '클라우드 연결 진단에 실패했습니다. 실패한 단계를 확인해 주세요.';
         for (const [key, label] of [
+          ['execution_platform', '실행 환경'],
+          ['tls_protocol', 'TLS 버전'],
+          ['tls_cipher', 'TLS 암호군'],
           ['dns', 'DNS 확인'],
           ['tcp', 'TCP 995 연결'],
           ['tls', 'TLS 연결/검증'],
