@@ -56,7 +56,7 @@ Files: existing `repo-root/admin/naver-shortest-distance.html`, new `repo-root/j
 - [x] Independent review and fix significant issues; rerun affected checks.
 - [x] Apply additive schema and deploy the new function only if permitted; preserve the existing deployed endpoint.
 - [ ] Verify live authorization and at most 60 Directions requests when an authorized session is available.
-- [ ] Commit/push the feature branch; report concrete results and unresolved external prerequisites.
+- [x] Commit/push the feature branch; report concrete results and unresolved external prerequisites.
 
 ## Execution Ledger
 
@@ -70,3 +70,4 @@ Files: existing `repo-root/admin/naver-shortest-distance.html`, new `repo-root/j
 - Security review: Supabase advisor flags authenticated execution of `naver_api_cancel` because it is SECURITY DEFINER. This is intentional: tables are not directly writable, and cancellation checks non-null auth.uid(), center edit permission and job owner/admin, uses fixed empty search_path, and is not executable by PUBLIC/anon. No other new-feature security finding was identified.
 - Verification: 8 related test files passed, plus lint/build and desktop/mobile browser checks. Temporary jsdom/xlsx test dependencies stay outside the app and lockfiles.
 - Follow-up review: all five initial findings resolved. Added caller-displayed revision to resume; a stale-tab test failed before the fix and passed after it. Single-pair additions use the same persisted collector and monthly ledger without replacing the main collection view.
+- Published: implementation commit `e29ab9f` pushed to `codex/pyeongtaek-route-relations`; Edge Function `naver-relations` version 2 ACTIVE. No main push or Vercel production deployment. User-facing local server is `http://127.0.0.1:8769`; an authenticated user session is still required for the real pilot.
