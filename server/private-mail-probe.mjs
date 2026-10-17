@@ -5,7 +5,8 @@ import {
   probePopConnection,
   validDiagnosticLease,
 } from '../supabase/functions/private-mail-diagnostic/handler.js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../repo-root/js/config.js';
+const DIAGNOSTIC_EDGE =
+  'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/private-mail-diagnostic';
 
 export function createNodeNetwork() {
   let details = {};
@@ -85,20 +86,16 @@ export async function handleNodeDiagnostic(
     return json({ error: '유효한 실행 잠금이 필요합니다.' }, 400);
   try {
     // Only an authenticated owner with a fresh, unclaimed Edge lease may probe.
-    const claim = await fetcher(
-      SUPABASE_URL + '/functions/v1/private-mail-diagnostic',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: authorization,
-          apikey: SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'claim', holder: body.lease }),
-        signal: AbortSignal.timeout(10000),
-        redirect: 'error',
+    const claim = await fetcher(DIAGNOSTIC_EDGE, {
+      method: 'POST',
+      headers: {
+        Authorization: authorization,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({ action: 'claim', holder: body.lease }),
+      signal: AbortSignal.timeout(10000),
+      redirect: 'error',
+    });
     if (!claim.ok || (await claim.json()).claimed !== true)
       return json(
         { error: '실행 권한 또는 잠금을 확인할 수 없습니다.' },
