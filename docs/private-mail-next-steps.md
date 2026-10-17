@@ -76,7 +76,7 @@ a separate future design/security decision. Cron remains disabled.
 
 Vercel supports functions['api/private-mail-collect.mjs'].regions=['icn1'] without
 changing other functions' region settings. This setting was NOT applied. The repo
-currently sets diagnostic maxDuration only; its observed runtime is iad1. The
+sets diagnostic maxDuration=30 and collector maxDuration=90; the observed production diagnostic runtime is iad1. The
 project's authenticated dashboard/plan is unavailable here. Hobby allows a single
 Function region and Pro up to five, so coexistence of iad1/icn1 depends on the plan.
 Do not change the whole project region or expand U+ countries automatically.
