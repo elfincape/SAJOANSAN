@@ -2,6 +2,7 @@ import {
   runMailConnectionDiagnostic,
   runMailCollection,
   configurePrivateMailFolder,
+  mailFolderReason,
 } from './private-mail-diagnostic-api.js';
 export { MAIL_DIAGNOSTIC_OWNER_ID } from './private-mail-diagnostic-api.js';
 
@@ -119,7 +120,7 @@ export function mountMailDiagnostic({ host, node, button, isActive }) {
           ? configure
             ? '메일 폴더를 연결했습니다. 수신은 아직 비활성 상태입니다.'
             : '본인 전용 폴더 확인 완료: ' + String(result.name || '')
-          : '공유 또는 소유자 권한을 확인하지 못해 연결하지 않았습니다.';
+          : mailFolderReason(result.reason);
     } catch (error) {
       if (isActive() && section.isConnected)
         folderStatus.textContent = error.message;

@@ -133,7 +133,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       await graph('/me/drive?$select=id,owner', env.access)
     ).json();
     const owner = drive.owner?.user?.id;
-    if (!owner) throw fail('메일 보관 계정 소유자를 확인할 수 없습니다.', 409);
+    if (!owner) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
     await privatePermissions(box, box.folder_id, env, owner);
     return owner;
   }
@@ -148,28 +148,34 @@ export async function handlePrivateMail(action, req, user, ctx) {
         env.access,
       )
     ).json();
-    if (
-      !Array.isArray(permissions.value) ||
-      permissions['@odata.nextLink'] ||
-      permissions.value.some((p) => {
-        const identities = [
-          p.grantedToV2,
-          p.grantedTo,
-          ...(p.grantedToIdentitiesV2 || []),
-          ...(p.grantedToIdentities || []),
-        ].filter(Boolean);
-        return (
-          p.link ||
-          p.invitation ||
-          !identities.length ||
-          identities.some((identity) => identity.user?.id !== owner)
+    if (!Array.isArray(permissions.value) || permissions['@odata.nextLink'])
+      throw fail('PERMISSIONS_INCOMPLETE', 409);
+    for (const p of permissions.value) {
+      // A URL alone says nothing about access. Only Graph permission facets do.
+      if (p.link)
+        throw fail(
+          p.link.scope === 'anonymous'
+            ? 'ANONYMOUS_LINK_PRESENT'
+            : p.link.scope === 'organization'
+              ? 'ORGANIZATION_LINK_PRESENT'
+              : 'SHARING_LINK_PRESENT',
+          409,
         );
-      })
-    )
-      throw fail(
-        '메일 폴더에 공유 권한이 있습니다. 본인 전용 비공개 폴더를 선택해 주세요.',
-        409,
-      );
+      if (p.invitation) throw fail('INVITATION_PRESENT', 409);
+      const identities = [
+        p.grantedToV2,
+        p.grantedTo,
+        ...(p.grantedToIdentitiesV2 || []),
+        ...(p.grantedToIdentities || []),
+      ].filter(Boolean);
+      if (
+        !identities.length ||
+        identities.some((identity) => !identity.user?.id)
+      )
+        throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
+      if (identities.some((identity) => identity.user.id !== owner))
+        throw fail('OTHER_PRINCIPAL_PRESENT', 409);
+    }
   }
   async function fenceMailbox(box, lease) {
     const live = (
@@ -320,7 +326,18 @@ export async function handlePrivateMail(action, req, user, ctx) {
             drive_id: driveId,
             name: String(item.name || '').slice(0, 200),
             private: false,
-            reason: 'PRIVACY_NOT_VERIFIED',
+            reason: [
+              'DRIVE_OWNER_UNAVAILABLE',
+              'PERMISSIONS_INCOMPLETE',
+              'ANONYMOUS_LINK_PRESENT',
+              'ORGANIZATION_LINK_PRESENT',
+              'SHARING_LINK_PRESENT',
+              'INVITATION_PRESENT',
+              'PERMISSION_IDENTITY_UNAVAILABLE',
+              'OTHER_PRINCIPAL_PRESENT',
+            ].includes(error.message)
+              ? error.message
+              : 'PRIVACY_NOT_VERIFIED',
           });
         throw error;
       }

@@ -1,6 +1,28 @@
 import { supabase } from './supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 export const MAIL_DIAGNOSTIC_OWNER_ID = '2a828c2d-9a6f-40d4-8e13-336b591811cc';
+export function mailFolderReason(reason) {
+  return (
+    {
+      DRIVE_OWNER_UNAVAILABLE:
+        'OneDrive가 드라이브 소유자 ID를 반환하지 않았습니다. 공유 여부와는 별개입니다.',
+      PERMISSIONS_INCOMPLETE:
+        'OneDrive 권한 목록을 완전히 확인하지 못했습니다. 공유가 확인된 상태는 아닙니다.',
+      PERMISSION_IDENTITY_UNAVAILABLE:
+        'OneDrive 권한 항목에 사용자 ID가 없어 소유자와 비교하지 못했습니다.',
+      ANONYMOUS_LINK_PRESENT:
+        'OneDrive 권한에서 링크를 가진 누구나 접근 가능한 권한을 확인했습니다.',
+      ORGANIZATION_LINK_PRESENT:
+        'OneDrive 권한에서 조직 구성원이 접근 가능한 링크를 확인했습니다.',
+      SHARING_LINK_PRESENT:
+        'OneDrive 권한에 링크 항목이 있으나 접근 대상을 확정하지 못했습니다. 입력 URL 형식 때문에 거절한 것이 아닙니다.',
+      INVITATION_PRESENT: 'OneDrive 권한에 초대 항목이 있습니다.',
+      OTHER_PRINCIPAL_PRESENT:
+        'OneDrive 권한에서 드라이브 소유자 이외의 사용자 접근을 확인했습니다.',
+    }[reason] ||
+    'OneDrive 소유권 또는 권한 조회를 완료하지 못했습니다. 추가 권한은 부여하지 않았습니다.'
+  );
+}
 export async function runMailConnectionDiagnostic() {
   const {
     data: { session },
@@ -73,7 +95,9 @@ export async function configurePrivateMailFolder(url, configure = true) {
       signal: AbortSignal.timeout(60000),
     },
   );
-  if (!response.ok)
-    throw Error('메일 폴더의 소유자와 비공개 권한을 확인하지 못했습니다.');
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    throw Error(mailFolderReason(failure.error));
+  }
   return response.json();
 }

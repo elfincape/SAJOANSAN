@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { handlePrivateMail } from '../supabase/functions/onedrive-auth/private-mail.js';
 const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc';
 let shared = false,
+  permissionOverride,
+  missingOwner = false,
   inserts = 0,
   existing = false,
   wrongDrive = false;
@@ -46,14 +48,16 @@ const ctx = {
     if (path === '/me/drive?$select=id,owner')
       return Response.json({
         id: 'drive',
-        owner: { user: { id: 'drive-owner' } },
+        owner: missingOwner ? {} : { user: { id: 'drive-owner' } },
       });
     if (path.endsWith('/permissions'))
-      return Response.json({
-        value: shared
-          ? [{ link: { scope: 'anonymous' } }]
-          : [{ grantedToV2: { user: { id: 'drive-owner' } } }],
-      });
+      return Response.json(
+        permissionOverride ?? {
+          value: shared
+            ? [{ link: { scope: 'anonymous' } }]
+            : [{ grantedToV2: { user: { id: 'drive-owner' } } }],
+        },
+      );
     throw Error('Unexpected Graph');
   },
   withLock: async (fn) => fn(),
@@ -79,13 +83,44 @@ const configured = await (await run(true)).json();
 assert.equal(configured.enabled, false);
 assert.equal(inserts, 1);
 shared = true;
-assert.equal((await (await run()).json()).private, false);
+assert.equal((await (await run()).json()).reason, 'ANONYMOUS_LINK_PRESENT');
 await assert.rejects(
   () => run(true),
   (e) => e.status === 409,
 );
 assert.equal(inserts, 1);
 shared = false;
+for (const [value, reason] of [
+  [
+    { value: [{ link: { scope: 'organization' } }] },
+    'ORGANIZATION_LINK_PRESENT',
+  ],
+  [{ value: [{ link: { scope: 'existingAccess' } }] }, 'SHARING_LINK_PRESENT'],
+  [{ value: [{ invitation: {} }] }, 'INVITATION_PRESENT'],
+  [
+    { value: [{ grantedTo: { user: { id: 'other' } } }] },
+    'OTHER_PRINCIPAL_PRESENT',
+  ],
+  [{ value: [{ grantedTo: { user: {} } }] }, 'PERMISSION_IDENTITY_UNAVAILABLE'],
+  [
+    { value: [], '@odata.nextLink': 'https://example.test/next' },
+    'PERMISSIONS_INCOMPLETE',
+  ],
+  [{}, 'PERMISSIONS_INCOMPLETE'],
+]) {
+  permissionOverride = value;
+  assert.equal((await (await run()).json()).reason, reason);
+  await assert.rejects(() => run(true), new RegExp(reason));
+}
+permissionOverride = {
+  value: [{ grantedTo: { user: { id: 'drive-owner' } } }],
+};
+assert.equal((await (await run()).json()).private, true);
+permissionOverride = undefined;
+missingOwner = true;
+assert.equal((await (await run()).json()).reason, 'DRIVE_OWNER_UNAVAILABLE');
+missingOwner = false;
+assert.equal(inserts, 1);
 existing = true;
 await assert.rejects(() => run(true), /CONFLICT/);
 existing = false;

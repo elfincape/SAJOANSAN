@@ -13,6 +13,7 @@ let owner = true,
   calls = 0,
   collectCalls = 0,
   folderCalls = 0,
+  folderReason = null,
   tlsFailure = false;
 const errors = [],
   unexpected = [];
@@ -40,7 +41,8 @@ try {
       return route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
-          private: true,
+          private: !folderReason,
+          reason: folderReason,
           name: 'Private mail',
           configured: body.configure,
           enabled: false,
@@ -161,6 +163,13 @@ try {
     })
     .waitFor();
   assert.equal(folderCalls, 2);
+  folderReason = 'ANONYMOUS_LINK_PRESENT';
+  await page.getByRole('button', { name: '메일 폴더 확인', exact: true }).click();
+  await page.getByText('OneDrive 권한에서 링크를 가진 누구나 접근 가능한 권한을 확인했습니다.', {exact:true}).waitFor();
+  folderReason = 'DRIVE_OWNER_UNAVAILABLE';
+  await page.getByRole('button', { name: '메일 폴더 확인', exact: true }).click();
+  await page.getByText('OneDrive가 드라이브 소유자 ID를 반환하지 않았습니다. 공유 여부와는 별개입니다.', {exact:true}).waitFor();
+  folderReason = null;
   assert.equal(collectCalls, 0);
   const receive = page.getByRole('button', {
     name: '메일 1회 수신',
