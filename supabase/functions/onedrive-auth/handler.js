@@ -173,7 +173,7 @@ export function makeHandler(env, fetcher=fetch, buildPdf=null, buildBackup=null)
       if(action==='private-mail-sync'){
         const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
         if(!env.MAIL_COLLECTOR_KEY||env.MAIL_COLLECTOR_KEY.length<32||token!==env.MAIL_COLLECTOR_KEY)throw fail('수집기 인증이 필요합니다.',403);
-        return await handlePrivateMail(action,req,{}, {db,graph,connected,settings,withLock,json,fail,hash,fetcher});
+        return await handlePrivateMail(action,req,{}, {db,graph,connected,settings,withLock,json,fail,hash,fetcher,collectorMailboxId:env.MAIL_COLLECTOR_MAILBOX_ID});
       }
       if(action.startsWith('private-mail-')){
         const mailUser=await caller(req,false,true);

@@ -73,10 +73,10 @@ class PopTests(unittest.TestCase):
             for i in range(3):
                 pop=c.ReadOnlyPOP('localhost',port,context=context,timeout=5);pop.user('fake');pop.pass_('fake')
                 if i==0:
-                    with self.assertRaises(RuntimeError):c.sync(pop,bridge,dt.datetime(2026,9,17,tzinfo=c.UTC))
+                    with self.assertRaises(RuntimeError):c.sync(pop,bridge,dt.datetime(2026,8,18,tzinfo=c.UTC))
                     bridge.fail=False
                 else:
-                    counts=c.sync(pop,bridge,dt.datetime(2026,9,17,tzinfo=c.UTC));self.assertEqual(counts['saved'],1 if i==1 else 0)
+                    counts=c.sync(pop,bridge,dt.datetime(2026,8,18,tzinfo=c.UTC));self.assertEqual(counts['saved'],1 if i==1 else 0)
                 with self.assertRaises(RuntimeError):pop._putcmd('DELE 1')
                 with self.assertRaises(RuntimeError):pop._putcmd('PASS fake\r\nDELE 1')
                 pop.quit()
@@ -99,7 +99,7 @@ class PopTests(unittest.TestCase):
                 raw={1:RAW.replace(b'2026',b'2020'),2:b'Date: invalid\r\n\r\nhello',4:RAW}[n]
                 return b'+OK',raw.rstrip(b'\r\n').split(b'\r\n'),len(raw)
         bridge=Bridge();bridge.fail=False
-        cutoff=dt.datetime(2026,9,17,tzinfo=c.UTC)
+        cutoff=dt.datetime(2026,8,18,tzinfo=c.UTC)
         first=c.sync(Fake(),bridge,cutoff,batch=1)
         self.assertEqual(first['deferred'],3)
         self.assertEqual(first['cursor'],c.digest(b'recent'))
@@ -121,5 +121,18 @@ class PopTests(unittest.TestCase):
         files=c.package(raw,b'uid')['files']
         self.assertEqual([f['kind'] for f in files],['eml','text','attachment'])
         self.assertEqual(files[2]['name'],'forwarded.eml')
+
+    def test_mime_limit_does_not_block_following_mail(self):
+        poison=b'Date: Sat, 17 Oct 2026 01:00:00 +0000\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n'+(b'--x\r\nContent-Type: text/plain\r\n\r\nx\r\n'*55)+b'--x--\r\n'
+        class Fake:
+            def uidl(self):return b'+OK',[b'1 good',b'2 poison'],0
+            def list(self):return b'+OK',[b'1 100',b'2 5000'],0
+            def top(self,*args):raise c.poplib.error_proto('unsupported')
+            def retr(self,n):
+                raw=poison if n==2 else RAW
+                return b'+OK',raw.rstrip(b'\r\n').split(b'\r\n'),len(raw)
+        bridge=Bridge();bridge.fail=False
+        counts=c.sync(Fake(),bridge,dt.datetime(2026,8,18,tzinfo=c.UTC))
+        self.assertEqual((counts['saved'],counts['oversized']),(1,1))
 
 if __name__=='__main__':unittest.main()

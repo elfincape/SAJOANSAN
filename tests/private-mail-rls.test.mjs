@@ -32,6 +32,15 @@ try {
     [box, lease],
   );
   assert.equal(begin.rows.length, 1);
+  assert.equal(begin.rows[0].initial_days, 60);
+  const age = await db.query(
+    'select extract(epoch from(now()-cutoff_at))/86400 as days from public.private_mailboxes where id=$1',
+    [box],
+  );
+  assert.ok(
+    Math.abs(Number(age.rows[0].days) - 60) < 0.001,
+    'default cutoff is 60 days',
+  );
   assert.equal(
     (
       await db.query('select * from public.private_mail_begin($1,$2)', [

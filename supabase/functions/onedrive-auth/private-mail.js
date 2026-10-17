@@ -125,12 +125,16 @@ export async function handlePrivateMail(action, req, user, ctx) {
     ).json();
     const owner = drive.owner?.user?.id;
     if (!owner) throw fail('메일 보관 계정 소유자를 확인할 수 없습니다.', 409);
+    await privatePermissions(box, box.folder_id, env, owner);
+    return owner;
+  }
+  async function privatePermissions(box, itemId, env, owner) {
     const permissions = await (
       await graph(
         '/drives/' +
           enc(box.drive_id) +
           '/items/' +
-          enc(box.folder_id) +
+          enc(itemId) +
           '/permissions',
         env.access,
       )
@@ -172,6 +176,10 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return box;
   };
   if (action === 'private-mail-sync') {
+    if (!uuid(ctx.collectorMailboxId))
+      throw fail('수집 대상 메일함 설정이 필요합니다.', 503);
+    if (body.mailbox !== ctx.collectorMailboxId)
+      throw fail('수집 대상 메일함이 아닙니다.', 403);
     const box = await mailbox(body.mailbox);
     if (body.operation === 'begin') {
       if (!box.enabled) throw fail('수집이 활성화되지 않았습니다.', 409);
@@ -287,7 +295,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       throw fail('원본 메일 검증에 실패했습니다.');
     return withLock(async (holder) => {
       const env = await environment();
-      await privateDestination(box, env);
+      const driveOwner = await privateDestination(box, env);
       const parent = await (
         await graph(
           '/drives/' +
@@ -325,6 +333,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
                 },
               )
             ).json();
+        await privatePermissions(box, item.id, env, driveOwner);
         await verify(
           { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
           item,
@@ -407,13 +416,14 @@ export async function handlePrivateMail(action, req, user, ctx) {
   const box = await mailbox(row.mailbox_id, user.token);
   return withLock(async () => {
     const env = await environment();
-    await privateDestination(box, env);
+    const driveOwner = await privateDestination(box, env);
     const item = await (
       await graph(
         '/drives/' + enc(box.drive_id) + '/items/' + enc(file.item_id),
         env.access,
       )
     ).json();
+    await privatePermissions(box, item.id, env, driveOwner);
     const bytes = await verify(
       { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
       item,

@@ -66,7 +66,8 @@ let row = null,
   puts = 0,
   reads = 0,
   corrupt = false,
-  shared = false;
+  shared = false,
+  sharedItem = false;
 async function db(path, opts = {}) {
   if (path.startsWith('onedrive_locks?')) return [{ holder: lease }];
   if (path.startsWith('private_mailboxes?'))
@@ -93,7 +94,12 @@ async function graph(path, access, opts = {}) {
   if (path.startsWith('/me/drive'))
     return json({ id: 'drive', owner: { user: { id: 'drive-owner' } } });
   if (path.endsWith('/permissions'))
-    return json({ value: shared ? [{ link: { scope: 'anonymous' } }] : [] });
+    return json({
+      value:
+        shared || (sharedItem && !path.includes('/items/private/'))
+          ? [{ link: { scope: 'anonymous' } }]
+          : [],
+    });
   if (path.startsWith('/drives/drive/items/private?'))
     return json({ id: 'private', folder: {} });
   if (path.includes('/content') && opts.method !== 'PUT') {
@@ -126,6 +132,7 @@ async function graph(path, access, opts = {}) {
   throw Error('Unexpected Graph ' + path);
 }
 const ctx = {
+  collectorMailboxId: id,
   db,
   graph,
   connected: async () => ({ accessToken: 'access' }),
@@ -222,6 +229,46 @@ await assert.rejects(
   (e) => e.status === 409,
 );
 shared = false;
+sharedItem = true;
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-download',
+      request({ id, index: 0 }),
+      user,
+      ctx,
+    ),
+  (e) => e.status === 409,
+);
+sharedItem = false;
+const publishedRow = row;
+row = null;
+sharedItem = true;
+await assert.rejects(ingest, (e) => e.status === 409);
+assert.equal(row, null);
+assert.equal(puts, 3);
+sharedItem = false;
+row = publishedRow;
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-sync',
+      request({ operation: 'begin', mailbox: other }),
+      {},
+      ctx,
+    ),
+  (e) => e.status === 403,
+);
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-sync',
+      request({ operation: 'begin', mailbox: id }),
+      {},
+      { ...ctx, collectorMailboxId: undefined },
+    ),
+  (e) => e.status === 503,
+);
 box.lease_until = '2000-01-01';
 await assert.rejects(ingest, (e) => e.status === 409);
 box.lease_until = new Date(Date.now() + 600000).toISOString();

@@ -6,7 +6,7 @@ create table if not exists public.private_mailboxes (
  account text not null check (account = 'jhs96@eangroup.kr'),
  drive_id text not null, folder_id text not null,
  enabled boolean not null default false,
- initial_days integer not null default 30 check(initial_days between 1 and 3650),
+ initial_days integer not null default 60 check(initial_days between 1 and 3650),
  cutoff_at timestamptz,
  scan_cursor text check(scan_cursor ~ '^[0-9a-f]{64}$'),
  status text not null default 'disabled' check(status in ('disabled','running','ready','error')),

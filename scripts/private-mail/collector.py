@@ -90,6 +90,8 @@ def package(raw, uidl):
                 data = data.decode('utf-8', errors='replace').encode('utf-8')
         if not data:
             continue
+        if len(data) > LIMIT:
+            raise ValueError('LIMIT_REACHED')
         files.append({'kind': kind, 'name': clean_name(part.get_filename() or kind), 'data': base64.b64encode(data).decode()})
         if len(files) > 50:
             raise ValueError('LIMIT_REACHED')
@@ -181,7 +183,14 @@ def sync(pop, bridge, cutoff, batch=20, seconds=240, cursor=None):
         if date < cutoff:
             counts['skipped'] += 1
             continue
-        bridge.call('ingest', message=package(raw, uidl))
+        try:
+            parsed = package(raw, uidl)
+        except ValueError as error:
+            if str(error) != 'LIMIT_REACHED':
+                raise
+            counts['oversized'] += 1
+            continue
+        bridge.call('ingest', message=parsed)
         counts['saved'] += 1
     else:
         counts['cursor'] = None

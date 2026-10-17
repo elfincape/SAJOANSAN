@@ -20,7 +20,7 @@ search, embeddings, notifications or assistant context.
 - [x] Verify fake POP/Graph, partial failure, duplicates, hostile HTML and files,
   RLS fixture and Vite build; document exact deployment prerequisites.
 
-Defaults prepared only: 30 days initial range, 10 minute timer. Account
+User-selected initial range: 60 days. Proposed timer: 10 minutes (not active). Account
 jhs96@eangroup.kr, POP mail.onnet21.com:995 with system CA verification; never DELE.
 Recent range uses sender Date (POP has no authoritative delivery timestamp); undated
 mail is skipped and counted. Late delivery with an old Date is a documented limitation.
