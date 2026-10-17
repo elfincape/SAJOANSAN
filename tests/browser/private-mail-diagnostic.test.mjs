@@ -12,6 +12,8 @@ const source = await readFile(
 let owner = true,
   collectCalls = 0,
   collectionFailure = false;
+let collectionCode = 'DRIVE_OWNER_UNAVAILABLE',
+  collectionStage = 'begin';
 const errors = [],
   unexpected = [];
 try {
@@ -42,8 +44,8 @@ try {
           collectionFailure
             ? {
                 error: 'PRIVATE_UPSTREAM_TEXT',
-                code: 'DRIVE_OWNER_UNAVAILABLE',
-                stage: 'begin',
+                code: collectionCode,
+                stage: collectionStage,
               }
             : { ok: true, counts: { saved: 1, deferred: 3 } },
         ),
@@ -104,6 +106,22 @@ try {
     .getByText('메일함 준비 실패 · DRIVE_OWNER_UNAVAILABLE', { exact: true })
     .waitFor();
   assert.equal(collectCalls, 2);
+  collectionStage = 'login';
+  for (const code of [
+    'POP_PASSWORD_REJECTED',
+    'POP_AUTH_TIMEOUT',
+    'POP_MAILBOX_BUSY',
+  ]) {
+    collectionCode = code;
+    await receive.click();
+    await page
+      .getByText('메일 로그인 실패 · ' + code, { exact: true })
+      .waitFor();
+    assert.equal(
+      await page.getByText('PRIVATE_UPSTREAM_TEXT', { exact: true }).count(),
+      0,
+    );
+  }
   assert.equal(await receive.isDisabled(), false);
   assert.equal(
     await page.getByText(/수신 설정|권한을 확인|COLLECTION_NOT/).count(),

@@ -30,6 +30,76 @@ const transport = {
   },
 };
 const pop = new ReadOnlyPop(transport);
+for (const [rejectedVerb, response, expected] of [
+  ['USER', '-ERR unknown user', 'POP_USER_REJECTED'],
+  ['PASS', '-ERR fixture-private-password', 'POP_PASSWORD_REJECTED'],
+  ['PASS', '-ERR [AUTH] fixture-private-password', 'POP_PASSWORD_REJECTED'],
+  ['PASS', '-ERR [IN-USE] private mailbox', 'POP_MAILBOX_BUSY'],
+  ['PASS', '-ERR [LOGIN-DELAY] private account', 'POP_LOGIN_DELAY'],
+  ['PASS', '-ERR [SYS/TEMP] private server', 'POP_AUTH_SERVER_ERROR'],
+  ['PASS', '-ERR [https://private.test] secret', 'POP_PASSWORD_REJECTED'],
+  ['PASS', 'unexpected private response', 'POP_AUTH_PROTOCOL_ERROR'],
+]) {
+  let authInput = Buffer.alloc(0),
+    closed = false;
+  const authWrites = [];
+  const auth = new ReadOnlyPop({
+    async write(bytes) {
+      const verb = bytes.toString().split(' ')[0];
+      authWrites.push(verb);
+      authInput = Buffer.from(
+        (verb === rejectedVerb ? response : '+OK') + '\r\n',
+      );
+    },
+    async read(buffer) {
+      const n = Math.min(buffer.length, authInput.length);
+      if (!n) return null;
+      buffer.set(authInput.subarray(0, n));
+      authInput = authInput.subarray(n);
+      return n;
+    },
+    close() {
+      closed = true;
+    },
+  });
+  await assert.rejects(
+    () => auth.login('jhs96@eangroup.kr', 'fixture-private-password'),
+    (error) => {
+      assert.equal(error.code, expected);
+      assert.equal(error.message, 'POP_LOGIN_FAILED');
+      assert.ok(
+        !/fixture-private|private\.test|secret/.test(JSON.stringify(error)),
+      );
+      return true;
+    },
+  );
+  assert.deepEqual(
+    authWrites,
+    rejectedVerb === 'USER' ? ['USER'] : ['USER', 'PASS'],
+  );
+  assert.equal(closed, true);
+}
+for (const [read, expected] of [
+  [async () => null, 'POP_AUTH_CLOSED'],
+  [async () => new Promise(() => {}), 'POP_AUTH_TIMEOUT'],
+]) {
+  let closed = false;
+  const auth = new ReadOnlyPop(
+    {
+      write: async () => {},
+      read,
+      close() {
+        closed = true;
+      },
+    },
+    { timeoutMs: 20 },
+  );
+  await assert.rejects(
+    () => auth.login('jhs96@eangroup.kr', 'fixture-private-password'),
+    (error) => error.code === expected,
+  );
+  assert.equal(closed, true);
+}
 await pop.greeting();
 await assert.rejects(() => pop.login('x\r\nDELE 1', 'test'), /INPUT_REJECTED/);
 await assert.rejects(() => pop.command('DELE', '1'), /COMMAND_REJECTED/);

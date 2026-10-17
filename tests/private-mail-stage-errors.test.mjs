@@ -16,6 +16,7 @@ let connected = 0,
   logs = [],
   beginCode = 'DRIVE_OWNER_UNAVAILABLE',
   loginFailure = false;
+let loginCode;
 const fetcher = async (_url, opts) => {
   const op = JSON.parse(opts.body).operation;
   if (op === 'begin' && beginCode)
@@ -37,7 +38,10 @@ const connect = async () => {
     },
     login: async () => {
       commands.push('login');
-      if (loginFailure) throw Error('fixture-private-password');
+      if (loginFailure)
+        throw Object.assign(Error('fixture-private-password'), {
+          code: loginCode,
+        });
     },
     uidl: async () => {
       commands.push('UIDL');
@@ -63,6 +67,26 @@ body = await (await handleOwnerCollect(req(), options)).json();
 assert.equal(body.code, 'POP_LOGIN_FAILED');
 assert.equal(body.stage, 'login');
 assert.equal(commands.includes('UIDL'), false);
+for (const code of [
+  'POP_USER_REJECTED',
+  'POP_PASSWORD_REJECTED',
+  'POP_AUTH_TIMEOUT',
+  'POP_AUTH_CLOSED',
+  'POP_AUTH_PROTOCOL_ERROR',
+  'POP_MAILBOX_BUSY',
+  'POP_LOGIN_DELAY',
+  'POP_AUTH_SERVER_ERROR',
+]) {
+  loginCode = code;
+  body = await (await handleOwnerCollect(req(), options)).json();
+  assert.equal(body.code, code);
+  assert.equal(body.stage, 'login');
+  assert.equal(commands.includes('UIDL'), false);
+  assert.ok(!JSON.stringify(body).includes('fixture-private-password'));
+}
+loginCode = 'fixture-private-password';
+body = await (await handleOwnerCollect(req(), options)).json();
+assert.equal(body.code, 'POP_LOGIN_FAILED');
 loginFailure = false;
 commands = [];
 body = await (await handleOwnerCollect(req('login'), options)).json();

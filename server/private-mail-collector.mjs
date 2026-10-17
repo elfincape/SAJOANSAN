@@ -2,6 +2,13 @@
 import { createHash } from 'node:crypto';
 const LIMIT = 10 * 1024 * 1024;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
+const RESPONSE_CODES = new Set([
+  'AUTH',
+  'IN-USE',
+  'LOGIN-DELAY',
+  'SYS/TEMP',
+  'SYS/PERM',
+]);
 const COMMANDS = new Set([
   'USER',
   'PASS',
@@ -80,8 +87,15 @@ export class ReadOnlyPop {
         await this.#transport.write(
           Buffer.from(verb + (arg ? ' ' + arg : '') + '\r\n'),
         );
-        if (!/^\+OK(?: |$)/.test((await this.#line()).toString('ascii')))
-          throw Error('POP_REJECTED');
+        const status = (await this.#line()).toString('ascii');
+        if (!/^\+OK(?: |$)/.test(status)) {
+          const error = Error(
+            /^-ERR(?: |$)/.test(status) ? 'POP_REJECTED' : 'POP_PROTOCOL_ERROR',
+          );
+          const code = /^-ERR \[([A-Z/-]+)\](?: |$)/.exec(status)?.[1];
+          if (RESPONSE_CODES.has(code)) error.responseCode = code;
+          throw error;
+        }
         if (!multiline) return;
         const blocks = [],
           crlf = Buffer.from('\r\n');
@@ -130,8 +144,31 @@ export class ReadOnlyPop {
       password.length > 1024
     )
       throw Error('INPUT_REJECTED');
-    await this.command('USER', account);
-    await this.command('PASS', password);
+    let step = 'USER';
+    try {
+      await this.command('USER', account);
+      step = 'PASS';
+      await this.command('PASS', password);
+    } catch (error) {
+      this.close();
+      const code =
+        {
+          'IN-USE': 'POP_MAILBOX_BUSY',
+          'LOGIN-DELAY': 'POP_LOGIN_DELAY',
+          'SYS/TEMP': 'POP_AUTH_SERVER_ERROR',
+          'SYS/PERM': 'POP_AUTH_SERVER_ERROR',
+        }[error.responseCode] ||
+        {
+          POP_TIMEOUT: 'POP_AUTH_TIMEOUT',
+          POP_CLOSED: 'POP_AUTH_CLOSED',
+          POP_PROTOCOL_ERROR: 'POP_AUTH_PROTOCOL_ERROR',
+          POP_REJECTED:
+            step === 'USER' ? 'POP_USER_REJECTED' : 'POP_PASSWORD_REJECTED',
+        }[error.message] ||
+        'POP_LOGIN_FAILED';
+      // Keep only a fixed category, never the command, password or server text.
+      throw Object.assign(Error('POP_LOGIN_FAILED'), { code });
+    }
   }
   async uidl() {
     const text = (await this.command('UIDL', '', true)).toString('ascii');

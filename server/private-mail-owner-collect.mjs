@@ -9,6 +9,14 @@ const BRIDGE =
   'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-owner-sync';
 const SITE = 'https://sajoansan.vercel.app';
 const SAFE_CODES = new Set([
+  'POP_USER_REJECTED',
+  'POP_PASSWORD_REJECTED',
+  'POP_AUTH_TIMEOUT',
+  'POP_AUTH_CLOSED',
+  'POP_AUTH_PROTOCOL_ERROR',
+  'POP_MAILBOX_BUSY',
+  'POP_LOGIN_DELAY',
+  'POP_AUTH_SERVER_ERROR',
   'OWNER_SYNC_DISABLED',
   'AUTH_REQUIRED',
   'OWNER_CONNECTION_REQUIRED',
