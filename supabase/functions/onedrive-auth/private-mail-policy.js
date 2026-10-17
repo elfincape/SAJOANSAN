@@ -51,8 +51,37 @@ export function validateMailPermissions(
     throw fail('PERMISSIONS_INCOMPLETE', 409);
   let missingIdentity = false,
     otherPermissions = 0;
+  const unavailable = (diagnostic) =>
+    Object.assign(fail('PERMISSION_IDENTITY_UNAVAILABLE', 409), {
+      mailDiagnostic: diagnostic,
+    });
   for (const p of permissions.value) {
     if (p.invitation) throw fail('INVITATION_PRESENT', 409);
+    if (p.link && anonymousAllowed && p.link.scope === 'anonymous') {
+      // Graph's plural grantedToIdentities(V2) describes a link permission.
+      // Singular grantedTo(V2) denotes a user-type grant and remains rejected.
+      if (p.grantedToV2 || p.grantedTo)
+        throw unavailable('LINK_HAS_DIRECT_GRANT');
+      if (
+        [p.grantedToIdentitiesV2, p.grantedToIdentities].some(
+          (values) =>
+            values !== undefined &&
+            (!Array.isArray(values) ||
+              values.some(
+                (value) =>
+                  !value || typeof value !== 'object' || Array.isArray(value),
+              )),
+        )
+      )
+        throw unavailable('LINK_IDENTITIES_MALFORMED');
+      if (
+        p.roles &&
+        (!Array.isArray(p.roles) ||
+          p.roles.some((r) => !['read', 'write'].includes(r)))
+      )
+        throw unavailable('LINK_ROLES_UNRECOGNIZED');
+      continue;
+    }
     const identities = [
       p.grantedToV2,
       p.grantedTo,
@@ -60,17 +89,6 @@ export function validateMailPermissions(
       ...(p.grantedToIdentities || []),
     ].filter(Boolean);
     if (p.link) {
-      if (anonymousAllowed && p.link.scope === 'anonymous') {
-        // A mixed/unknown grant is outside the narrow link-only approval.
-        if (
-          identities.length ||
-          (p.roles &&
-            (!Array.isArray(p.roles) ||
-              p.roles.some((r) => !['read', 'write'].includes(r))))
-        )
-          throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
-        continue;
-      }
       throw fail(
         p.link.scope === 'anonymous'
           ? 'ANONYMOUS_LINK_PRESENT'
@@ -88,5 +106,5 @@ export function validateMailPermissions(
   }
   if (permissions['@odata.nextLink']) throw fail('PERMISSIONS_INCOMPLETE', 409);
   if (!owner && otherPermissions) throw fail('DRIVE_OWNER_UNAVAILABLE', 409);
-  if (missingIdentity) throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
+  if (missingIdentity) throw unavailable('DIRECT_IDENTITY_UNAVAILABLE');
 }

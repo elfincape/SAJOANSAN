@@ -71,6 +71,66 @@ const anonymous = { link: { scope: 'anonymous' }, roles: ['read'] };
 assert.doesNotThrow(() =>
   validateMailPermissions({ value: [anonymous] }, undefined, true, fail),
 );
+// Graph grantedToIdentitiesV2 is a link-type facet, not a second direct grant.
+for (const metadata of [
+  { grantedToIdentitiesV2: [{ user: { displayName: 'Fixture' } }] },
+  { grantedToIdentities: [{ user: { id: 'fixture-link-recipient' } }] },
+])
+  assert.doesNotThrow(() =>
+    validateMailPermissions(
+      { value: [{ ...anonymous, ...metadata }] },
+      undefined,
+      true,
+      fail,
+    ),
+  );
+for (const identity of [
+  { grantedTo: { user: { id: 'drive-owner' } } },
+  { grantedToV2: { user: { id: 'drive-owner' } } },
+])
+  assert.doesNotThrow(() =>
+    validateMailPermissions({ value: [identity] }, 'drive-owner', false, fail),
+  );
+assert.throws(
+  () =>
+    validateMailPermissions(
+      { value: [{ grantedTo: { user: {} } }] },
+      'drive-owner',
+      true,
+      fail,
+    ),
+  /PERMISSION_IDENTITY_UNAVAILABLE/,
+);
+assert.throws(
+  () =>
+    validateMailPermissions(
+      { value: [{ grantedToV2: { user: {} } }] },
+      'drive-owner',
+      true,
+      fail,
+    ),
+  (e) => e.mailDiagnostic === 'DIRECT_IDENTITY_UNAVAILABLE',
+);
+assert.throws(
+  () =>
+    validateMailPermissions(
+      { value: [{ ...anonymous, grantedToIdentitiesV2: 'malformed' }] },
+      undefined,
+      true,
+      fail,
+    ),
+  (e) => e.mailDiagnostic === 'LINK_IDENTITIES_MALFORMED',
+);
+assert.throws(
+  () =>
+    validateMailPermissions(
+      { value: [{ ...anonymous, grantedTo: { user: { id: 'other' } } }] },
+      undefined,
+      true,
+      fail,
+    ),
+  (e) => e.mailDiagnostic === 'LINK_HAS_DIRECT_GRANT',
+);
 assert.throws(
   () => validateMailPermissions({ value: [anonymous] }, undefined, false, fail),
   /ANONYMOUS_LINK_PRESENT/,

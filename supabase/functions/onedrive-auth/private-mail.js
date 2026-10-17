@@ -532,7 +532,19 @@ export async function handlePrivateMail(action, req, user, ctx) {
                 ? 'FOLDER_CHECK_FAILED'
                 : 'BEGIN_FAILED';
             console.warn(
-              JSON.stringify({ event: 'private_mail', stage, code }),
+              JSON.stringify({
+                event: 'private_mail',
+                stage,
+                code,
+                ...([
+                  'LINK_HAS_DIRECT_GRANT',
+                  'LINK_IDENTITIES_MALFORMED',
+                  'LINK_ROLES_UNRECOGNIZED',
+                  'DIRECT_IDENTITY_UNAVAILABLE',
+                ].includes(error.mailDiagnostic)
+                  ? { diagnostic: error.mailDiagnostic }
+                  : {}),
+              }),
             );
             throw fail(code, error.status === 403 ? 403 : 409);
           }
