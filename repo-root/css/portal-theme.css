@@ -23,8 +23,8 @@ body.workspace-ui.portal-shell {
   border-radius: 6px;
 }
 .workspace-ui.portal-shell button:hover:not(:disabled) {
-  background: #f0f3f4;
-  border-color: #aeb8bf;
+  background: var(--theme-soft);
+  border-color: var(--theme-border);
 }
 .workspace-ui.portal-shell .primary {
   background: #087f5b;
@@ -54,7 +54,7 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell .portal-header {
   padding-inline: 32px;
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
 }
 .workspace-ui.portal-shell .portal-header > strong {
@@ -62,8 +62,8 @@ body.workspace-ui.portal-shell {
   font-size: 13px;
 }
 .workspace-ui.portal-shell .portal-user-avatar {
-  background: #edf3ef;
-  color: #34614c;
+  background: var(--theme-soft);
+  color: var(--theme-selected-text);
 }
 .workspace-ui.portal-shell #portal-description {
   font-size: 13px;
@@ -126,8 +126,8 @@ body.workspace-ui.portal-shell {
   color: #fff;
 }
 .workspace-ui.portal-shell .portal-sidebar nav button[aria-pressed='true'] {
-  background: #d8f3e5;
-  color: #124c35;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
   border-color: transparent;
   font-weight: 650;
 }
@@ -146,13 +146,13 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell #message {
   border-left: 3px solid var(--accent);
-  background: #eaf5ef;
-  color: #285440;
+  background: var(--theme-success-bg);
+  color: var(--theme-selected-text);
   border-radius: 0;
 }
 .workspace-ui.portal-shell #message.error {
-  background: #fff0ef;
-  color: #a12622;
+  background: var(--theme-danger-bg);
+  color: var(--theme-danger);
   border-color: #c33f35;
 }
 .workspace-ui.portal-shell .task-toolbar {
@@ -169,18 +169,18 @@ body.workspace-ui.portal-shell {
   margin-top: 12px;
 }
 .workspace-ui.portal-shell .view-buttons {
-  background: #eceff1;
+  background: var(--theme-soft);
   border-color: transparent;
   border-radius: 6px;
 }
 .workspace-ui.portal-shell .view-buttons > button {
   border-radius: 4px;
-  color: #626d78;
+  color: var(--theme-muted);
 }
 .workspace-ui.portal-shell .view-buttons > button[aria-pressed='true'] {
-  background: #fff;
-  color: #20252b;
-  border-color: #d8dee2;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  border-color: var(--theme-border);
   box-shadow: none;
 }
 .workspace-ui.portal-shell #task-status {
@@ -188,19 +188,19 @@ body.workspace-ui.portal-shell {
   padding: 0;
 }
 .workspace-ui.portal-shell #task-status > button[aria-pressed='true'] {
-  background: #e3f3ea;
-  color: #126746;
-  border-color: #c2e5d2;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell :is(.list, #detail) {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
   border-radius: 6px;
   box-shadow: none;
 }
 .workspace-ui.portal-shell .list-heading {
   padding: 16px 20px;
-  background: #fff;
+  background: var(--theme-panel);
 }
 .workspace-ui.portal-shell .portal-items {
   padding: 0 20px 16px;
@@ -208,7 +208,7 @@ body.workspace-ui.portal-shell {
 .workspace-ui.portal-shell .portal-items > h3 {
   padding: 18px 0 10px;
   font-size: 12px;
-  color: #68737e;
+  color: var(--theme-muted);
 }
 .workspace-ui.portal-shell .task-row {
   border: 0;
@@ -221,16 +221,16 @@ body.workspace-ui.portal-shell {
   box-shadow: none;
 }
 .workspace-ui.portal-shell .task-row:hover:not(:disabled) {
-  background: #f5f9f7;
-  border-color: #edf0f2;
+  background: var(--theme-hover);
+  border-color: var(--theme-border-soft);
 }
 .workspace-ui.portal-shell .task-row.selected {
-  background: #ebf6ef;
+  background: var(--theme-selected);
   box-shadow: inset 3px 0 #087f5b;
-  border-color: #dcebe2;
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .task-row small {
-  color: #697680;
+  color: var(--theme-muted);
   font-size: 12px;
 }
 .workspace-ui.portal-shell .badge {
@@ -239,21 +239,21 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell
   :is(.status-completed, .status-incident-resolved, .completion-confirmed) {
-  color: #176140;
-  background: #e2f3e8;
+  color: var(--theme-success);
+  background: var(--theme-success-bg);
 }
 .workspace-ui.portal-shell .status-active {
-  color: #2356a2;
-  background: #e9f0ff;
+  color: var(--theme-info);
+  background: var(--theme-info-bg);
 }
 .workspace-ui.portal-shell :is(.status-delayed, .status-incident-open) {
-  color: #a52e26;
-  background: #ffedea;
+  color: var(--theme-danger);
+  background: var(--theme-danger-bg);
 }
 .workspace-ui.portal-shell .center-property {
-  color: #34614c;
+  color: var(--theme-selected-text);
   border-color: #d1e2d7;
-  background: #f1f7f3;
+  background: var(--theme-success-bg);
 }
 .workspace-ui.portal-shell .hq-review {
   background: transparent;
@@ -265,35 +265,35 @@ body.workspace-ui.portal-shell {
   border: 0;
 }
 .workspace-ui.portal-shell .calendar-cell {
-  background: #fff;
-  border-color: #e9edf0;
+  background: var(--theme-panel);
+  border-color: var(--theme-border-soft);
   border-radius: 4px;
 }
 .workspace-ui.portal-shell .calendar-cell.calendar-today {
-  background: #f1faf5;
+  background: var(--theme-hover);
   border-color: #258260;
 }
 .workspace-ui.portal-shell .calendar-task-bar.task-row {
-  background: #edf5ff;
-  color: #254d7b;
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
   border: 1px solid #d2e2f7;
   border-radius: 4px;
   padding: 8px 10px;
 }
 .workspace-ui.portal-shell .calendar-task-bar .task-row-name {
-  color: #254d7b;
+  color: var(--theme-info);
 }
 .workspace-ui.portal-shell .calendar-task-bar.task-row:hover:not(:disabled),
 .workspace-ui.portal-shell .calendar-task-bar.task-row.selected {
-  background: #e3efff;
+  background: var(--theme-info-bg);
   border-color: #98badc;
 }
 .workspace-ui.portal-shell .calendar-task-bar:has(.status-delayed) {
-  background: #fff4f1;
-  border-color: #f0d3cc;
+  background: var(--theme-danger-bg);
+  border-color: var(--theme-danger-border);
 }
 .workspace-ui.portal-shell .calendar-task-bar:has(.status-completed) {
-  background: #eff7f1;
+  background: var(--theme-success-bg);
   border-color: #d2e6d7;
 }
 .workspace-ui.portal-shell .calendar-daily-dropdown {
@@ -302,7 +302,7 @@ body.workspace-ui.portal-shell {
   box-shadow: 0 8px 28px #15282420;
 }
 .workspace-ui.portal-shell .parent-task-dialog {
-  background: #fff;
+  background: var(--theme-panel);
   color: var(--text);
   border-color: var(--border);
   box-shadow: -12px 0 48px #14211b20;
@@ -311,11 +311,11 @@ body.workspace-ui.portal-shell {
   background: #14211b55;
 }
 .workspace-ui.portal-shell .parent-dialog-heading {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
 }
 .workspace-ui.portal-shell .portal-form :is(input, select, textarea) {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
 }
 .workspace-ui.portal-shell .portal-form fieldset {
@@ -336,17 +336,17 @@ body.workspace-ui.portal-shell {
   border-color: var(--border-soft);
 }
 .workspace-ui.portal-shell .registered-task-row:hover {
-  background: #f5f9f7;
+  background: var(--theme-hover);
 }
 .workspace-ui.portal-shell
   .registration-tabs
   > [role='tab'][aria-selected='true'] {
-  background: #e3f3ea;
-  color: #126746;
-  border-color: #c2e5d2;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .trash-button {
-  color: #a32e28;
+  color: var(--theme-danger);
 }
 @media (max-width: 1180px) {
   .workspace-ui.portal-shell main {

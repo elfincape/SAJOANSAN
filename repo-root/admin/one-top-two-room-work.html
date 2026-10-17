@@ -42,6 +42,8 @@
 <link rel="stylesheet" href="/css/workspace-ui.css">
 <link rel="stylesheet" href="/css/admin-workspace.css">
 <script type="module" src="/js/admin-workspace.js"></script>
+<link rel="stylesheet" href="/css/theme.css">
+<script type="module" src="/js/theme.js"></script>
 </head>
 <body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen">
   <header class="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
@@ -357,7 +359,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function renderCaptures() {
     $('capture-count').textContent = state.captures.length ? `${state.captures.length}장` : '';
     $('capture-empty').classList.toggle('hidden', state.captures.length > 0);
-    const pasteTile='<div id="capture-paste" class="paste-tile" tabindex="0" role="button" aria-label="클립보드 사진 붙여넣기"><span class="text-2xl">📋</span><strong class="text-sm text-zinc-200">사진 붙여넣기</strong><span class="text-[11px]">여기를 누른 뒤<br>Ctrl+V</span></div>';
+    const pasteTile='<div id="capture-paste" class="paste-tile" tabindex="0" role="button" aria-label="클립보드 사진 붙여넣기" title="클립보드 사진 붙여넣기 (Ctrl+V)"><span class="text-2xl" aria-hidden="true">📋</span><strong class="text-sm text-zinc-200">사진 붙여넣기</strong></div>';
     $('capture-grid').innerHTML = pasteTile+state.captures.map((item,index) => `<div class="thumb"><input data-select="${item.id}" class="capture-check" type="checkbox" aria-label="${index+1}번 사진 선택" ${state.selectedCaptureIds.has(item.id)?'checked':''}><img src="${item.dataUrl}" alt="촬영 ${index+1}"><div class="p-2 text-[11px] flex gap-1"><span class="truncate flex-1">${escapeHtml(item.name)}</span>${item.dbId?`<span class="${item.cloudDirty?'text-amber-300':'text-emerald-300'}">${item.cloudDirty?'변경됨':'DB저장'}</span>`:''}<button data-remove="${item.id}" class="text-rose-300">삭제</button></div></div>`).join('');
     $('capture-paste').addEventListener('click',event=>event.currentTarget.focus());
     $('capture-grid').querySelectorAll('[data-select]').forEach(input=>input.addEventListener('change',()=>{if(input.checked)state.selectedCaptureIds.add(input.dataset.select);else state.selectedCaptureIds.delete(input.dataset.select);updateSelectionControls();}));

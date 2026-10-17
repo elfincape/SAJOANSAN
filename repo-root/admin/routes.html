@@ -34,6 +34,8 @@
 <link rel="stylesheet" href="/css/workspace-ui.css">
 <link rel="stylesheet" href="/css/admin-workspace.css">
 <script type="module" src="/js/admin-workspace.js"></script>
+<link rel="stylesheet" href="/css/theme.css">
+<script type="module" src="/js/theme.js"></script>
 </head>
 <body class="workspace-ui work-shell bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
 
@@ -132,7 +134,7 @@
         { field: 'carNumber', headerName: '호차', width: 125, minWidth: 100, sort: 'asc', sortIndex: 1 },
         { field: 'routeName', headerName: '코스명', width: 170, minWidth: 145, sort: 'asc', sortIndex: 2 },
         { field: 'primaryDriver', headerName: '주기사', width: 110, minWidth: 100 },
-        { field: 'secondaryDriver', headerName: '보조기사', width: 110, minWidth: 100, cellStyle: { color: '#526776' } },
+        { field: 'secondaryDriver', headerName: '보조기사', width: 110, minWidth: 100, cellStyle: { color: 'var(--theme-muted)' } },
         { field: 'primaryVehicle', headerName: '주차량', width: 160, minWidth: 155 },
         { field: 'stopCount', headerName: '납품처', width: 95, filter: 'agNumberColumnFilter', cellStyle: { textAlign: 'right' } },
         { field: 'closedDaysText', headerName: '휴무일', minWidth: 135, cellRenderer: closedDaysRenderer },

@@ -39,7 +39,7 @@ body.workspace-ui {
 }
 
 .workspace-ui :where(input, textarea)::placeholder {
-  color: #637887;
+  color: var(--theme-muted);
 }
 .workspace-ui :where(input, select, textarea):disabled {
   cursor: not-allowed;
@@ -58,7 +58,7 @@ body.workspace-ui {
   background: #177c57;
 }
 .workspace-ui .btn-ghost:hover {
-  background: #e8f1ee;
+  background: var(--theme-hover);
 }
 .workspace-ui :where(button, a)[aria-current='page'] {
   color: var(--green);
@@ -70,7 +70,7 @@ body.workspace-ui {
   font-weight: 600;
 }
 .workspace-ui table tbody tr:hover {
-  background-color: #edf6f2;
+  background-color: var(--theme-hover);
 }
 .workspace-ui :where(dialog, [role='dialog']) {
   max-width: calc(100vw - 24px);
@@ -99,7 +99,7 @@ body.workspace-ui {
 }
 .workspace-ui #menu-grid > a:hover {
   border-color: #6aab95;
-  background: #f5fbf8;
+  background: var(--theme-hover);
 }
 .workspace-ui #menu-grid > a:focus-visible {
   outline-offset: 4px;
@@ -120,7 +120,7 @@ body.workspace-ui {
 }
 
 .workspace-ui.portal-shell .portal-header {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border-soft);
 }
 .workspace-ui.portal-shell h1 {
@@ -151,19 +151,19 @@ body.workspace-ui {
   min-height: min-content;
 }
 .workspace-ui.portal-shell .calendar-today {
-  background: #f5fbf8;
-  border-color: #258260;
+  background: var(--theme-hover);
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .calendar-cell h4 {
   padding-inline: 0;
   white-space: nowrap;
-  color: #4b6472;
+  color: var(--theme-muted);
 }
 .workspace-ui.portal-shell .calendar-today h4 {
   display: flex;
   align-items: center;
   gap: 3px;
-  color: #185f45;
+  color: var(--theme-selected-text);
 }
 .workspace-ui.portal-shell .calendar-today h4::after {
   content: '오늘';
@@ -171,8 +171,8 @@ body.workspace-ui {
   flex: 0 0 auto;
   padding: 1px 2px;
   border-radius: 4px;
-  background: #dcefe4;
-  color: #185f45;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
   font-size: 10px;
   line-height: 1.5;
 }
@@ -191,7 +191,7 @@ body.workspace-ui {
   min-height: 68px;
   padding: 8px 10px;
   background: #e7f3ed;
-  border-color: #86b39e;
+  border-color: var(--theme-selected-border);
   border-radius: 6px;
 }
 .workspace-ui.portal-shell .calendar-task-bar .task-row-copy {
@@ -200,7 +200,7 @@ body.workspace-ui {
 .workspace-ui.portal-shell .calendar-task-bar .task-row-name {
   flex: 0 0 100%;
   min-width: 0;
-  color: #204d3b;
+  color: var(--theme-selected-text);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -211,7 +211,7 @@ body.workspace-ui {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #3e6352;
+  color: var(--theme-selected-text);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -223,7 +223,7 @@ body.workspace-ui {
 .workspace-ui.portal-shell .calendar-task-bar.task-row:hover:not(:disabled),
 .workspace-ui.portal-shell .calendar-task-bar.task-row.selected {
   background: #d8ecdf;
-  border-color: #398362;
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .task-calendar {
   max-width: 100%;

@@ -40,6 +40,23 @@ export default defineConfig({
   },
   plugins: [
     {
+      name: 'initial-workspace-theme',
+      transformIndexHtml: {
+        order: 'pre',
+        handler(html) {
+          if (!html.includes('/css/theme.css')) return html;
+          return [
+            {
+              tag: 'script',
+              children:
+                "try{document.documentElement.dataset.theme=localStorage.getItem('sajo.appearance.v1')==='dark'?'dark':'light'}catch{}",
+              injectTo: 'head-prepend',
+            },
+          ];
+        },
+      },
+    },
+    {
       name: 'copy-download-templates',
       closeBundle() {
         for (const directory of ['assets', 'templates', 'sql']) {

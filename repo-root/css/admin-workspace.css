@@ -34,23 +34,23 @@ body.workspace-ui.work-shell:has(#app) {
 
 .workspace-ui.work-shell:not(.portal-shell)
   :is(.sample, .empty, .column-choices) {
-  background: #f2f4f5;
-  color: #626d78;
-  border-color: #d7dde2;
+  background: var(--theme-soft);
+  color: var(--theme-muted);
+  border-color: var(--theme-border);
   border-radius: 6px;
 }
 .workspace-ui.work-shell:not(.portal-shell) :is(.number, .step-badge) {
-  background: #e6f3ed;
-  color: #165e3b;
-  border-color: #aacaba;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.work-shell:not(.portal-shell) .drop-card {
-  background: #fff;
-  border-color: #b8c5bf;
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
   box-shadow: none;
 }
 .workspace-ui.work-shell:not(.portal-shell) .drop-card.dragover {
-  background: #e6f3ed;
+  background: var(--theme-selected);
   border-color: #087f5b;
 }
 .workspace-ui.work-shell:not(.portal-shell)
@@ -59,11 +59,11 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :is(.status-warn, .false-cell, .warn) {
-  color: #99621c;
+  color: var(--theme-warn);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :is(.status-error, .cell-false, .diff-old) {
-  color: #b42332;
+  color: var(--theme-danger);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   .feature-switch[aria-checked='true'] {
@@ -72,9 +72,9 @@ body.workspace-ui.work-shell:has(#app) {
 .workspace-ui.work-shell:not(.portal-shell)
   .file-label
   input::file-selector-button {
-  background: #f0f4f2;
-  color: #265b43;
-  border-color: #c7d8cd;
+  background: var(--theme-hover);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
 }
 
 @media (max-width: 640px) {
@@ -100,13 +100,13 @@ body.workspace-ui.work-shell:has(#app) {
     [type='radio']
   ):not([type='hidden']) {
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-panel);
   color: var(--fg);
   border-color: var(--border);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :where(input, textarea)::placeholder {
-  color: #7b8590;
+  color: var(--theme-muted);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :where(input[type='checkbox'], input[type='radio']) {
@@ -130,20 +130,20 @@ body.workspace-ui.work-shell:has(#app) {
   color: #fff;
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn-ghost {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
-  color: #48515b;
+  color: var(--theme-muted);
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn-ghost:hover {
-  background: #f0f4f2;
+  background: var(--theme-hover);
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn-danger {
-  background: #fff4f4;
-  border-color: #ebc7ca;
-  color: #b42332;
+  background: var(--theme-danger-bg);
+  border-color: var(--theme-danger-border);
+  color: var(--theme-danger);
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn-danger:hover {
-  background: #ffe6e7;
+  background: var(--theme-danger-bg);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :where(button, input, select, textarea):disabled {
@@ -159,7 +159,7 @@ body.workspace-ui.work-shell:has(#app) {
   margin-bottom: 6px;
 }
 .workspace-ui.work-shell:not(.portal-shell) .issue {
-  color: #99621c;
+  color: var(--theme-warn);
 }
 
 .workspace-ui.work-shell:not(.portal-shell) > header,
@@ -169,7 +169,7 @@ body.workspace-ui.work-shell:has(#app) {
   margin-left: var(--work-nav-width);
   width: calc(100% - var(--work-nav-width));
   padding: 0;
-  background: #fff;
+  background: var(--theme-panel);
   color: var(--fg);
   border-color: var(--border-soft);
   position: sticky;
@@ -193,12 +193,12 @@ body.workspace-ui.work-shell:has(#app) {
   font-weight: 650;
 }
 .workspace-ui.work-shell:not(.portal-shell) #app > header .btn {
-  color: #48515b;
+  color: var(--theme-muted);
   border-color: var(--border);
 }
 .workspace-ui.work-shell:not(.portal-shell) #app > header .btn:hover {
   color: var(--fg);
-  background: #f0f4f2;
+  background: var(--theme-hover);
 }
 .workspace-ui.work-shell:not(.portal-shell) #app > header #user-badge {
   color: var(--muted);
@@ -263,11 +263,11 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :is(.feature-panel, .mode-card, .file-label, .metric) {
-  background: #fff;
+  background: var(--theme-panel);
 }
 .workspace-ui.work-shell:not(.portal-shell) .mode-card:has(input:checked) {
-  border-color: #91bea8;
-  background: #eef7f2;
+  border-color: var(--theme-selected-border);
+  background: var(--theme-selected);
 }
 .workspace-ui.work-shell:not(.portal-shell) .file-card {
   box-shadow: none;
@@ -275,7 +275,7 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .workspace-ui.work-shell:not(.portal-shell) .work-list,
 .workspace-ui.work-shell:not(.portal-shell) .work-editor {
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
   border-radius: 6px;
 }
@@ -285,7 +285,7 @@ body.workspace-ui.work-shell:has(#app) {
 .workspace-ui.work-shell:not(.portal-shell) .work-form-actions {
   position: sticky;
   bottom: 0;
-  background: #fff;
+  background: var(--theme-panel);
   padding-top: 12px;
   border-top: 1px solid var(--border-soft);
   z-index: 2;
@@ -303,7 +303,7 @@ body.workspace-ui.work-shell:has(#app) {
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  background: #fff;
+  background: var(--theme-panel);
 }
 .workspace-ui.work-shell:not(.portal-shell) table {
   font-variant-numeric: tabular-nums;
@@ -313,22 +313,22 @@ body.workspace-ui.work-shell:has(#app) {
   border-color: var(--border-soft);
 }
 .workspace-ui.work-shell:not(.portal-shell) table th {
-  background: #f1f3f5;
-  color: #56616c;
+  background: var(--theme-soft);
+  color: var(--theme-muted);
   font-size: 12px;
 }
 .workspace-ui.work-shell:not(.portal-shell) table tbody td {
-  background: #fff;
+  background: var(--theme-panel);
   font-size: 13px;
 }
 .workspace-ui.work-shell:not(.portal-shell) table tbody tr:nth-child(even) td {
-  background: #fafbfc;
+  background: var(--theme-stripe);
 }
 .workspace-ui.work-shell:not(.portal-shell) table tbody tr:hover td {
-  background: #f0f7f3;
+  background: var(--theme-hover);
 }
 .workspace-ui.work-shell:not(.portal-shell) table tbody tr.selected td {
-  background: #e6f3ed;
+  background: var(--theme-selected);
 }
 .workspace-ui.work-shell:not(.portal-shell) .work-section-navigation {
   display: flex;
@@ -341,7 +341,7 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .work-section-navigation a {
   text-decoration: none;
-  color: #56616c;
+  color: var(--theme-muted);
   padding: 4px 0;
 }
 .work-section-navigation a:hover {
@@ -355,7 +355,7 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .workspace-ui.work-shell:not(.portal-shell)
   :is(dialog:not(.work-navigation), [role='dialog'] > div) {
-  background: #fff;
+  background: var(--theme-panel);
   color: var(--fg);
   border-color: var(--border);
   border-radius: 6px;
@@ -464,8 +464,8 @@ body.workspace-ui.work-shell:has(#app) {
   color: #fff;
 }
 .work-navigation a[aria-current='page'] {
-  background: #d9eee2;
-  color: #165e3b;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
   font-weight: 600;
 }
 .work-nav-icon {
@@ -491,7 +491,7 @@ body.workspace-ui.work-shell:has(#app) {
   left: 250px;
   top: -100px;
   z-index: 10000;
-  background: #fff;
+  background: var(--theme-panel);
   color: var(--accent);
   padding: 10px 16px;
   border: 2px solid var(--accent);
@@ -502,7 +502,7 @@ body.workspace-ui.work-shell:has(#app) {
 }
 .workspace-ui.work-shell:not(.portal-shell) #center-switcher > div {
   border-color: var(--border);
-  background: #f4f6f5;
+  background: var(--theme-soft);
   border-radius: 6px;
 }
 .workspace-ui.work-shell:not(.portal-shell) #center-switcher button {
@@ -510,7 +510,7 @@ body.workspace-ui.work-shell:has(#app) {
   min-width: 46px;
   font-size: 12px;
   border-radius: 4px;
-  color: #56616c;
+  color: var(--theme-muted);
 }
 .workspace-ui.work-shell:not(.portal-shell)
   #center-switcher
@@ -547,17 +547,17 @@ body.workspace-ui.work-shell:has(#app) {
   border-radius: 6px;
   min-height: 34px;
   padding: 6px 12px;
-  background: #fff;
+  background: var(--theme-panel);
   border-color: var(--border);
-  color: #626d78;
+  color: var(--theme-muted);
   font-size: 12px;
 }
 .workspace-ui.work-shell:not(.portal-shell)
   .hub-categories
   button[aria-pressed='true'] {
-  background: #e6f3ed;
-  border-color: #aacaba;
-  color: #165e3b;
+  background: var(--theme-selected);
+  border-color: var(--theme-selected-border);
+  color: var(--theme-selected-text);
 }
 .workspace-ui.work-shell:not(.portal-shell) #menu-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -584,7 +584,7 @@ body.workspace-ui.work-shell:has(#app) {
   height: 100dvh;
   min-height: 0;
   margin-left: var(--work-nav-width);
-  background: #fff;
+  background: var(--theme-panel);
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -607,26 +607,26 @@ body.workspace-ui.work-shell:has(#app) {
 .workspace-ui.work-shell:not(.portal-shell)
   .dashboard-filter-details
   > summary {
-  color: #626d78;
+  color: var(--theme-muted);
 }
 .workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-controls {
   gap: 8px;
 }
 .workspace-ui.work-shell:not(.portal-shell) .view-toggle {
   min-height: 34px;
-  color: #626d78;
-  background: #fff;
+  color: var(--theme-muted);
+  background: var(--theme-panel);
 }
 .workspace-ui.work-shell:not(.portal-shell) .view-toggle[aria-pressed='true'] {
-  background: #e6f3ed;
-  color: #165e3b;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
 }
 .workspace-ui.work-shell:not(.portal-shell) .ms-menu {
   max-width: calc(100vw - 32px);
   box-shadow: 0 8px 24px #20252b15;
   border-color: var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-panel);
 }
 .workspace-ui.work-shell:not(.portal-shell) #table-area {
   padding: 0;
