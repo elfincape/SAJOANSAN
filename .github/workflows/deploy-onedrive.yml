@@ -27,7 +27,9 @@ jobs:
       - run: node tests/driver-documents.test.mjs
       - run: node tests/driver-pdf-batch.test.mjs
       - run: node tests/company-documents.test.mjs
+      - run: node --test tests/private-mail.test.mjs
       - name: Apply front/back document schema
+        if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'repo-root/sql/onedrive-document-sides.sql') || contains(toJSON(github.event.commits), 'repo-root/sql/onedrive-pdf.sql') || contains(toJSON(github.event.commits), 'repo-root/sql/company-documents.sql') || contains(toJSON(github.event.commits), 'scripts/apply-onedrive-migration.mjs')
         run: node scripts/apply-onedrive-migration.mjs
       - uses: supabase/setup-cli@v3
         with:
