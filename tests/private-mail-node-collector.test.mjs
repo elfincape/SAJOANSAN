@@ -1,0 +1,132 @@
+import assert from 'node:assert/strict';
+import { ReadOnlyPop, syncBatch } from '../server/private-mail-collector.mjs';
+const writes = [];
+let input = Buffer.from('+OK ready\r\n');
+const transport = {
+  async write(bytes) {
+    const cmd = Buffer.from(bytes).toString();
+    writes.push(cmd);
+    const response = cmd.startsWith('TOP')
+      ? '-ERR unsupported\r\n'
+      : cmd.startsWith('UIDL')
+        ? '+OK\r\n1 id-one\r\n2 id-two\r\n.\r\n'
+        : cmd.startsWith('LIST')
+          ? '+OK\r\n1 50\r\n2 60\r\n.\r\n'
+          : cmd.startsWith('RETR')
+            ? '+OK\r\nDate: Sat, 17 Oct 2026 00:00:00 +0000\r\n\r\n..dot\r\n.\r\n'
+            : '+OK\r\n';
+    input = Buffer.concat([input, Buffer.from(response)]);
+  },
+  async read(buffer) {
+    if (!input.length) return null;
+    const count = Math.min(buffer.length, 3, input.length);
+    buffer.set(input.subarray(0, count));
+    input = input.subarray(count);
+    return count;
+  },
+  close() {
+    this.closed = true;
+  },
+};
+const pop = new ReadOnlyPop(transport);
+await pop.greeting();
+await assert.rejects(() => pop.login('x\r\nDELE 1', 'test'), /INPUT_REJECTED/);
+await assert.rejects(() => pop.command('DELE', '1'), /COMMAND_REJECTED/);
+await pop.login('jhs96@eangroup.kr', 'fake-only');
+const entries = await pop.uidl();
+assert.deepEqual(entries, [
+  [1, 'id-one'],
+  [2, 'id-two'],
+]);
+const raw = await pop.retr(1);
+assert.ok(raw.toString().includes('\r\n.dot\r\n'));
+let stored = 0,
+  seen = 0;
+const bridge = {
+  async seen() {
+    return ++seen === 1;
+  },
+  async ingest() {
+    stored++;
+  },
+};
+const result = await syncBatch({
+  pop,
+  bridge,
+  cutoff: new Date('2026-08-18T00:00:00Z'),
+  packageMessage: async (raw, uidl) => ({ raw, uidl }),
+  batch: 1,
+});
+assert.equal(result.saved, 1);
+assert.equal(stored, 1);
+assert.ok(writes.every((x) => !/^DELE/i.test(x)));
+const failBridge = {
+  seen: async () => false,
+  ingest: async () => {
+    throw Error('failure');
+  },
+};
+await assert.rejects(
+  () =>
+    syncBatch({
+      pop,
+      bridge: failBridge,
+      cutoff: new Date('2026-08-18T00:00:00Z'),
+      packageMessage: async () => ({}),
+    }),
+  /SYNC_FAILED/,
+);
+await pop.quit();
+assert.equal(transport.closed, true);
+let oversized = Buffer.from('+OK\r\n' + 'a'.repeat(100) + '\r\n.\r\n');
+const limited = new ReadOnlyPop(
+  {
+    write: async () => {},
+    read: async (b) => {
+      if (!oversized.length) return null;
+      const n = Math.min(b.length, oversized.length);
+      b.set(oversized.subarray(0, n));
+      oversized = oversized.subarray(n);
+      return n;
+    },
+    close() {},
+  },
+  { maxBytes: 64 },
+);
+await assert.rejects(() => limited.retr(1), /LIMIT_REACHED/);
+console.log(
+  'PASS read-only Node POP: fragmented lines, dot unstuffing, injection/DELE rejection, UIDL dedup, bounded batch/reception, partial failure, QUIT cleanup',
+);
+
+let abortSignal,
+  deadlineClosed = false;
+const deadlinePop = {
+  uidl: async () => [[1, 'deadline']],
+  list: async () => new Map([[1, 10]]),
+  close() {
+    deadlineClosed = true;
+  },
+};
+const started = Date.now();
+await assert.rejects(
+  () =>
+    syncBatch({
+      pop: deadlinePop,
+      bridge: {
+        seen: async (id, { signal }) => {
+          abortSignal = signal;
+          return new Promise(() => {});
+        },
+      },
+      cutoff: new Date(),
+      packageMessage: async () => ({}),
+      seconds: 0.02,
+    }),
+  /SYNC_FAILED/,
+);
+assert.ok(Date.now() - started < 500);
+assert.equal(abortSignal.aborted, true);
+assert.equal(deadlineClosed, true);
+console.log(
+  'PASS batch deadline aborts stalled bridge and closes POP transport',
+);
