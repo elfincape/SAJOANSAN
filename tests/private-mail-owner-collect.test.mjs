@@ -5,11 +5,53 @@ import {
   safeName,
   RAW_LIMIT,
 } from '../server/private-mail-package.mjs';
-import { handleOwnerCollect } from '../server/private-mail-owner-collect.mjs';
+import {
+  handleOwnerCollect,
+  ownerBridge,
+} from '../server/private-mail-owner-collect.mjs';
 const raw = Buffer.from(
   'Date: Sat, 17 Oct 2026 00:00:00 +0000\r\nFrom: Sample <sender@example.test>\r\nSubject: =?UTF-8?B?7YWM7Iqk7Yq4?=\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hello</p><script>evil()</script><img src="https://track.test">\r\n--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="../../evil.exe"\r\nContent-Transfer-Encoding: base64\r\n\r\nTVo=\r\n--b--\r\n',
 );
 const packaged = await packageMessage(raw, Buffer.from('uid-1'));
+const nativeTimeout = AbortSignal.timeout;
+let finishAcknowledged = false;
+try {
+  // Scale the real 8s/30s deadlines to avoid a slow regression test.
+  AbortSignal.timeout = (ms) =>
+    nativeTimeout(ms === 8000 ? 8 : ms === 30000 ? 80 : ms);
+  const slowFinish = ownerBridge('Bearer mock-owner', async (_url, opts) => {
+    if (opts.headers['Content-Type'] === 'application/octet-stream')
+      return Response.json({ file: { item_id: 'mock' } });
+    const op = JSON.parse(opts.body).operation;
+    if (op === 'begin')
+      return Response.json({
+        mailbox: '00000000-0000-4000-8000-000000000003',
+        lease: '00000000-0000-4000-8000-000000000004',
+        cutoff: '2026-08-18T00:00:00Z',
+        cursor: null,
+      });
+    assert.equal(op, 'finish');
+    await new Promise((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(Error('SLOW_FINISH_ABORTED'));
+      };
+      const timer = setTimeout(() => {
+        opts.signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, 25);
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+      if (opts.signal.aborted) onAbort();
+    });
+    finishAcknowledged = true;
+    return Response.json({ id: 'mock-published' });
+  });
+  await slowFinish.begin();
+  assert.equal((await slowFinish.ingest(packaged)).id, 'mock-published');
+  assert.equal(finishAcknowledged, true);
+} finally {
+  AbortSignal.timeout = nativeTimeout;
+}
 assert.equal(packaged.subject, '테스트');
 assert.equal(packaged.sender, 'sender@example.test');
 assert.ok(packaged.files.some((f) => f.kind === 'html'));

@@ -105,7 +105,9 @@ export function ownerBridge(authorization, fetcher = fetch) {
       },
       body,
       signal: AbortSignal.any([
-        AbortSignal.timeout(operation === 'begin' ? 15000 : 8000),
+        AbortSignal.timeout(
+          operation === 'begin' ? 15000 : operation === 'finish' ? 30000 : 8000,
+        ),
         ...(signal ? [signal] : []),
       ]),
       redirect: 'error',
