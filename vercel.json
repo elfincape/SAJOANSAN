@@ -8,6 +8,7 @@
       "maxDuration": 30
     },
     "api/private-mail-collect.mjs": {
+      "regions": ["icn1"],
       "maxDuration": 90
     }
   }
