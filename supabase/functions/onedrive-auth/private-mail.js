@@ -148,8 +148,9 @@ export async function handlePrivateMail(action, req, user, ctx) {
         env.access,
       )
     ).json();
-    if (!Array.isArray(permissions.value) || permissions['@odata.nextLink'])
+    if (!Array.isArray(permissions.value))
       throw fail('PERMISSIONS_INCOMPLETE', 409);
+    let missingIdentity = false;
     for (const p of permissions.value) {
       // A URL alone says nothing about access. Only Graph permission facets do.
       if (p.link)
@@ -169,13 +170,21 @@ export async function handlePrivateMail(action, req, user, ctx) {
         ...(p.grantedToIdentities || []),
       ].filter(Boolean);
       if (
+        identities.some(
+          (identity) => identity.user?.id && identity.user.id !== owner,
+        )
+      )
+        throw fail('OTHER_PRINCIPAL_PRESENT', 409);
+      if (
         !identities.length ||
         identities.some((identity) => !identity.user?.id)
       )
-        throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
-      if (identities.some((identity) => identity.user.id !== owner))
-        throw fail('OTHER_PRINCIPAL_PRESENT', 409);
+        missingIdentity = true;
     }
+    // Known sharing takes precedence; unresolved metadata still prevents connection.
+    if (permissions['@odata.nextLink'])
+      throw fail('PERMISSIONS_INCOMPLETE', 409);
+    if (missingIdentity) throw fail('PERMISSION_IDENTITY_UNAVAILABLE', 409);
   }
   async function fenceMailbox(box, lease) {
     const live = (

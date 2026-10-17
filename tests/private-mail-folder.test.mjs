@@ -107,6 +107,36 @@ for (const [value, reason] of [
     'PERMISSIONS_INCOMPLETE',
   ],
   [{}, 'PERMISSIONS_INCOMPLETE'],
+  [
+    {
+      value: [{ link: { scope: 'anonymous' } }],
+      '@odata.nextLink': 'https://example.test/next',
+    },
+    'ANONYMOUS_LINK_PRESENT',
+  ],
+  [
+    {
+      value: [{ grantedTo: { user: {} } }, { link: { scope: 'organization' } }],
+    },
+    'ORGANIZATION_LINK_PRESENT',
+  ],
+  [
+    {
+      value: [
+        { grantedTo: { user: {} } },
+        { grantedToV2: { user: { id: 'other' } } },
+      ],
+    },
+    'OTHER_PRINCIPAL_PRESENT',
+  ],
+  [
+    {
+      value: [
+        { grantedTo: { user: {} }, grantedToV2: { user: { id: 'other' } } },
+      ],
+    },
+    'OTHER_PRINCIPAL_PRESENT',
+  ],
 ]) {
   permissionOverride = value;
   assert.equal((await (await run()).json()).reason, reason);
