@@ -241,6 +241,7 @@ export function generateDispatch(
   return plan;
 }
 export function recomputeDispatch(plan, graph) {
+  if (plan.resourcesOutdated) graph = null;
   const jobs = new Map(plan.jobs.map((j) => [j.id, j]));
   for (const g of plan.groups) {
     const js = g.jobIds.map((id) => jobs.get(id));
@@ -345,6 +346,7 @@ export function newTemporaryGroup(plan, jobId, graph) {
   return moveWholeDestination(next, jobId, id, graph);
 }
 export function transferCandidates(plan, model, graph) {
+  if (plan.resourcesOutdated) return [];
   if (!graph) return [];
   const byId = new Map(plan.jobs.map((j) => [j.id, j])),
     out = [];
@@ -545,6 +547,11 @@ export function mergeDestinations(plan, sourceId, targetId, graph) {
   target.address = source.address || target.address;
   const deadlines = [target.deadline, source.deadline].filter(Number.isFinite);
   target.deadline = deadlines.length ? Math.min(...deadlines) : null;
+  const starts = [target.earliestArrival, source.earliestArrival].filter(
+    Number.isFinite,
+  );
+  target.earliestArrival = starts.length ? Math.max(...starts) : null;
+  target.otdInvalid = !!(target.otdInvalid || source.otdInvalid);
   target.profile = { ...(target.profile || {}) };
   for (const k of serviceKeys) {
     const a = target.profile[k] ?? null,

@@ -58,13 +58,11 @@ export function drivingGraph(addresses, legs) {
     if (!edges.has(a.id)) edges.set(a.id, new Map());
     const old = edges.get(a.id).get(b.id);
     if (!old || old.seconds > leg.duration_seconds)
-      edges
-        .get(a.id)
-        .set(b.id, {
-          meters: leg.distance_meters,
-          seconds: leg.duration_seconds,
-          priority: leg.priority,
-        });
+      edges.get(a.id).set(b.id, {
+        meters: leg.distance_meters,
+        seconds: leg.duration_seconds,
+        priority: leg.priority,
+      });
     valid++;
   }
   function oneLocation(values) {
@@ -237,6 +235,7 @@ export function drivingGraph(addresses, legs) {
     const issues = [],
       deadlineViolations = [];
     let serviceTotal = 0,
+      waitingTotal = 0,
       serviceKnown = true;
     for (const j of ordered) {
       const to = resolve(j.address),
@@ -250,6 +249,23 @@ export function drivingGraph(addresses, legs) {
         meters += leg.meters;
         seconds += leg.seconds;
         if (minutes !== null) minutes += leg.seconds / 60;
+      }
+      if (
+        minutes !== null &&
+        Number.isFinite(j.earliestArrival) &&
+        minutes < j.earliestArrival
+      ) {
+        waitingTotal += j.earliestArrival - minutes;
+        minutes = j.earliestArrival;
+      }
+      if (
+        j.otdInvalid ||
+        (j.earliestArrival != null &&
+          j.deadline != null &&
+          j.earliestArrival > j.deadline)
+      ) {
+        issues.push(j.name + ': 납품 OTD 확인 필요');
+        deadlineViolations.push(j.id);
       }
       if (j.deadline != null && minutes !== null && minutes > j.deadline) {
         issues.push(j.name + ': 납품 마감 초과');
@@ -277,8 +293,14 @@ export function drivingGraph(addresses, legs) {
       knownSeconds: seconds,
       finishMinutes: minutes,
       elapsedMinutes:
-        complete && serviceKnown ? seconds / 60 + serviceTotal : null,
+        complete && serviceKnown
+          ? seconds / 60 + serviceTotal + waitingTotal
+          : null,
       serviceMinutes: serviceKnown ? serviceTotal : null,
+      waitingMinutes:
+        departureMinutes !== null && complete && serviceKnown
+          ? waitingTotal
+          : null,
       issues,
       deadlineViolations,
       deadlineVerified:

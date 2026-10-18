@@ -1,3 +1,4 @@
+import { parseOTD } from './pyeongtaek-dispatch-model.js';
 import {
   normalizeValue,
   parseNormalizedSheet,
@@ -229,14 +230,31 @@ export function normalizeDispatchJobs(
   const index = pointIndex(points),
     enriched = parsed.jobs.map((j) => {
       const ps = index.get(j.code) || [],
-        point = ps.length === 1 ? ps[0] : null;
+        point = ps.length === 1 ? ps[0] : null,
+        profile = point?.dispatch_profile || null,
+        otd = parseOTD(
+          profile
+            ? profile.otd
+            : point?.deadline_business_min == null
+              ? null
+              : { type: 'before', time: point.deadline_business_min },
+          parsed.date,
+        ),
+        midnight = Date.parse(parsed.date + 'T00:00:00+09:00'),
+        minute = (v) => (v == null ? null : (v - midnight) / 60000);
       return {
         ...j,
         address: j.address || point?.address || '',
         pointId: point?.id || null,
-        profile: point?.dispatch_profile || null,
-        deadline: point?.deadline_business_min ?? null,
-        issues: ps.length > 1 ? ['납품처 마스터 코드 중복'] : [],
+        profile,
+        earliestArrival: minute(otd.start),
+        deadline: minute(otd.end),
+        otdInvalid: !otd.valid,
+        conditionReview: !otd.valid,
+        issues: [
+          ...(ps.length > 1 ? ['납품처 마스터 코드 중복'] : []),
+          ...(!otd.valid ? ['납품정보 OTD 해석 확인 필요'] : []),
+        ],
       };
     });
   const byId = new Map(enriched.map((j) => [j.id, j])),
@@ -290,7 +308,7 @@ export function normalizeDispatchJobs(
       kinds = new Set(members.map((j) => j.kind)),
       deadlines = members.map((j) => j.deadline).filter(Number.isFinite),
       profile = { ...(first.profile || {}) };
-    let conditionReview = false;
+    let conditionReview = members.some((j) => j.conditionReview);
     for (const k of ['unloadMinutes', 'inspectionMinutes', 'marginMinutes']) {
       const values = members.map((j) => j.profile?.[k] ?? null);
       if (values.some((v) => v !== values[0])) conditionReview = true;
@@ -309,6 +327,12 @@ export function normalizeDispatchJobs(
       profile,
       deadline: deadlines.length ? Math.min(...deadlines) : null,
       conditionReview,
+      earliestArrival: members.some((j) => Number.isFinite(j.earliestArrival))
+        ? Math.max(
+            ...members.map((j) => j.earliestArrival).filter(Number.isFinite),
+          )
+        : null,
+      otdInvalid: members.some((j) => j.otdInvalid),
       quantity: members.reduce((n, j) => n + j.quantity, 0),
       frozen: members.every((j) => j.frozen !== null)
         ? members.reduce((n, j) => n + j.frozen, 0)

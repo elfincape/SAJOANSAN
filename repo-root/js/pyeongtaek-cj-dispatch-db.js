@@ -115,7 +115,11 @@ export async function saveDispatchDraft(state, reference) {
         ? '다른 곳에서 수정된 가배차입니다. 다시 불러온 뒤 저장해 주세요.'
         : error.message,
     );
-  if (!data?.id || !Number.isInteger(data.revision))
+  if (
+    !data?.id ||
+    !Number.isInteger(data.revision) ||
+    data.revision !== (reference?.revision || 0) + 1
+  )
     throw Error('가배차 저장 응답을 확인해 주세요.');
   return data;
 }
@@ -123,6 +127,7 @@ export async function listDispatchDrafts() {
   const { data, error } = await supabase
     .from('pyeongtaek_dispatch_drafts')
     .select('id,business_date,revision,updated_at')
+    .eq('payload->>type', 'pyeongtaek-dispatch')
     .eq('center_code', '002')
     .order('updated_at', { ascending: false })
     .limit(30);

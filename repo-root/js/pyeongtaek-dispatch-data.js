@@ -247,7 +247,7 @@ function draft(row) {
 
 export async function listDrafts(supabase, date) {
   if (!date || dateValue(date) !== date) throw new Error('배차 기준일을 YYYY-MM-DD 형식으로 입력해 주세요.');
-  return (await readAll(supabase, TABLE, 'id,business_date,revision,owner_id,created_at,updated_at', ['id'], query => query.eq('business_date', date))).map(draft);
+  return (await readAll(supabase, TABLE, 'id,business_date,revision,owner_id,created_at,updated_at', ['id'], query => query.eq('business_date', date).is('payload->>type', null))).map(draft);
 }
 
 export async function loadDraft(supabase, id) {

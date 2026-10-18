@@ -272,3 +272,97 @@
     flex-grow: 1;
   }
 }
+
+#dispatch-workspace .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0;
+}
+#dispatch-workspace .toolbar label {
+  flex: 1;
+  min-width: 160px;
+}
+#dispatch-workspace .scroll {
+  overflow: auto;
+  max-height: 520px;
+}
+#dispatch-workspace .scroll td {
+  white-space: nowrap;
+}
+#dispatch-workspace .edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+#dispatch-workspace .issue {
+  color: var(--theme-warning, #b45309);
+}
+#dispatch-workspace .muted {
+  color: var(--theme-muted, #71717a);
+}
+#dispatch-workspace .metric {
+  padding: 8px 12px;
+  border: 1px solid var(--theme-border, #a1a1aa);
+  border-radius: 8px;
+}
+#dispatch-workspace .dispatch-board {
+  display: grid;
+  gap: 16px;
+}
+#dispatch-workspace .dispatch-route {
+  border: 1px solid var(--theme-border, #a1a1aa);
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+#dispatch-workspace .dispatch-route td {
+  white-space: normal;
+  min-width: 90px;
+}
+#dispatch-workspace .dispatch-route td:first-child {
+  min-width: 200px;
+}
+#dispatch-fleet input[type='number'] {
+  min-width: 110px;
+}
+#dispatch-edit-dialog {
+  width: min(1200px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--theme-panel, white);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border, #a1a1aa);
+  border-radius: 12px;
+  padding: 20px;
+}
+#dispatch-edit-dialog::backdrop {
+  background: #000b;
+}
+#dispatch-edit-form > * + * {
+  margin-top: 12px;
+}
+#dispatch-comparison {
+  max-width: 100%;
+  overflow: auto;
+}
+#dispatch-workspace table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#dispatch-workspace th,
+#dispatch-workspace td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--theme-border, #a1a1aa);
+}
+#dispatch-workspace button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#dispatch-app nav [aria-pressed='true'] {
+  outline: 2px solid var(--theme-primary, #059669);
+  outline-offset: 2px;
+}

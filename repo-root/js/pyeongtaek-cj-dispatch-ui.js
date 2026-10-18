@@ -91,6 +91,7 @@ export async function mountDispatchWorkspace(center) {
     busy = false,
     editing = null,
     settingsDirty = false,
+    verificationPending = false,
     routePage = 0,
     visibleGroupCount = 0;
   const status = (text, error = false) => {
@@ -121,9 +122,11 @@ export async function mountDispatchWorkspace(center) {
       !model ||
       !resources ||
       resources.beforeDate !== parsed.date;
-    $('save').disabled = busy || !editable || !plan || settingsDirty;
-    $('export').disabled = busy || !plan || settingsDirty;
-    $('json').disabled = busy || !plan || settingsDirty;
+    $('save').disabled =
+      busy || !editable || !plan || settingsDirty || verificationPending;
+    $('export').disabled =
+      busy || !plan || settingsDirty || verificationPending;
+    $('json').disabled = busy || !plan || settingsDirty || verificationPending;
     $('actual').disabled = busy || !plan;
     $('route-prev').disabled = busy || routePage <= 0;
     $('route-next').disabled =
@@ -319,7 +322,7 @@ export async function mountDispatchWorkspace(center) {
         g.travel?.sections.some((s) => s.status === 'composed')
           ? '일부 실측구간 연결 경로'
           : '',
-        ...g.issues,
+        g.issues.length ? '확인할 항목 ' + g.issues.length + '건' : '',
       ]
         .filter(Boolean)
         .join(' · ');
@@ -378,7 +381,18 @@ export async function mountDispatchWorkspace(center) {
       const wrap = document.createElement('div');
       wrap.className = 'scroll';
       wrap.append(table);
-      article.append(title, evidence, conditions, controls, wrap);
+      const issues = document.createElement('details');
+      issues.hidden = !g.issues.length;
+      const issueTitle = document.createElement('summary'),
+        issueList = document.createElement('ul');
+      issueTitle.textContent = '확인할 항목 ' + g.issues.length + '건';
+      for (const text of g.issues) {
+        const item = document.createElement('li');
+        item.textContent = text;
+        issueList.append(item);
+      }
+      issues.append(issueTitle, issueList);
+      article.append(title, evidence, conditions, issues, controls, wrap);
       board.append(article);
     }
     renderTransfers();
@@ -450,12 +464,20 @@ export async function mountDispatchWorkspace(center) {
     const j = plan.jobs.find((j) => j.id === id);
     $('edit-title').textContent = j.name;
     $('edit-address').value = j.address;
+    $('edit-earliest').value =
+      j.earliestArrival == null || j.earliestArrival >= 1440
+        ? ''
+        : String(Math.floor(j.earliestArrival / 60)).padStart(2, '0') +
+          ':' +
+          String(j.earliestArrival % 60).padStart(2, '0');
     $('edit-deadline').value =
       j.deadline == null
         ? ''
         : String(Math.floor(j.deadline / 60)).padStart(2, '0') +
           ':' +
           String(j.deadline % 60).padStart(2, '0');
+    for (const key of ['earliest', 'deadline'])
+      $('edit-' + key).dataset.initial = $('edit-' + key).value;
     for (const key of ['unloadMinutes', 'inspectionMinutes', 'marginMinutes'])
       $('edit-' + key).value = j.profile?.[key] ?? '';
     const target = $('edit-target');
@@ -489,7 +511,16 @@ export async function mountDispatchWorkspace(center) {
       let next = structuredClone(plan),
         j = next.jobs.find((j) => j.id === editing);
       j.address = $('edit-address').value.trim();
-      j.deadline = displayToMin($('edit-deadline').value);
+      for (const [key, field] of [
+        ['deadline', 'deadline'],
+        ['earliest', 'earliestArrival'],
+      ]) {
+        const input = $('edit-' + key);
+        if (input.value !== input.dataset.initial) {
+          j[field] = displayToMin(input.value);
+          j.otdInvalid = false;
+        }
+      }
       j.profile = { ...(j.profile || {}) };
       for (const key of [
         'unloadMinutes',
@@ -605,6 +636,21 @@ export async function mountDispatchWorkspace(center) {
       );
     }
   };
+  const signature = (r) =>
+    JSON.stringify([
+      r.points
+        .map((p) => [
+          p.id,
+          p.code,
+          p.address,
+          p.deadline_business_min,
+          p.dispatch_profile,
+        ])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+      r.routes
+        .map((r) => [r.id, r.name, r.active, r.closed_days, r.stops])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    ]);
   $('load').onclick = () =>
     task(async () => {
       const date = parsed?.date || $('date').value;
@@ -618,6 +664,9 @@ export async function mountDispatchWorkspace(center) {
       graph = nextGraph;
       fleetTable();
       if (plan) {
+        if (plan.resourceSignature !== signature(next)) settingsDirty = true;
+        verificationPending = false;
+        plan.resourcesOutdated = settingsDirty;
         recomputeDispatch(plan, graph);
         plan.transferCandidates = transferCandidates(plan, model, graph);
         render();
@@ -638,7 +687,9 @@ export async function mountDispatchWorkspace(center) {
         '일 이력 · 충돌 코스 제외 ' +
         model.excludedCourses;
       status(
-        '기준·주행·이력을 불러왔습니다. 실제 상차한도를 확인한 뒤 가배차를 실행하세요.',
+        settingsDirty
+          ? '납품정보 또는 코스 기준이 변경되었습니다. 현재 조정은 유지됩니다. 가배차를 재실행한 뒤 저장하세요.'
+          : '기준·주행·이력을 불러왔습니다. 실제 상차한도를 확인한 뒤 가배차를 실행하세요.',
       );
     });
   $('generate').onclick = () =>
@@ -653,16 +704,17 @@ export async function mountDispatchWorkspace(center) {
       const capacity = nullable($('temporary-capacity'));
       if (capacity !== null && (!Number.isFinite(capacity) || capacity <= 0))
         throw Error('임시차 실제 상차한도를 확인해 주세요.');
+      const next = generateDispatch(parsed, {
+        ...resources,
+        model,
+        graph,
+        settings,
+        temporaryCapacity: capacity,
+      });
+      next.resourceSignature = signature(resources);
       settingsDirty = false;
-      mark(
-        generateDispatch(parsed, {
-          ...resources,
-          model,
-          graph,
-          settings,
-          temporaryCapacity: capacity,
-        }),
-      );
+      verificationPending = false;
+      mark(next);
       status('가배차를 만들었습니다. 검토 상태와 착지 묶음을 확인해 주세요.');
     });
   $('actual').onchange = () =>
@@ -691,7 +743,7 @@ export async function mountDispatchWorkspace(center) {
   $('save').onclick = () =>
     task(async () => {
       if (!editable) throw Error('가배차 수정 권한이 없습니다.');
-      if (settingsDirty)
+      if (settingsDirty || verificationPending)
         throw Error(
           '변경한 차량 조건으로 가배차를 다시 실행한 뒤 저장해 주세요.',
         );
@@ -743,11 +795,13 @@ export async function mountDispatchWorkspace(center) {
       actualTrips = null;
       dirty = false;
       settingsDirty = false;
+      verificationPending = true;
+      plan.resourcesOutdated = true;
       $('date').value = plan.date;
       fleetTable();
       render();
       status(
-        '저장안을 불러왔습니다. 경로·이배송 재검증은 기준·주행·이력을 다시 불러오세요.',
+        '저장안을 불러왔습니다. 저장·출력 전 기준·주행·이력을 다시 불러와 현재 납품조건과 경로를 확인해 주세요.',
       );
     });
   $('json').onclick = () =>
@@ -824,6 +878,21 @@ export async function mountDispatchWorkspace(center) {
     routePage++;
     render();
   };
+  window.addEventListener('pyeongtaek-dispatch-resources-changed', () => {
+    resources = null;
+    model = null;
+    graph = null;
+    if (plan) {
+      settingsDirty = true;
+      plan.resourcesOutdated = true;
+      recomputeDispatch(plan, null);
+      render();
+    }
+    refresh();
+    status(
+      '납품정보·주행 DB가 변경되었습니다. 기준·주행·이력을 다시 불러오고 가배차를 재실행해 주세요.',
+    );
+  });
   window.addEventListener('beforeunload', (e) => {
     if (dirty) {
       e.preventDefault();
