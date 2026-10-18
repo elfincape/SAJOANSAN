@@ -24,7 +24,6 @@
           <h2>김해 배차 요청</h2>
           <span id="gm-center" class="gm-muted"></span>
         </div>
-        <span id="gm-saved" class="gm-badge">새 작업</span>
       </div>
       <p id="gm-status" role="status" aria-live="polite">로그인 확인 중</p>
       <div id="gm-work" hidden>
@@ -32,17 +31,7 @@
           <label
             >기준날짜<input id="gm-date" type="date" required data-edit
           /></label>
-          <button id="gm-save" class="btn btn-primary" data-edit>저장</button>
-          <button id="gm-save-copy" class="btn btn-ghost" data-edit>
-            사본 저장
-          </button>
           <button id="gm-new" class="btn btn-ghost" data-edit>새 작업</button>
-          <label class="gm-history"
-            >내 저장 내역<select id="gm-history">
-              <option value="">선택</option>
-            </select></label
-          >
-          <button id="gm-load" class="btn btn-ghost">불러오기</button>
         </div>
         <section class="gm-source-band" aria-labelledby="gm-source-title">
           <div class="gm-source">
@@ -102,49 +91,25 @@
             </div>
             <p id="gm-request-empty" class="gm-empty">CJ 요청 대기</p>
             <div id="gm-haul" role="status" aria-live="polite" hidden></div>
-            <div
-              id="gm-fixed-today"
-              class="gm-fixed-today"
-              aria-label="오늘 고정기사"
-            ></div>
-            <details id="gm-fixed-settings" class="gm-settings">
-              <summary>
-                고정기사 설정
-                <span id="gm-fixed-status" class="gm-muted"></span>
-              </summary>
-              <div class="gm-toolbar">
-                <button id="gm-add-fixed" class="btn btn-ghost" data-edit>
-                  기사 추가
-                </button>
-                <button id="gm-load-fixed" class="btn btn-ghost" data-edit>
-                  기본값 불러오기
-                </button>
-                <button id="gm-save-fixed" class="btn btn-primary" data-edit>
-                  기본값 저장
-                </button>
-              </div>
-              <div class="gm-scroll">
-                <table class="gm-fixed-table">
-                  <thead>
-                    <tr>
-                      <th>지역</th>
-                      <th>운수사</th>
-                      <th>도크</th>
-                      <th>기사</th>
-                      <th>차량번호</th>
-                      <th>연락처</th>
-                      <th>입차시간</th>
-                      <th>관리</th>
-                    </tr>
-                  </thead>
-                  <tbody id="gm-fixed"></tbody>
-                </table>
-              </div>
-              <p id="gm-fixed-empty" class="gm-empty">
-                등록된 고정기사가 없습니다.
-              </p>
-            </details>
           </div>
+        </section>
+        <section class="gm-band gm-fixed-band" aria-labelledby="gm-fixed-title">
+          <div class="gm-section-head">
+            <h3 id="gm-fixed-title">고정기사</h3>
+            <button id="gm-add-fixed" class="btn btn-ghost" data-edit>
+              고정기사 등록
+            </button>
+          </div>
+          <p id="gm-fixed-status" class="gm-muted" role="status"></p>
+          <div
+            id="gm-fixed-today"
+            class="gm-fixed-today"
+            aria-label="오늘 배차에 포함할 고정기사"
+          ></div>
+          <p id="gm-fixed-empty" class="gm-empty">등록된 고정기사 없음</p>
+          <button id="gm-fixed-retry" class="btn btn-ghost" hidden>
+            다시 불러오기
+          </button>
         </section>
         <section class="gm-band" aria-labelledby="gm-carrier-title">
           <div class="gm-section-head">
@@ -153,68 +118,146 @@
           <div id="gm-request-issues" class="gm-issues" role="status"></div>
           <div id="gm-carrier-messages" class="gm-messages gm-carriers"></div>
         </section>
-        <section class="gm-band" aria-labelledby="gm-reply-title">
-          <div class="gm-section-head">
-            <h3 id="gm-reply-title">운수사 회신</h3>
-            <span id="gm-reply-count" class="gm-muted"></span>
-          </div>
-          <div class="gm-reply-source">
-            <textarea
-              id="gm-reply"
-              rows="3"
-              maxlength="40000"
-              aria-label="운수사 회신 원문"
-              placeholder="회신 붙여넣기"
-              data-edit
-            ></textarea>
-            <div class="gm-reply-actions">
-              <label
-                >목적지 보완<select id="gm-reply-region" data-edit>
-                  <option value="">원문 기준</option>
-                  <option>광주</option>
-                  <option>전주</option>
-                  <option>하양</option>
-                </select></label
-              >
-              <button
-                id="gm-apply-reply"
-                class="btn btn-ghost"
-                hidden
+        <div class="gm-handoff">
+          <section
+            class="gm-band gm-reply-band"
+            aria-labelledby="gm-reply-title"
+          >
+            <div class="gm-section-head">
+              <h3 id="gm-reply-title">운수사 회신</h3>
+              <span id="gm-reply-count" class="gm-muted"></span>
+            </div>
+            <div class="gm-reply-source">
+              <textarea
+                id="gm-reply"
+                rows="9"
+                maxlength="40000"
+                aria-label="운수사 회신 원문"
+                placeholder="회신 붙여넣기"
                 data-edit
-              >
-                회신 반영
-              </button>
-              <span id="gm-reply-state" role="status" class="gm-muted"></span>
+              ></textarea>
+              <div class="gm-reply-actions">
+                <label
+                  >목적지 보완<select id="gm-reply-region" data-edit>
+                    <option value="">원문 기준</option>
+                    <option>광주</option>
+                    <option>전주</option>
+                    <option>하양</option>
+                  </select></label
+                >
+                <button
+                  id="gm-apply-reply"
+                  class="btn btn-ghost"
+                  hidden
+                  data-edit
+                >
+                  회신 반영
+                </button>
+                <span id="gm-reply-state" role="status" class="gm-muted"></span>
+              </div>
             </div>
+          </section>
+          <section class="gm-band gm-cj-band" aria-labelledby="gm-cj-title">
+            <div class="gm-section-head"><h3 id="gm-cj-title">CJ 전달</h3></div>
+            <div id="gm-issues" class="gm-issues" role="status"></div>
+            <div id="gm-cj-messages" class="gm-messages"></div>
+          </section>
+        </div>
+        <details id="gm-truck-details" class="gm-settings gm-band">
+          <summary>차량별 배차정보</summary>
+          <div class="gm-scroll">
+            <table class="gm-trucks-table">
+              <thead>
+                <tr>
+                  <th>요청 연결</th>
+                  <th>도크</th>
+                  <th>기사</th>
+                  <th>차량번호</th>
+                  <th>연락처</th>
+                  <th>입차시간</th>
+                  <th>상차량·조건</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="gm-trucks"></tbody>
+            </table>
           </div>
-          <details id="gm-truck-details" class="gm-settings">
-            <summary>차량별 배차정보</summary>
-            <div class="gm-scroll">
-              <table class="gm-trucks-table">
-                <thead>
-                  <tr>
-                    <th>요청 연결</th>
-                    <th>도크</th>
-                    <th>기사</th>
-                    <th>차량번호</th>
-                    <th>연락처</th>
-                    <th>입차시간</th>
-                    <th>상차량·조건</th>
-                    <th>관리</th>
-                  </tr>
-                </thead>
-                <tbody id="gm-trucks"></tbody>
-              </table>
-            </div>
-            <p id="gm-truck-empty" class="gm-empty">배차정보 대기</p>
-          </details>
-        </section>
-        <section class="gm-band" aria-labelledby="gm-cj-title">
-          <div class="gm-section-head"><h3 id="gm-cj-title">CJ 전달</h3></div>
-          <div id="gm-issues" class="gm-issues" role="status"></div>
-          <div id="gm-cj-messages" class="gm-messages"></div>
-        </section>
+          <p id="gm-truck-empty" class="gm-empty">배차정보 대기</p>
+        </details>
       </div>
+      <dialog id="gm-fixed-dialog" aria-labelledby="gm-fixed-dialog-title">
+        <form id="gm-fixed-form">
+          <h3 id="gm-fixed-dialog-title">고정기사 등록</h3>
+          <div class="gm-fixed-fields">
+            <label
+              >지역<select name="region">
+                <option>광주</option>
+                <option>전주</option>
+                <option>하양</option>
+              </select></label
+            >
+            <label
+              >운수사<select name="carrier">
+                <option value="">공통</option>
+                <option>광신</option>
+                <option>동진</option>
+                <option>해피</option>
+              </select></label
+            >
+            <label>도크<select name="dock"></select></label>
+            <label
+              >기사명<input
+                name="driver"
+                required
+                maxlength="80"
+                autocomplete="off"
+            /></label>
+            <label
+              >차량번호<input
+                name="vehicle"
+                required
+                maxlength="40"
+                autocomplete="off"
+            /></label>
+            <label
+              >연락처<input
+                name="phone"
+                type="tel"
+                required
+                maxlength="40"
+                autocomplete="off"
+            /></label>
+            <label
+              >입차시간<input name="arrival" maxlength="80" placeholder="선택"
+            /></label>
+          </div>
+          <p id="gm-fixed-error" class="gm-issues" role="alert"></p>
+          <button
+            id="gm-refresh-fixed"
+            type="button"
+            class="btn btn-ghost"
+            hidden
+          >
+            최신 기사정보 불러오기
+          </button>
+          <div class="gm-dialog-actions">
+            <button
+              id="gm-delete-fixed"
+              type="button"
+              class="btn btn-ghost"
+              hidden
+            >
+              등록 삭제
+            </button>
+            <button id="gm-cancel-fixed" type="button" class="btn btn-ghost">
+              취소
+            </button>
+            <button id="gm-submit-fixed" type="submit" class="btn btn-primary">
+              등록
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
     <script type="module" src="/js/gimhae-dispatch-ui.js"></script>
   </body>

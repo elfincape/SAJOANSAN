@@ -13,7 +13,7 @@ import {
 } from './private-features.js';
 import { confirmDialog } from './ui.js';
 import {
-  REGIONS,
+  DOCKS,
   newDraft,
   normalizeDraft,
   carrierFor,
@@ -32,9 +32,6 @@ import {
   clearFixedAssignment,
 } from './gimhae-dispatch-model.js';
 import {
-  listDrafts,
-  loadDraft,
-  saveDraft,
   analyze,
   imageData,
   loadFixedDefaults,
@@ -44,8 +41,6 @@ import {
 const $ = (id) => document.getElementById('gm-' + id);
 const state = {
   draft: newDraft(),
-  id: null,
-  revision: 0,
   dirty: false,
   ready: false,
   editable: false,
@@ -54,6 +49,7 @@ const state = {
   copied: new Map(),
   fixedDefaults: null,
   defaultsLoaded: false,
+  editingFixedId: null,
   previous: null,
   photoError: '',
   replyError: '',
@@ -103,18 +99,14 @@ function counters() {
   $('reply-count').textContent = d.requestPending
     ? ''
     : `${filled} / ${total}대`;
-  $('saved').textContent = state.dirty
-    ? '저장 전 변경사항'
-    : state.id
-      ? `저장됨 · v${state.revision}`
-      : '새 작업';
 }
 function controls() {
   for (const el of $('work').querySelectorAll('button,input,select,textarea'))
     el.disabled =
       state.busy || (!state.editable && el.hasAttribute('data-edit'));
-  $('load').disabled ||= !$('history').value;
-  $('save-fixed').disabled ||= !state.defaultsLoaded;
+  $('add-fixed').disabled ||= !state.defaultsLoaded;
+  for (const el of $('fixed-form').querySelectorAll('button,input,select'))
+    el.disabled = state.busy || !state.editable;
   const noRequest = state.draft.requestPending || !state.draft.requests.length;
   for (const id of ['reply', 'reply-region', 'apply-reply'])
     $(id).disabled ||= noRequest;
@@ -125,6 +117,7 @@ function controls() {
   for (const button of document.querySelectorAll('[data-copy]'))
     button.disabled =
       state.busy ||
+      !state.defaultsLoaded ||
       issues(state.draft, ['cj', 'summary'].includes(button.dataset.copy))
         .length > 0;
   $('work').setAttribute('aria-busy', String(state.busy));
@@ -174,8 +167,10 @@ function renderSource() {
 }
 function fixedStatus(f) {
   if (!f.enabled) return '오늘 제외';
+  if (!state.draft.requests.length) return '오늘 포함 · 요청 대기';
   if (state.draft.requestPending) return '분석 대기';
-  if (state.draft.trucks.some((t) => t.fixedDriverId === f.id)) return '적용됨';
+  if (state.draft.trucks.some((t) => t.fixedDriverId === f.id))
+    return '오늘 포함 · 배차 적용';
   const slot = state.draft.trucks.some((t) => {
     const r = state.draft.requests.find((r) => r.id === t.requestId);
     return (
@@ -191,56 +186,31 @@ function renderFixedToday() {
   $('fixed-today').innerHTML = state.draft.fixedDrivers
     .map(
       (f) =>
-        `<label class="gm-fixed-choice"><input type="checkbox" data-fixed-toggle="${escape(f.id)}" aria-label="${escape(f.driver || '고정기사')} 오늘 포함" ${f.enabled ? 'checked' : ''} data-edit /><span><strong>${escape(f.region)} ${escape(f.dock)}번 · ${escape(f.driver || '기사 미정')}</strong><span class="gm-muted">${escape(f.vehicle)} · ${fixedStatus(f)}</span></span></label>`,
+        `<div class="gm-fixed-person"><label class="gm-fixed-choice"><input type="checkbox" data-fixed-toggle="${escape(f.id)}" aria-label="${escape(f.driver)} 오늘 포함" ${f.enabled ? 'checked' : ''} data-edit /><span><strong>${escape(f.driver)} · ${escape(f.vehicle)}</strong><span>${escape(f.region)} · ${escape(f.carrier || '운수사 공통')} · ${escape(f.dock)}번 도크</span><span class="gm-muted">${escape(f.phone)}${f.arrival ? ' · ' + escape(f.arrival) : ''}</span><span class="gm-fixed-state">${fixedStatus(f)}</span></span></label><button class="btn btn-ghost" data-edit-fixed="${escape(f.id)}" aria-label="${escape(f.driver)} 고정기사 수정" data-edit>수정</button></div>`,
     )
     .join('');
-  const comparable = (rows) =>
-    JSON.stringify(
-      normalizeFixedDrivers(rows).map((r) => ({ ...r, enabled: true })),
-    );
-  $('fixed-status').textContent = !state.defaultsLoaded
-    ? '불러오기 필요'
-    : comparable(state.draft.fixedDrivers) !==
-        comparable(state.fixedDefaults?.payload.fixedDrivers || [])
-      ? '변경사항 있음'
-      : state.fixedDefaults
-        ? '저장됨'
-        : '';
-}
-function renderFixed() {
-  renderFixedToday();
-  $('fixed').innerHTML = state.draft.fixedDrivers
-    .map(
-      (f) => `<tr data-id="${escape(f.id)}">
-    <td>${select(
-      'region',
-      f.region,
-      REGIONS.map((v) => [v, v]),
-      '고정기사 지역',
-    )}</td>
-    <td>${select(
-      'carrier',
-      f.carrier,
-      [
-        ['', '공통'],
-        ['광신', '광신'],
-        ['동진', '동진'],
-        ['해피', '해피'],
-      ],
-      '고정기사 운수사',
-    )}</td>
-    <td>${input('dock', f.dock, '고정기사 도크', 'text', 'maxlength="20"')}</td>
-    <td>${input('driver', f.driver, '고정기사 이름', 'text', 'maxlength="80"')}</td>
-    <td>${input('vehicle', f.vehicle, '고정기사 차량번호', 'text', 'maxlength="40"')}</td>
-    <td>${input('phone', f.phone, '고정기사 연락처', 'tel', 'maxlength="40"')}</td>
-    <td>${input('arrival', f.arrival, '고정기사 입차시간', 'text', 'maxlength="80"')}</td>
-    <td><button class="btn btn-ghost" data-remove-fixed="${escape(f.id)}" data-edit>삭제</button></td></tr>`,
-    )
-    .join('');
-  $('fixed-empty').hidden = !!state.draft.fixedDrivers.length;
+  $('fixed-empty').hidden =
+    !state.defaultsLoaded || !!state.draft.fixedDrivers.length;
+  $('add-fixed').classList.toggle(
+    'btn-primary',
+    !state.draft.fixedDrivers.length,
+  );
+  $('add-fixed').classList.toggle(
+    'btn-ghost',
+    !!state.draft.fixedDrivers.length,
+  );
 }
 async function refreshFixedDefaults(apply = false) {
-  const result = await loadFixedDefaults(supabase, state.center.code);
+  let result;
+  try {
+    result = await loadFixedDefaults(supabase, state.center.code);
+    $('fixed-status').textContent = '';
+    $('fixed-retry').hidden = true;
+  } catch (error) {
+    $('fixed-status').textContent = '고정기사 정보를 불러오지 못했습니다.';
+    $('fixed-retry').hidden = false;
+    throw error;
+  }
   state.fixedDefaults = result;
   state.defaultsLoaded = true;
   if (!apply) return;
@@ -287,13 +257,17 @@ function renderTrucks() {
 function renderMessages() {
   const d = state.draft,
     ready = !d.requestPending && d.requests.length;
+  const hasAssignment = d.trucks.some((t) =>
+    [t.driver, t.vehicle, t.phone].some((v) => v?.trim()),
+  );
   const requestIssues = ready ? issues(d) : [];
   $('request-issues').textContent = [...new Set(requestIssues)]
     .slice(0, 4)
     .join(' / ');
-  $('issues').textContent = ready
-    ? [...new Set(issues(d, true))].slice(0, 4).join(' / ')
-    : '';
+  $('issues').textContent =
+    ready && (hasAssignment || d.replyPending)
+      ? [...new Set(issues(d, true))].slice(0, 4).join(' / ')
+      : '';
   $('carrier-messages').replaceChildren();
   $('cj-messages').replaceChildren();
   if (!ready) {
@@ -303,18 +277,32 @@ function renderMessages() {
     return;
   }
   for (const message of messages(d)) {
-    if (d.replyPending && ['cj', 'summary'].includes(message.key)) continue;
+    if (
+      ['cj', 'summary'].includes(message.key) &&
+      (d.replyPending || !hasAssignment)
+    )
+      continue;
     const article = document.createElement('article');
     article.className = 'gm-message';
     const copied = state.copied.get(message.key);
     const lines = Math.min(15, Math.max(4, message.text.split('\n').length));
     article.innerHTML = `<div class="gm-section-head"><h3>${escape(message.title)}</h3><span class="gm-message-status">${copied === message.text ? '복사됨' : copied ? '복사 후 변경됨' : ''}</span><button class="btn btn-primary" data-copy="${escape(message.key)}">복사</button></div><textarea rows="${lines}" readonly aria-label="${escape(message.title)}">${escape(message.text)}</textarea>`;
+    let output = article;
+    if (message.key === 'summary') {
+      output = document.createElement('details');
+      output.className = 'gm-settings';
+      const title = document.createElement('summary');
+      title.textContent = '차량 운영 현황';
+      output.append(title, article);
+    }
     $(
       ['cj', 'summary'].includes(message.key)
         ? 'cj-messages'
         : 'carrier-messages',
-    ).append(article);
+    ).append(output);
   }
+  if (!hasAssignment && !d.replyPending)
+    $('cj-messages').innerHTML = '<p class="gm-empty">운수사 회신 대기</p>';
 }
 function stopHaul() {
   state.haulWorker?.terminate();
@@ -379,50 +367,12 @@ function render() {
   $('date').value = state.draft.date;
   $('reply').value = state.draft.replyText;
   renderSource();
-  renderFixed();
+  renderFixedToday();
   renderTrucks();
   renderMessages();
   counters();
   controls();
   scheduleHaul();
-}
-async function refreshHistory() {
-  const rows = await listDrafts(supabase, state.center.code);
-  $('history').innerHTML =
-    option('', '선택', '') +
-    rows
-      .map((r) =>
-        option(
-          r.id,
-          `${r.business_date} · v${r.revision} · ${new Date(r.updated_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`,
-          state.id,
-        ),
-      )
-      .join('');
-}
-async function save(copy = false) {
-  const result = await saveDraft(
-    supabase,
-    state.center.code,
-    state.draft,
-    copy ? null : state.id,
-    copy ? 0 : state.revision,
-  );
-  state.id = result.id;
-  state.revision = result.revision;
-  if (state.previous?.id === result.id) {
-    state.previous.revision = result.revision;
-    state.previous.dirty = true;
-  }
-  state.draft = normalizeDraft(result.payload);
-  state.dirty = false;
-  render();
-  status('저장했습니다.');
-  try {
-    await refreshHistory();
-  } catch {
-    status('저장은 완료했습니다. 저장 목록 새로고침에 실패했습니다.', true);
-  }
 }
 async function analyzePhoto() {
   state.photoError = '';
@@ -441,10 +391,6 @@ async function analyzePhoto() {
       'request',
     );
     const next = importRequest(state.draft, result);
-    if (next.date !== state.draft.date) {
-      state.id = null;
-      state.revision = 0;
-    }
     state.draft = next;
     state.replyError = '';
     state.replyChanged = false;
@@ -492,8 +438,6 @@ async function pastePhoto(file) {
       )
         state.previous = {
           draft: structuredClone(state.draft),
-          id: state.id,
-          revision: state.revision,
           dirty: state.dirty,
         };
       state.draft.image = data;
@@ -625,8 +569,6 @@ $('date').onchange = (e) => {
   }
   if (state.draft.date !== e.target.value) {
     state.lastReply = '';
-    state.id = null;
-    state.revision = 0;
     for (const f of state.draft.fixedDrivers) f.enabled = true;
   }
   state.draft.date = e.target.value;
@@ -646,88 +588,152 @@ $('fixed-today').onchange = (e) => {
   renderTrucks();
   updateOutputs();
 };
-$('add-fixed').onclick = () =>
-  run(
+function fixedDocks(value) {
+  const form = $('fixed-form');
+  const docks = [...(DOCKS[form.elements.region.value] || [])];
+  if (value && !docks.includes(value)) docks.push(value);
+  form.elements.dock.innerHTML = docks
+    .map((d) => option(d, d + '번 도크', value))
+    .join('');
+}
+function openFixed(id = null) {
+  if (!state.editable || state.busy || !state.defaultsLoaded) return;
+  const row = id
+    ? state.draft.fixedDrivers.find((f) => f.id === id)
+    : newFixedDriver();
+  if (!row) return;
+  state.editingFixedId = id;
+  const form = $('fixed-form');
+  for (const key of [
+    'region',
+    'carrier',
+    'driver',
+    'vehicle',
+    'phone',
+    'arrival',
+  ])
+    form.elements[key].value = row[key];
+  fixedDocks(row.dock);
+  $('fixed-dialog-title').textContent = id ? '고정기사 수정' : '고정기사 등록';
+  $('submit-fixed').textContent = id ? '변경 적용' : '등록';
+  $('delete-fixed').hidden = !id;
+  $('delete-fixed').textContent = '등록 삭제';
+  $('delete-fixed').dataset.confirm = '';
+  $('fixed-error').textContent = '';
+  $('refresh-fixed').hidden = true;
+  $('fixed-dialog').showModal();
+}
+function syncRegisteredFixed(draft, rows) {
+  const nextRows = normalizeFixedDrivers(rows).map((f) => ({
+    ...f,
+    enabled: draft.fixedDrivers.find((old) => old.id === f.id)?.enabled ?? true,
+  }));
+  for (const next of nextRows) {
+    const old = draft.fixedDrivers.find((f) => f.id === next.id);
+    if (!old) continue;
+    for (const t of draft.trucks) {
+      if (t.fixedDriverId !== next.id) continue;
+      for (const field of ['driver', 'vehicle', 'phone', 'arrival'])
+        if (t[field] === old[field]) t[field] = next[field];
+    }
+  }
+  draft.fixedDrivers = nextRows;
+  applyFixedDrivers(draft);
+}
+async function commitFixed(rows) {
+  const result = await saveFixedDefaults(
+    supabase,
+    state.center.code,
+    rows,
+    state.fixedDefaults?.id || null,
+    state.fixedDefaults?.revision || 0,
+  );
+  state.fixedDefaults = { ...result, payload: normalizeDraft(result.payload) };
+  syncRegisteredFixed(state.draft, rows);
+  if (state.previous) syncRegisteredFixed(state.previous.draft, rows);
+  render();
+}
+async function fixedAction(action) {
+  await run(
     async () => {
-      if (state.draft.fixedDrivers.length >= 100)
-        throw Error('고정기사는 최대 100명입니다.');
-      state.draft.fixedDrivers.push(newFixedDriver());
-      touch();
-      renderFixed();
-      renderMessages();
+      $('fixed-error').textContent = '';
+      try {
+        await action();
+        $('fixed-dialog').close();
+        status('고정기사 정보를 반영했습니다.');
+      } catch (error) {
+        $('fixed-error').textContent = error.message;
+        if (['PT409', '23505'].includes(error.code))
+          $('refresh-fixed').hidden = false;
+        throw error;
+      }
     },
     { edit: true },
   );
-$('fixed').oninput = (e) => {
-  if (!state.editable || state.busy) return;
-  const f = state.draft.fixedDrivers.find(
-      (f) => f.id === e.target.closest('[data-id]')?.dataset.id,
-    ),
-    field = e.target.dataset.field;
-  if (!f || !field) return;
-  const previous = f[field];
-  f[field] =
-    field === 'dock' ? dockNumber(e.target.value) : e.target.value.trim();
-  if (['driver', 'vehicle', 'phone', 'arrival'].includes(field))
-    for (const t of state.draft.trucks)
-      if (t.fixedDriverId === f.id && t[field] === previous)
-        t[field] = f[field];
-  applyFixedDrivers(state.draft);
-  touch();
-  renderTrucks();
-  updateOutputs();
+}
+$('add-fixed').onclick = () => openFixed();
+$('fixed-today').onclick = (e) => {
+  const button = e.target.closest('[data-edit-fixed]');
+  if (button) openFixed(button.dataset.editFixed);
 };
-$('fixed').onclick = (e) => {
-  const button = e.target.closest('[data-remove-fixed]');
-  if (!button) return;
+$('fixed-form').elements.region.onchange = () => fixedDocks();
+$('cancel-fixed').onclick = () => $('fixed-dialog').close();
+$('refresh-fixed').onclick = () =>
   run(
     async () => {
-      state.draft.fixedDrivers = state.draft.fixedDrivers.filter(
-        (f) => f.id !== button.dataset.removeFixed,
-      );
-      applyFixedDrivers(state.draft);
-      touch();
-      renderFixed();
-      renderTrucks();
-      updateOutputs();
+      try {
+        await refreshFixedDefaults();
+        const rows = state.fixedDefaults?.payload.fixedDrivers || [];
+        syncRegisteredFixed(state.draft, rows);
+        if (state.previous) syncRegisteredFixed(state.previous.draft, rows);
+        render();
+        $('refresh-fixed').hidden = true;
+        $('fixed-error').textContent =
+          '최신 기사정보를 불러왔습니다. 입력한 내용을 확인하고 다시 적용해 주세요.';
+      } catch (error) {
+        $('fixed-error').textContent = error.message;
+      }
     },
     { edit: true },
+  );
+$('fixed-dialog').addEventListener('cancel', (e) => {
+  if (state.busy) e.preventDefault();
+});
+$('fixed-form').onsubmit = (e) => {
+  e.preventDefault();
+  const fields = Object.fromEntries(new FormData(e.currentTarget));
+  const current = state.draft.fixedDrivers.find(
+    (f) => f.id === state.editingFixedId,
+  );
+  if (state.editingFixedId && !current) {
+    $('fixed-error').textContent =
+      '다른 창에서 삭제된 기사입니다. 취소 후 새로 등록해 주세요.';
+    return;
+  }
+  const row = { ...(current || newFixedDriver()), ...fields };
+  const rows = current
+    ? state.draft.fixedDrivers.map((f) => (f.id === row.id ? row : f))
+    : [...state.draft.fixedDrivers, row];
+  fixedAction(() => commitFixed(rows));
+};
+$('delete-fixed').onclick = () => {
+  const id = state.editingFixedId;
+  if (!id) return;
+  if (!$('delete-fixed').dataset.confirm) {
+    $('delete-fixed').dataset.confirm = 'yes';
+    $('delete-fixed').textContent = '삭제 확정';
+    $('fixed-error').textContent = '이 기사의 고정 배차 등록을 삭제합니다.';
+    return;
+  }
+  fixedAction(() =>
+    commitFixed(state.draft.fixedDrivers.filter((f) => f.id !== id)),
   );
 };
-$('save-fixed').onclick = () =>
-  run(
-    async () => {
-      state.fixedDefaults = await saveFixedDefaults(
-        supabase,
-        state.center.code,
-        state.draft.fixedDrivers,
-        state.fixedDefaults?.id || null,
-        state.fixedDefaults?.revision || 0,
-      );
-      state.fixedDefaults.payload = normalizeDraft(state.fixedDefaults.payload);
-      renderFixedToday();
-      status('고정기사 기본값을 저장했습니다. 오늘 제외 상태는 유지됩니다.');
-    },
-    { edit: true },
-  );
-$('load-fixed').onclick = () =>
-  run(
-    async () => {
-      if (
-        state.draft.fixedDrivers.length &&
-        !(await confirmDialog(
-          '저장된 고정기사 기본값으로 바꿀까요? 오늘 포함 상태도 초기화됩니다.',
-          { okText: '불러오기' },
-        ))
-      )
-        return;
-      await refreshFixedDefaults(true);
-      touch();
-      render();
-      status('고정기사 기본값을 불러왔습니다.');
-    },
-    { edit: true },
-  );
+$('fixed-retry').onclick = () =>
+  run(async () => {
+    await refreshFixedDefaults(true);
+    render();
+  });
 $('trucks').oninput = (e) => {
   if (!state.editable || state.busy) return;
   const row = state.draft.trucks.find(
@@ -802,9 +808,6 @@ $('trucks').onclick = (e) => {
     { edit: true },
   );
 };
-$('save').onclick = () => run(() => save(), { edit: true });
-$('save-copy').onclick = () => run(() => save(true), { edit: true });
-$('history').onchange = controls;
 function resetTransient() {
   state.previous = null;
   state.photoError = '';
@@ -816,7 +819,7 @@ function resetTransient() {
 }
 function restoreAnalysisState() {
   if (state.draft.requestPending)
-    state.photoError = '저장된 사진의 분석이 완료되지 않았습니다.';
+    state.photoError = '현재 사진의 분석이 완료되지 않았습니다.';
   else if (
     state.draft.image &&
     issues({ ...state.draft, fixedDrivers: [] }).length
@@ -827,37 +830,13 @@ function restoreAnalysisState() {
     $('reply-state').textContent = '현재 회신의 분석이 완료되지 않았습니다.';
   }
 }
-$('load').onclick = () =>
-  run(async () => {
-    if (
-      state.dirty &&
-      !(await confirmDialog(
-        '저장하지 않은 변경사항을 닫고 저장 내역을 불러올까요?',
-        { okText: '불러오기' },
-      ))
-    )
-      return;
-    const row = await loadDraft(
-      supabase,
-      state.center.code,
-      $('history').value,
-    );
-    state.draft = row.payload;
-    state.id = row.id;
-    state.revision = row.revision;
-    state.dirty = false;
-    resetTransient();
-    restoreAnalysisState();
-    render();
-    status('저장 내역을 불러왔습니다.');
-  });
 $('new').onclick = () =>
   run(
     async () => {
       if (
         state.dirty &&
         !(await confirmDialog(
-          '저장하지 않은 변경사항을 닫고 새 작업을 시작할까요?',
+          '현재 요청과 회신을 비우고 새 작업을 시작할까요? 등록된 고정기사는 유지됩니다.',
           { okText: '새 작업' },
         ))
       )
@@ -867,8 +846,6 @@ $('new').onclick = () =>
         defaultDate(),
         state.fixedDefaults?.payload.fixedDrivers,
       );
-      state.id = null;
-      state.revision = 0;
       state.dirty = false;
       resetTransient();
       render();
@@ -880,6 +857,8 @@ document.addEventListener('click', (e) => {
   const copy = e.target.closest('[data-copy]');
   if (!copy) return;
   run(async () => {
+    if (!state.defaultsLoaded)
+      throw Error('고정기사 정보를 먼저 불러와 주세요.');
     const key = copy.dataset.copy,
       errors = issues(state.draft, ['cj', 'summary'].includes(key));
     if (errors.length) throw Error(errors[0]);
@@ -900,7 +879,7 @@ document.addEventListener('click', (e) => {
   });
 });
 addEventListener('beforeunload', (e) => {
-  if (state.dirty || state.busy) {
+  if (state.busy) {
     e.preventDefault();
     e.returnValue = '';
   }
@@ -937,10 +916,9 @@ async function initialize() {
     if (
       state.busy ||
       (state.dirty &&
-        !(await confirmDialog(
-          '저장하지 않은 변경사항을 닫고 센터를 전환할까요?',
-          { okText: '전환' },
-        )))
+        !(await confirmDialog('현재 요청과 회신을 닫고 센터를 전환할까요?', {
+          okText: '전환',
+        })))
     ) {
       setSelectedCenterCode(state.center.code);
       const select = document.querySelector('#center-switcher select');
@@ -954,7 +932,6 @@ async function initialize() {
   render();
   status('');
   await run(async () => {
-    await refreshHistory();
     await refreshFixedDefaults(true);
     render();
   });

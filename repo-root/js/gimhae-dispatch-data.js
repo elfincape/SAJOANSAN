@@ -6,11 +6,13 @@ import {
 const TABLE = 'dispatch_message_drafts';
 function check(error) {
   if (!error) return;
-  throw Error(
+  const failure = Error(
     ['PT409', '23505'].includes(error.code)
-      ? '다른 창에서 저장된 내용이 있습니다. 사본으로 저장하거나 다시 불러와 주세요.'
+      ? '다른 창에서 고정기사 정보가 변경되었습니다. 최신 기사정보를 불러온 뒤 다시 적용해 주세요.'
       : 'DB 요청에 실패했습니다. 현재 입력은 유지됩니다. 로그인과 연결 상태를 확인해 주세요.',
   );
+  failure.code = error.code;
+  throw failure;
 }
 export async function listDrafts(client, center) {
   const { data, error } = await client
