@@ -1,3 +1,4 @@
+import { mountDispatchWorkspace } from './pyeongtaek-cj-dispatch-ui.js';
 import { requireAuth } from './auth.js';
 import { supabase } from './supabase.js';
 import { menuPermissions } from './menu-permissions.js';
@@ -920,6 +921,7 @@ async function refreshLegs() {
   state.context.addresses = c.addresses;
   state.context.legs = c.legs;
   state.context.issues = c.issues;
+  window.dispatchEvent(new Event('pyeongtaek-dispatch-resources-changed'));
   issues($('context-issues'), c.issues);
   if (state.draft) recalc('저장 구간 갱신');
 }
@@ -1530,14 +1532,34 @@ async function initialize() {
   state.ready = true;
   $('access').textContent = state.editable ? '' : '열람 전용';
   $('work').hidden = false;
-  await run(async () => {
-    await context({ replaceDrivers: true });
-    await snapshots();
-    stage(0);
-    if (new URL(location.href).searchParams.get('view') === 'roads')
-      sourceTab('roads');
-    message('기준일 물량표를 선택하거나 저장된 초안을 불러오세요.');
-  });
+  let toolsLoaded = false;
+  const showWorkflow = async (tools) => {
+    $('legacy-workflow').hidden = !tools;
+    document.getElementById('dispatch-workspace').hidden = tools;
+    $('mode-cj').setAttribute('aria-pressed', String(!tools));
+    $('mode-tools').setAttribute('aria-pressed', String(tools));
+    if (tools && !toolsLoaded) {
+      await run(async () => {
+        await context({ replaceDrivers: true });
+        await snapshots();
+        toolsLoaded = true;
+        stage(0);
+        if (new URL(location.href).searchParams.get('view') === 'roads')
+          sourceTab('roads');
+        message(
+          '직접 입력 작업 · CJ 원본은 CJ 당일 지시서 배차에서 처리하세요.',
+        );
+      });
+    }
+  };
+  await mountDispatchWorkspace(getSelectedCenter());
+  $('mode-cj').disabled = false;
+  $('mode-tools').disabled = false;
+  $('mode-cj').onclick = () => showWorkflow(false);
+  $('mode-tools').onclick = () => showWorkflow(true);
+  await showWorkflow(
+    new URL(location.href).searchParams.get('view') === 'roads',
+  );
 }
 const profiles = createProfilesUI({
   host: $('profiles-panel'),
@@ -1559,6 +1581,8 @@ const profiles = createProfilesUI({
     const changed =
       signature(next.destinations) !== signature(state.context.destinations);
     state.context.destinations = next.destinations;
+    if (changed)
+      window.dispatchEvent(new Event('pyeongtaek-dispatch-resources-changed'));
     relations?.refreshDestinations();
     if (state.draft && changed) {
       state.needsRegeneration = true;
@@ -1567,6 +1591,7 @@ const profiles = createProfilesUI({
     render();
   },
   onSaved(records) {
+    window.dispatchEvent(new Event('pyeongtaek-dispatch-resources-changed'));
     for (const record of records) {
       const destination = state.context.destinations.find(
         (d) => String(d.id) === String(record.id),
