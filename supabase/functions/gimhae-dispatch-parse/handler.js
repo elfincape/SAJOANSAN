@@ -81,10 +81,7 @@ export function parseAnswer(data, mode) {
   try {
     result = JSON.parse(answer);
   } catch {
-    throw fail(
-      '분석 응답을 읽지 못했습니다. 다시 시도하거나 직접 입력해 주세요.',
-      502,
-    );
+    throw fail('분석 응답을 읽지 못했습니다. 다시 시도해 주세요.', 502);
   }
   const field = mode === 'request' ? 'requests' : 'trucks';
   if (
@@ -94,7 +91,7 @@ export function parseAnswer(data, mode) {
     result[field].some((r) => !r || typeof r !== 'object' || Array.isArray(r))
   )
     throw fail(
-      '인식된 배차 항목이 없습니다. 원본을 확인하거나 직접 입력해 주세요.',
+      '인식된 배차 항목이 없습니다. 원본을 확인하고 다시 붙여넣어 주세요.',
       422,
     );
   if (mode === 'request' && !Array.isArray(result.volumes)) result.volumes = [];
@@ -155,7 +152,7 @@ export function makeHandler(env, fetcher = fetch) {
           body.imageBase64.length > 2800000 ||
           !/^[A-Za-z0-9+/]+={0,2}$/.test(body.imageBase64)
         )
-          throw fail('지원하는 이미지 파일을 선택해 주세요.', 400);
+          throw fail('지원하는 형식의 사진을 붙여넣어 주세요.', 400);
         content.push({
           type: 'image',
           source: {

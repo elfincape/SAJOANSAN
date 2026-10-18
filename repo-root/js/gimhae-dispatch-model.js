@@ -131,6 +131,8 @@ export function newDraft(date = defaultDate(), fixedDrivers = []) {
   return {
     schemaVersion: 1,
     recordKind: 'draft',
+    requestPending: false,
+    replyPending: false,
     fixedDrivers: normalizeFixedDrivers(fixedDrivers).map((r) => ({
       ...r,
       enabled: true,
@@ -200,6 +202,8 @@ export function normalizeDraft(input) {
     schemaVersion: 1,
     recordKind:
       input.recordKind === 'fixed-defaults' ? 'fixed-defaults' : 'draft',
+    requestPending: input.requestPending === true,
+    replyPending: input.replyPending === true,
     fixedDrivers: normalizeFixedDrivers(input.fixedDrivers),
     date: input.date,
     requests,
@@ -221,7 +225,7 @@ export function normalizeDraft(input) {
         : '',
     imageName: text(input.imageName).slice(0, 200),
     replyText: text(input.replyText).slice(0, 40000),
-    instructions: text(input.instructions ?? INSTRUCTIONS).slice(0, 3000),
+    instructions: INSTRUCTIONS,
   };
 }
 export function filledTruck(row) {
@@ -361,12 +365,12 @@ function validateVolumes(volumes) {
   const unknown = volumes.find((v) => !REGIONS.includes(regionName(v?.region)));
   if (unknown)
     throw Error(
-      `물량 지역 '${text(unknown.region) || '미정'}'을 연결하지 못했습니다. 원본을 확인하고 직접 입력하거나 다시 분석해 주세요.`,
+      `물량 지역 '${text(unknown.region) || '미정'}'을 연결하지 못했습니다. 원본을 확인하고 다시 붙여넣어 주세요.`,
     );
   const names = volumes.map((v) => regionName(v.region));
   if (new Set(names).size !== names.length)
     throw Error(
-      '같은 지역의 물량이 중복 인식되었습니다. 원본을 확인하고 직접 입력해 주세요.',
+      '같은 지역의 물량이 중복 인식되었습니다. 원본을 확인하고 다시 붙여넣어 주세요.',
     );
 }
 export function importRequest(draft, result) {
@@ -376,14 +380,14 @@ export function importRequest(draft, result) {
     result.requests.length > 60
   )
     throw Error(
-      '사진에서 차량 요청을 읽지 못했습니다. 직접 입력하거나 다시 분석해 주세요.',
+      '사진에서 차량 요청을 읽지 못했습니다. 요청표가 잘 보이도록 다시 붙여넣어 주세요.',
     );
   validateVolumes(result.volumes);
   const next = {
     ...newDraft(validDate(result.date) ? result.date : draft.date),
     image: draft.image,
     imageName: draft.imageName,
-    instructions: draft.instructions,
+    instructions: INSTRUCTIONS,
     fixedDrivers: normalizeFixedDrivers(draft.fixedDrivers).map((f) => ({
       ...f,
       enabled:
@@ -472,8 +476,10 @@ export function applyReply(draft, result) {
 }
 export function issues(draft, complete = false) {
   const result = [];
+  if (draft.requestPending)
+    result.push('현재 사진 분석이 완료되지 않았습니다.');
   if (!validDate(draft.date)) result.push('기준날짜를 확인해 주세요.');
-  if (!draft.requests.length) result.push('차량 요청을 입력해 주세요.');
+  if (!draft.requests.length) result.push('CJ 요청 사진을 붙여넣어 주세요.');
   result.push(
     ...fixedDriverIssues((draft.fixedDrivers || []).filter((f) => f.enabled)),
   );
@@ -490,7 +496,21 @@ export function issues(draft, complete = false) {
   }
   if (draft.requests.reduce((n, r) => n + r.count, 0) > 100)
     result.push('요청 대수는 최대 100대입니다.');
+  for (const region of new Set(draft.requests.map((r) => r.region))) {
+    const volume = draft.volumes.find((v) => v.region === region);
+    if (
+      !volume ||
+      ![volume.frozen, volume.chilled].every(
+        (n) => Number.isFinite(n) && n >= 0,
+      )
+    )
+      result.push(
+        `${region}: 물량 인식이 불완전합니다. 사진을 다시 분석해 주세요.`,
+      );
+  }
   if (complete) {
+    if (draft.replyPending)
+      result.push('현재 운수사 회신 분석이 완료되지 않았습니다.');
     for (const [i, t] of draft.trucks.entries()) {
       if (!draft.requests.some((r) => r.id === t.requestId))
         result.push(`차량 ${i + 1}: 연결할 요청을 선택해 주세요.`);
@@ -565,7 +585,7 @@ export function messages(draft) {
               .join('\n')}`,
         )
         .join('\n\n');
-    if (draft.instructions) body += '\n\n' + draft.instructions;
+    body += '\n\n' + INSTRUCTIONS;
     if (carrier === '광신') {
       output.push({
         key: 'carrier-광신',

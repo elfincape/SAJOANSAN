@@ -49,3 +49,11 @@
 - Inline model regressions, targeted ESLint, existing menu-permission test and production build passed. Independent review findings were addressed, including dock movement, date transitions, request counts and reply preservation.
 - Isolated browser QA passed default save/reload, carrier text, daily exclusion save/load, new-work reset, phone/load text preservation, manual replacement preservation and date reset. Desktop and dark mobile 390px have no page overflow or runtime errors.
 - Production migration applied; transactional create/update, duplicate defaults, stale revisions, record-kind mutation, cross-center, other-owner and anonymous access checks passed. Test writes rolled back; no operational defaults or dispatch data inserted.
+
+## Paste-Only Follow-Up
+- Replace tabs with one page: paste/readonly request summary, carrier messages, raw reply and CJ messages. Remove file selection, drop, normal analyze/remove controls, request/quantity editing and separate common-instructions editor.
+- Decode and show the pasted photo before the existing API call. Replies analyze on text paste; failure or edited text exposes retry. Preserve fixed-driver defaults and daily exclusion.
+- Persist pending image/reply state. Hide stale outputs while pending; incomplete extraction remains retryable after load/undo. Undo after saving a replacement retains the current optimistic revision and marks restored content dirty.
+- Compare imported pallets and requested ton/count against the existing haul calculator in a bounded module worker. Only differences or unavailable comparisons appear; no CJ request mutation, rate editing or standalone calculator UI. Existing private-price visibility applies.
+- Targeted lint, existing haul and menu tests, production build passed. Isolated browser checks passed preview-before-API, duplicate photo, automatic reply, failure/undo, pending reply save/load, retry dedup recovery and replacement-save/undo/resave. Desktop and 390px mobile checked in both themes with no overflow or broken images.
+- Existing parse function version 2 deployed with only paste/retry error wording changes; JWT and center authorization unchanged. No schema changes.

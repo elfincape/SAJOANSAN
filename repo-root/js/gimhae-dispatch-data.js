@@ -108,7 +108,7 @@ export async function analyze(client, center, draft, mode) {
     throw Error(
       typeof detail?.error === 'string'
         ? detail.error
-        : '분석 API 연결에 실패했습니다. 원문은 유지됩니다. 다시 시도하거나 직접 입력해 주세요.',
+        : '분석 API 연결에 실패했습니다. 원문은 유지됩니다. 다시 시도해 주세요.',
     );
   }
   if (data?.error || !data?.result)
@@ -125,7 +125,7 @@ export async function imageData(file) {
     !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
     file.size > 15000000
   )
-    throw Error('JPG·PNG·WEBP 사진을 15MB 이하로 선택해 주세요.');
+    throw Error('JPG·PNG·WEBP 사진을 15MB 이하로 붙여넣어 주세요.');
   const bitmap = await createImageBitmap(file);
   try {
     if (bitmap.width * bitmap.height > 50000000)
@@ -140,7 +140,7 @@ export async function imageData(file) {
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const result = canvas.toDataURL('image/jpeg', 0.9);
     if (result.length > 2800000)
-      throw Error('요청표 부분만 캡처하거나 더 작은 사진을 선택해 주세요.');
+      throw Error('요청표 부분만 캡처하거나 더 작은 사진을 붙여넣어 주세요.');
     return result;
   } finally {
     bitmap.close();
