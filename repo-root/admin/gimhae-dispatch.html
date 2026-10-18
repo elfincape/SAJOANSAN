@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>김해 배차 요청 · 이안물류</title>
+    <link rel="stylesheet" href="/css/common.css" />
+    <link rel="stylesheet" href="/css/workspace-ui.css" />
+    <link rel="stylesheet" href="/css/admin-workspace.css" />
+    <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/gimhae-dispatch.css" />
+    <script type="module" src="/js/theme.js"></script>
+    <script type="module" src="/js/admin-workspace.js"></script>
+  </head>
+  <body class="workspace-ui work-shell">
+    <header>
+      <a href="/admin/">관리 허브</a>
+      <h1>김해 배차 요청</h1>
+    </header>
+    <main id="gm-app">
+      <div class="gm-heading">
+        <div>
+          <h2>김해 배차 요청</h2>
+          <span id="gm-center" class="gm-muted"></span>
+        </div>
+        <span id="gm-saved" class="gm-badge">새 작업</span>
+      </div>
+      <p id="gm-status" role="status" aria-live="polite">로그인 확인 중</p>
+      <div id="gm-work" hidden>
+        <div class="gm-toolbar gm-topbar">
+          <label
+            >기준날짜<input id="gm-date" type="date" required data-edit
+          /></label>
+          <button id="gm-save" class="btn btn-primary" data-edit>저장</button>
+          <button id="gm-save-copy" class="btn btn-ghost" data-edit>
+            사본 저장
+          </button>
+          <button id="gm-new" class="btn btn-ghost" data-edit>새 작업</button>
+          <label class="gm-history"
+            >내 저장 내역<select id="gm-history">
+              <option value="">선택</option>
+            </select></label
+          >
+          <button id="gm-load" class="btn btn-ghost">불러오기</button>
+        </div>
+        <div class="gm-toolbar gm-tabs" role="tablist" aria-label="배차 업무">
+          <button
+            id="gm-tab-request"
+            role="tab"
+            aria-selected="true"
+            aria-controls="gm-panel-request"
+            data-tab="request"
+          >
+            CJ 요청
+          </button>
+          <button
+            id="gm-tab-reply"
+            role="tab"
+            aria-selected="false"
+            aria-controls="gm-panel-reply"
+            tabindex="-1"
+            data-tab="reply"
+          >
+            운수사 회신
+          </button>
+          <button
+            id="gm-tab-messages"
+            role="tab"
+            aria-selected="false"
+            aria-controls="gm-panel-messages"
+            tabindex="-1"
+            data-tab="messages"
+          >
+            전달문
+          </button>
+          <span id="gm-count" class="gm-muted"></span>
+        </div>
+        <section
+          id="gm-panel-request"
+          role="tabpanel"
+          aria-labelledby="gm-tab-request"
+        >
+          <div class="gm-request-layout">
+            <div class="gm-source">
+              <div class="gm-section-head">
+                <h3>CJ 요청 사진</h3>
+                <span class="gm-muted">Haiku 4.5</span>
+              </div>
+              <div
+                id="gm-drop"
+                class="gm-drop"
+                tabindex="0"
+                role="button"
+                aria-label="CJ 요청 사진 선택 또는 붙여넣기"
+              >
+                <span id="gm-image-empty">요청 사진</span
+                ><img id="gm-image" alt="CJ 요청 원본" hidden />
+              </div>
+              <label class="gm-file-label"
+                >사진 선택<input
+                  id="gm-file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  data-edit
+              /></label>
+              <p id="gm-image-name" class="gm-muted"></p>
+              <div class="gm-toolbar">
+                <button
+                  id="gm-analyze-request"
+                  class="btn btn-primary"
+                  data-edit
+                >
+                  사진 분석</button
+                ><button id="gm-remove-image" class="btn btn-ghost" data-edit>
+                  사진 제거
+                </button>
+              </div>
+            </div>
+            <div class="gm-request-data">
+              <div class="gm-section-head">
+                <h3>예상출고량</h3>
+                <span class="gm-muted">단위 p</span>
+              </div>
+              <div class="gm-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>지역</th>
+                      <th>냉동</th>
+                      <th>냉장</th>
+                      <th>합계</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gm-volumes"></tbody>
+                </table>
+              </div>
+              <div class="gm-section-head">
+                <h3>요청 차량</h3>
+                <button id="gm-add-request" class="btn btn-ghost" data-edit>
+                  요청 추가
+                </button>
+              </div>
+              <div class="gm-scroll">
+                <table class="gm-requests-table">
+                  <thead>
+                    <tr>
+                      <th>지역</th>
+                      <th>온도</th>
+                      <th>요청 톤수</th>
+                      <th>대수</th>
+                      <th>운수사</th>
+                      <th>관리</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gm-requests"></tbody>
+                </table>
+              </div>
+              <p id="gm-request-empty" class="gm-empty">
+                등록된 차량 요청이 없습니다.
+              </p>
+            </div>
+          </div>
+          <details class="gm-instructions">
+            <summary>운수사 공통 안내문</summary>
+            <textarea
+              id="gm-instructions"
+              rows="5"
+              maxlength="3000"
+              aria-label="운수사 공통 안내문"
+              data-edit
+            ></textarea>
+          </details>
+          <div class="gm-toolbar gm-bottom">
+            <button class="btn btn-primary" data-go="messages">
+              요청문 확인</button
+            ><button class="btn btn-ghost" data-go="reply">
+              운수사 회신 입력
+            </button>
+          </div>
+        </section>
+        <section
+          id="gm-panel-reply"
+          role="tabpanel"
+          aria-labelledby="gm-tab-reply"
+          hidden
+        >
+          <div class="gm-section-head">
+            <h3>운수사 회신 원문</h3>
+            <span class="gm-muted">Haiku 4.5</span>
+          </div>
+          <textarea
+            id="gm-reply"
+            rows="6"
+            maxlength="40000"
+            aria-label="운수사 회신 원문"
+            data-edit
+          ></textarea>
+          <div class="gm-toolbar gm-bottom">
+            <label
+              >목적지 보완<select id="gm-reply-region" data-edit>
+                <option value="">원문 기준</option>
+                <option>광주</option>
+                <option>전주</option>
+                <option>하양</option>
+              </select></label
+            ><button id="gm-analyze-reply" class="btn btn-primary" data-edit>
+              회신 분석·반영</button
+            ><button id="gm-add-truck" class="btn btn-ghost" data-edit>
+              차량 추가
+            </button>
+          </div>
+          <div class="gm-section-head">
+            <h3>차량별 배차정보</h3>
+            <span id="gm-reply-count" class="gm-muted"></span>
+          </div>
+          <div class="gm-scroll">
+            <table class="gm-trucks-table">
+              <thead>
+                <tr>
+                  <th>요청 연결</th>
+                  <th>도크</th>
+                  <th>기사</th>
+                  <th>차량번호</th>
+                  <th>연락처</th>
+                  <th>입차시간</th>
+                  <th>회신 상차량·조건</th>
+                  <th>순서·관리</th>
+                </tr>
+              </thead>
+              <tbody id="gm-trucks"></tbody>
+            </table>
+          </div>
+          <p id="gm-truck-empty" class="gm-empty">등록된 차량이 없습니다.</p>
+          <div class="gm-toolbar gm-bottom">
+            <button class="btn btn-primary" data-go="messages">
+              CJ 전달문 확인
+            </button>
+          </div>
+        </section>
+        <section
+          id="gm-panel-messages"
+          role="tabpanel"
+          aria-labelledby="gm-tab-messages"
+          hidden
+        >
+          <div id="gm-issues" role="status"></div>
+          <h3 class="gm-message-heading">운수사 요청</h3>
+          <div id="gm-carrier-messages" class="gm-messages"></div>
+          <h3 class="gm-message-heading">CJ 전달</h3>
+          <div id="gm-cj-messages" class="gm-messages"></div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/js/gimhae-dispatch-ui.js"></script>
+  </body>
+</html>

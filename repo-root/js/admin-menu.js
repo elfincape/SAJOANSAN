@@ -66,6 +66,13 @@ export function getAdminMenus(profile, centerCode) {
     },
     {
       feature: 'dispatchParser',
+      href: '/admin/gimhae-dispatch.html',
+      title: '김해 배차 요청',
+      desc: 'CJ 요청 사진 · 운수사 회신 · 전달문 복사',
+      color: 'emerald',
+    },
+    {
+      feature: 'dispatchParser',
       href: '/admin/dispatch-parser.html',
       title: '배차정보 파서',
       desc: '배차 문자 자동 파싱',
