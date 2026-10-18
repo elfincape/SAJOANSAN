@@ -328,7 +328,7 @@ export async function mountDispatchWorkspace(center) {
         .join(' · ');
       const controls = document.createElement('div');
       controls.className = 'toolbar';
-      if (g.kind !== 'external')
+      if (g.kind === 'temporary' || g.kind === 'review')
         controls.append(
           button('코스명·상차한도', () =>
             task(async () => {
@@ -362,7 +362,11 @@ export async function mountDispatchWorkspace(center) {
           codes = document.createElement('p');
         strong.textContent = j.name;
         codes.className = 'text-xs muted';
-        codes.textContent = j.memberIds.join(' · ');
+        codes.textContent = j.memberIds
+          .map((id) =>
+            id.replace(/^sajo:/, '사조 ').replace(/^hansung:/, '한성 '),
+          )
+          .join(' · ');
         name.append(strong, codes);
         const actions = document.createElement('div');
         actions.append(
@@ -420,6 +424,8 @@ export async function mountDispatchWorkspace(center) {
         group.label +
         ' · 추가 ' +
         fmt(c.extraMinutes) +
+        '분 / 본인코스 대비 누적 ' +
+        fmt(c.cumulativeExtraMinutes) +
         '분 · 과거 지원 ' +
         c.historyDays +
         '일 · ' +

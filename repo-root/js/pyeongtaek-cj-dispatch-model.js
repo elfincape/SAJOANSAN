@@ -138,6 +138,7 @@ export function generateDispatch(
     }
     add('fixed', f.route, chosen, {
       fleetId: f.id,
+      baselineJobIds: chosen.map((j) => j.id),
       capacity:
         Number.isFinite(f.capacity) && f.capacity > 0 ? f.capacity : null,
       reason: '본인코스 우선',
@@ -264,6 +265,29 @@ export function recomputeDispatch(plan, graph) {
     g.travel =
       graph?.route(js, { departureMinutes: g.departureMinutes ?? null }) ||
       null;
+    if (g.kind === 'fixed') {
+      const baselineJobs = g.baselineJobIds?.map((id) => jobs.get(id));
+      const baseline =
+        baselineJobs?.length && baselineJobs.every(Boolean)
+          ? graph?.route(baselineJobs, {
+              departureMinutes: g.departureMinutes ?? null,
+            })
+          : null;
+      g.baselineElapsedMinutes =
+        baseline?.complete && Number.isFinite(baseline.elapsedMinutes)
+          ? baseline.elapsedMinutes
+          : null;
+      g.cumulativeExtraMinutes =
+        Number.isFinite(g.baselineElapsedMinutes) &&
+        Number.isFinite(g.travel?.elapsedMinutes)
+          ? g.travel.elapsedMinutes - g.baselineElapsedMinutes
+          : null;
+      const allowance = plan.fleet.find(
+        (f) => f.id === g.fleetId,
+      )?.maxExtraMinutes;
+      if (Number.isFinite(allowance) && g.cumulativeExtraMinutes > allowance)
+        g.issues.push('본인코스 대비 누적 추가시간 초과');
+    }
     if (g.kind !== 'external') {
       if (!g.travel?.complete) g.issues.push('주행 구간 확인 필요');
       if (!g.travel?.deadlineVerified)
@@ -364,7 +388,12 @@ export function transferCandidates(plan, model, graph) {
         )
           continue;
         const base = fixed.travel;
-        if (!base?.complete || !Number.isFinite(base.elapsedMinutes)) continue;
+        if (
+          !base?.complete ||
+          !Number.isFinite(base.elapsedMinutes) ||
+          !Number.isFinite(fixed.baselineElapsedMinutes)
+        )
+          continue;
         const own = fixed.jobIds.map((k) => byId.get(k));
         let best = null;
         for (let i = 0; i <= own.length; i++) {
@@ -379,13 +408,16 @@ export function transferCandidates(plan, model, graph) {
           )
             continue;
           const extra = travel.elapsedMinutes - base.elapsedMinutes;
-          if (extra > f.maxExtraMinutes) continue;
+          const cumulativeExtra =
+            travel.elapsedMinutes - fixed.baselineElapsedMinutes;
+          if (cumulativeExtra > f.maxExtraMinutes) continue;
           if (!best || extra < best.extraMinutes)
             best = {
               jobId: id,
               targetId: fixed.id,
               insertAt: i,
               extraMinutes: extra,
+              cumulativeExtraMinutes: cumulativeExtra,
               travel,
               historyDays: Math.max(
                 0,
