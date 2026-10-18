@@ -18,7 +18,7 @@
 - [x] Model: dates, request/vehicle normalization, reply mapping, deterministic messages; inline checks against examples.
 - [x] Backend: bounded authenticated extraction, existing dispatch_parser permission, RLS draft storage with optimistic revisions; denial/conflict checks.
 - [x] UI: hub/sidebar entry, photo paste/drop/upload, editable requests/replies, preview/copy, saved drafts, dark/mobile states.
-- [ ] Verify: targeted checks, production build, desktop/mobile browser exercise, independent review, deploy backend and frontend, verify live availability.
+- [x] Verify: targeted checks, production build, desktop/mobile browser exercise, independent review, deploy backend and frontend, verify live availability.
 
 ## Review Focus
 - Late API responses must not overwrite subsequent input; disable editing during calls.
@@ -36,3 +36,7 @@
 - Production migration dispatch_message_drafts applied. Transactional authenticated checks passed create/update, stale revision rejection, wrong-center denial, identity-update denial, other-owner read/write denial and anonymous denial. All verification rows rolled back; table count 0. Security advisor has no finding for new objects.
 - Production gimhae-dispatch-parse version 1 ACTIVE, platform JWT verification enabled and in-function user/center checks. No provider key is exposed; no JEV key stored or called.
 - Targeted ESLint, existing menu-permissions tests and Vite production build passed. Existing large-chunk warning remains unrelated.
+- Feature commit 0360cb6 pushed atomically to main and codex/gimhae-dispatch-messages. Vercel reported success; live hub shows 25 tools including the new menu.
+- Authenticated production Haiku image extraction passed with the supplied CJ image: 2026-10-16, pallets 2/8, 1/3, 3/10 and requested 5/3.5/8 tons, one vehicle each. Weekday Hayang correctly uses Dongjin.
+- Production Haiku raw-reply extraction passed with clearly synthetic vehicle details: Gyeongsan aliases Hayang, actual tonnage remains separate, carrier loading text is preserved. Generated CJ text keeps requested tonnage; copied clipboard text exactly matches the preview.
+- Synthetic production UI inputs were discarded without saving; no Kakao message was sent. Live screenshot recorded outside the repository at ../gimhae-dispatch-live.jpg.
