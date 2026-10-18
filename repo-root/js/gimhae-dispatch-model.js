@@ -38,6 +38,10 @@ export function numberValue(value) {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 && n <= 100000 ? n : null;
 }
+export function tonnageValue(value) {
+  const match = /^(\d+(?:\.\d+)?)\s*(?:톤|t|tons?)?$/i.exec(text(value));
+  return match ? numberValue(match[1]) : null;
+}
 export function dockNumber(value) {
   const raw = text(value)
     .replace(/번\s*도크|도크/g, '')
@@ -167,7 +171,7 @@ export function normalizeDraft(input) {
       id: text(row.id),
       region: regionName(row.region),
       temperature: text(row.temperature).slice(0, 40),
-      tons: numberValue(row.tons),
+      tons: tonnageValue(row.tons),
       count:
         Number.isInteger(row.count) && row.count >= 0 && row.count <= 30
           ? row.count
@@ -191,7 +195,7 @@ export function normalizeDraft(input) {
       phone: text(row.phone).slice(0, 40),
       arrival: text(row.arrival).slice(0, 80),
       loadText: text(row.loadText).slice(0, 1000),
-      actualTons: numberValue(row.actualTons),
+      actualTons: tonnageValue(row.actualTons),
       fixedDriverId: text(row.fixedDriverId),
       fixedConfirmed: row.fixedConfirmed === true,
     };
@@ -406,7 +410,7 @@ export function importRequest(draft, result) {
   next.requests = result.requests.map((row) => ({
     ...newRequest(regionName(row.region)),
     temperature: text(row.temperature).slice(0, 40),
-    tons: numberValue(row.tons),
+    tons: tonnageValue(row.tons),
     count:
       Number.isInteger(row.count) && row.count > 0 && row.count <= 30
         ? row.count
@@ -464,8 +468,8 @@ export function applyReply(draft, result) {
           0,
           field === 'loadText' ? 1000 : 80,
         );
-    if (numberValue(item.actualTons) != null)
-      target.actualTons = numberValue(item.actualTons);
+    if (tonnageValue(item.actualTons) != null)
+      target.actualTons = tonnageValue(item.actualTons);
     if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
   }
