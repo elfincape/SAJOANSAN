@@ -40,3 +40,12 @@
 - Authenticated production Haiku image extraction passed with the supplied CJ image: 2026-10-16, pallets 2/8, 1/3, 3/10 and requested 5/3.5/8 tons, one vehicle each. Weekday Hayang correctly uses Dongjin.
 - Production Haiku raw-reply extraction passed with clearly synthetic vehicle details: Gyeongsan aliases Hayang, actual tonnage remains separate, carrier loading text is preserved. Generated CJ text keeps requested tonnage; copied clipboard text exactly matches the preview.
 - Synthetic production UI inputs were discarded without saving; no Kakao message was sent. Live screenshot recorded outside the repository at ../gimhae-dispatch-live.jpg.
+
+## Fixed-Driver Follow-Up
+- User requested saved default fixed drivers, checked by default, optional daily exclusion, and inclusion in initial carrier request text.
+- Reuse dispatch_message_drafts with a generated record_kind and unique owner/center defaults index. Existing save RPC, RLS and optimistic revision checks remain in place. Daily drafts retain their own fixed-driver snapshot; defaults never appear in dated history.
+- Fixed drivers match region/dock with an optional carrier restriction. Unchecking removes that driver's assignment, not the CJ-requested vehicle count. New work and a different business date reset inclusion; same-day photo reimport preserves exclusion.
+- Carrier text keeps the explicit requested count and adds fixed-driver contacts separately. Existing manual replacements and confirmed replies are preserved; surplus confirmed replies remain unlinked for review rather than disappearing.
+- Inline model regressions, targeted ESLint, existing menu-permission test and production build passed. Independent review findings were addressed, including dock movement, date transitions, request counts and reply preservation.
+- Isolated browser QA passed default save/reload, carrier text, daily exclusion save/load, new-work reset, phone/load text preservation, manual replacement preservation and date reset. Desktop and dark mobile 390px have no page overflow or runtime errors.
+- Production migration applied; transactional create/update, duplicate defaults, stale revisions, record-kind mutation, cross-center, other-owner and anonymous access checks passed. Test writes rolled back; no operational defaults or dispatch data inserted.

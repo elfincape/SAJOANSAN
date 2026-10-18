@@ -198,6 +198,52 @@
 .gm-requests-table {
   min-width: 640px;
 }
+.gm-fixed-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--theme-border);
+}
+.gm-fixed-section .gm-section-head {
+  flex-wrap: wrap;
+}
+.gm-fixed-table {
+  min-width: 1100px;
+}
+.gm-fixed-table th:nth-child(1) {
+  width: 70px;
+}
+.gm-fixed-table th:nth-child(2) {
+  width: 90px;
+}
+.gm-fixed-table th:nth-child(3) {
+  width: 100px;
+}
+.gm-fixed-table th:nth-child(4) {
+  width: 70px;
+}
+.gm-fixed-table th:nth-child(5) {
+  width: 100px;
+}
+.gm-fixed-table th:nth-child(6) {
+  width: 150px;
+}
+.gm-fixed-table th:nth-child(7) {
+  width: 150px;
+}
+.gm-fixed-table th:nth-child(8) {
+  width: 120px;
+}
+.gm-fixed-table th:nth-child(9) {
+  width: 110px;
+}
+#gm-app input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 9px;
+  padding: 0;
+  accent-color: var(--theme-accent);
+}
 .gm-requests-table th:nth-child(1) {
   width: 90px;
 }

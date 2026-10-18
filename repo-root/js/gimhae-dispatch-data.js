@@ -1,9 +1,13 @@
-import { normalizeDraft } from './gimhae-dispatch-model.js';
+import {
+  normalizeDraft,
+  newDraft,
+  fixedDriverIssues,
+} from './gimhae-dispatch-model.js';
 const TABLE = 'dispatch_message_drafts';
 function check(error) {
   if (!error) return;
   throw Error(
-    error.code === 'PT409'
+    ['PT409', '23505'].includes(error.code)
       ? '다른 창에서 저장된 내용이 있습니다. 사본으로 저장하거나 다시 불러와 주세요.'
       : 'DB 요청에 실패했습니다. 현재 입력은 유지됩니다. 로그인과 연결 상태를 확인해 주세요.',
   );
@@ -13,6 +17,7 @@ export async function listDrafts(client, center) {
     .from(TABLE)
     .select('id,business_date,revision,updated_at')
     .eq('center_code', center)
+    .eq('record_kind', 'draft')
     .order('business_date', { ascending: false })
     .order('updated_at', { ascending: false })
     .limit(100);
@@ -25,6 +30,7 @@ export async function loadDraft(client, center, id) {
     .select('*')
     .eq('center_code', center)
     .eq('id', id)
+    .eq('record_kind', 'draft')
     .maybeSingle();
   check(error);
   if (!data || data.center_code !== center)
@@ -48,6 +54,23 @@ export async function saveDraft(client, center, draft, id, revision) {
   )
     throw Error('저장 응답을 확인하지 못했습니다. 저장 내역을 확인해 주세요.');
   return data;
+}
+export async function loadFixedDefaults(client, center) {
+  const { data, error } = await client
+    .from(TABLE)
+    .select('*')
+    .eq('center_code', center)
+    .eq('record_kind', 'fixed-defaults')
+    .maybeSingle();
+  check(error);
+  return data ? { ...data, payload: normalizeDraft(data.payload) } : null;
+}
+export async function saveFixedDefaults(client, center, rows, id, revision) {
+  const draft = newDraft(undefined, rows);
+  draft.recordKind = 'fixed-defaults';
+  const errors = fixedDriverIssues(draft.fixedDrivers);
+  if (errors.length) throw Error(errors[0]);
+  return saveDraft(client, center, draft, id, revision);
 }
 export async function analyze(client, center, draft, mode) {
   const body = { mode, center, date: draft.date };

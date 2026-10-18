@@ -68,9 +68,73 @@ export function newTruck(request, index = 0) {
     actualTons: null,
   };
 }
-export function newDraft(date = defaultDate()) {
+export function newFixedDriver() {
+  return {
+    id: uid(),
+    enabled: true,
+    region: '광주',
+    carrier: '',
+    dock: '4',
+    driver: '',
+    vehicle: '',
+    phone: '',
+    arrival: '',
+  };
+}
+export function normalizeFixedDrivers(rows = []) {
+  if (!Array.isArray(rows) || rows.length > 100)
+    throw Error('고정기사는 최대 100명입니다.');
+  const ids = new Set();
+  return rows.map((row) => {
+    if (!row?.id || ids.has(text(row.id)))
+      throw Error('고정기사 ID를 확인해 주세요.');
+    ids.add(text(row.id));
+    return {
+      id: text(row.id),
+      enabled: row.enabled !== false,
+      region: regionName(row.region),
+      carrier: text(row.carrier).slice(0, 40),
+      dock: dockNumber(row.dock).slice(0, 20),
+      driver: text(row.driver).slice(0, 80),
+      vehicle: text(row.vehicle).slice(0, 40),
+      phone: text(row.phone).slice(0, 40),
+      arrival: text(row.arrival).slice(0, 80),
+    };
+  });
+}
+export function fixedDriverIssues(rows) {
+  const result = [];
+  for (const [i, row] of rows.entries()) {
+    if (
+      !REGIONS.includes(row.region) ||
+      !['', '광신', '동진', '해피'].includes(row.carrier) ||
+      ![row.dock, row.driver, row.vehicle, row.phone].every(text)
+    )
+      result.push(
+        `고정기사 ${i + 1}: 지역·도크·기사·차량번호·연락처를 확인해 주세요.`,
+      );
+    if (
+      rows
+        .slice(0, i)
+        .some(
+          (r) =>
+            r.region === row.region &&
+            r.dock === row.dock &&
+            (!r.carrier || !row.carrier || r.carrier === row.carrier),
+        )
+    )
+      result.push(`고정기사 ${i + 1}: 같은 지역·도크의 고정기사가 중복됩니다.`);
+  }
+  return result;
+}
+export function newDraft(date = defaultDate(), fixedDrivers = []) {
   return {
     schemaVersion: 1,
+    recordKind: 'draft',
+    fixedDrivers: normalizeFixedDrivers(fixedDrivers).map((r) => ({
+      ...r,
+      enabled: true,
+    })),
     date,
     volumes: REGIONS.map((region) => ({ region, frozen: null, chilled: null })),
     requests: [],
@@ -126,12 +190,17 @@ export function normalizeDraft(input) {
       arrival: text(row.arrival).slice(0, 80),
       loadText: text(row.loadText).slice(0, 1000),
       actualTons: numberValue(row.actualTons),
+      fixedDriverId: text(row.fixedDriverId),
+      fixedConfirmed: row.fixedConfirmed === true,
     };
   });
   validateVolumes(input.volumes);
   const image = text(input.image);
   return {
     schemaVersion: 1,
+    recordKind:
+      input.recordKind === 'fixed-defaults' ? 'fixed-defaults' : 'draft',
+    fixedDrivers: normalizeFixedDrivers(input.fixedDrivers),
     date: input.date,
     requests,
     trucks,
@@ -164,19 +233,36 @@ export function reconcileDocks(draft) {
   for (const truck of draft.trucks) {
     const request = draft.requests.find((r) => r.id === truck.requestId);
     if (request) truck.region = request.region;
+    const fixed = (draft.fixedDrivers || []).find(
+      (f) => f.id === truck.fixedDriverId,
+    );
+    if (truck.fixedDriverId) {
+      if (
+        !fixed?.enabled ||
+        !request ||
+        fixed.region !== request.region ||
+        (fixed.carrier &&
+          fixed.carrier !==
+            (request.carrier || carrierFor(request.region, draft.date)))
+      ) {
+        clearFixedAssignment(truck, fixed?.enabled === true);
+      } else truck.dock = fixed.dock;
+    }
   }
   const used = Object.fromEntries(
     REGIONS.map((region) => [
       region,
       new Set(
         draft.trucks
-          .filter((t) => t.region === region && t.dockManual)
+          .filter(
+            (t) => t.region === region && (t.dockManual || t.fixedDriverId),
+          )
           .map((t) => t.dock),
       ),
     ]),
   );
   for (const truck of draft.trucks) {
-    if (truck.dockManual) continue;
+    if (truck.dockManual || truck.fixedDriverId) continue;
     truck.dock =
       DOCKS[truck.region]?.find((dock) => !used[truck.region].has(dock)) || '';
     if (truck.dock) used[truck.region].add(truck.dock);
@@ -188,7 +274,11 @@ export function syncSlots(draft) {
     let count = next.filter((t) => t.requestId === request.id).length;
     for (let i = next.length - 1; i >= 0 && count > request.count; i--) {
       if (next[i].requestId === request.id) {
-        if (filledTruck(next[i])) next[i].requestId = '';
+        if (
+          filledTruck(next[i]) &&
+          (!next[i].fixedDriverId || next[i].fixedConfirmed)
+        )
+          next[i].requestId = '';
         else next.splice(i, 1);
         count--;
       }
@@ -203,6 +293,68 @@ export function syncSlots(draft) {
     throw Error('차량은 최대 100대까지 입력할 수 있습니다.');
   draft.trucks = next;
   reconcileDocks(draft);
+  applyFixedDrivers(draft);
+}
+export function clearFixedAssignment(truck, preserveConfirmed = false) {
+  if (preserveConfirmed && truck.fixedConfirmed) {
+    truck.fixedDriverId = '';
+    truck.fixedConfirmed = false;
+    return;
+  }
+  for (const key of [
+    'driver',
+    'vehicle',
+    'phone',
+    'arrival',
+    'loadText',
+    'fixedDriverId',
+  ])
+    truck[key] = '';
+  truck.actualTons = null;
+  truck.fixedConfirmed = false;
+}
+function fixedMatches(draft, fixed, truck) {
+  const request = draft.requests.find((r) => r.id === truck.requestId);
+  return (
+    fixed?.enabled &&
+    request &&
+    fixed.region === request.region &&
+    fixed.dock === truck.dock &&
+    (!fixed.carrier ||
+      fixed.carrier ===
+        (request.carrier || carrierFor(request.region, draft.date)))
+  );
+}
+export function applyFixedDrivers(draft) {
+  reconcileDocks(draft);
+  const rows = draft.fixedDrivers || [];
+  for (const truck of draft.trucks) {
+    if (
+      truck.fixedDriverId &&
+      !fixedMatches(
+        draft,
+        rows.find((f) => f.id === truck.fixedDriverId),
+        truck,
+      )
+    )
+      clearFixedAssignment(truck);
+  }
+  for (const fixed of rows) {
+    if (
+      !fixed.enabled ||
+      draft.trucks.some((t) => t.fixedDriverId === fixed.id)
+    )
+      continue;
+    const truck = draft.trucks.find(
+      (t) =>
+        fixedMatches(draft, fixed, t) && !filledTruck(t) && !t.fixedDriverId,
+    );
+    if (!truck) continue;
+    for (const field of ['driver', 'vehicle', 'phone', 'arrival'])
+      truck[field] = text(fixed[field]);
+    truck.fixedDriverId = fixed.id;
+  }
+  return draft;
 }
 function validateVolumes(volumes) {
   if (!Array.isArray(volumes)) throw Error('물량 분석 결과를 확인해 주세요.');
@@ -232,6 +384,11 @@ export function importRequest(draft, result) {
     image: draft.image,
     imageName: draft.imageName,
     instructions: draft.instructions,
+    fixedDrivers: normalizeFixedDrivers(draft.fixedDrivers).map((f) => ({
+      ...f,
+      enabled:
+        validDate(result.date) && result.date !== draft.date ? true : f.enabled,
+    })),
   };
   next.volumes = REGIONS.map((region) => {
     const row =
@@ -288,6 +445,15 @@ export function applyReply(draft, result) {
       target.region = region;
       draft.trucks.push(target);
     }
+    if (
+      target.fixedDriverId &&
+      text(item.driver) &&
+      text(target.driver) &&
+      text(item.driver) !== text(target.driver)
+    ) {
+      target.fixedDriverId = '';
+      target.fixedConfirmed = false;
+    }
     for (const field of ['driver', 'vehicle', 'phone', 'arrival', 'loadText'])
       if (text(item[field]))
         target[field] = text(item[field]).slice(
@@ -296,6 +462,7 @@ export function applyReply(draft, result) {
         );
     if (numberValue(item.actualTons) != null)
       target.actualTons = numberValue(item.actualTons);
+    if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
   }
   if (draft.trucks.length > 100)
@@ -307,6 +474,9 @@ export function issues(draft, complete = false) {
   const result = [];
   if (!validDate(draft.date)) result.push('기준날짜를 확인해 주세요.');
   if (!draft.requests.length) result.push('차량 요청을 입력해 주세요.');
+  result.push(
+    ...fixedDriverIssues((draft.fixedDrivers || []).filter((f) => f.enabled)),
+  );
   for (const [i, r] of draft.requests.entries()) {
     if (
       !REGIONS.includes(r.region) ||
@@ -347,6 +517,7 @@ function volumeLines(draft, regions) {
   ].join('\n');
 }
 function requestLine(draft, request) {
+  const trucks = draft.trucks.filter((t) => t.requestId === request.id);
   const docks = [
     ...new Set(
       draft.trucks
@@ -355,7 +526,16 @@ function requestLine(draft, request) {
         .filter(Boolean),
     ),
   ];
-  return ` - ${request.temperature || '온도 미정'} ${request.tons > 0 ? request.tons : '미정'}톤 ${request.count}대${docks.length ? ` (${docks.join('·')}번 도크)` : ''}`;
+  const line = ` - ${request.temperature || '온도 미정'} ${request.tons > 0 ? request.tons : '미정'}톤 ${request.count}대${docks.length ? ` (${docks.join('·')}번 도크)` : ''}`;
+  return [
+    line,
+    ...trucks
+      .filter((t) => t.fixedDriverId)
+      .map(
+        (t) =>
+          `   고정기사 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, t.phone].filter(Boolean).join(' ')}`,
+      ),
+  ].join('\n');
 }
 export function messages(draft) {
   const output = [],

@@ -27,6 +27,10 @@ import {
   filledTruck,
   validDate,
   defaultDate,
+  newFixedDriver,
+  normalizeFixedDrivers,
+  applyFixedDrivers,
+  clearFixedAssignment,
 } from './gimhae-dispatch-model.js';
 import {
   listDrafts,
@@ -34,6 +38,8 @@ import {
   saveDraft,
   analyze,
   imageData,
+  loadFixedDefaults,
+  saveFixedDefaults,
 } from './gimhae-dispatch-data.js';
 
 const $ = (id) => document.getElementById('gm-' + id);
@@ -48,6 +54,8 @@ const state = {
   tab: 'request',
   center: null,
   copied: new Map(),
+  fixedDefaults: null,
+  defaultsLoaded: false,
 };
 const escape = (value) =>
   String(value ?? '').replace(
@@ -79,7 +87,9 @@ function counters() {
   const d = state.draft,
     total = d.requests.reduce((n, r) => n + r.count, 0),
     filled = d.trucks.filter((t) => t.vehicle && t.driver && t.phone).length;
-  $('count').textContent = `요청 ${total}대 · 회신 ${filled}대`;
+  const fixed = d.trucks.filter((t) => t.fixedDriverId).length;
+  $('count').textContent =
+    `요청 ${total}대 · 배차 ${filled}대${fixed ? ` · 고정 ${fixed}대` : ''}`;
   $('reply-count').textContent = `${d.trucks.length}대`;
   $('saved').textContent = state.dirty
     ? '저장 전 변경사항'
@@ -96,6 +106,7 @@ function controls() {
   $('remove-image').disabled ||= !state.draft.image;
   $('analyze-reply').disabled ||= !state.draft.replyText.trim();
   $('load').disabled ||= !$('history').value;
+  $('save-fixed').disabled ||= !state.defaultsLoaded;
   for (const button of document.querySelectorAll('[data-copy]')) {
     const cj = ['cj', 'summary'].includes(button.dataset.copy);
     button.disabled = state.busy || issues(state.draft, cj).length > 0;
@@ -166,6 +177,98 @@ function renderRequests() {
     .join('');
   $('request-empty').hidden = !!state.draft.requests.length;
 }
+function fixedStatus(fixed) {
+  if (!fixed.enabled) return '오늘 제외';
+  if (state.draft.trucks.some((t) => t.fixedDriverId === fixed.id))
+    return '적용됨';
+  const slot = state.draft.trucks.find((t) => {
+    const r = state.draft.requests.find((r) => r.id === t.requestId);
+    return (
+      r?.region === fixed.region &&
+      t.dock === fixed.dock &&
+      (!fixed.carrier ||
+        fixed.carrier === (r.carrier || carrierFor(r.region, state.draft.date)))
+    );
+  });
+  return slot ? '기존 배차 유지' : '해당 요청 없음';
+}
+function renderFixed() {
+  fixedIndicators();
+  $('fixed').innerHTML = state.draft.fixedDrivers
+    .map(
+      (f) => `<tr data-id="${escape(f.id)}">
+    <td><input type="checkbox" data-field="enabled" aria-label="${escape(f.driver || '고정기사')} 오늘 포함" ${f.enabled ? 'checked' : ''} data-edit /></td>
+    <td>${select(
+      'region',
+      f.region,
+      REGIONS.map((v) => [v, v]),
+      '고정기사 지역',
+    )}</td>
+    <td>${select(
+      'carrier',
+      f.carrier,
+      [
+        ['', '공통'],
+        ['광신', '광신'],
+        ['동진', '동진'],
+        ['해피', '해피'],
+      ],
+      '고정기사 운수사',
+    )}</td>
+    <td>${input('dock', f.dock, '고정기사 도크', 'text', 'maxlength="20"')}</td>
+    <td>${input('driver', f.driver, '고정기사 이름', 'text', 'maxlength="80"')}</td>
+    <td>${input('vehicle', f.vehicle, '고정기사 차량번호', 'text', 'maxlength="40"')}</td>
+    <td>${input('phone', f.phone, '고정기사 연락처', 'tel', 'maxlength="40"')}</td>
+    <td>${input('arrival', f.arrival, '고정기사 입차시간', 'text', 'maxlength="80"')}</td>
+    <td class="gm-muted" data-fixed-state>${fixedStatus(f)}</td>
+    <td><button class="btn btn-ghost" data-remove-fixed="${escape(f.id)}" data-edit>삭제</button></td>
+  </tr>`,
+    )
+    .join('');
+  $('fixed-empty').hidden = !!state.draft.fixedDrivers.length;
+}
+function fixedIndicators() {
+  const saved = state.fixedDefaults?.payload.fixedDrivers || [];
+  const comparable = (rows) =>
+    JSON.stringify(rows.map((r) => ({ ...r, enabled: true })));
+  $('fixed-status').textContent = !state.defaultsLoaded
+    ? '기본값 불러오기 필요'
+    : comparable(state.draft.fixedDrivers) !== comparable(saved)
+      ? '기본값과 다른 정보'
+      : state.fixedDefaults
+        ? '기본값 저장됨'
+        : '';
+  for (const row of $('fixed').querySelectorAll('[data-id]')) {
+    const f = state.draft.fixedDrivers.find((f) => f.id === row.dataset.id);
+    if (!f) continue;
+    row.querySelector('[data-fixed-state]').textContent = fixedStatus(f);
+    row
+      .querySelector('[type="checkbox"]')
+      .setAttribute('aria-label', `${f.driver || '고정기사'} 오늘 포함`);
+  }
+}
+async function refreshFixedDefaults(apply = false) {
+  const result = await loadFixedDefaults(supabase, state.center.code);
+  state.fixedDefaults = result;
+  state.defaultsLoaded = true;
+  if (apply) {
+    const defaults = normalizeFixedDrivers(result?.payload.fixedDrivers).map(
+      (r) => ({ ...r, enabled: true }),
+    );
+    for (const truck of state.draft.trucks) {
+      if (!truck.fixedDriverId) continue;
+      const same = defaults.some(
+        (f) =>
+          f.id === truck.fixedDriverId &&
+          f.driver === truck.driver &&
+          f.vehicle === truck.vehicle,
+      );
+      if (!truck.fixedConfirmed || !same) clearFixedAssignment(truck, true);
+    }
+    state.draft.fixedDrivers = defaults;
+    applyFixedDrivers(state.draft);
+  }
+}
 function renderTrucks() {
   const choices = [
     ['', '요청 연결 필요'],
@@ -180,7 +283,7 @@ function renderTrucks() {
         t,
         i,
       ) => `<tr data-id="${escape(t.id)}" class="${state.draft.requests.some((r) => r.id === t.requestId) ? '' : 'gm-unlinked'}">
-    <td>${select('requestId', t.requestId, choices, '차량 요청 연결')}${!t.requestId && t.region ? `<span class="gm-muted">${escape(t.region)}</span>` : ''}${t.actualTons != null ? `<span class="gm-muted">회신 차량 ${escape(t.actualTons)}톤</span>` : ''}</td>
+    <td>${select('requestId', t.requestId, choices, '차량 요청 연결')}${t.fixedDriverId ? '<span class="gm-muted">고정기사</span>' : ''}${!t.requestId && t.region ? `<span class="gm-muted">${escape(t.region)}</span>` : ''}${t.actualTons != null ? `<span class="gm-muted">회신 차량 ${escape(t.actualTons)}톤</span>` : ''}</td>
     <td>${input('dock', t.dock, '도크 번호', 'text', 'maxlength="20"')}</td>
     <td>${input('driver', t.driver, '기사명', 'text', 'maxlength="80"')}</td>
     <td>${input('vehicle', t.vehicle, '차량번호', 'text', 'maxlength="40"')}</td>
@@ -226,6 +329,7 @@ function render() {
   $('image-name').textContent = state.draft.imageName;
   renderVolumes();
   renderRequests();
+  renderFixed();
   renderTrucks();
   renderMessages();
   counters();
@@ -414,9 +518,14 @@ $('date').onchange = (e) => {
       '새 날짜의 사본으로 저장됩니다. 이전 날짜의 저장 내역은 유지됩니다.',
     );
   }
+  if (state.draft.date !== e.target.value) {
+    for (const fixed of state.draft.fixedDrivers) fixed.enabled = true;
+  }
   state.draft.date = e.target.value;
+  applyFixedDrivers(state.draft);
   touch();
   renderRequests();
+  renderFixed();
   controls();
 };
 $('volumes').oninput = (e) => {
@@ -457,6 +566,7 @@ $('requests').onchange = (e) => {
     syncSlots(state.draft);
     touch();
     renderRequests();
+    renderFixed();
     controls();
   } catch (error) {
     status(error.message, true);
@@ -497,6 +607,93 @@ $('add-request').onclick = () =>
     },
     { edit: true },
   );
+$('add-fixed').onclick = () =>
+  run(
+    async () => {
+      if (state.draft.fixedDrivers.length >= 100)
+        throw Error('고정기사는 최대 100명입니다.');
+      state.draft.fixedDrivers.push(newFixedDriver());
+      touch();
+      renderFixed();
+    },
+    { edit: true },
+  );
+$('fixed').oninput = (e) => {
+  if (!state.editable || state.busy) return;
+  const fixed = state.draft.fixedDrivers.find(
+    (f) => f.id === e.target.closest('[data-id]')?.dataset.id,
+  );
+  const field = e.target.dataset.field;
+  if (!fixed || !field) return;
+  const previous = fixed[field];
+  fixed[field] =
+    field === 'enabled'
+      ? e.target.checked
+      : field === 'dock'
+        ? dockNumber(e.target.value)
+        : e.target.value.trim();
+  if (['driver', 'vehicle', 'phone', 'arrival'].includes(field)) {
+    for (const truck of state.draft.trucks) {
+      if (truck.fixedDriverId === fixed.id && truck[field] === previous)
+        truck[field] = fixed[field];
+    }
+  }
+  applyFixedDrivers(state.draft);
+  touch();
+  fixedIndicators();
+  controls();
+};
+$('fixed').onclick = (e) => {
+  const button = e.target.closest('[data-remove-fixed]');
+  if (!button) return;
+  run(
+    async () => {
+      state.draft.fixedDrivers = state.draft.fixedDrivers.filter(
+        (f) => f.id !== button.dataset.removeFixed,
+      );
+      applyFixedDrivers(state.draft);
+      touch();
+      renderFixed();
+    },
+    { edit: true },
+  );
+};
+$('save-fixed').onclick = () =>
+  run(
+    async () => {
+      state.fixedDefaults = await saveFixedDefaults(
+        supabase,
+        state.center.code,
+        state.draft.fixedDrivers,
+        state.fixedDefaults?.id || null,
+        state.fixedDefaults?.revision || 0,
+      );
+      state.fixedDefaults.payload = normalizeDraft(state.fixedDefaults.payload);
+      renderFixed();
+      status(
+        '고정기사 기본값을 저장했습니다. 새 작업에서는 모두 포함되며, 오늘 제외 상태는 유지됩니다.',
+      );
+    },
+    { edit: true },
+  );
+$('load-fixed').onclick = () =>
+  run(
+    async () => {
+      if (
+        state.draft.fixedDrivers.length &&
+        !(await confirmDialog(
+          '저장된 고정기사 기본값으로 바꿀까요? 오늘 포함 상태도 초기화됩니다.',
+          { okText: '불러오기' },
+        ))
+      )
+        return;
+      await refreshFixedDefaults(true);
+      touch();
+      render();
+      status('고정기사 기본값을 불러왔습니다.');
+    },
+    { edit: true },
+  );
 $('trucks').oninput = (e) => {
   if (!state.editable || state.busy) return;
   const row = state.draft.trucks.find(
@@ -504,7 +701,19 @@ $('trucks').oninput = (e) => {
     ),
     field = e.target.dataset.field;
   if (!row || !field) return;
+  if (
+    ['driver', 'vehicle', 'requestId'].includes(field) &&
+    row[field] !== e.target.value
+  ) {
+    row.fixedDriverId = '';
+    row.fixedConfirmed = false;
+  }
   row[field] = e.target.value;
+  if (
+    row.fixedDriverId &&
+    ['phone', 'arrival', 'loadText', 'dock'].includes(field)
+  )
+    row.fixedConfirmed = true;
   if (field === 'requestId') {
     const r = state.draft.requests.find((r) => r.id === row.requestId);
     row.region = r?.region || row.region;
@@ -523,6 +732,10 @@ $('trucks').onchange = (e) => {
     if (row) {
       e.target.value = row.dock = dockNumber(e.target.value);
       row.dockManual = true;
+      const fixed = state.draft.fixedDrivers.find(
+        (f) => f.id === row.fixedDriverId,
+      );
+      if (fixed) fixed.dock = row.dock;
     }
   }
 };
@@ -606,7 +819,11 @@ $('new').onclick = () =>
         ))
       )
         return;
-      state.draft = newDraft(defaultDate());
+      await refreshFixedDefaults();
+      state.draft = newDraft(
+        defaultDate(),
+        state.fixedDefaults?.payload.fixedDrivers,
+      );
       state.id = null;
       state.revision = 0;
       state.dirty = false;
@@ -711,6 +928,10 @@ async function initialize() {
   });
   render();
   status('');
-  await run(refreshHistory);
+  await run(async () => {
+    await refreshHistory();
+    await refreshFixedDefaults(true);
+    render();
+  });
 }
 initialize().catch((error) => status(error.message, true));
