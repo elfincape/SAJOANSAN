@@ -112,7 +112,6 @@ function controls() {
   for (const id of ['reply', 'reply-region', 'apply-reply'])
     $(id).disabled ||= noRequest;
   $('apply-reply').disabled ||= !state.draft.replyText.trim();
-  $('apply-reply').hidden = !state.replyChanged && !state.replyError;
   $('retry-photo').hidden = !state.photoError;
   $('undo').hidden = !state.previous;
   for (const button of document.querySelectorAll('[data-copy]'))
@@ -537,22 +536,30 @@ $('reply').addEventListener('paste', (e) => {
     return;
   const value = e.clipboardData?.getData('text/plain') || '';
   if (!value.trim()) return;
-  if (value.length > 40000) {
+  const input = $('reply');
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const separator =
+    start === end &&
+    end === input.value.length &&
+    input.value &&
+    !input.value.endsWith('\n')
+      ? '\n\n'
+      : '';
+  const inserted = separator + value;
+  if (input.value.length - (end - start) + inserted.length > 40000) {
     status('회신 원문은 40,000자까지 처리할 수 있습니다.', true);
     return;
   }
-  $('reply').value = value;
-  state.draft.replyText = value;
-  state.replyChanged =
-    value + '|' + $('reply-region').value !== state.lastReply;
-  state.draft.replyPending = state.replyChanged || state.draft.replyPending;
-  touch();
-  run(analyzeReply, { edit: true });
+  input.setRangeText(inserted, start, end, 'end');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 });
 $('reply').oninput = (e) => {
   state.draft.replyText = e.target.value;
   state.replyChanged = true;
   state.draft.replyPending = true;
+  state.replyError = '';
+  $('reply-state').textContent = e.target.value.trim() ? '분석 전' : '';
   renderMessages();
   touch();
   controls();
@@ -560,6 +567,7 @@ $('reply').oninput = (e) => {
 $('reply-region').onchange = () => {
   state.replyChanged = !!state.draft.replyText.trim();
   state.draft.replyPending ||= state.replyChanged;
+  if (state.replyChanged) $('reply-state').textContent = '분석 전';
   renderMessages();
   controls();
 };
