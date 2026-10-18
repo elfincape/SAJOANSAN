@@ -127,7 +127,7 @@ export async function imageData(file) {
     !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
     file.size > 15000000
   )
-    throw Error('JPG·PNG·WEBP 사진을 15MB 이하로 붙여넣어 주세요.');
+    throw Error('JPG·PNG·WEBP 사진을 15MB 이하로 선택하거나 붙여넣어 주세요.');
   const bitmap = await createImageBitmap(file);
   try {
     if (bitmap.width * bitmap.height > 50000000)
@@ -142,7 +142,7 @@ export async function imageData(file) {
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const result = canvas.toDataURL('image/jpeg', 0.9);
     if (result.length > 2800000)
-      throw Error('요청표 부분만 캡처하거나 더 작은 사진을 붙여넣어 주세요.');
+      throw Error('요청표 부분만 캡처하거나 더 작은 사진을 등록해 주세요.');
     return result;
   } finally {
     bitmap.close();

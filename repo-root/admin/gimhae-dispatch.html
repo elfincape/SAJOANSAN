@@ -67,12 +67,22 @@
               <button
                 id="gm-paste"
                 class="gm-paste"
-                aria-label="CJ 요청 사진 붙여넣기"
+                type="button"
+                aria-label="CJ 요청 사진 파일 선택 또는 붙여넣기"
+                title="JPG·PNG·WEBP, 최대 15MB"
                 data-edit
               >
-                <span id="gm-image-empty">사진 붙여넣기</span
+                <span id="gm-image-empty">사진 파일 선택 · 붙여넣기</span
                 ><img id="gm-image" alt="CJ 요청 원본" hidden />
               </button>
+              <input
+                id="gm-photo-file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                aria-label="CJ 요청 사진 파일"
+                hidden
+                data-edit
+              />
               <div class="gm-analysis-state">
                 <span id="gm-photo-state" role="status"></span>
                 <button id="gm-view-photo" class="btn btn-ghost" hidden>

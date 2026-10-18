@@ -419,7 +419,7 @@ async function analyzePhoto() {
     throw error;
   }
 }
-async function pastePhoto(file) {
+async function importPhoto(file) {
   await run(
     async () => {
       const data = await imageData(file);
@@ -442,7 +442,7 @@ async function pastePhoto(file) {
           dirty: state.dirty,
         };
       state.draft.image = data;
-      state.draft.imageName = '붙여넣은 사진';
+      state.draft.imageName = file.name || '붙여넣은 사진';
       state.draft.requestPending = true;
       touch();
       await analyzePhoto();
@@ -450,6 +450,15 @@ async function pastePhoto(file) {
     { edit: true },
   );
 }
+$('paste').onclick = () => {
+  if (!state.ready || !state.editable || state.busy) return;
+  $('photo-file').click();
+};
+$('photo-file').onchange = (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (file) importPhoto(file);
+};
 $('paste').addEventListener('paste', (e) => {
   const item = [...(e.clipboardData?.items || [])].find((x) =>
     x.type.startsWith('image/'),
@@ -460,7 +469,7 @@ $('paste').addEventListener('paste', (e) => {
     status('클립보드에 사진이 없습니다.', true);
     return;
   }
-  pastePhoto(item.getAsFile());
+  importPhoto(item.getAsFile());
 });
 $('retry-photo').onclick = () => run(analyzePhoto, { edit: true });
 $('undo').onclick = () =>
@@ -483,7 +492,7 @@ $('undo').onclick = () =>
   );
 async function analyzeReply() {
   if (state.draft.requestPending || !state.draft.requests.length)
-    throw Error('CJ 요청 사진을 먼저 붙여넣어 주세요.');
+    throw Error('CJ 요청 사진을 먼저 선택하거나 붙여넣어 주세요.');
   const signature = state.draft.replyText + '|' + $('reply-region').value;
   if (
     signature === state.lastReply &&
