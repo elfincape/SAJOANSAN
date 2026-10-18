@@ -19,118 +19,105 @@
       <h1>김해 배차 요청</h1>
     </header>
     <main id="gm-app">
-      <div class="gm-heading">
-        <div>
-          <h2>김해 배차 요청</h2>
-          <span id="gm-center" class="gm-muted"></span>
-        </div>
-      </div>
-      <p id="gm-status" role="status" aria-live="polite">로그인 확인 중</p>
       <div id="gm-work" hidden>
         <div class="gm-toolbar gm-topbar">
           <label
             >기준날짜<input id="gm-date" type="date" required data-edit
           /></label>
           <button id="gm-new" class="btn btn-ghost" data-edit>새 작업</button>
+          <span id="gm-center" class="gm-muted"></span>
         </div>
-        <section class="gm-source-band" aria-labelledby="gm-source-title">
-          <div class="gm-source">
-            <div class="gm-section-head">
-              <h3 id="gm-source-title">CJ 요청 사진</h3>
-              <button
-                id="gm-undo"
-                class="btn btn-ghost gm-icon"
-                aria-label="이전 요청 복원"
-                title="이전 요청 복원"
-                hidden
-                data-edit
-              >
-                &#8630;
-              </button>
-            </div>
-            <button
-              id="gm-paste"
-              class="gm-paste"
-              aria-label="CJ 요청 사진 붙여넣기"
-              data-edit
-            >
-              <span id="gm-image-empty">사진 붙여넣기</span
-              ><img id="gm-image" alt="CJ 요청 원본" hidden />
-            </button>
-            <div class="gm-analysis-state">
-              <span id="gm-photo-state" role="status"></span>
-              <button
-                id="gm-retry-photo"
-                class="btn btn-ghost"
-                hidden
-                data-edit
-              >
-                다시 시도
-              </button>
-            </div>
-          </div>
-          <div class="gm-request-summary">
-            <div class="gm-section-head">
-              <h3>요청 내역</h3>
-              <span id="gm-count" class="gm-muted"></span>
-            </div>
-            <div class="gm-scroll">
-              <table class="gm-summary-table">
-                <thead>
-                  <tr>
-                    <th>지역</th>
-                    <th>냉동</th>
-                    <th>냉장</th>
-                    <th>합계</th>
-                    <th>CJ 요청</th>
-                    <th>운수사</th>
-                  </tr>
-                </thead>
-                <tbody id="gm-summary"></tbody>
-              </table>
-            </div>
-            <p id="gm-request-empty" class="gm-empty">CJ 요청 대기</p>
-            <div id="gm-haul" role="status" aria-live="polite" hidden></div>
-          </div>
-        </section>
-        <section class="gm-band gm-fixed-band" aria-labelledby="gm-fixed-title">
-          <div class="gm-section-head">
-            <h3 id="gm-fixed-title">고정기사</h3>
-            <button id="gm-add-fixed" class="btn btn-ghost" data-edit>
-              고정기사 등록
-            </button>
-          </div>
-          <p id="gm-fixed-status" class="gm-muted" role="status"></p>
+        <section class="gm-fixed-strip" aria-labelledby="gm-fixed-title">
+          <h3 id="gm-fixed-title">고정기사</h3>
           <div
             id="gm-fixed-today"
             class="gm-fixed-today"
             aria-label="오늘 배차에 포함할 고정기사"
           ></div>
-          <p id="gm-fixed-empty" class="gm-empty">등록된 고정기사 없음</p>
+          <span id="gm-fixed-empty" class="gm-empty">등록 없음</span>
+          <button id="gm-add-fixed" class="btn btn-ghost" data-edit>
+            고정기사 등록
+          </button>
+          <span id="gm-fixed-status" class="gm-muted" role="status"></span>
           <button id="gm-fixed-retry" class="btn btn-ghost" hidden>
             다시 불러오기
           </button>
         </section>
-        <section class="gm-band" aria-labelledby="gm-carrier-title">
-          <div class="gm-section-head">
-            <h3 id="gm-carrier-title">운수사 요청</h3>
-          </div>
-          <div id="gm-request-issues" class="gm-issues" role="status"></div>
-          <div id="gm-carrier-messages" class="gm-messages gm-carriers"></div>
-        </section>
-        <div class="gm-handoff">
+        <div class="gm-flow">
           <section
-            class="gm-band gm-reply-band"
+            class="gm-stage gm-source-band"
+            aria-labelledby="gm-source-title"
+          >
+            <div class="gm-source">
+              <div class="gm-section-head">
+                <h3 id="gm-source-title">
+                  <span class="gm-step">1</span> CJ 요청
+                </h3>
+                <button
+                  id="gm-undo"
+                  class="btn btn-ghost gm-icon"
+                  aria-label="이전 요청 복원"
+                  title="이전 요청 복원"
+                  hidden
+                  data-edit
+                >
+                  &#8630;
+                </button>
+              </div>
+              <button
+                id="gm-paste"
+                class="gm-paste"
+                aria-label="CJ 요청 사진 붙여넣기"
+                data-edit
+              >
+                <span id="gm-image-empty">사진 붙여넣기</span
+                ><img id="gm-image" alt="CJ 요청 원본" hidden />
+              </button>
+              <div class="gm-analysis-state">
+                <span id="gm-photo-state" role="status"></span>
+                <button id="gm-view-photo" class="btn btn-ghost" hidden>
+                  원본 보기
+                </button>
+                <button
+                  id="gm-retry-photo"
+                  class="btn btn-ghost"
+                  hidden
+                  data-edit
+                >
+                  다시 시도
+                </button>
+              </div>
+            </div>
+            <div class="gm-request-summary">
+              <p id="gm-count" class="gm-muted"></p>
+              <div id="gm-summary"></div>
+              <p id="gm-request-empty" class="gm-empty">CJ 요청 대기</p>
+              <div id="gm-haul" role="status" aria-live="polite" hidden></div>
+            </div>
+          </section>
+          <section class="gm-stage" aria-labelledby="gm-carrier-title">
+            <div class="gm-section-head">
+              <h3 id="gm-carrier-title">
+                <span class="gm-step">2</span> 운수사 요청
+              </h3>
+            </div>
+            <div id="gm-request-issues" class="gm-issues" role="status"></div>
+            <div id="gm-carrier-messages" class="gm-messages gm-carriers"></div>
+          </section>
+          <section
+            class="gm-stage gm-reply-band"
             aria-labelledby="gm-reply-title"
           >
             <div class="gm-section-head">
-              <h3 id="gm-reply-title">운수사 회신</h3>
+              <h3 id="gm-reply-title">
+                <span class="gm-step">3</span> 운수사 회신
+              </h3>
               <span id="gm-reply-count" class="gm-muted"></span>
             </div>
             <div class="gm-reply-source">
               <textarea
                 id="gm-reply"
-                rows="9"
+                rows="7"
                 maxlength="40000"
                 aria-label="운수사 회신 원문"
                 placeholder="회신 붙여넣기"
@@ -157,8 +144,10 @@
               </div>
             </div>
           </section>
-          <section class="gm-band gm-cj-band" aria-labelledby="gm-cj-title">
-            <div class="gm-section-head"><h3 id="gm-cj-title">CJ 전달</h3></div>
+          <section class="gm-stage gm-cj-band" aria-labelledby="gm-cj-title">
+            <div class="gm-section-head">
+              <h3 id="gm-cj-title"><span class="gm-step">4</span> CJ 전달</h3>
+            </div>
             <div id="gm-issues" class="gm-issues" role="status"></div>
             <div id="gm-cj-messages" class="gm-messages"></div>
           </section>
@@ -185,6 +174,20 @@
           <p id="gm-truck-empty" class="gm-empty">배차정보 대기</p>
         </details>
       </div>
+      <p id="gm-status" role="status" aria-live="polite">로그인 확인 중</p>
+      <dialog id="gm-preview-dialog" aria-labelledby="gm-preview-title">
+        <div class="gm-section-head">
+          <h3 id="gm-preview-title">원본</h3>
+          <button id="gm-close-preview" class="btn btn-ghost">닫기</button>
+        </div>
+        <img id="gm-preview-image" alt="CJ 요청 원본 확대" hidden />
+        <textarea
+          id="gm-preview-text"
+          aria-label="전달문 전문"
+          readonly
+          hidden
+        ></textarea>
+      </dialog>
       <dialog id="gm-fixed-dialog" aria-labelledby="gm-fixed-dialog-title">
         <form id="gm-fixed-form">
           <h3 id="gm-fixed-dialog-title">고정기사 등록</h3>

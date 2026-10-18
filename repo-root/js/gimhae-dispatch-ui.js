@@ -81,6 +81,7 @@ function input(field, value, label, type = 'text', attrs = '') {
 function status(message, error = false) {
   $('status').textContent = message;
   $('status').dataset.error = String(error);
+  $('status').hidden = !error && state.ready;
 }
 function touch() {
   state.dirty = true;
@@ -142,6 +143,7 @@ function renderSource() {
     if (img.getAttribute('src') !== d.image) img.src = d.image;
   } else img.removeAttribute('src');
   img.hidden = !d.image;
+  $('view-photo').hidden = !d.image;
   $('image-empty').hidden = !!d.image;
   $('photo-state').textContent =
     state.photoError ||
@@ -157,7 +159,7 @@ function renderSource() {
   $('summary').innerHTML = rows
     .map((v) => {
       const requests = d.requests.filter((r) => r.region === v.region);
-      return `<tr><th scope="row">${escape(v.region)}</th><td>${v.frozen ?? '-'}</td><td>${v.chilled ?? '-'}</td><td>${v.frozen != null && v.chilled != null ? v.frozen + v.chilled : '-'}</td><td>${requests.map((r) => `<div>${escape(r.temperature || '온도 미정')} ${escape(r.tons ?? '?')}톤 ${r.count}대</div>`).join('')}</td><td>${[...new Set(requests.map((r) => r.carrier || carrierFor(r.region, d.date)))].map(escape).join(' · ')}</td></tr>`;
+      return `<div class="gm-region"><div class="gm-region-head"><strong>${escape(v.region)}</strong><span>${[...new Set(requests.map((r) => r.carrier || carrierFor(r.region, d.date)))].map(escape).join(' · ')}</span></div><div class="gm-volume">냉동 <b>${v.frozen ?? '-'}</b> · 냉장 <b>${v.chilled ?? '-'}</b><span>합계 ${v.frozen != null && v.chilled != null ? v.frozen + v.chilled : '-'}p</span></div>${requests.map((r) => `<div class="gm-request-line">${escape(r.temperature || '온도 미정')} <strong>${escape(r.tons ?? '?')}톤 ${r.count}대</strong></div>`).join('')}</div>`;
     })
     .join('');
   $('request-empty').hidden = !!rows.length;
@@ -186,7 +188,7 @@ function renderFixedToday() {
   $('fixed-today').innerHTML = state.draft.fixedDrivers
     .map(
       (f) =>
-        `<div class="gm-fixed-person"><label class="gm-fixed-choice"><input type="checkbox" data-fixed-toggle="${escape(f.id)}" aria-label="${escape(f.driver)} 오늘 포함" ${f.enabled ? 'checked' : ''} data-edit /><span><strong>${escape(f.driver)} · ${escape(f.vehicle)}</strong><span>${escape(f.region)} · ${escape(f.carrier || '운수사 공통')} · ${escape(f.dock)}번 도크</span><span class="gm-muted">${escape(f.phone)}${f.arrival ? ' · ' + escape(f.arrival) : ''}</span><span class="gm-fixed-state">${fixedStatus(f)}</span></span></label><button class="btn btn-ghost" data-edit-fixed="${escape(f.id)}" aria-label="${escape(f.driver)} 고정기사 수정" data-edit>수정</button></div>`,
+        `<div class="gm-fixed-person" title="${escape([f.vehicle, f.phone, f.carrier || '운수사 공통', fixedStatus(f)].join(' · '))}"><label class="gm-fixed-choice"><input type="checkbox" data-fixed-toggle="${escape(f.id)}" aria-label="${escape(f.driver)} 오늘 포함" ${f.enabled ? 'checked' : ''} data-edit /><strong>${escape(f.driver)}</strong><span>${escape(f.region)} ${escape(f.dock)}번</span></label><button class="btn btn-ghost" data-edit-fixed="${escape(f.id)}" aria-label="${escape(f.driver)} 고정기사 수정" data-edit>수정</button></div>`,
     )
     .join('');
   $('fixed-empty').hidden =
@@ -286,7 +288,7 @@ function renderMessages() {
     article.className = 'gm-message';
     const copied = state.copied.get(message.key);
     const lines = Math.min(15, Math.max(4, message.text.split('\n').length));
-    article.innerHTML = `<div class="gm-section-head"><h3>${escape(message.title)}</h3><span class="gm-message-status">${copied === message.text ? '복사됨' : copied ? '복사 후 변경됨' : ''}</span><button class="btn btn-primary" data-copy="${escape(message.key)}">복사</button></div><textarea rows="${lines}" readonly aria-label="${escape(message.title)}">${escape(message.text)}</textarea>`;
+    article.innerHTML = `<div class="gm-section-head"><h3>${escape(message.title)}</h3><button class="btn btn-primary" data-copy="${escape(message.key)}" aria-label="${escape(message.title)} 복사">복사</button></div><textarea rows="${lines}" readonly aria-label="${escape(message.title)}">${escape(message.text)}</textarea><div class="gm-message-footer"><span class="gm-message-status">${copied === message.text ? '복사됨' : copied ? '복사 후 변경됨' : ''}</span><button class="btn btn-ghost" data-preview="${escape(message.key)}" aria-label="${escape(message.title)} 전문 보기">전문 보기</button></div>`;
     let output = article;
     if (message.key === 'summary') {
       output = document.createElement('details');
@@ -346,7 +348,7 @@ function scheduleHaul() {
       $('haul').innerHTML = notices
         .map((r) =>
           r.status === 'different'
-            ? `<p><strong>${escape(r.region)} · 최저가 조합과 다름</strong><span>요청 ${escape(r.requestedLabel)} / 최저가 ${escape(r.bestLabel)}</span>${state.showPrices ? `<span>요청 ${Number(r.requestedCost).toLocaleString('ko-KR')}원 / 최저가 ${Number(r.bestCost).toLocaleString('ko-KR')}원</span>` : ''}<small>김해→${escape(r.destination)} · 기존 하불단가·표준 적재 기준</small></p>`
+            ? `<p title="김해→${escape(r.destination)}"><strong>${escape(r.region)} · 최저가 조합과 다름</strong><span>요청 ${escape(r.requestedLabel)} / 최저가 ${escape(r.bestLabel)}</span>${state.showPrices ? `<span>요청 ${Number(r.requestedCost).toLocaleString('ko-KR')}원 / 최저가 ${Number(r.bestCost).toLocaleString('ko-KR')}원</span>` : ''}<small>기존 하불단가·표준 적재 기준</small></p>`
             : `<p><strong>${escape(r.region)} · 하불 비교 보류</strong><span>${escape(r.reason)}</span></p>`,
         )
         .join('');
@@ -854,6 +856,20 @@ $('new').onclick = () =>
     { edit: true },
   );
 document.addEventListener('click', (e) => {
+  const preview = e.target.closest('[data-preview]');
+  if (preview) {
+    const message = messages(state.draft).find(
+      (m) => m.key === preview.dataset.preview,
+    );
+    if (message) {
+      $('preview-title').textContent = message.title;
+      $('preview-image').hidden = true;
+      $('preview-text').hidden = false;
+      $('preview-text').value = message.text;
+      $('preview-dialog').showModal();
+    }
+    return;
+  }
   const copy = e.target.closest('[data-copy]');
   if (!copy) return;
   run(async () => {
@@ -878,6 +894,15 @@ document.addEventListener('click', (e) => {
     status(message.title + ' 문구를 복사했습니다.');
   });
 });
+$('view-photo').onclick = () => {
+  if (!state.draft.image) return;
+  $('preview-title').textContent = 'CJ 요청 원본';
+  $('preview-image').src = state.draft.image;
+  $('preview-image').hidden = false;
+  $('preview-text').hidden = true;
+  $('preview-dialog').showModal();
+};
+$('close-preview').onclick = () => $('preview-dialog').close();
 addEventListener('beforeunload', (e) => {
   if (state.busy) {
     e.preventDefault();
