@@ -42,6 +42,7 @@ export function dispatchFleet(parsed, routes, settings = {}) {
   const weekday = new Date(parsed.date + 'T12:00:00Z').getUTCDay();
   return [...map.values()].map((f) => ({
     ...f,
+    splitThresholdPercent: 90,
     ...settings[f.id],
     available:
       settings[f.id]?.available ??
@@ -70,6 +71,9 @@ export function generateDispatch(
     groups = [],
     remaining = new Map(jobs.map((j) => [j.id, j])),
     notices = [];
+  const sourceMemberQuantities = Object.fromEntries(
+    jobs.flatMap((j) => j.members.map((m) => [m.id, m.quantity])),
+  );
   let serial = 0;
   const add = (kind, label, js, options = {}) => {
     if (!js.length) return;
@@ -119,22 +123,64 @@ export function generateDispatch(
       if (
         Number.isFinite(f.capacity) &&
         f.capacity > 0 &&
-        j.quantity > f.capacity
-      ) {
-        j.forceTemporary = true;
-        j.reason = '한 착지 물량이 본인 차량의 실제 상차한도 초과';
-        continue;
-      }
-      if (
-        Number.isFinite(f.capacity) &&
-        f.capacity > 0 &&
-        quantity + j.quantity > f.capacity
+        quantity + j.quantity > f.capacity + 1e-8
       ) {
         j.reason = '본인코스 우선 상차 후 잔여 물량';
         continue;
       }
       chosen.push(j);
       quantity += j.quantity;
+    }
+    const threshold = f.splitThresholdPercent;
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100)
+      throw Error('분할 검토 기준은 0~100%로 입력해 주세요.');
+    if (
+      Number.isFinite(f.capacity) &&
+      f.capacity > 0 &&
+      quantity < (f.capacity * threshold) / 100 - 1e-8
+    ) {
+      const overflow = own.find(
+        (j) => !chosen.includes(j) && j.quantity > f.capacity - quantity,
+      );
+      if (overflow) {
+        const take = f.capacity - quantity;
+        const portion = structuredClone(overflow);
+        portion.id = overflow.id + ':fixed-part';
+        portion.sourceDestinationId = overflow.id;
+        overflow.sourceDestinationId = overflow.id;
+        portion.quantity = take;
+        const ratio = take / overflow.quantity;
+        portion.members = overflow.members.map((m) => ({
+          ...m,
+          quantity: m.quantity * ratio,
+          frozen: null,
+          chilled: null,
+        }));
+        overflow.members = overflow.members.map((m, i) => ({
+          ...m,
+          quantity: m.quantity - portion.members[i].quantity,
+          frozen: null,
+          chilled: null,
+        }));
+        overflow.quantity -= take;
+        for (const part of [portion, overflow]) {
+          part.frozen = null;
+          part.chilled = null;
+          part.issues = [
+            ...(part.issues || []),
+            '분할 상차 · 품목별 실제 상차내역 확인 필요',
+          ];
+          part.reason = '본인차 물량 확보를 위한 분할 상차';
+        }
+        overflow.forceTemporary = true;
+        jobs.push(portion);
+        chosen.push(portion);
+        quantity += take;
+        notices.push({
+          jobId: portion.id,
+          reason: '분할 상차 ' + take + ' / 임시차 잔여 ' + overflow.quantity,
+        });
+      }
     }
     add('fixed', f.route, chosen, {
       fleetId: f.id,
@@ -232,6 +278,7 @@ export function generateDispatch(
     groups,
     fleet,
     notices,
+    sourceMemberQuantities,
     quantityUnit: parsed.quantityUnit,
     sourceQuantity: jobs.reduce((n, j) => n + j.quantity, 0),
     modelSummary: { days: model.days, excludedCourses: model.excludedCourses },
@@ -302,6 +349,25 @@ export function recomputeDispatch(plan, graph) {
           ? '검토 필요'
           : '가배차';
   }
+  if (plan.sourceMemberQuantities) {
+    const totals = new Map();
+    for (const job of plan.jobs) {
+      const total = job.members.reduce((n, m) => n + m.quantity, 0);
+      if (
+        !Number.isFinite(job.quantity) ||
+        job.quantity <= 0 ||
+        Math.abs(total - job.quantity) > 1e-6
+      )
+        throw Error('분할 배정 수량을 확인해 주세요.');
+      for (const m of job.members)
+        totals.set(m.id, (totals.get(m.id) || 0) + m.quantity);
+    }
+    for (const [id, quantity] of Object.entries(plan.sourceMemberQuantities))
+      if (Math.abs((totals.get(id) || 0) - quantity) > 1e-6)
+        throw Error('원본 대비 분할 수량이 일치하지 않습니다.');
+    if ([...totals.keys()].some((id) => !(id in plan.sourceMemberQuantities)))
+      throw Error('원본에 없는 배정 수량입니다.');
+  }
   const assigned = plan.groups.flatMap((g) => g.jobIds);
   if (
     assigned.length !== plan.jobs.length ||
@@ -342,7 +408,7 @@ export function moveWholeDestination(plan, jobId, targetId, graph) {
   )
     throw Error('대상 차량의 실제 상차한도를 넘습니다.');
   if (target.kind === 'fixed' && job.forceTemporary)
-    throw Error('본인차 실제 한도 초과 착지는 임시차로 처리해야 합니다.');
+    throw Error('휴무 또는 분할 후 잔여 물량은 임시차로 처리해야 합니다.');
   current.jobIds = current.jobIds.filter((id) => id !== jobId);
   target.jobIds.push(jobId);
   next.groups = next.groups.filter((g) => g.jobIds.length);
@@ -482,7 +548,26 @@ export function compareActual(plan, trips) {
       plan.groups.flatMap((g) => g.jobIds.map((id) => [id, g])),
     ),
     rows = [];
-  for (const j of plan.jobs) {
+  const destinations = new Map();
+  for (const job of plan.jobs) {
+    const key = job.sourceDestinationId || job.id;
+    if (!destinations.has(key))
+      destinations.set(key, {
+        ...job,
+        quantity: 0,
+        members: [],
+        allocationIds: [],
+      });
+    const row = destinations.get(key);
+    row.quantity += job.quantity;
+    row.allocationIds.push(job.id);
+    for (const member of job.members) {
+      const existing = row.members.find((m) => m.id === member.id);
+      if (existing) existing.quantity += member.quantity;
+      else row.members.push({ ...member });
+    }
+  }
+  for (const j of destinations.values()) {
     const matchedMembers = j.members.filter((m) => actual.has(m.id)),
       hits = matchedMembers.flatMap((m) => actual.get(m.id) || []),
       recordedSourceQuantity = matchedMembers.length
@@ -507,7 +592,10 @@ export function compareActual(plan, trips) {
           ? null
           : actualQuantity - recordedSourceQuantity,
       originalRoute: j.ownerRoute,
-      predictedGroup: predicted.get(j.id)?.label,
+      predictedGroup: j.allocationIds
+        .map((id) => predicted.get(id)?.label)
+        .filter(Boolean)
+        .join(' / '),
       actualCourses: courses,
       status: !hits.length
         ? '원래 코스 잔류 여부 확인'
@@ -542,6 +630,10 @@ export function mergeDestinations(plan, sourceId, targetId, graph) {
     target = next.jobs.find((j) => j.id === targetId),
     group = next.groups.find((g) => g.jobIds.includes(targetId));
   if (!source || !target || !group) throw Error('합칠 착지를 확인해 주세요.');
+  if (source.sourceDestinationId || target.sourceDestinationId)
+    throw Error(
+      '분할 배정된 착지는 합산할 수 없습니다. 차량 조건을 조정한 뒤 재생성해 주세요.',
+    );
   if (routeKey(source.ownerRoute) !== routeKey(target.ownerRoute))
     throw Error('원래 호차가 다른 착지는 소속을 확인한 뒤 처리해 주세요.');
   if (

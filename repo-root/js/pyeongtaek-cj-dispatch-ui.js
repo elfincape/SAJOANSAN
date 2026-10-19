@@ -174,6 +174,11 @@ export async function mountDispatchWorkspace(center) {
       available.checked = f.available;
       available.disabled = !editable;
       available.setAttribute('aria-label', f.route + ' 운행 여부');
+      const splitThreshold = numberInput(
+        f.splitThresholdPercent,
+        f.route + ' 분할 검토 기준 (%)',
+      );
+      splitThreshold.max = '100';
       const cap = numberInput(f.capacity, f.route + ' 실제 상차한도'),
         extra = numberInput(
           f.maxExtraMinutes,
@@ -188,9 +193,14 @@ export async function mountDispatchWorkspace(center) {
           String(Math.floor(f.departureMinutes / 60)).padStart(2, '0') +
           ':' +
           String(f.departureMinutes % 60).padStart(2, '0');
-      for (const e of [cap, extra, departure]) e.disabled = !editable;
+      for (const e of [cap, extra, departure, splitThreshold])
+        e.disabled = !editable;
       const update = () => {
         if (
+          splitThreshold.value === '' ||
+          !Number.isFinite(Number(splitThreshold.value)) ||
+          Number(splitThreshold.value) < 0 ||
+          Number(splitThreshold.value) > 100 ||
           (cap.value !== '' &&
             (!Number.isFinite(Number(cap.value)) || Number(cap.value) <= 0)) ||
           (extra.value !== '' &&
@@ -201,6 +211,7 @@ export async function mountDispatchWorkspace(center) {
         }
         settingsDirty = true;
         settings[f.id] = {
+          splitThresholdPercent: Number(splitThreshold.value),
           available: available.checked,
           capacity: nullable(cap),
           maxExtraMinutes: nullable(extra),
@@ -212,7 +223,8 @@ export async function mountDispatchWorkspace(center) {
         );
         refresh();
       };
-      for (const e of [available, cap, extra, departure]) e.onchange = update;
+      for (const e of [available, cap, extra, departure, splitThreshold])
+        e.onchange = update;
       const own = parsed.jobs
         .filter((j) => routeKey(j.ownerRoute) === f.id)
         .reduce((n, j) => n + j.quantity, 0);
@@ -224,6 +236,7 @@ export async function mountDispatchWorkspace(center) {
         fmt(own),
         available,
         cap,
+        splitThreshold,
         departure,
         extra,
       ]);
@@ -242,7 +255,12 @@ export async function mountDispatchWorkspace(center) {
       review: '소속 확인',
     };
     for (const text of [
-      '착지 ' + plan.jobs.length + '개',
+      '착지 ' +
+        new Set(plan.jobs.map((j) => j.sourceDestinationId || j.id)).size +
+        '개',
+      ...(plan.jobs.some((j) => j.sourceDestinationId)
+        ? ['분할 포함 배정 ' + plan.jobs.length + '건']
+        : []),
       '총 ' + fmt(plan.sourceQuantity) + ' 박스환산',
       ...Object.keys(labels).map(
         (k) =>
@@ -360,7 +378,8 @@ export async function mountDispatchWorkspace(center) {
         const name = document.createElement('div'),
           strong = document.createElement('strong'),
           codes = document.createElement('p');
-        strong.textContent = j.name;
+        strong.textContent =
+          j.name + (j.sourceDestinationId ? ' · 분할 배정' : '');
         codes.className = 'text-xs muted';
         codes.textContent = j.memberIds
           .map((id) =>
@@ -503,6 +522,8 @@ export async function mountDispatchWorkspace(center) {
     merge.replaceChildren(new Option('동일 하차 단위 합산 안 함', ''));
     for (const other of plan.jobs)
       if (
+        !j.sourceDestinationId &&
+        !other.sourceDestinationId &&
         other.id !== id &&
         routeKey(other.ownerRoute) === routeKey(j.ownerRoute)
       )
