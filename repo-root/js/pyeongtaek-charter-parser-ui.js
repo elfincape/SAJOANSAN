@@ -9,6 +9,7 @@ import { loadCharterTrips,existingVersions,saveCharterTrips,deleteCharterTrip,li
 import { charterOneDrive } from './pyeongtaek-charter-onedrive.js';
 const $=id=>document.getElementById(id),PAGE=50;
 let center,profile,source,trips=[],versions=new Map(),origin='upload',page=0,fileRevision=0,editing=null,archives=[],busy=false,dirty=false,dirtyIds=new Set();
+let saveProgress=null;
 let statsVehicle='',statsView='drivers',statsOptionsSource=null;
 const number=value=>value==null?'빈칸':Number(value).toLocaleString('ko-KR');
 function message(text,error=false){$('status').textContent=text;$('status').className=error?'text-sm text-red-300':'text-sm text-zinc-300';}
@@ -37,7 +38,7 @@ function cellRow(parent,values,tag='td'){
  const row=document.createElement('tr');for(const value of values){const cell=document.createElement(tag);if(value instanceof Node)cell.append(value);else cell.textContent=value??'';row.append(cell);}parent.append(row);return row;
 }
 function showTrips(next,nextOrigin,nextVersions=new Map()){
- trips=next;origin=nextOrigin;versions=nextVersions;page=0;dirty=false;dirtyIds.clear();$('preview-wrap').hidden=true;render();
+ saveProgress=null;trips=next;origin=nextOrigin;versions=nextVersions;page=0;dirty=false;dirtyIds.clear();$('preview-wrap').hidden=true;render();
 }
 function render(){
  const shown=visible();page=Math.min(page,Math.max(0,Math.ceil(shown.length/PAGE)-1));const query=$('customer-filter').value,s=routingSummary(shown,query);
@@ -216,7 +217,9 @@ function saveMessage(text,error=false){
  $('db-save-status').textContent=text;$('db-save-status').className=error?'text-sm text-red-300':'text-sm text-zinc-300';
 }
 async function saveDB(){
- const next=visible();let expected=versions,saved=0;
+ const shown=visible(),key=JSON.stringify(shown);
+ if(saveProgress?.key!==key)saveProgress={key,completed:new Set()};
+ const next=shown.filter(t=>!saveProgress.completed.has(t.id));let expected=versions,saved=0;
  $('db-save').textContent='저장 중…';saveMessage('DB 저장 준비 중…');
  try{
   if(!next.length)throw new Error('저장할 데이터가 없습니다. 필터를 확인해 주세요.');
@@ -226,13 +229,14 @@ async function saveDB(){
     saveMessage('DB 저장을 취소했습니다.');return;
    }
   }
+  for(const [id,version] of expected)versions.set(id,version);
   for(let offset=0;offset<next.length;offset+=500){
    const batch=next.slice(offset,offset+500);saveMessage('DB 저장 중… '+saved+' / '+next.length+'운행');
    const result=await saveCharterTrips(center.code,batch,expected);
-   for(const row of result){versions.set(row.id,row.version);expected.set(row.id,row.version);dirtyIds.delete(row.id);}
+   for(const row of result){versions.set(row.id,row.version);expected.set(row.id,row.version);dirtyIds.delete(row.id);saveProgress.completed.add(row.id);}
    saved+=result.length;origin='db';dirty=dirtyIds.size>0;
   }
-  render();saveMessage('DB 저장 완료: '+saved+'운행');message('DB에 '+saved+'운행을 저장했습니다.');
+  saveProgress=null;render();saveMessage('DB 저장 완료: '+saved+'운행');message('DB에 '+saved+'운행을 저장했습니다.');
  }catch(error){
   const detail=error.message||String(error);
   saveMessage('DB 저장 실패'+(saved?' ('+saved+' / '+next.length+'운행 저장됨)':'')+': '+detail,true);

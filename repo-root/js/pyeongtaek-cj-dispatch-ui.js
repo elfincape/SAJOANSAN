@@ -266,7 +266,7 @@ export async function mountDispatchWorkspace(center) {
         (k) =>
           labels[k] +
           ' ' +
-          plan.groups.filter((g) => g.kind === k).length +
+          plan.groups.filter((g) => g.kind === k && g.jobIds.length).length +
           '묶음',
       ),
     ]) {

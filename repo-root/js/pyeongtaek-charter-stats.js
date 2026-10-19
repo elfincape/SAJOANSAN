@@ -6,7 +6,9 @@ function quantity(delivery){return numeric(delivery.quantity)?delivery.quantity:
 function addCustomer(map,trip,delivery){
  const code=text(delivery.code),name=text(delivery.name),customer=text(delivery.customer);
  if(!code&&!name)return false;
- const key=code?'code:'+code:'name:'+JSON.stringify([name,customer]);
+ const key=customer.replace(/\s/g,'')==='한성'
+  ? 'hansung:'+JSON.stringify([name,text(delivery.address).replace(/[\s,]/g,'')])
+  : code?'code:'+code:'name:'+JSON.stringify([name,customer]);
  if(!map.has(key))map.set(key,{key,code,names:new Map(),clients:new Set(),trips:new Set(),days:new Set(),quantityKeys:new Set(),totalQuantity:0,missingQuantity:0,missingDate:0});
  const entry=map.get(key);if(name)entry.names.set(name,(entry.names.get(name)||0)+1);if(customer)entry.clients.add(customer);entry.trips.add(trip.id);
  if(validDate(trip.date))entry.days.add(trip.date);else entry.missingDate++;

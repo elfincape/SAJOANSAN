@@ -76,7 +76,7 @@ export function generateDispatch(
   );
   let serial = 0;
   const add = (kind, label, js, options = {}) => {
-    if (!js.length) return;
+    if (!js.length && kind !== 'fixed') return;
     const group = {
       id: 'group-' + ++serial,
       kind,
@@ -93,7 +93,28 @@ export function generateDispatch(
     const own = jobs.filter(
       (j) => j.kind === 'fixed' && routeKey(j.ownerRoute) === f.id,
     );
-    if (!own.length) continue;
+    if (!own.length) {
+      if (
+        !Number.isFinite(f.capacity) ||
+        f.capacity <= 0 ||
+        !Number.isFinite(f.maxExtraMinutes)
+      )
+        continue;
+      const sameAssignment = (other) =>
+        other &&
+        (other.id === f.id ||
+          (f.plate && routeKey(other.plate) === routeKey(f.plate)) ||
+          (f.driver && other.driver === f.driver));
+      const assignedElsewhere = fleet.some(
+        (other) =>
+          sameAssignment(other) &&
+          jobs.some((j) => routeKey(j.ownerRoute) === other.id),
+      );
+      const reserved = groups.some((g) =>
+        sameAssignment(fleet.find((other) => other.id === g.fleetId)),
+      );
+      if (assignedElsewhere || reserved) continue;
+    }
     if (!f.available) {
       for (const j of own) {
         j.reason = '고정기사 휴무 · 착지 전체 용차';
@@ -187,7 +208,9 @@ export function generateDispatch(
       baselineJobIds: chosen.map((j) => j.id),
       capacity:
         Number.isFinite(f.capacity) && f.capacity > 0 ? f.capacity : null,
-      reason: '본인코스 우선',
+      reason: chosen.length
+        ? '본인코스 우선'
+        : '본인물량 없음 · 이배송 배정 대기',
       departureMinutes: f.departureMinutes,
     });
   }
@@ -315,7 +338,7 @@ export function recomputeDispatch(plan, graph) {
     if (g.kind === 'fixed') {
       const baselineJobs = g.baselineJobIds?.map((id) => jobs.get(id));
       const baseline =
-        baselineJobs?.length && baselineJobs.every(Boolean)
+        Array.isArray(baselineJobs) && baselineJobs.every(Boolean)
           ? graph?.route(baselineJobs, {
               departureMinutes: g.departureMinutes ?? null,
             })
@@ -411,7 +434,9 @@ export function moveWholeDestination(plan, jobId, targetId, graph) {
     throw Error('휴무 또는 분할 후 잔여 물량은 임시차로 처리해야 합니다.');
   current.jobIds = current.jobIds.filter((id) => id !== jobId);
   target.jobIds.push(jobId);
-  next.groups = next.groups.filter((g) => g.jobIds.length);
+  next.groups = next.groups.filter(
+    (g) => g.jobIds.length || g.kind === 'fixed',
+  );
   next.transferCandidates = [];
   next.notices.push({
     jobId,
@@ -696,7 +721,9 @@ export function mergeDestinations(plan, sourceId, targetId, graph) {
   next.jobs = next.jobs.filter((j) => j.id !== sourceId);
   for (const g of next.groups)
     g.jobIds = g.jobIds.filter((id) => id !== sourceId);
-  next.groups = next.groups.filter((g) => g.jobIds.length);
+  next.groups = next.groups.filter(
+    (g) => g.jobIds.length || g.kind === 'fixed',
+  );
   next.transferCandidates = [];
   next.notices.push({
     jobId: targetId,
