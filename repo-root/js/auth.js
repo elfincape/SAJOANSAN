@@ -30,8 +30,9 @@ export async function getCurrentProfile() {
   if (_profileCache) return _profileCache;
   if (_profilePromise) return _profilePromise;
 
-  _profilePromise = (async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+  const request = (async () => {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
     if (!user) return null;
 
     const { data, error } = await supabase
@@ -41,14 +42,15 @@ export async function getCurrentProfile() {
       .maybeSingle();
 
     if (error) {
-      console.error('[auth] 프로필 조회 실패:', error);
-      return null;
+      throw error;
     }
     _profileCache = data || null;
     return _profileCache;
   })();
 
-  return _profilePromise;
+  _profilePromise = request;
+  try { return await request; }
+  finally { if (_profilePromise === request) _profilePromise = null; }
 }
 
 // 인증만 강제 (역할 무관). 미인증 또는 비활성 사용자면 로그인 페이지로
@@ -56,7 +58,12 @@ export async function requireAuth() {
   const session = await getSessionOrRedirect();
   if (!session) return null;
 
-  const profile = await getCurrentProfile();
+  let profile;
+  try { profile = await getCurrentProfile(); }
+  catch {
+    toast('로그인 상태를 확인하지 못했습니다. 연결을 확인한 뒤 새로고침해 주세요.', 'error');
+    return null;
+  }
 
   // 프로필이 없거나 비활성화 상태면 차단
   if (!profile || !profile.active) {

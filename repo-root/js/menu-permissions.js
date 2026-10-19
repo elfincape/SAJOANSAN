@@ -2,7 +2,19 @@ import {supabase} from './supabase.js';
 import {permissionAllowed} from './portal-permissions.js';
 import {normalizeCenterCode,withCenterParam} from './center.js';
 let cached,pending;
-export async function menuPermissions(refresh=false){if(refresh){cached=null;pending=null;}if(cached)return cached;if(!pending)pending=supabase.rpc('operations_permissions_context').then(({data,error})=>{if(error){pending=null;throw error;}cached=data;return data;});return pending;}
+export async function menuPermissions(refresh=false){
+ if(refresh){cached=null;pending=null;}
+ if(cached)return cached;
+ if(!pending){
+  const request=supabase.rpc('operations_permissions_context').then(({data,error})=>{
+   if(error)throw error;
+   if(pending===request)cached=data;
+   return data;
+  }).finally(()=>{if(pending===request)pending=null;});
+  pending=request;
+ }
+ return pending;
+}
 export const pageResources={'routes.html':'routes','route-edit.html':'routes','delivery-points.html':'delivery_points','drivers.html':'drivers','vehicles.html':'vehicles','companies.html':'companies','transfers.html':'transfers','pyeongtaek-charter-parser.html':'charter','charter-fuel-estimator.html':'delivery_points','naver-shortest-distance.html':'delivery_points','dispatch-parser.html':'dispatch_parser','excel-compare.html':'excel_compare','pallet-slips.html':'pallet_slips','one-top-two-room-work.html':'one_top','daily-temperature.html':'temperature','coupang-entry.html':'coupang','haul-dispatch-calculator.html':'haul','ansan-gimhae-busan-ansan.html':'busan','image-straightener.html':'straightener','pdf-image-converter.html':'pdf_converter','export.html':'export','import.html':'import','users.html':'users','settings.html':'settings','audit-log.html':'audit','operations.html':'history','notion-health.html':'connections'};
 pageResources['pyeongtaek-dispatch.html']='charter';
 pageResources['gimhae-dispatch.html']='dispatch_parser';

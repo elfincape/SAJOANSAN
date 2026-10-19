@@ -134,6 +134,7 @@ export function closeModal() {
   if (!_activeModal) return;
   const m = _activeModal;
   _activeModal = null;
+  m._onClose?.();
   if (m._returnFocus?.isConnected) m._returnFocus.focus();
 
   if (m._escHandler) {
@@ -181,9 +182,10 @@ export function confirmDialog(msg, options = {}) {
 
     const { overlay } = openModal(panel, { width: 'sm', dismissable: !okOnly });
 
+    overlay._onClose = () => resolve(false);
     panel.querySelector('[data-act="ok"]').addEventListener('click', () => {
-      closeModal();
       resolve(true);
+      closeModal();
     });
     const cancelBtn = panel.querySelector('[data-act="cancel"]');
     if (cancelBtn) {
