@@ -18,3 +18,10 @@
 - React 작업을 실제로 수행할 때만 `vercel-react-best-practices`를 사용한다. 설치를 이유로 기존 화면을 React로 전환하지 않는다.
 - 외부 배포 프로그램·번들·실행 동작 분석이 필요한 경우 `reverse-engineer-anything`을 사용한다. 일반적인 자체 소스 분석에는 기존 검색·브라우저 도구를 사용한다. REA 실행·MCP 설정은 `.agent-tools/README.md`를 따른다.
 - 엑셀 업무는 현재 웹의 SheetJS·ExcelJS와 사용 가능한 스프레드시트 도구를 재사용한다. 원본 양식, 병합 셀·수식·인쇄 설정과 입출력 물량 보존을 검증한다. Anthropic XLSX 원본은 외부 복제·배포 제한으로 설치·커밋하지 않는다.
+
+- 디자인 작업은 `impeccable`로 기존 PRODUCT.md·DESIGN.md를 먼저 읽고 필요한 명령만 적용한다. 관리 화면은 Operate 기준으로 기존 정보 위계와 접근성을 유지한다. 자동 훅은 중복 설치하지 않으며 UI 변경 후 `.agents/skills/impeccable/scripts/impeccable detect --json <변경 파일>`과 실제 브라우저 검증을 수행한다. 원본 스킬의 진단은 실제 화면과 기존 제품 지침에 대조한다.
+- `ponytail`을 개발 작업의 재사용·최소 변경 기준으로 사용하고, 리뷰나 전체 점검 요청 시 각각 `ponytail-review`, `ponytail-audit`을 사용한다. 검증·오류 처리·권한·접근성을 줄이는 근거로 사용하지 않는다. 기존 별도 테스트 파일 금지 규칙에 따라 관련 기존 검사나 임시 검증에서 확인한다.
+- Serena MCP는 JavaScript 심벌·참조 탐색에 사용한다. HTML 인라인 코드·스타일은 기존 도구로 확인하고 공급업체 스킬·도구·빌드 결과는 인덱스에서 제외한다. 복구·연결 방법은 `.agent-tools/README.md`를 참조한다.
+- awesome-design-md의 Airtable·Linear·IBM 문서는 `.agent-tools/design/references/awesome-design-md/`에서 필요한 패턴만 참고한다. 현재 DESIGN.md가 시각적 기준이며 다른 브랜드의 전체 테마·자산을 복사하지 않는다.
+- Lenis는 긴 데스크톱 업무 페이지의 세로 스크롤에 적용한다. 표 내부·가로 스크롤·입력·모달·키보드·고정 대시보드와 모바일·모션 감소 사용자의 기본 조작을 유지한다.
+- JEV 스킬·MCP 조사 결과는 `.agent-tools/JEV.md`에서 확인한다. 개발 검토의 판단값은 실제 코드·물량·거리·브라우저 증거에 대조하며 모델 점수를 사실 또는 실제 사용자 발생률로 간주하지 않는다.

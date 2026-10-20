@@ -3,3 +3,12 @@ command = "node"
 args = [".agent-tools/rea/node_modules/rea-agents/scripts/rea.mjs", "mcp"]
 startup_timeout_sec = 30
 tool_timeout_sec = 120
+
+[mcp_servers.serena]
+command = ".agent-tools/serena/.venv/bin/serena"
+args = ["start-mcp-server", "--context", "codex", "--project-from-cwd", "--agent-interface", "tools", "--open-web-dashboard", "false", "--enable-web-dashboard", "false"]
+startup_timeout_sec = 120
+tool_timeout_sec = 120
+
+[mcp_servers.serena.env]
+SERENA_HOME = ".agent-tools/serena/state"

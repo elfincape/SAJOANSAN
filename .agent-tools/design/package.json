@@ -1,0 +1,7 @@
+{
+  "name": "sajoansan-design-tools",
+  "private": true,
+  "dependencies": {
+    "impeccable": "4.7.0"
+  }
+}
