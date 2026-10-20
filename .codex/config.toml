@@ -1,0 +1,5 @@
+[mcp_servers.rea]
+command = "node"
+args = [".agent-tools/rea/node_modules/rea-agents/scripts/rea.mjs", "mcp"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120

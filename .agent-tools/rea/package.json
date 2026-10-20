@@ -1,0 +1,8 @@
+{
+  "name": "sajoansan-agent-rea",
+  "private": true,
+  "description": "Pinned REA development tool; not part of the web application",
+  "dependencies": {
+    "rea-agents": "6.7.0"
+  }
+}
