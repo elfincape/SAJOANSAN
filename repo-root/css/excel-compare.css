@@ -250,7 +250,7 @@ label select,label input[type=number] {
 }
 .mode-card small {
   display:block;
-  color:#a1a1aa;
+  color:var(--theme-muted, #a1a1aa);
   line-height:1.6;
   margin-top:5px;
 }

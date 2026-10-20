@@ -12,7 +12,7 @@
   --theme-soft: #f1f3f5;
   --theme-stripe: #fafbfc;
   --theme-text: #20252b;
-  --theme-muted: #626d78;
+  --theme-muted: #526170;
   --theme-border: #d7dde2;
   --theme-border-soft: #e7ebee;
   --theme-hover: #f0f7f3;
@@ -27,7 +27,7 @@
   --theme-danger: #b42332;
   --theme-danger-bg: #fff0f0;
   --theme-danger-border: #ebc7ca;
-  --theme-warn: #99621c;
+  --theme-warn: #85530b;
   --theme-warn-bg: #fff6df;
   --theme-control-hover: #076b4d;
   --theme-scroll-thumb: #b4c0c8;
@@ -131,8 +131,21 @@ html[data-theme] body.workspace-ui {
   background: var(--theme-panel);
   border-color: var(--theme-border);
 }
+.workspace-ui .paste-target {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+}
+.workspace-ui .paste-target .plus {
+  color: var(--theme-muted);
+}
 .workspace-ui .file-paste-hint {
   color: var(--theme-muted);
+}
+.workspace-ui .photo-stage {
+  color: #eef3f5;
+}
+.workspace-ui .photo-stage .file-paste-hint {
+  display: none;
 }
 .workspace-ui :is(input, textarea, [contenteditable]) {
   caret-color: var(--theme-accent);
@@ -493,4 +506,265 @@ html[data-theme='dark']
   .theme-toggle {
     display: none !important;
   }
+}
+
+/* Legacy status colors need both an ink and a surface in light mode. */
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='text-emerald-50'],
+    [class~='text-emerald-100'],
+    [class~='text-emerald-200'],
+    [class~='text-emerald-300'],
+    [class~='text-emerald-400'],
+    [class~='text-emerald-500'],
+    [class~='text-green-400']
+  ) {
+  color: var(--theme-success);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='bg-emerald-500/10'],
+    [class~='bg-emerald-600/15'],
+    [class~='bg-emerald-600/20'],
+    [class~='bg-emerald-600/30'],
+    [class~='bg-emerald-900/20'],
+    [class~='bg-emerald-900/40'],
+    [class~='bg-emerald-900/90'],
+    [class~='bg-emerald-950/20'],
+    [class~='bg-emerald-950/95']
+  ) {
+  background: var(--theme-success-bg);
+  color: var(--theme-success);
+  border-color: var(--theme-success);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='text-amber-50'],
+    [class~='text-amber-200'],
+    [class~='text-amber-300'],
+    [class~='text-amber-300/90'],
+    [class~='text-amber-400'],
+    [class~='text-yellow-400']
+  ) {
+  color: var(--theme-warn);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='bg-amber-500/10'],
+    [class~='bg-amber-900/20'],
+    [class~='bg-amber-900/40'],
+    [class~='bg-amber-900/90'],
+    [class~='bg-amber-950'],
+    [class~='bg-amber-950/20']
+  ) {
+  background: var(--theme-warn-bg);
+  color: var(--theme-warn);
+  border-color: var(--theme-warn);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='text-red-50'],
+    [class~='text-red-300'],
+    [class~='text-red-400'],
+    [class~='text-rose-100'],
+    [class~='text-rose-200'],
+    [class~='text-rose-300'],
+    [class~='text-rose-400']
+  ) {
+  color: var(--theme-danger);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='bg-red-900/20'],
+    [class~='bg-red-900/90'],
+    [class~='bg-rose-900/40'],
+    [class~='bg-rose-950'],
+    [class~='bg-rose-950/95']
+  ) {
+  background: var(--theme-danger-bg);
+  color: var(--theme-danger);
+  border-color: var(--theme-danger);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    [class~='text-sky-300'],
+    [class~='text-sky-400'],
+    [class~='text-cyan-400'],
+    [class~='text-blue-400']
+  ) {
+  color: var(--theme-info);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is([class~='bg-sky-500/10'], [class~='bg-sky-600/20']) {
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
+  border-color: var(--theme-info);
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(
+    .bg-red-600,
+    [class~='bg-red-600/90'],
+    [class~='bg-red-700/90'],
+    [class~='bg-red-700/70']
+  ) {
+  background: var(--theme-danger);
+  color: #fff;
+}
+html[data-theme='light']
+  body.workspace-ui
+  :is(.bg-emerald-600, .bg-emerald-500) {
+  background: var(--theme-primary);
+  color: #fff;
+}
+html[data-theme] body.workspace-ui .role-fixed {
+  color: var(--theme-success);
+  background: var(--theme-success-bg);
+}
+html[data-theme] body.workspace-ui .role-wide {
+  color: var(--theme-info);
+  background: var(--theme-info-bg);
+}
+html[data-theme] body.workspace-ui .role-temp {
+  color: var(--theme-warn);
+  background: var(--theme-warn-bg);
+}
+
+/* Readable text hierarchy and controls across existing work screens. */
+html[data-theme] body.workspace-ui {
+  font-size: 15px;
+  line-height: 1.65;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(
+    .text-xs,
+    .text-\[11px\],
+    small,
+    .app-label,
+    .hint,
+    .footer-note,
+    .role-pill
+  ) {
+  font-size: 13px;
+  line-height: 1.65;
+}
+html[data-theme] body.workspace-ui :is(.text-sm, .note) {
+  font-size: 14px;
+  line-height: 1.65;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(.app-main, #portal-main)
+  :is(.btn, .hub-categories button) {
+  min-height: 40px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(.app-main, #portal-main)
+  :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not(
+    [type='hidden']
+  ) {
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(.app-main, #portal-main)
+  table
+  :is(th, td) {
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+html[data-theme] body.workspace-ui :is(.app-main, #portal-main) table th {
+  font-weight: 650;
+  color: var(--theme-text);
+}
+html[data-theme] body.workspace-ui .app-main :is(.app-label, .toolbar label) {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+html[data-theme] body.workspace-ui .app-main h2 {
+  font-size: 19px;
+  line-height: 1.5;
+}
+html[data-theme] body.workspace-ui .app-main h3 {
+  font-size: 17px;
+  line-height: 1.5;
+}
+html[data-theme] body.workspace-ui .app-main .app-function-title::before {
+  display: none;
+}
+html[data-theme] body.workspace-ui .app-main p:is(.text-xs, .muted) {
+  max-inline-size: 95ch;
+}
+html[data-theme] body.workspace-ui .app-main :is(.toolbar, .pd-toolbar) {
+  column-gap: 12px;
+  row-gap: 12px;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is(.app-local-menu a, .app-local-menu button[data-view]) {
+  font-size: 14px;
+  line-height: 1.5;
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar summary {
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  html[data-theme]
+    body.workspace-ui
+    :is(.app-main, #portal-main)
+    :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not(
+      [type='hidden']
+    ) {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  html[data-theme]
+    body.workspace-ui
+    :is(.app-main, #portal-main)
+    :is(.btn, button, summary) {
+    min-height: 44px;
+  }
+}
+
+html[data-theme] body.workspace-ui .readability-guide > summary {
+  cursor: pointer;
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.6;
+  min-height: 40px;
+  padding: 8px 0;
+}
+html[data-theme] body.workspace-ui .readability-guide[open] > summary {
+  margin-bottom: 12px;
+}
+
+html[data-theme] body.workspace-ui :is(.route-filter-summary, .th-grip) {
+  color: var(--theme-muted);
+}
+html[data-theme] body.workspace-ui #route-grid .route-action-delete {
+  color: var(--theme-danger);
+}
+html[data-theme] body.workspace-ui #route-grid .route-action-delete:hover {
+  background: var(--theme-danger-bg);
+  border-color: var(--theme-danger);
 }
