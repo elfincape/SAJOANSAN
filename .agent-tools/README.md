@@ -46,3 +46,22 @@ node .agent-tools/rea/node_modules/rea-agents/scripts/rea.mjs analyze-javascript
 Git 공백 검사는 `.agents/skills/`의 공급업체 원본에만 적용하지 않는다. upstream의 공백까지 그대로 보존하여 잠금 파일 해시와 일치시키기 위한 설정이며, 프로젝트가 작성한 코드·설정·문서의 공백 검사는 유지한다.
 
 Web Design Guidelines는 실행 시 upstream `main`의 규칙을 가져온다. 잠금 파일은 설치된 스킬 파일만 고정하며 원격 규칙까지 고정하지 않는다. 리뷰 결과를 남길 때 적용한 원격 규칙의 조회 시점 또는 커밋을 함께 기록한다.
+
+## 추가 디자인·코드 도구
+
+- Impeccable 4.7.0 / 엔진 0.1.16: 공식 Codex 프로젝트 설치. 기존 PRODUCT.md와 DESIGN.md를 사용하고 자동 편집 훅은 설치하지 않았다. 스킬 문서·런처는 커밋하고 플랫폼 바이너리는 제외한다.
+- Ponytail: 공식 core/review/audit/debt/help/gain 스킬을 고정 커밋으로 설치했다. 벤치마크 수치는 upstream 주장이고 이 관리웹의 실측 개선량으로 사용하지 않는다.
+- awesome-design-md: Airtable·Linear·IBM 자료와 MIT 고지를 고정 버전으로 포함했다. 전체 디자인을 교체하지 않고 기존 업무 화면의 정보 위계·일관성 참고로 사용한다.
+- Serena 2.1.0: GPL-3.0-or-later 독립 개발 도구이며 웹 배포물에 포함하지 않는다. Python 환경과 uv.lock을 분리하고 .serena/project.yml로 JavaScript 심벌을 인덱싱한다. HTML 인라인 코드나 CSS의 의미 분석을 보장하지 않는다.
+
+새 체크아웃에서 다음 명령으로 복구한다.
+
+```sh
+npm ci --prefix .agent-tools/design --ignore-scripts --no-audit --no-fund
+node .agent-tools/design/node_modules/impeccable/cli/bin/cli.js install --providers=codex --scope=project --no-hooks --yes
+uv sync --project .agent-tools/serena --frozen --no-dev
+```
+
+Serena MCP는 `.codex/config.toml`에 연결했다. 저장소 루트에서 신뢰된 프로젝트로 세션을 재시작해야 현재 도구 목록에 표시된다. 대시보드·GUI 창 자동 실행은 끄고 상태·다운로드된 언어 서버는 `.agent-tools/serena/state/`에 보관한다. 설치 후 언어 서버는 첫 프로젝트 활성화 시 필요에 따라 다운로드된다.
+
+Lenis 1.3.27은 웹의 고정 의존성으로 추가했다. 패키지 모듈을 처리하지 않는 정적 파일 미리보기에서는 기본 스크롤로 동작한다.

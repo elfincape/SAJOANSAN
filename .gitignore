@@ -4,3 +4,19 @@ playwright-report/
 .venv/
 dist/
 __pycache__/
+
+# Local development tool binaries, caches and agent state.
+.agents/skills/impeccable/scripts/bin/
+.agent-tools/serena/state/
+.serena/*
+!.serena/project.yml
+**/.impeccable/config.local.json
+**/.impeccable/hook.*.json
+**/.impeccable/*.png
+**/.impeccable/review/
+**/.impeccable/questions/
+**/.impeccable/live/server.json
+**/.impeccable/live/sessions/
+**/.impeccable/live/previews/
+**/.impeccable/live/annotations/
+**/.impeccable/live/cache/

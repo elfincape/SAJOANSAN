@@ -10,6 +10,7 @@ import {
   renderWorkspaceNavigation,
 } from './workspace-navigation.js';
 import { mountThemeToggle } from './theme.js';
+import { mountWorkspaceScroll } from './workspace-scroll.js';
 
 const areas = Object.fromEntries(
   applicationAreas.map(({ area, label }) => [area, label]),
@@ -263,6 +264,7 @@ export function mountAppShell({
   headerSize.observe(header);
   updateContext(context);
   normalizeHeadings(main);
+  mountWorkspaceScroll(main);
   const observer = new MutationObserver((records) => {
     for (const record of records)
       for (const added of record.addedNodes)
