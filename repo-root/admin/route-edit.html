@@ -121,6 +121,7 @@
       secondaryVehicle: null
     };
     const $ = (id) => document.getElementById(id);
+    let sortable = null;
 
     // =========================================================================
     // 2. 부트
@@ -286,7 +287,6 @@
     // =========================================================================
     // 5. SortableJS - 드래그 정렬
     // =========================================================================
-    let sortable = null;
     function initSortable() {
       const tbody = $('stops-tbody');
       if (sortable) sortable.destroy();

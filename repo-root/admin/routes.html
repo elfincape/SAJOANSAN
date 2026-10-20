@@ -551,7 +551,7 @@
       container.className = 'route-grid-days';
       if (!params.data.closedDays.length) {
         container.textContent = '-';
-        container.style.color = '#52525b';
+        container.style.color = 'var(--theme-muted, #52525b)';
         return container;
       }
       const labels = ['일','월','화','수','목','금','토'];
@@ -567,7 +567,7 @@
     function statusRenderer(params) {
       const status = document.createElement('span');
       status.className = 'text-xs';
-      status.style.color = params.value === '비활성' ? '#a51e36' : '#08634f';
+      status.style.color = params.value === '비활성' ? 'var(--theme-danger, #a51e36)' : 'var(--theme-success, #08634f)';
       status.textContent = params.value;
       return status;
     }

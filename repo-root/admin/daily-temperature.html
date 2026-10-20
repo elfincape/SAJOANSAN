@@ -98,7 +98,8 @@
 
   <main class="flex-1 max-w-[1500px] w-full mx-auto px-4 py-6 space-y-5">
     <section class="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
-      <h2 class="text-sm font-semibold mb-2">작업 방식</h2>
+      <details class="readability-guide">
+      <summary>작업 방법 · 처음 사용하는 경우</summary>
       <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
         <li>저장된 기본 템플릿을 먼저 자동으로 불러오고, 필요할 때만 업로드 파일로 임시 교체합니다.</li>
         <li>템플릿은 Sheet1, <code>5행</code>부터 <code>B~R열</code>을 편집 대상으로 불러옵니다.</li>
@@ -107,6 +108,7 @@
         <li>삽입 행은 지사/센터/날짜/운송사/기본값을 자동으로 채우고, <code>J~M</code>, <code>P~R</code>은 공란으로 둡니다.</li>
         <li>결과는 DB 저장 없이 Excel 파일로만 다운로드합니다.</li>
       </ol>
+      </details>
     </section>
 
     <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -118,10 +120,11 @@
             <div class="text-xs text-zinc-500">저장된 기본 템플릿을 우선 사용합니다.</div>
           </div>
         </div>
-        <div class="text-xs text-zinc-400 leading-relaxed mb-3">
+        <details class="readability-guide text-xs text-zinc-400 leading-relaxed mb-3">
+          <summary>기본 템플릿 관리 정보</summary>
           기본 저장 위치: <code id="default-template-path" class="text-emerald-300">repo-root/templates/one-top-two-room-template.xlsx</code><br>
           GitHub에서 이 파일만 교체하면 다음 접속부터 기본 템플릿으로 사용됩니다.
-        </div>
+        </details>
         <div class="flex flex-wrap gap-2 mb-3">
           <button id="reload-default-btn" class="btn btn-ghost text-xs" type="button">저장된 기본 템플릿 다시 불러오기</button>
         </div>
