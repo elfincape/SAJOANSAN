@@ -1,0 +1,3 @@
+
+# Preserve pinned third-party skill files byte-for-byte.
+/.agents/skills/** -whitespace
