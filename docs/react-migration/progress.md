@@ -91,3 +91,5 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Portal internal screen 3 (incidents): ordered incident records, read-only parent task dialog, edit/resolve/reopen/support requests and attachments integrated into tickets/side detail. Browser passed parent restrictions, unknown input retention and optimistic version payload, resolution/list status, reopen and support request. Corrected initial view URL validation to use the newly fetched permission context. Build/Impeccable passed; mock calls only.
 
 - Portal internal screen 4 (headquarters): own unfinished work and expandable cross-center review list with center/category/support properties share the existing ticket/incident detail components. Browser passed counts, own assignment, review expansion retention and headquarters support form. Build/Impeccable passed; no live calls.
+
+- Portal internal screen 5 (notifications): original-record navigation, permission-gated read marking and unread state ported. Browser passed writable and read-only notification variants, source task dialog and absent task mutation controls for viewers. Build/Impeccable passed; mock calls only.

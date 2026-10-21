@@ -14,6 +14,7 @@ import {
   PortalIncidentList,
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
+import { PortalNotifications } from '../components/portal/PortalNotifications';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
 import { PortalTickets } from '../components/portal/PortalTickets';
 import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
@@ -572,10 +573,12 @@ function Work({ profile }: { profile: Profile }) {
         ? inPeriod.length + overdue.length
         : state.view === 'incidents'
           ? state.incidents.length
-          : hq
-            ? tasks.filter((t) => !finished(t)).length +
-              state.incidents.filter((i) => i.status === 'open').length
-            : 0;
+          : state.view === 'notifications'
+            ? state.notifications.length
+            : hq
+              ? tasks.filter((t) => !finished(t)).length +
+                state.incidents.filter((i) => i.status === 'open').length
+              : 0;
   const title = !state.context
     ? '업무목록'
     : denied
@@ -915,15 +918,20 @@ function Work({ profile }: { profile: Profile }) {
               <section className="list">
                 <div className="list-heading">
                   <strong id="list-title">
-                    {hq
-                      ? '업무와 지원 요청'
-                      : state.view === 'incidents'
-                        ? '특이사항'
-                        : '업무목록'}
+                    {state.view === 'notifications'
+                      ? '내 알림'
+                      : hq
+                        ? '업무와 지원 요청'
+                        : state.view === 'incidents'
+                          ? '특이사항'
+                          : '업무목록'}
                   </strong>
                   <span id="count">{denied ? '' : count + '건'}</span>
                 </div>
                 <div id="items" className="portal-items">
+                  {!denied && state.view === 'notifications' ? (
+                    <PortalNotifications />
+                  ) : null}
                   {!denied && hq ? <PortalHeadquarters /> : null}
                   {!denied && state.view === 'incidents' ? (
                     <>
