@@ -1,3 +1,4 @@
+import '../styles/common.css';
 import '../styles/dispatch-parser.css';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage } from '../components/AdminPage';

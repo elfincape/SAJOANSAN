@@ -1,5 +1,7 @@
+import '../styles/common.css';
 import '../styles/image-straightener.css';
 import { useEffect, useRef, useState } from 'react';
+import { FileArea } from '../components/FileArea';
 import { AdminPage } from '../components/AdminPage';
 
 interface Photo { url: string; rotation: number }
@@ -39,14 +41,14 @@ export default function ImageStraightener() {
   return <AdminPage title="기울기 보정" feature="imageStraightener" bodyClass="bg-zinc-900 text-zinc-100 h-full flex flex-col">
     <main id="work-main" tabIndex={-1} className="workspace app-main flex-1 flex flex-col">
       <section id="empty-state" className={`flex-1 flex items-center justify-center p-4${photo ? ' hidden' : ''}`}>
-        <button id="paste-target" type="button" className="paste-target rounded-2xl flex items-center justify-center" aria-label="사진 추가" onClick={event => event.currentTarget.focus()}><span className="plus">＋</span></button>
+        <FileArea as="button" accept="image/*" multiple onFiles={addFiles} id="paste-target" type="button" className="paste-target rounded-2xl flex items-center justify-center" aria-label="사진 추가" onClick={event => event.currentTarget.focus()}><span className="plus">＋</span></FileArea>
       </section>
       <input ref={fileInput} id="file-input" type="file" accept="image/*" multiple hidden onChange={event => { if (event.currentTarget.files) addFiles(event.currentTarget.files); }} />
-      <section id="editor" className={`photo-stage flex-1 ${photo ? 'flex' : 'hidden'} items-center justify-center`}>
+      <FileArea as="section" accept="image/*" multiple onFiles={addFiles} id="editor" className={`photo-stage flex-1 ${photo ? 'flex' : 'hidden'} items-center justify-center`}>
         {photo ? <img id="photo" alt="" src={photo.url} style={{ transform: `rotate(${photo.rotation}deg)` }} /> : null}
         <button id="previous" type="button" className="nav-button absolute left-3 sm:left-6 top-1/2 -translate-y-1/2" aria-label="이전 사진" disabled={photos.length < 2} onClick={() => move(-1)}>‹</button>
         <button id="next" type="button" className="nav-button absolute right-3 sm:right-6 top-1/2 -translate-y-1/2" aria-label="다음 사진" disabled={photos.length < 2} onClick={() => move(1)}>›</button>
-      </section>
+      </FileArea>
       <section id="controls" className={`${photo ? '' : 'hidden '}shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]`}>
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <span id="photo-count" className="text-xs text-zinc-400 shrink-0" aria-live="polite">{photo ? `${currentIndex + 1} / ${photos.length}` : ''}</span>

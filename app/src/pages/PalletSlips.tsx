@@ -1,6 +1,8 @@
+import '../styles/common.css';
 import '../styles/pallet-slips.css';
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
+import { FileArea } from '../components/FileArea';
 import { AdminPage } from '../components/AdminPage';
 import { firstSheet, matchWorkbooks, sheetRange } from '../domain/pallet-slips';
 
@@ -12,7 +14,6 @@ export default function PalletSlips() {
   const [result, setResult] = useState<Result | null>(null);
   const [skipHeader, setSkipHeader] = useState(true);
   const [ignoreSpaces, setIgnoreSpaces] = useState(true);
-  const [drag, setDrag] = useState('');
   async function handleFile(kind: 'source' | 'upload', file?: File) {
     if (!file) return;
     try {
@@ -38,11 +39,11 @@ export default function PalletSlips() {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">{(['source', 'upload'] as const).map((kind, index) => {
         const item = kind === 'source' ? source : upload;
         const range = item ? sheetRange(firstSheet(item.workbook)) : null;
-        return <div key={kind} className={`drop-card rounded-lg p-4${drag === kind ? ' dragover' : ''}`} data-drop={kind} onDragOver={event => { event.preventDefault(); setDrag(kind); }} onDragLeave={() => setDrag('')} onDrop={event => { event.preventDefault(); setDrag(''); void handleFile(kind, event.dataTransfer.files[0]); }}>
+        return <FileArea key={kind} accept=".xlsx,.xls,.xlsm,.xlsb,.csv" onFiles={files => void handleFile(kind, files[0])} className="drop-card rounded-lg p-4" data-drop={kind}>
           <div className="flex items-center gap-2 mb-3"><span className="step-badge">{index + 1}</span><div><div className="text-sm font-semibold">{kind === 'source' ? '원본 템플릿 파일' : '업로드용 파일'}</div><div className="text-xs text-zinc-500">{kind === 'source' ? 'Sheet1 H열 매칭 → I열에 결과 입력' : 'Sheet1 P열 기준 → T열 값을 가져옴'}</div></div></div>
           <input id={`${kind}-file`} type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.csv" className="w-full text-sm" onChange={event => void handleFile(kind, event.currentTarget.files?.[0])} />
           <div id={`${kind}-info`} className="mt-3 text-xs text-zinc-400">{item ? <><div className="font-medium text-zinc-200">{item.file.name}</div><div>Sheet1: {item.workbook.SheetNames[0] || '-'} · {range ? `${range.e.r + 1}행` : '빈 시트'}</div></> : '선택된 파일 없음'}</div>
-        </div>;
+        </FileArea>;
       })}</section>
       <section className="border border-zinc-700 rounded-lg overflow-hidden">
         <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><span className="step-badge">3</span><span className="text-sm font-semibold">매칭 실행</span></div><label className="ml-2 inline-flex items-center gap-1.5 text-xs text-zinc-300"><input id="skip-header" type="checkbox" checked={skipHeader} className="rounded bg-zinc-900 border-zinc-600" onChange={event => { const next = event.target.checked; setSkipHeader(next); if (result) runMatch(next); }} />1행 헤더 제외</label><label className="inline-flex items-center gap-1.5 text-xs text-zinc-300"><input id="ignore-spaces" type="checkbox" checked={ignoreSpaces} className="rounded bg-zinc-900 border-zinc-600" onChange={event => { const next = event.target.checked; setIgnoreSpaces(next); if (result) runMatch(skipHeader, next); }} />공백 무시 매칭</label><div className="flex-1" /><button id="run-btn" className="btn btn-primary" disabled={!source || !upload} onClick={() => runMatch()}>매칭 실행</button><button id="download-btn" className="btn btn-ghost" disabled={!result || !matched} onClick={download}>결과 Excel 다운로드</button></div>
