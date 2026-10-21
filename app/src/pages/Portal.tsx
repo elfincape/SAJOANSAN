@@ -15,6 +15,7 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalPermissions as PortalPermissionsView } from '../components/portal/PortalPermissions';
 import { PortalMembers } from '../components/portal/PortalMembers';
 import { PortalBriefing } from '../components/portal/PortalBriefing';
 import { portalBriefing } from '../lib/portal-ai';
@@ -731,6 +732,9 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'permissions' && !denied ? (
+              <PortalPermissionsView />
+            ) : null}
             {state.view === 'members' && !denied ? <PortalMembers /> : null}
             {state.view === 'briefing' && !denied ? <PortalBriefing /> : null}
             {state.view === 'surveys' && !denied ? (
@@ -738,9 +742,14 @@ function Work({ profile }: { profile: Profile }) {
             ) : null}
             {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {!['history', 'search', 'surveys', 'briefing', 'members'].includes(
-              state.view,
-            ) ? (
+            {![
+              'history',
+              'search',
+              'surveys',
+              'briefing',
+              'members',
+              'permissions',
+            ].includes(state.view) ? (
               <section
                 id="quick-actions"
                 className="quick-actions"
@@ -956,9 +965,14 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {!['history', 'search', 'surveys', 'briefing', 'members'].includes(
-              state.view,
-            ) ? (
+            {![
+              'history',
+              'search',
+              'surveys',
+              'briefing',
+              'members',
+              'permissions',
+            ].includes(state.view) ? (
               <div className="workspace">
                 <section className="list">
                   <div className="list-heading">
