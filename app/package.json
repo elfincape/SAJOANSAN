@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "2.118.0",
     "ag-grid-community": "36.2.0",
     "exceljs": "4.4.0",
+    "javascript-lp-solver": "1.0.3",
     "jszip": "3.10.1",
     "open-props": "1.7.23",
     "papaparse": "5.4.1",

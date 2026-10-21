@@ -21,7 +21,7 @@ export interface VolumeRow {
   mode: string;
   notes: string;
   date: string;
-  boxes: number | null;
+  boxes: number | string | null;
   destinationCode?: string;
 }
 export interface ImportIssue {
