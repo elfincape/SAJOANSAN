@@ -126,12 +126,12 @@ export function PortalSearch() {
     }
     const request = ++generation.current;
     ++detailGeneration.current;
+    viewState.set('search', { term: value, center: centerValue, page });
     setBusy(true);
     message('검색 중입니다…');
     try {
       const result = await portalSearch(value, centerValue, page);
       if (request !== generation.current) return;
-      viewState.set('search', { term: value, center: centerValue, page });
       setResult(result);
       setQuery({ term: value, center: centerValue, page, serial: request });
       message('');
@@ -161,7 +161,11 @@ export function PortalSearch() {
   useEffect(() => {
     if (refresh.current !== state.refreshVersion) {
       refresh.current = state.refreshVersion;
-      if (query) void search(query.page, query.term, query.center);
+      if (saved?.term) {
+        setTerm(saved.term);
+        setCenter(saved.center);
+        void search(saved.page, saved.term, saved.center);
+      }
     }
   }, [state.refreshVersion]);
   async function open(kind: string, row: SearchRow) {

@@ -693,6 +693,15 @@ function Work({ profile }: { profile: Profile }) {
                             {
                               incidents:
                                 '센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.',
+                              members:
+                                '역할·담당 센터를 설정하고 페이지별 적용 권한을 확인하세요.',
+                              permissions:
+                                '멤버의 역할·센터 속성으로 열람과 수정 조건을 설정하세요.',
+                              connections:
+                                '업무자료 저장 폴더와 연결 상태를 관리합니다.',
+                              backups:
+                                '월말 전체 원본과 OneDrive 저장 상태를 확인하세요.',
+                              mail: '본인 전용 받은 메일과 첨부파일을 확인하세요.',
                               history:
                                 '센터 업무와 특이사항의 실제 처리 내역을 확인하세요.',
                               search:
