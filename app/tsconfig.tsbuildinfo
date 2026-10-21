@@ -1,1 +1,0 @@
-{"root":["./src/main.tsx","./src/components/ThemeToggle.tsx","./src/components/Toasts.tsx","./src/lib/login.ts","./src/lib/supabase.ts","./src/pages/Login.tsx","./vite.config.ts"],"version":"5.9.3"}

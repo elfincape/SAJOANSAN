@@ -8,6 +8,8 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Pre-flight: auth/session, center, permission context and page queries must retain contracts. Move queries to src/lib; no DB/schema/Edge changes.
 - Pre-flight: legacy tests include scripts with production writes; run relevant isolated checks only. AGENTS.md forbids separate committed test files; use existing tests and private temporary browser assertions.
 - Setup: complete. Baseline legacy npm run build passed (existing large-chunk warning).
-- Screens: 1/33 migrated (login). Portal internal views require separate commits.
+- Screens: 2/33 migrated (login, image straightener). Portal internal views require separate commits.
 
 - Login: npm run build passed (TypeScript + Vite); existing username-auth and menu-permissions checks passed; temporary Playwright assertions passed for empty fields, invalid username/email credentials, inactive reason, theme and mobile overflow. No live backend requests. Redirect allowlist assertions passed. Impeccable detector: no findings.
+
+- Image straightener: TypeScript/Vite build passed; temporary isolated Playwright passed multi-file ingestion, circular navigation, per-photo rotation retention, responsive shared shell, native dialog Escape. Impeccable: no findings. Reused original catalog/settings behavior and CSS; no live requests. Removed generated tsbuildinfo from tracking and ignored it.
