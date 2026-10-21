@@ -110,12 +110,18 @@ function HistoryRow({
   );
 }
 export function PortalHistoryView() {
-  const { state, allowed, centerName, message, choose, update } = usePortal(),
-    [filters, setFilters] = useState(() => ({
-      center: '',
-      ...periodBounds(koreaDate(), 'month'),
-      status: '',
-    })),
+  const { state, allowed, centerName, message, choose, update, viewState } =
+      usePortal(),
+    [filters, setFilters] = useState(
+      () =>
+        (viewState.get('history') as
+          | { center: string; from: string; through: string; status: string }
+          | undefined) ?? {
+          center: '',
+          ...periodBounds(koreaDate(), 'month'),
+          status: '',
+        },
+    ),
     [loaded, setLoaded] = useState<HistoryData | null>(null),
     [selected, setSelected] = useState<HistoryRecord | null>(null),
     [guide, setGuide] = useState(false),
@@ -131,6 +137,9 @@ export function PortalHistoryView() {
           authorized.has(row.center_code),
         )
       : [];
+  useEffect(() => {
+    viewState.set('history', filters);
+  }, [filters]);
   useEffect(() => {
     const request = ++generation.current;
     let active = true;

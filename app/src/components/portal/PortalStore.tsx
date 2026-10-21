@@ -48,6 +48,7 @@ export interface PortalState {
 }
 export interface PortalStoreValue {
   profile: Profile;
+  viewState: Map<string, unknown>;
   taskDrafts: Map<
     string,
     {

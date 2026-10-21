@@ -15,6 +15,7 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalSearch } from '../components/portal/PortalSearch';
 import { PortalHistoryView } from '../components/portal/PortalHistoryView';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
 import { PortalTickets } from '../components/portal/PortalTickets';
@@ -137,6 +138,7 @@ function Work({ profile }: { profile: Profile }) {
     workflowRequests = useRef(
       new Map<string, { key: string; id: string }>(),
     ).current;
+  const viewState = useRef(new Map<string, unknown>()).current;
   function update(fn: (s: PortalState) => void) {
     const next = { ...current.current };
     fn(next);
@@ -616,6 +618,7 @@ function Work({ profile }: { profile: Profile }) {
     <PortalStore.Provider
       value={{
         profile,
+        viewState,
         taskDrafts,
         workflowRequests,
         state,
@@ -706,8 +709,9 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {state.view !== 'history' ? (
+            {!['history', 'search'].includes(state.view) ? (
               <section
                 id="quick-actions"
                 className="quick-actions"
@@ -923,7 +927,7 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {state.view !== 'history' ? (
+            {!['history', 'search'].includes(state.view) ? (
               <div className="workspace">
                 <section className="list">
                   <div className="list-heading">
