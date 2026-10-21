@@ -28,7 +28,7 @@ function activePath(href: string) {
   return path === location.pathname;
 }
 
-function Shell({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
+function Shell({ title, children, actions, centerTarget }: { title: string; children: ReactNode; actions?: ReactNode; centerTarget?: string }) {
   const { profile, permissions, center } = useAdminPage();
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 1000px)').matches);
@@ -83,7 +83,7 @@ function Shell({ title, children, actions }: { title: string; children: ReactNod
       <div className="app-page-actions">{actions}</div>
       <div className="app-header-controls"><label id="center-switcher" data-app-center="true"><span>센터</span><select id="app-center-select" aria-label="작업 센터" value={center.code} onChange={event => {
         const next = setSelectedCenterCode(event.target.value);
-        if (next) location.replace(withCenterParam(location.pathname + location.search + location.hash, next));
+        if (next) location.replace(withCenterParam(centerTarget || location.pathname + location.search + location.hash, next));
       }}><option value="" disabled>센터 선택</option>{CENTERS.map(item => <option key={item.code} value={item.code}>{item.shortName}</option>)}</select></label>
         <button type="button" id="app-account-toggle" popoverTarget="app-account-menu" aria-label="사용자 메뉴" title="사용자 메뉴"><span id="app-profile-label">{profile.display_name || profile.email || '사용자'}</span><span aria-hidden="true">⌄</span></button><ThemeToggle />
       </div>
@@ -93,8 +93,8 @@ function Shell({ title, children, actions }: { title: string; children: ReactNod
   </>;
 }
 
-export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-zinc-900 text-zinc-100 min-h-screen', children, actions }: {
-  title: string; feature?: string; minRole?: 'viewer' | 'editor' | 'admin'; bodyClass?: string; children: ReactNode; actions?: ReactNode;
+export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-zinc-900 text-zinc-100 min-h-screen', children, actions, centerTarget }: {
+  title: string; feature?: string; minRole?: 'viewer' | 'editor' | 'admin'; bodyClass?: string; children: ReactNode; actions?: ReactNode; centerTarget?: string;
 }) {
   const [auth, setAuth] = useState<AuthContext | null>(null);
   const [error, setError] = useState('');
@@ -117,5 +117,5 @@ export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-
   if (denied) return <div id="modal-root"><div role="dialog" aria-modal="true" aria-label="접근 권한" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"><div className="w-full max-w-md mx-4 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-5"><p>{resource ? '이 목록의 열람 권한이 없습니다.' : `이 페이지에 접근할 권한이 없습니다. 필요 권한: ${minRole} 현재 권한: ${auth.profile.role}`}</p><button type="button" className="btn btn-primary mt-4" onClick={() => location.replace(resource ? '/portal/' : '/')}>확인</button></div></div></div>;
   if (feature && !loadPrivateFeatures(auth.profile)[feature]) { location.replace(withCenterParam('/admin/', center)); return null; }
   const editable = !resource || permissionAllowed(auth.permissions, resource, 'edit', center.code);
-  return <Context.Provider value={{ ...auth, center, editable }}><Shell title={title} actions={actions}>{children}</Shell></Context.Provider>;
+  return <Context.Provider value={{ ...auth, center, editable }}><Shell title={title} actions={actions} centerTarget={centerTarget}>{children}</Shell></Context.Provider>;
 }
