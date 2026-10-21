@@ -15,6 +15,8 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalBriefing } from '../components/portal/PortalBriefing';
+import { portalBriefing } from '../lib/portal-ai';
 import { PortalRegistration } from '../components/portal/PortalRegistration';
 import { PortalSearch } from '../components/portal/PortalSearch';
 import { PortalHistoryView } from '../components/portal/PortalHistoryView';
@@ -99,6 +101,7 @@ function Work({ profile }: { profile: Profile }) {
       date: koreaDate(),
       mine: false,
       context: null,
+      briefing: null,
       permissions: { access: {}, rules: [] },
       center: '',
       tasks: [],
@@ -214,6 +217,7 @@ function Work({ profile }: { profile: Profile }) {
         staff,
         members,
         participants,
+        briefing,
       ] = await Promise.all([
         portalApi.tasks({
           center: ['hq', 'trash'].includes(s.view) ? undefined : s.center,
@@ -234,6 +238,7 @@ function Work({ profile }: { profile: Profile }) {
         s.view === 'access' ? portalApi.staffAccess() : [],
         s.view === 'members' ? portalApi.members() : [],
         portalApi.participantOptions(s.center),
+        s.view === 'briefing' ? portalBriefing.cached() : null,
       ]),
       parents = await portalApi.parentTasks(incidents.map((i) => i.task_id));
     if (!mounted.current) return;
@@ -247,6 +252,7 @@ function Work({ profile }: { profile: Profile }) {
       s.members = members;
       s.participants = participants;
       s.parents = parents;
+      s.briefing = briefing;
       s.unread = notifications.filter((n) => !n.read_at).length;
       if (s.selected) {
         const values =
@@ -724,12 +730,15 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'briefing' && !denied ? <PortalBriefing /> : null}
             {state.view === 'surveys' && !denied ? (
               <PortalRegistration key={state.center} />
             ) : null}
             {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {!['history', 'search', 'surveys'].includes(state.view) ? (
+            {!['history', 'search', 'surveys', 'briefing'].includes(
+              state.view,
+            ) ? (
               <section
                 id="quick-actions"
                 className="quick-actions"
@@ -945,7 +954,9 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {!['history', 'search', 'surveys'].includes(state.view) ? (
+            {!['history', 'search', 'surveys', 'briefing'].includes(
+              state.view,
+            ) ? (
               <div className="workspace">
                 <section className="list">
                   <div className="list-heading">

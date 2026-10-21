@@ -48,3 +48,58 @@ export const portalAi = {
   draft: (surveyId: string, force = false) =>
     call<PortalAiDraft>('portal-survey-draft', { surveyId, force }),
 };
+
+export interface BriefingItem {
+  id: string;
+  kind: string;
+  title: string;
+  center?: string;
+  reason_label?: string;
+  action?: string;
+}
+export interface BriefingCache {
+  body?: {
+    date: string;
+    items: BriefingItem[];
+    counts?: Record<string, number>;
+    limited?: boolean;
+    centers: { code: string; name: string }[];
+  } | null;
+  status?: string;
+  last_error?: string | null;
+  generated_at?: string;
+  dispatch_error?: string | null;
+}
+export const portalBriefing = {
+  generate: (force = false) =>
+    call<{ pending?: boolean; message?: string; cached?: boolean }>(
+      'portal-briefing',
+      { force },
+    ),
+  async cached(): Promise<BriefingCache> {
+    const day = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date()),
+      [result, dispatch] = await Promise.all([
+        supabase
+          .from('operations_ai_results')
+          .select('body,status,last_error,generated_at')
+          .eq('cache_key', 'briefing:' + day)
+          .maybeSingle(),
+        supabase
+          .from('operations_automation_state')
+          .select('last_error')
+          .eq('name', 'briefing-dispatch')
+          .maybeSingle(),
+      ]);
+    if (result.error) throw result.error;
+    if (dispatch.error) throw dispatch.error;
+    return {
+      ...result.data,
+      dispatch_error: dispatch.data?.last_error ?? null,
+    };
+  },
+};

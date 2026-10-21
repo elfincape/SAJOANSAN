@@ -22,6 +22,7 @@ export interface PortalState {
   date: string;
   mine: boolean;
   context: PortalContext | null;
+  briefing: import('../../lib/portal-ai').BriefingCache | null;
   permissions: PortalPermissions;
   center: string;
   tasks: PortalTask[];
