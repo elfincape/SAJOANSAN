@@ -17,6 +17,8 @@ import { PortalParticipants } from './PortalParticipants';
 import { subjectLabel, PortalTaskRow } from './PortalTaskList';
 import { PortalRecordHistory } from './PortalHistory';
 import { PortalFiles } from './PortalFiles';
+import { PortalVersionStatus } from './PortalVersionStatus';
+import { PortalWorkflowReview } from './PortalWorkflowReview';
 const text = (value: unknown) => String(value ?? '').replaceAll('HQ', '배송팀');
 function localTime(value?: string | null) {
   if (!value) return '';
@@ -85,6 +87,16 @@ export function PortalTaskDetail({
       state.participants.find((s) => s.user_id === task.owner_id),
     children = state.incidents.filter((i) => i.task_id === task.id),
     disabled = busy || finished(task) || !writable;
+  function changeValues(change: (previous: PortalInputs) => PortalInputs) {
+    const next = change(values);
+    setValues(next);
+    if (!readOnly && JSON.stringify(next) !== JSON.stringify(task.inputs ?? {}))
+      taskDrafts.set(task.id, {
+        version: task.version,
+        inputs: structuredClone(next),
+      });
+    else taskDrafts.delete(task.id);
+  }
   function collect() {
     const visible = Object.fromEntries(
       fields.map((f) => [
@@ -161,6 +173,13 @@ export function PortalTaskDetail({
         ?.focus();
     });
   }
+  const dirty = !readOnly && taskDrafts.has(task.id);
+  const nextStep = task.template_snapshot?.spec?.steps?.find(
+    (item) =>
+      !['completed', 'not_applicable'].includes(
+        task.inputs?.steps?.[item.key] ?? '',
+      ),
+  );
   const entry = (
     <form
       ref={form}
@@ -171,9 +190,29 @@ export function PortalTaskDetail({
       }}
     >
       <h3 className="task-input-heading">업무 입력</h3>
-      <p className="editor-status" data-state={busy ? 'saving' : !disabled && JSON.stringify(values) !== JSON.stringify(task.inputs ?? {}) ? 'dirty' : 'ready'} role="status" aria-live="polite">
-        <span className="editor-status-dot" aria-hidden="true"/>{busy ? '요청을 처리하고 있습니다.' : disabled ? '저장된 업무 내용을 보고 있습니다.' : JSON.stringify(values) !== JSON.stringify(task.inputs ?? {}) ? '아직 서버에 저장되지 않았습니다. 저장 또는 업무 완료로 반영하세요.' : '입력한 뒤 저장하거나, 처리가 끝나면 업무 완료를 선택하세요.'}
+      <p
+        className="editor-status"
+        data-state={busy ? 'saving' : !disabled && dirty ? 'dirty' : 'ready'}
+        role="status"
+        aria-live="polite"
+      >
+        <span className="editor-status-dot" aria-hidden="true" />
+        {busy
+          ? '요청을 처리하고 있습니다.'
+          : disabled
+            ? '저장된 업무 내용을 보고 있습니다.'
+            : dirty
+              ? '변경 내용이 있습니다. 저장하거나 업무 완료로 반영하세요.'
+              : '필요한 내용을 입력하고 저장하세요.'}
       </p>
+      {writable && !finished(task) && dirty ? (
+        <PortalWorkflowReview
+          task={task}
+          values={values}
+          fields={fields}
+          includeNote={!coupang}
+        />
+      ) : null}
       {fields.map((f) => (
         <PortalField key={f.key}>
           {f.label}
@@ -183,7 +222,7 @@ export function PortalTaskDetail({
               value={String(values[f.key] ?? '')}
               disabled={disabled}
               onChange={(e) =>
-                setValues((s) => ({ ...s, [f.key]: e.target.value }))
+                changeValues((s) => ({ ...s, [f.key]: e.target.value }))
               }
             >
               <option value="">선택하세요</option>
@@ -198,7 +237,7 @@ export function PortalTaskDetail({
               checked={values[f.key] === true}
               disabled={disabled}
               onChange={(e) =>
-                setValues((s) => ({ ...s, [f.key]: e.target.checked }))
+                changeValues((s) => ({ ...s, [f.key]: e.target.checked }))
               }
             />
           ) : f.control === 'textarea' ? (
@@ -207,7 +246,7 @@ export function PortalTaskDetail({
               value={String(values[f.key] ?? '')}
               disabled={disabled}
               onValue={(mentionValue) =>
-                setValues((s) => ({ ...s, [f.key]: mentionValue }))
+                changeValues((s) => ({ ...s, [f.key]: mentionValue }))
               }
               multiline
             />
@@ -225,7 +264,7 @@ export function PortalTaskDetail({
               value={String(values[f.key] ?? '')}
               disabled={disabled}
               onValue={(mentionValue) =>
-                setValues((s) => ({ ...s, [f.key]: mentionValue }))
+                changeValues((s) => ({ ...s, [f.key]: mentionValue }))
               }
             />
           )}
@@ -239,7 +278,7 @@ export function PortalTaskDetail({
             value={String(values.work_note ?? '')}
             disabled={disabled}
             onValue={(mentionValue) =>
-              setValues((s) => ({ ...s, work_note: mentionValue }))
+              changeValues((s) => ({ ...s, work_note: mentionValue }))
             }
             multiline
           />
@@ -418,6 +457,26 @@ export function PortalTaskDetail({
           ))}
         </dl>
       </section>
+      <PortalVersionStatus
+        task={task}
+        dirty={dirty}
+        busy={busy}
+        readOnly={readOnly}
+      />
+      {!finished(task) && writable && !coupang ? (
+        <p className="task-next-step">
+          <strong>다음 할 일</strong>{' '}
+          {nextStep ? (
+            <MentionText>
+              {nextStep.label + ' 단계를 처리한 뒤 업무 완료를 선택하세요.'}
+            </MentionText>
+          ) : dirty ? (
+            '변경 내용을 확인하고 저장하세요. 모든 처리가 끝났다면 업무 완료를 선택하세요.'
+          ) : (
+            '업무 내용을 확인하세요. 처리가 끝났다면 업무 완료를 선택하세요.'
+          )}
+        </p>
+      ) : null}
       {!coupang && task.template_snapshot?.spec?.external_process?.length ? (
         <details className="external-process">
           <summary>외부 업무 프로세스</summary>

@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { DispatchBoard } from './DispatchBoard';
+import { useWorkspaceActions } from '../lib/workspace-actions';
+import '../styles/dispatch-experience.css';
 import * as XLSX from 'xlsx';
 import { useAdminPage } from './AdminPage';
 import { useFeedback } from './useFeedback';
@@ -226,6 +229,128 @@ function FleetRow({
     </tr>
   );
 }
+const comparableProfile = (profile: CJJob['profile']) =>
+  Object.fromEntries(
+    Object.entries(profile || {})
+      .filter(([, value]) => value != null)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+// Compare editable plan content; verification and timestamps are recomputed separately.
+const adjustmentKey = (plan: CJPlan) =>
+  JSON.stringify({
+    jobs: plan.jobs.map(
+      ({
+        id,
+        address,
+        earliestArrival,
+        deadline,
+        profile,
+        memberIds,
+        quantity,
+        conditionReview,
+        otdInvalid,
+      }) => ({
+        id,
+        address,
+        earliestArrival: earliestArrival ?? null,
+        deadline: deadline ?? null,
+        profile: comparableProfile(profile),
+        memberIds,
+        quantity,
+        conditionReview: !!conditionReview,
+        otdInvalid: !!otdInvalid,
+      }),
+    ),
+    groups: plan.groups.map(
+      ({ id, jobIds, capacity, label, departureMinutes }) => ({
+        id,
+        jobIds,
+        capacity,
+        label,
+        departureMinutes,
+      }),
+    ),
+  });
+function planChanges(before: CJPlan | null, after: CJPlan | null): string[] {
+  if (!before || !after) return [];
+  const changes: string[] = [];
+  const originalJobs = new Map(before.jobs.map((job) => [job.id, job]));
+  const currentJobs = new Map(after.jobs.map((job) => [job.id, job]));
+  const originalGroups = new Map(
+    before.groups.map((group) => [group.id, group]),
+  );
+  const assignment = new Map(
+    before.groups.flatMap((group) =>
+      group.jobIds.map((id) => [id, group] as const),
+    ),
+  );
+  for (const group of after.groups) {
+    const old = originalGroups.get(group.id);
+    if (old && (old.label !== group.label || old.capacity !== group.capacity))
+      changes.push(
+        `${old.label} → ${group.label} · 실제 상차한도 ${fmt(old.capacity)} → ${fmt(group.capacity)}`,
+      );
+    for (const [index, id] of group.jobIds.entries()) {
+      const job = currentJobs.get(id);
+      if (!job) continue;
+      const previous = assignment.get(id);
+      if (!previous) changes.push(`${job.name} · 새 배정 → ${group.label}`);
+      else if (previous.id !== group.id)
+        changes.push(`${job.name} · ${previous.label} → ${group.label}`);
+      else if (previous.jobIds.indexOf(id) !== index)
+        changes.push(
+          `${job.name} · ${group.label} 순서 ${previous.jobIds.indexOf(id) + 1} → ${index + 1}`,
+        );
+      const original = originalJobs.get(id);
+      if (original) {
+        if (original.address !== job.address)
+          changes.push(
+            `${job.name} · 주소 ${original.address || '미확인'} → ${job.address || '미확인'}`,
+          );
+        if (
+          (original.earliestArrival ?? null) !== (job.earliestArrival ?? null)
+        )
+          changes.push(
+            `${job.name} · 납품 시작 ${timeInput(original.earliestArrival) || '미확인'} → ${timeInput(job.earliestArrival) || '미확인'}`,
+          );
+        if ((original.deadline ?? null) !== (job.deadline ?? null))
+          changes.push(
+            `${job.name} · 납품 마감 ${timeInput(original.deadline) || '미확인'} → ${timeInput(job.deadline) || '미확인'}`,
+          );
+        for (const [key, label] of [
+          ['unloadMinutes', '하차'],
+          ['inspectionMinutes', '검수'],
+          ['marginMinutes', '여유'],
+        ] as const)
+          if (
+            (original.profile?.[key] ?? null) !== (job.profile?.[key] ?? null)
+          )
+            changes.push(
+              `${job.name} · ${label} ${fmt(original.profile?.[key])} → ${fmt(job.profile?.[key])}분`,
+            );
+        if (
+          !!original.conditionReview !== !!job.conditionReview ||
+          !!original.otdInvalid !== !!job.otdInvalid
+        )
+          changes.push(
+            `${job.name} · 납품조건 ${original.conditionReview || original.otdInvalid ? '확인 필요' : '확인됨'} → ${job.conditionReview || job.otdInvalid ? '확인 필요' : '확인됨'}`,
+          );
+      }
+      if (
+        original &&
+        (original.quantity !== job.quantity ||
+          JSON.stringify(original.memberIds) !== JSON.stringify(job.memberIds))
+      )
+        changes.push(
+          `${job.name} · 착지 묶음/물량 ${fmt(original.quantity)} → ${fmt(job.quantity)}`,
+        );
+    }
+  }
+  for (const job of before.jobs)
+    if (!currentJobs.has(job.id))
+      changes.push(`${job.name} · 기존 착지 묶음 해제/병합`);
+  return changes;
+}
 export function CJDispatch({
   active,
   onStateChange,
@@ -268,6 +393,52 @@ export function CJDispatch({
     current = useRef(view),
     dialog = useRef<HTMLDialogElement>(null);
   const [editing, setEditing] = useState<Edit | null>(null);
+  const [layout, setLayout] = useState<'list' | 'board'>('list');
+  const [focusedJobId, setFocusedJobId] = useState('');
+  const history = useRef<{ past: CJPlan[]; future: CJPlan[] }>({
+    past: [],
+    future: [],
+  });
+  const baseline = useRef<{ plan: CJPlan | null; dirty: boolean }>({
+    plan: null,
+    dirty: false,
+  });
+  const [boardEpoch, setBoardEpoch] = useState(0);
+  function clearHistory() {
+    history.current = { past: [], future: [] };
+  }
+  function resetBaseline(plan: CJPlan | null, dirty: boolean) {
+    clearHistory();
+    baseline.current = { plan: plan ? structuredClone(plan) : null, dirty };
+    setBoardEpoch((value) => value + 1);
+    setFocusedJobId('');
+  }
+  function historyStep(direction: 'past' | 'future') {
+    const s = current.current;
+    if (
+      !editable ||
+      s.busy ||
+      !s.plan ||
+      s.settingsDirty ||
+      s.verificationPending
+    )
+      return;
+    const stack = history.current[direction];
+    const snapshot = stack.pop();
+    if (!snapshot) return;
+    const opposite = direction === 'past' ? 'future' : 'past';
+    history.current[opposite].push(structuredClone(s.plan));
+    const next = recomputeDispatch(structuredClone(snapshot), s.graph);
+    next.transferCandidates = s.model
+      ? transferCandidates(next, s.model, s.graph)
+      : [];
+    mark(next, false);
+    status(
+      direction === 'past'
+        ? '최근 로컬 조정을 되돌렸습니다. 주행과 물량을 다시 확인했습니다.'
+        : '로컬 조정을 다시 적용했습니다. 주행과 물량을 다시 확인했습니다.',
+    );
+  }
   function update(fn: (s: State) => void) {
     const next = { ...current.current };
     fn(next);
@@ -304,6 +475,7 @@ export function CJDispatch({
   }, [editing]);
   useEffect(() => {
     const changed = () => {
+      clearHistory();
       update((s) => {
         s.resources = null;
         s.model = null;
@@ -326,14 +498,24 @@ export function CJDispatch({
         changed,
       );
   }, []);
-  function mark(plan: CJPlan) {
+  function mark(plan: CJPlan, record = true) {
     const s = current.current;
+    if (record && s.plan && adjustmentKey(s.plan) !== adjustmentKey(plan)) {
+      history.current.past = [
+        ...history.current.past.slice(-19),
+        structuredClone(s.plan),
+      ];
+      history.current.future = [];
+    }
     const comparison = s.actualTrips
       ? compareActual(plan, s.actualTrips)
       : null;
     update((s) => {
       s.plan = plan;
-      s.dirty = true;
+      s.dirty =
+        baseline.current.dirty ||
+        !baseline.current.plan ||
+        adjustmentKey(plan) !== adjustmentKey(baseline.current.plan);
       s.comparison = comparison;
     });
   }
@@ -353,6 +535,7 @@ export function CJDispatch({
         XLSX,
       );
       parsed.sourceName = file.name;
+      resetBaseline(null, true);
       update((s) => {
         s.parsed = parsed;
         s.date = parsed.date;
@@ -365,6 +548,7 @@ export function CJDispatch({
         s.reference = null;
         s.settings = {};
         s.settingsDirty = false;
+        s.verificationPending = false;
         s.dirty = true;
         s.inputSummary = `${parsed.sourceCount} 상세행 · ${parsed.jobs.length} 코드/명 · ${fmt(parsed.jobs.reduce((n, j) => n + j.quantity, 0))} 박스환산 · ${parsed.issues.map((i) => i.message).join(' / ')}`;
       });
@@ -378,6 +562,7 @@ export function CJDispatch({
     const resources = await loadDispatchResources(date),
       model = historicalModel(resources.history, date),
       graph = drivingGraph(resources.addresses, resources.legs);
+    clearHistory();
     update((s) => {
       s.resources = resources;
       s.model = model;
@@ -413,6 +598,7 @@ export function CJDispatch({
       status('차량 조건 숫자를 확인해 주세요.', true);
       return;
     }
+    clearHistory();
     update((s) => {
       s.settingsDirty = true;
       s.settings = { ...s.settings, [id]: value };
@@ -449,7 +635,8 @@ export function CJDispatch({
       s.settingsDirty = false;
       s.verificationPending = false;
     });
-    mark(next);
+    resetBaseline(next, true);
+    mark(next, false);
     status('가배차를 만들었습니다. 검토 상태와 착지 묶음을 확인해 주세요.');
   }
   async function actual(file: File) {
@@ -495,6 +682,7 @@ export function CJDispatch({
         '변경한 차량 조건으로 가배차를 다시 실행한 뒤 저장해 주세요.',
       );
     const saved = await saveDispatchDraft(payload(), s.reference);
+    resetBaseline(s.plan, false);
     update((s) => {
       s.reference = { id: saved.id, revision: saved.revision };
       s.dirty = false;
@@ -518,6 +706,7 @@ export function CJDispatch({
     const plan = structuredClone(p.plan);
     recomputeDispatch(plan, null);
     plan.resourcesOutdated = true;
+    resetBaseline(plan, false);
     update((s) => {
       s.parsed = p.parsed;
       s.settings = p.settings || {};
@@ -758,7 +947,67 @@ export function CJDispatch({
       Math.max(0, Math.ceil(visibleGroups.length / 10) - 1),
     ),
     saveBlocked = !plan || view.settingsDirty || view.verificationPending,
-    editingJob = plan?.jobs.find((j) => j.id === editing?.id);
+    editingJob = plan?.jobs.find((j) => j.id === editing?.id),
+    changes = planChanges(baseline.current.plan, plan);
+  useWorkspaceActions(
+    active
+      ? [
+          {
+            id: 'cj-show-board',
+            title: '배차 · 차량 보드 보기',
+            description: '차량별 적재량과 착지 카드',
+            disabled: !plan || view.busy,
+            run: () => setLayout('board'),
+          },
+          {
+            id: 'cj-show-list',
+            title: '배차 · 상세 목록 보기',
+            description: '기존 착지 상세 표',
+            disabled: !plan || view.busy,
+            run: () => setLayout('list'),
+          },
+          {
+            id: 'cj-search',
+            title: '배차 · 착지 검색',
+            description: '착지·원본 코드·코스 검색으로 이동',
+            disabled: view.busy,
+            run: () => document.getElementById('dispatch-filter')?.focus(),
+          },
+          {
+            id: 'cj-undo',
+            title: '배차 · 로컬 조정 되돌리기',
+            disabled:
+              view.busy ||
+              !editable ||
+              saveBlocked ||
+              !history.current.past.length,
+            run: () => historyStep('past'),
+          },
+          {
+            id: 'cj-redo',
+            title: '배차 · 로컬 조정 다시 적용',
+            disabled:
+              view.busy ||
+              !editable ||
+              saveBlocked ||
+              !history.current.future.length,
+            run: () => historyStep('future'),
+          },
+          {
+            id: 'cj-save',
+            title: '배차 · 가배차 저장',
+            disabled: view.busy || !editable || saveBlocked,
+            run: () => document.getElementById('dispatch-save')?.click(),
+          },
+          {
+            id: 'cj-export',
+            title: '배차 · 가배차 엑셀 다운로드',
+            disabled: view.busy || saveBlocked,
+            run: () => document.getElementById('dispatch-export')?.click(),
+          },
+        ]
+      : [],
+  );
   function button(
     id: string,
     text: string,
@@ -835,6 +1084,7 @@ export function CJDispatch({
                   return;
                 }
                 update((s) => {
+                  clearHistory();
                   s.date = e.target.value;
                 });
               }}
@@ -925,7 +1175,13 @@ export function CJDispatch({
             disabled={view.busy || !editable}
             onChange={(e) =>
               update((s) => {
+                if (s.temporaryCapacity === e.target.value) return;
+                clearHistory();
                 s.temporaryCapacity = e.target.value;
+                if (s.plan) {
+                  s.settingsDirty = true;
+                  s.dirty = true;
+                }
               })
             }
           />
@@ -1006,6 +1262,85 @@ export function CJDispatch({
           </select>
         </label>
       </div>
+      {plan ? (
+        <div
+          className="dispatch-view-controls"
+          role="group"
+          aria-label="배차 보기와 조정 기록"
+        >
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-pressed={layout === 'list'}
+            onClick={() => setLayout('list')}
+          >
+            상세 목록
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-pressed={layout === 'board'}
+            onClick={() => setLayout('board')}
+          >
+            차량 보드
+          </button>
+          <button
+            id="dispatch-undo"
+            type="button"
+            className="btn btn-ghost"
+            disabled={
+              view.busy ||
+              !editable ||
+              view.settingsDirty ||
+              view.verificationPending ||
+              !history.current.past.length
+            }
+            onClick={() => historyStep('past')}
+          >
+            되돌리기
+          </button>
+          <button
+            id="dispatch-redo"
+            type="button"
+            className="btn btn-ghost"
+            disabled={
+              view.busy ||
+              !editable ||
+              view.settingsDirty ||
+              view.verificationPending ||
+              !history.current.future.length
+            }
+            onClick={() => historyStep('future')}
+          >
+            다시 적용
+          </button>
+          <span className="text-xs muted">
+            로컬 조정 최대 20단계 · 저장/기준 변경 시 초기화
+          </span>
+        </div>
+      ) : null}
+      {plan ? (
+        <details className="dispatch-changes" id="dispatch-changes">
+          <summary>
+            {baseline.current.dirty ? '생성안' : '마지막 저장안'} 대비 변경{' '}
+            {changes.length}건 · {view.dirty ? '저장 전' : '저장됨'}
+          </summary>
+          {changes.length ? (
+            <ul>
+              {changes.map((change, index) => (
+                <li key={index}>{change}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs muted">착지 배정·순서·납품조건 조정 없음</p>
+          )}
+          {view.settingsDirty ? (
+            <p className="issue">
+              차량 또는 기준 조건 변경 · 가배차 재실행 필요
+            </p>
+          ) : null}
+        </details>
+      ) : null}
       <div className="toolbar">
         {button(
           'route-prev',
@@ -1036,7 +1371,48 @@ export function CJDispatch({
           },
         )}
       </div>
-      <div id="dispatch-board" className="dispatch-board">
+      {plan && layout === 'board' ? (
+        <DispatchBoard
+          key={boardEpoch}
+          plan={plan}
+          focusedJobId={focusedJobId}
+          onFocusJob={setFocusedJobId}
+          addresses={view.resources?.addresses || []}
+          groups={visibleGroups.slice(page * 10, (page + 1) * 10)}
+          disabled={view.busy || saveBlocked}
+          editable={editable}
+          onEdit={edit}
+          onReorder={reorder}
+          onExport={(jobs) => {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.json_to_sheet(
+                jobs.map((job) => ({
+                  착지: job.name,
+                  원본코드: job.memberIds.join(' · '),
+                  분할원본: job.sourceDestinationId || '',
+                  코스:
+                    plan.groups.find((group) => group.jobIds.includes(job.id))
+                      ?.label || '',
+                  물량: job.quantity,
+                  단위: plan.quantityUnit,
+                  주소: job.address,
+                })),
+              ),
+              '선택 착지',
+            );
+            XLSX.writeFile(wb, `평택_${plan.date}_선택착지.xlsx`, {
+              compression: true,
+            });
+          }}
+        />
+      ) : null}
+      <div
+        id="dispatch-board"
+        className="dispatch-board"
+        hidden={layout !== 'list'}
+      >
         {visibleGroups.slice(page * 10, (page + 1) * 10).map((g) => {
           const issues = g.issues || [];
           return (
@@ -1104,7 +1480,14 @@ export function CJDispatch({
                     {g.jobIds.map((id, i) => {
                       const j = plan!.jobs.find((j) => j.id === id)!;
                       return (
-                        <tr key={id}>
+                        <tr
+                          key={id}
+                          className={
+                            focusedJobId === id
+                              ? 'dispatch-table-focused'
+                              : undefined
+                          }
+                        >
                           <td>
                             <div>
                               <strong>
@@ -1136,7 +1519,18 @@ export function CJDispatch({
                               </button>
                               <button
                                 className="btn btn-ghost"
+                                disabled={view.busy}
+                                onClick={() => {
+                                  setFocusedJobId(j.id);
+                                  setLayout('board');
+                                }}
+                              >
+                                위치·원본 확인
+                              </button>
+                              <button
+                                className="btn btn-ghost"
                                 disabled={view.busy || !editable}
+                                aria-label={`${j.name} 앞 순서로`}
                                 onClick={() => reorder(g.id, i, -1)}
                               >
                                 ↑
@@ -1144,6 +1538,7 @@ export function CJDispatch({
                               <button
                                 className="btn btn-ghost"
                                 disabled={view.busy || !editable}
+                                aria-label={`${j.name} 뒤 순서로`}
                                 onClick={() => reorder(g.id, i, 1)}
                               >
                                 ↓

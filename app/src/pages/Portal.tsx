@@ -5,6 +5,7 @@ import '../styles/workspace-ui.css';
 import '../styles/portal-theme.css';
 import '../styles/theme.css';
 import '../styles/portal-task-ui.css';
+import '../styles/portal-workflow.css';
 import { loadAuthContext } from '../lib/auth';
 import type { Profile } from '../lib/auth';
 import { portalApi, portalHasMailbox, portalRecord } from '../lib/portal';
@@ -163,7 +164,25 @@ function Work({ profile }: { profile: Profile }) {
       new Map<string, { key: string; id: string }>(),
     ).current;
   const viewState = useRef(new Map<string, unknown>()).current;
+  const draftBases = useRef(new Map<string, PortalTask>()).current;
+  const [lastQueryAt, setLastQueryAt] = useState<Date | null>(null);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+    };
+  }, []);
   function update(fn: (s: PortalState) => void) {
+    const selected = current.current.selected;
+    if (
+      selected?.type === 'task' &&
+      taskDrafts.get(selected.row.id)?.version === selected.row.version
+    )
+      draftBases.set(selected.row.id, selected.row);
     const next = { ...current.current };
     fn(next);
     current.current = next;
@@ -262,6 +281,7 @@ function Work({ profile }: { profile: Profile }) {
       ]),
       parents = await portalApi.parentTasks(incidents.map((i) => i.task_id));
     if (!mounted.current) return;
+    setLastQueryAt(new Date());
     update((s) => {
       s.tasks = tasks;
       s.incidents = incidents;
@@ -282,14 +302,16 @@ function Work({ profile }: { profile: Profile }) {
                 ? incidents
                 : surveys,
           row = values.find((row) => row.id === s.selected!.row.id);
-        if (row) s.selected = { ...s.selected, row } as PortalSelection;
+        if (row && !(s.selected.type === 'task' && taskDrafts.has(row.id)))
+          s.selected = { ...s.selected, row } as PortalSelection;
         else if (s.selected.type !== 'task') s.selected = null;
       }
     });
     const selected = current.current.selected;
     if (
       selected?.type === 'task' &&
-      !tasks.some((t) => t.id === selected.row.id)
+      !tasks.some((t) => t.id === selected.row.id) &&
+      !taskDrafts.has(selected.row.id)
     ) {
       const row = await portalRecord('task', selected.row.id);
       update((s) => {
@@ -337,6 +359,18 @@ function Work({ profile }: { profile: Profile }) {
         result.id === current.current.selected?.row.id
       )
         update((s) => {
+          if (
+            s.selected?.type === 'task' &&
+            'version' in result &&
+            typeof result.version === 'number'
+          ) {
+            const draft = taskDrafts.get(s.selected.row.id);
+            if (draft)
+              taskDrafts.set(s.selected.row.id, {
+                ...draft,
+                version: result.version,
+              });
+          }
           if (s.selected)
             s.selected = {
               ...s.selected,
@@ -375,6 +409,16 @@ function Work({ profile }: { profile: Profile }) {
     }
   }
   function choose(selection: PortalSelection) {
+    const previous = current.current.selected;
+    if (previous?.type === 'task' && taskDrafts.has(previous.row.id))
+      draftBases.set(previous.row.id, previous.row);
+    if (selection.type === 'task') {
+      const draft = taskDrafts.get(selection.row.id),
+        base = draftBases.get(selection.row.id);
+      if (draft && base?.version === draft.version)
+        selection = { type: 'task', row: base };
+      else if (!draft) draftBases.delete(selection.row.id);
+    }
     update((s) => {
       s.parentTask = null;
       s.parentTaskId = null;
@@ -674,7 +718,12 @@ function Work({ profile }: { profile: Profile }) {
         onCenter={changeCenter}
       >
         <div id="portal-content" className="app-main" tabIndex={-1}>
-          <main id="portal-main" tabIndex={-1} data-view={state.view} aria-busy={state.busy}>
+          <main
+            id="portal-main"
+            tabIndex={-1}
+            data-view={state.view}
+            aria-busy={state.busy}
+          >
             <div className="heading" key={state.view}>
               <div>
                 <h1 id="portal-title" tabIndex={-1}>
@@ -760,6 +809,38 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {!online ? (
+              <p className="portal-offline" role="status">
+                브라우저가 오프라인 상태입니다. 입력은 이 화면에 유지됩니다.
+                연결 후 서버 버전을 확인하고 저장하세요.
+              </p>
+            ) : null}
+            {lastQueryAt ? (
+              <p className="portal-query-status">
+                목록 조회 성공{' '}
+                <time dateTime={lastQueryAt.toISOString()}>
+                  {lastQueryAt.toLocaleTimeString('ko-KR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
+                </time>
+                {state.busy ? ' · 요청 처리 중' : ''}
+              </p>
+            ) : state.busy && !state.messageError ? (
+              <div
+                className="portal-initial-loading"
+                role="status"
+                aria-label="업무 목록을 불러오는 중"
+              >
+                <p>업무와 조회 권한을 불러오고 있습니다…</p>
+                <div aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
+            ) : null}
             {state.view === 'access' && !denied ? <PortalAccess /> : null}
             {state.view === 'mail' && !denied ? <PortalMail /> : null}
             {state.view === 'backups' && !denied ? <PortalBackups /> : null}
@@ -1018,7 +1099,7 @@ function Work({ profile }: { profile: Profile }) {
                     {!denied && state.view === 'incidents' ? (
                       <>
                         <PortalIncidentList />
-                        {!count ? (
+                        {!count && !state.busy ? (
                           <div className="portal-empty">
                             <strong>표시할 항목이 없습니다.</strong>
                             <p>등록된 항목이 있으면 여기에 표시됩니다.</p>
@@ -1068,7 +1149,7 @@ function Work({ profile }: { profile: Profile }) {
                             />
                           ))
                         )}
-                        {!count ? (
+                        {!count && !state.busy ? (
                           <div className="portal-empty">
                             <strong>조회 조건에 맞는 업무가 없습니다.</strong>
                             <p>

@@ -1,3 +1,7 @@
+import { SavedViews } from '../components/SavedViews';
+import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
+import { useWorkspaceActions } from '../lib/workspace-actions';
+import { permissionAllowed } from '../lib/permissions';
 import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
@@ -10,13 +14,17 @@ const parseTonnage = (text: string) => { if (!text) return null; const match = S
 const formatTonnage = (n?: number | null) => n == null ? '' : `${Number(n)}톤`;
 const toDraft = (row?: Vehicle | null): Draft => ({ id: row?.id || '', plate: row?.plate_number || '', tonnage: formatTonnage(row?.tonnage), pallet: row?.pallet_capacity == null ? '' : String(row.pallet_capacity), company: row?.company_id || '', memo: row?.memo || '' });
 function VehiclesContent() {
-  const { center, editable } = useAdminPage();
+  const { center, editable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadVehicles>>>({ rows: [], companies: [], routes: [] });
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
   const [search, setSearch] = useState(''), [debouncedSearch, setDebouncedSearch] = useState('');
   const [company, setCompany] = useState(''), [sort, setSort] = useState('plate');
   const [selected, setSelected] = useState<string | null>(null), [draft, setDraft] = useState(() => toDraft());
+  const [inlineTonnage, setInlineTonnage] = useState(false);
+  const inlineStart = useRef('');
+  useEffect(() => { setInlineTonnage(false); }, [selected]);
   const plateInput = useRef<HTMLInputElement>(null), savingRef = useRef(false);
   const initial = useRef<ReturnType<typeof loadVehicles> | undefined>(undefined);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
@@ -40,9 +48,19 @@ function VehiclesContent() {
   const selectedRow = data.rows.find(row => row.id === selected);
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
   useEditorGuard(dirty, saving, confirm);
+  const bulk = useRowSelection(rows.map(row => row.id));
+  const selectedRows = rows.filter(row => bulk.selected.has(row.id));
+  const canExport = permissionAllowed(permissions, 'export', 'read', center.code);
+  const { exportRows, downloadLink } = useSelectionExport('차량_선택목록', ['차량번호', '톤수', '팔레트', '운수사'], selectedRows.map(row => [row.plate_number, row.tonnage, row.pallet_capacity, companyById.get(row.company_id || '')?.name]));
+  useWorkspaceActions([
+    { id: 'vehicles-search', title: '차량 검색창으로 이동', run: () => document.getElementById('search-input')?.focus() },
+    ...editable ? [{ id: 'vehicles-new', title: '새 차량 등록', disabled: saving, run: () => { reset(); plateInput.current?.focus(); } }] : [],
+    ...canExport && selectedRows.length ? [{ id: 'vehicles-export', title: '선택한 차량 내보내기', disabled: saving, run: exportRows }] : [],
+  ]);
+
   const update = (key: keyof Draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
-  function select(row: Vehicle, focus = false, force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 차량을 선택할까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row.id); setDraft(toDraft(row)); if (focus) plateInput.current?.focus(); }
-  function reset(force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 새 차량을 작성할까요?').then(ok => { if (ok) reset(true); }); return; } setSelected(null); setDraft(toDraft()); }
+  function select(row: Vehicle, focus = false, force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 차량을 선택할까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row.id); setDraft(toDraft(row)); if (focus) { setEditorIntent(value => value + 1); plateInput.current?.focus(); } }
+  function reset(force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 새 차량을 작성할까요?').then(ok => { if (ok) reset(true); }); return; } setSelected(null); setDraft(toDraft()); setEditorIntent(value => value + 1); }
   async function save() {
     if (!editable || savingRef.current) return;
     const plate = draft.plate.trim();
@@ -71,14 +89,16 @@ function VehiclesContent() {
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)] gap-4">
+      <SavedViews scope="vehicles" value={{ search, company, sort }} defaultValue={{ search: '', company: '', sort: 'plate' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setCompany(next.company); setSort(next.sort); }} disabled={saving} />
+      <SplitPane scope="vehicles" revealToken={editorIntent} revealFocus="#f-plate">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="차량 목록">
           <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center"><input id="search-input" type="search" placeholder="차량번호 검색" aria-label="차량번호 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="filter-company" className="app-select w-44" aria-label="운수사 필터" value={company} onChange={event => setCompany(event.target.value)}><option value="">운수사(전체)</option>{data.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select><select id="sort-key" className="app-select w-28" aria-label="차량 정렬 기준" value={sort} onChange={event => setSort(event.target.value)}>{[['plate', '차량번호순'], ['tonnage', '톤수순'], ['company', '운수사순'], ['updated', '수정 최신순']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => { reset(); plateInput.current?.focus(); }}>+ 신규</button></div>
-          <div className="table-wrap" style={{ maxHeight: 'calc(100vh - 220px)', border: 'none', borderRadius: 0 }} tabIndex={0} role="region" aria-label="목록"><table className="app-table"><thead><tr>{['차량번호', '톤수', '팔레트', '운수사', '주코스', '보조코스'].map((title, index) => <th key={title} className={[1, 2, 4, 5].includes(index) ? 'text-right' : undefined}>{title}</th>)}</tr></thead><tbody id="list-tbody">{rows.map(row => { const count = counts.get(row.id) || { primary: 0, secondary: 0 }; return <tr key={row.id} data-id={row.id} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row, true)}><td><button type="button" className="text-left hover:underline" aria-label={`${row.plate_number || '(번호 없음)'} 편집`}>{row.plate_number || '(번호 없음)'}</button></td><td className="text-right">{row.tonnage != null ? row.tonnage + 't' : ''}</td><td className="text-right">{row.pallet_capacity ?? ''}</td><td>{companyById.get(row.company_id || '')?.name || ''}</td><td className="text-right">{count.primary}</td><td className="text-right">{count.secondary}</td></tr>; })}</tbody></table><div id="empty-msg" className={`${rows.length ? 'hidden ' : ''}text-center text-sm text-zinc-500 py-12`}>{loading ? '목록을 불러오는 중입니다…' : data.rows.length ? '검색 조건에 맞는 항목이 없습니다. 검색·필터 조건을 확인하세요.' : '등록된 차량이 없습니다. 신규 버튼으로 등록하세요.'}</div></div>
+          <div className="table-wrap" style={{ maxHeight: 'calc(100vh - 220px)', border: 'none', borderRadius: 0 }} tabIndex={0} role="region" aria-label="목록"><table className="app-table"><thead><tr><th className="selection-column"><SelectionCheckbox label="현재 목록 전체 선택" checked={rows.length > 0 && bulk.selected.size === rows.length} mixed={bulk.selected.size > 0 && bulk.selected.size < rows.length} onChange={bulk.all} /></th>{['차량번호', '톤수', '팔레트', '운수사', '주코스', '보조코스'].map((title, index) => <th key={title} className={[1, 2, 4, 5].includes(index) ? 'text-right' : undefined}>{title}</th>)}</tr></thead><tbody id="list-tbody">{loading && !data.rows.length ? <TableSkeleton columns={7} /> : null}{rows.map(row => { const count = counts.get(row.id) || { primary: 0, secondary: 0 }; return <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row, true)}><td className="selection-column"><SelectionCheckbox label={`${row.plate_number || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td><button type="button" className="text-left hover:underline" aria-label={`${row.plate_number || '(번호 없음)'} 편집`}>{row.plate_number || '(번호 없음)'}</button></td><td className="text-right" onClick={event => { if (row.id === selected && editable) event.stopPropagation(); }}>{row.id === selected && editable ? inlineTonnage ? <input className="draft-cell-input" aria-label="목록에서 톤수 초안 편집" autoFocus disabled={saving} value={draft.tonnage} onChange={event => update('tonnage', event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); update('tonnage', inlineStart.current); setInlineTonnage(false); } else if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} onBlur={() => { if (!inlineTonnage) return; const n = parseTonnage(draft.tonnage.trim()); if (draft.tonnage.trim() && n == null) { update('tonnage', inlineStart.current); toast('유효한 톤수를 입력하세요.', 'warn'); } else update('tonnage', formatTonnage(n)); setInlineTonnage(false); }} /> : <button type="button" className="draft-cell-trigger" aria-label="톤수 초안 편집" title="초안을 편집하고 상세 패널에서 저장하세요" disabled={saving} onClick={() => { inlineStart.current = draft.tonnage; setInlineTonnage(true); }}>{draft.tonnage || '톤수 입력'}{draft.tonnage !== formatTonnage(row.tonnage) ? ' · 미저장' : ''}</button> : row.tonnage != null ? row.tonnage + 't' : ''}</td><td className="text-right">{row.pallet_capacity ?? ''}</td><td>{companyById.get(row.company_id || '')?.name || ''}</td><td className="text-right">{count.primary}</td><td className="text-right">{count.secondary}</td></tr>; })}</tbody></table><div id="empty-msg" className={`${rows.length ? 'hidden ' : ''}text-center text-sm text-zinc-500 py-12`}>{loading ? '목록을 불러오는 중입니다…' : data.rows.length ? '검색 조건에 맞는 항목이 없습니다. 검색·필터 조건을 확인하세요.' : '등록된 차량이 없습니다. 신규 버튼으로 등록하세요.'}</div></div>
           <div className="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between"><span id="result-count" role="status" aria-live="polite" aria-atomic="true">{!data.rows.length ? '데이터 없음' : rows.length === data.rows.length ? `총 ${data.rows.length}건` : `총 ${rows.length}건 (전체 ${data.rows.length}건 중)`}</span><span id="loading-indicator" className={loading ? '' : 'hidden'} role="status" aria-live="polite">불러오는 중...</span></div>
-        </section>
+        <SelectionActions count={selectedRows.length} clear={bulk.clear}><button type="button" disabled={saving} onClick={() => { if (selectedRows[0]) select(selectedRows[0], true); }}>첫 선택 항목 상세</button>{canExport ? <button type="button" disabled={saving} onClick={exportRows}>선택 목록 CSV</button> : null}</SelectionActions></section>
         <section className="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title"><div className="px-4 py-3 border-b border-zinc-700 flex items-center gap-3"><h2 id="form-title" className="app-function-title text-sm font-semibold">{draft.id ? selectedRow?.plate_number || '(번호 없음)' : '새 차량'}</h2><span id="form-mode-badge" className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">{draft.id ? '편집' : '신규'}</span><div className="flex-1" /><span id="form-meta" className="text-[11px] text-zinc-500">{draft.id && selectedRow?.updated_at ? `최종수정: ${new Date(selectedRow.updated_at).toLocaleString('ko-KR')}` : ''}</span></div>
           <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} />
+          <ChangeReview fields={[{ label: '차량번호', before: selectedRow?.plate_number, after: draft.plate }, { label: '톤수', before: formatTonnage(selectedRow?.tonnage), after: draft.tonnage }, { label: '팔레트', before: selectedRow?.pallet_capacity == null ? '' : String(selectedRow.pallet_capacity), after: draft.pallet }, { label: '운수사', before: companyById.get(selectedRow?.company_id || '')?.name, after: companyById.get(draft.company)?.name }, { label: '비고', before: selectedRow?.memo, after: draft.memo }]} />
           <form data-permission-action="edit" id="form" className="p-4 space-y-3" noValidate onSubmit={event => { event.preventDefault(); void save(); }}><fieldset className="editor-fields space-y-3" disabled={!editable || saving}><input type="hidden" id="f-id" value={draft.id} />
             <div><label className="app-label" htmlFor="f-plate">차량번호 *</label><input ref={plateInput} id="f-plate" className="app-input" required placeholder="예: 12가3456" aria-describedby="plate-help" value={draft.plate} onChange={event => update('plate', event.target.value)} /><p id="plate-help" className="text-[10px] text-zinc-500 mt-1">차량번호는 중복될 수 없습니다.</p></div>
             <div className="grid grid-cols-2 gap-3"><div><label className="app-label" htmlFor="f-tonnage-text">톤수</label><input id="f-tonnage-text" className="app-input" placeholder={'예: "3.5톤"'} aria-describedby="tonnage-help" value={draft.tonnage} onChange={event => update('tonnage', event.target.value)} onBlur={() => { const n = parseTonnage(draft.tonnage.trim()); if (n != null) update('tonnage', formatTonnage(n)); }} /><p id="tonnage-help" className="text-[10px] text-zinc-500 mt-1">숫자가 포함되면 자동으로 톤수 값에 반영됩니다.</p></div><div><label className="app-label" htmlFor="f-pallet">팔레트 적재량</label><input id="f-pallet" type="number" min="0" step="1" className="app-input" placeholder="예: 16" value={draft.pallet} onChange={event => update('pallet', event.target.value)} /></div></div>
@@ -87,8 +107,8 @@ function VehiclesContent() {
             <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => setDraft(toDraft(selectedRow))}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable} onClick={() => void remove()}>삭제</button></div>
           </fieldset></form>
         </section>
-      </div>
-    </main>{feedback}
+      </SplitPane>
+    </main>{downloadLink}{feedback}
   </>;
 }
 export default function Vehicles() { return <AdminPage title="차량 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><VehiclesContent /></AdminPage>; }

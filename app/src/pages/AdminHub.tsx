@@ -15,12 +15,14 @@ function HubContent() {
   const allowed = FEATURE_CATALOG.filter(feature => feature.href && feature.hub !== false && featureAccessible(feature, profile, permissions, center.code, features));
   const menus = allowed;
   const workTools = allowed.filter(item => item.category === 'work').slice(0, 3);
+  const fileTools = allowed.filter(item => item.category === 'files').slice(0, 2);
   const term = search.trim().toLocaleLowerCase('ko');
   const visible = allowed.filter(item => (category === 'all' || item.category === category) && [item.title, item.desc].filter(Boolean).join(' ').toLocaleLowerCase('ko').includes(term));
-  return <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-8">
+  return <main id="work-main" tabIndex={-1} className="hub-workspace app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-8">
     <div className="hub-heading"><h2 className="app-function-title">{center.shortName} 관리 도구</h2><p>업무를 선택하고, 필요한 기준정보와 파일 도구를 함께 확인하세요.</p></div>
     <section className="hub-bento" aria-label="업무 바로 시작">
-      <div className="hub-bento-start"><h3>어떤 업무를 처리하시나요?</h3><p>표시되는 도구는 계정의 역할·작업 센터·페이지 권한과 기능 설정을 따릅니다.</p><div>{workTools.map(tool => <a key={tool.id} href={withCenterParam(tool.href!, center)}>{tool.title}<span aria-hidden="true">→</span></a>)}</div>{!workTools.length ? <p>아래 사용 가능한 도구를 선택하세요.</p> : null}</div>
+      <div className="hub-bento-start"><h3>업무 바로 시작</h3><p>표시되는 도구는 계정의 역할·작업 센터·페이지 권한과 기능 설정을 따릅니다.</p><div>{workTools.map(tool => <a key={tool.id} href={withCenterParam(tool.href!, center)}>{tool.title}<span aria-hidden="true">→</span></a>)}</div>{!workTools.length ? <p>아래 사용 가능한 도구를 선택하세요.</p> : null}</div>
+      {fileTools.length ? <div className="hub-bento-files"><h3>파일 작업</h3><p>비교·변환·내려받기에 필요한 도구를 엽니다.</p><div className="hub-file-links">{fileTools.map(tool => <a key={tool.id} href={withCenterParam(tool.href!, center)}><strong>{tool.title}</strong>{tool.desc ? <span>{tool.desc}</span> : null}</a>)}</div></div> : null}
       <div className="hub-bento-context"><h3>현재 작업 환경</h3><dl><div><dt>작업 센터</dt><dd>{center.name}</dd></div><div><dt>역할</dt><dd>{profile.role === 'admin' ? '관리자' : profile.role === 'editor' ? '센터 업무 담당' : '조회 전용'}</dd></div><div><dt>사용 가능한 도구</dt><dd>{allowed.length}개</dd></div></dl><p>센터를 바꾸면 해당 센터에서 사용 가능한 도구로 갱신됩니다.</p></div>
     </section>
     <section className="hub-controls" aria-label="관리 도구 찾기"><div className="hub-search"><label htmlFor="menu-search">도구 검색</label><input ref={input} id="menu-search" type="search" placeholder="코스, 기사, 엑셀 등 도구 이름 검색" autoComplete="off" aria-controls="menu-grid" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setSearch(''); }} /></div>

@@ -1,3 +1,7 @@
+import { SavedViews } from '../components/SavedViews';
+import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
+import { useWorkspaceActions } from '../lib/workspace-actions';
+import { permissionAllowed } from '../lib/permissions';
 import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -22,15 +26,16 @@ function previewPhoto(photo: DeliveryPhoto) {
   }
 }
 function DeliveryPointsContent() {
-  const { center, editable } = useAdminPage();
+  const { center, editable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<DeliveryPoint[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<string | null>(null), [draft, setDraft] = useState(pointToDraft);
   const [search, setSearch] = useState(''), [debouncedSearch, setDebouncedSearch] = useState(''), [region, setRegion] = useState(''), [method, setMethod] = useState(''), [sort, setSort] = useState('code');
   const [photoMessage, setPhotoMessage] = useState<{ text: string; error?: boolean } | null>(null), [photoBusy, setPhotoBusy] = useState(false);
   const photoBusyRef = useRef(false), savingRef = useRef(false), generation = useRef(0), nameInput = useRef<HTMLInputElement>(null);
   const initial = useRef<ReturnType<typeof loadDeliveryPoints> | undefined>(undefined);
-  function select(row?: DeliveryPoint, focus = false, force = false) { if (!force && (saving || photoBusy)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 납품처 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } generation.current++; setSelected(row?.id || null); setDraft(pointToDraft(row)); setPhotoMessage(null); if (focus) nameInput.current?.focus(); }
+  function select(row?: DeliveryPoint, focus = false, force = false) { if (!force && (saving || photoBusy)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 납품처 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } generation.current++; setSelected(row?.id || null); setDraft(pointToDraft(row)); setPhotoMessage(null); if (focus) { setEditorIntent(value => value + 1); nameInput.current?.focus(); } }
   useEffect(() => {
     let active = true; const request = initial.current ??= loadDeliveryPoints(center.code);
     void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked) select(linked); }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
@@ -59,6 +64,16 @@ function DeliveryPointsContent() {
   const selectedRow = data.find(row => row.id === selected);
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
   useEditorGuard(dirty, saving || photoBusy, confirm);
+  const bulk = useRowSelection(rows.map(row => row.id));
+  const selectedRows = rows.filter(row => bulk.selected.has(row.id));
+  const canExport = permissionAllowed(permissions, 'export', 'read', center.code);
+  const { exportRows, downloadLink } = useSelectionExport('납품처_선택목록', ['코드', '이름', '주소', '지역', '납품방식'], selectedRows.map(row => [row.code, row.name, row.address, row.region, row.delivery_method]));
+  useWorkspaceActions([
+    { id: 'delivery-points-search', title: '납품처 검색창으로 이동', run: () => document.getElementById('search-input')?.focus() },
+    ...editable ? [{ id: 'delivery-points-new', title: '새 납품처 등록', disabled: saving, run: () => { select(undefined, true); } }] : [],
+    ...canExport && selectedRows.length ? [{ id: 'delivery-points-export', title: '선택한 납품처 내보내기', disabled: saving, run: exportRows }] : [],
+  ]);
+
   function extractRegion() { const region = extractRegionFromAddress(draft.address.trim()); if (region) { update('region', region); toast(`지역을 "${region}"으로 설정했습니다.`, 'success'); } else toast('주소에서 지역을 추출하지 못했습니다.', 'warn'); }
   function normalizeDeadline() {
     const value = draft.deadline.trim(); if (!value) return;
@@ -105,7 +120,8 @@ function DeliveryPointsContent() {
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
     {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(420px,520px)] gap-4">
+          <SavedViews scope="delivery-points" value={{ search, region, method, sort }} defaultValue={{ search: '', region: '', method: '', sort: 'code' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setRegion(next.region); setMethod(next.method); setSort(next.sort); }} disabled={saving} />
+      <SplitPane scope="delivery-points" revealToken={editorIntent} revealFocus="#f-name">
 
       
       <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{"minHeight": "70vh"}} aria-label="납품처 목록">
@@ -133,7 +149,7 @@ function DeliveryPointsContent() {
           <table className="app-table">
             <thead>
               <tr>
-                <th>코드</th>
+                <th className="selection-column"><SelectionCheckbox label="현재 목록 전체 선택" checked={rows.length > 0 && bulk.selected.size === rows.length} mixed={bulk.selected.size > 0 && bulk.selected.size < rows.length} onChange={bulk.all} /></th><th>코드</th>
                 <th>이름</th>
                 <th>코스 배정</th>
                 <th>지역</th>
@@ -141,7 +157,7 @@ function DeliveryPointsContent() {
                 <th>마감</th>
               </tr>
             </thead>
-            <tbody id="dp-tbody">{rows.map(row => <tr key={row.id} data-id={row.id} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td><td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td></tr>)}</tbody>
+            <tbody id="dp-tbody">{loading && !data.length ? <TableSkeleton columns={7} /> : null}{rows.map(row => <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="selection-column"><SelectionCheckbox label={`${row.name || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td><td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td></tr>)}</tbody>
           </table>
           <div id="empty-msg" className={`${rows.length ? "hidden " : ""}text-center text-sm text-zinc-500 py-12`}>
             조건에 맞는 납품처가 없습니다.
@@ -152,7 +168,7 @@ function DeliveryPointsContent() {
           <span id="result-count" role="status" aria-live="polite" aria-atomic="true">{!data.length ? "데이터 없음" : rows.length === data.length ? `총 ${data.length}건` : `총 ${rows.length}건 (전체 ${data.length}건 중)`}</span>
           <span id="loading-indicator" className={loading ? "" : "hidden"} role="status" aria-live="polite">불러오는 중...</span>
         </div>
-      </section>
+      <SelectionActions count={selectedRows.length} clear={bulk.clear}><button type="button" disabled={saving} onClick={() => { if (selectedRows[0]) select(selectedRows[0], true); }}>첫 선택 항목 상세</button>{canExport ? <button type="button" disabled={saving} onClick={exportRows}>선택 목록 CSV</button> : null}</SelectionActions></section>
 
       
       <section className="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
@@ -164,6 +180,7 @@ function DeliveryPointsContent() {
         </div>
 
         <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} />
+          <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
         <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}><fieldset className="editor-fields space-y-4" disabled={!editable || saving}>
           <input type="hidden" id="f-id" value={draft.id} />
 
@@ -301,9 +318,9 @@ function DeliveryPointsContent() {
           </div>
         </fieldset></form>
       </section>
-    </div>
+    </SplitPane>
   </main>
-    {feedback}
+    {downloadLink}{feedback}
   </>;
 }
 export default function DeliveryPoints() { return <AdminPage title="납품처 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><DeliveryPointsContent /></AdminPage>; }

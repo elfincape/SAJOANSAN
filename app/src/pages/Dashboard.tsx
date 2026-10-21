@@ -7,6 +7,8 @@ import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { Modal } from '../components/Modal';
 import { DashboardDetail } from '../components/DashboardDetail';
 import { OperationsAssistant } from '../components/OperationsAssistant';
+import { SavedViews } from '../components/SavedViews';
+import { useWorkspaceActions } from '../lib/workspace-actions';
 import { useFeedback } from '../components/useFeedback';
 import { loadDashboard, dashboardHealth } from '../lib/dashboard';
 import {
@@ -78,6 +80,66 @@ function initial() {
       : structuredClone(DEFAULT_SORT),
     view = params.get('view') === 'group' ? 'group' : 'flat';
   return { filters, sort, view };
+}
+interface DashboardView {
+  filters: Record<string, string | (string | number)[]>;
+  sort: Sorter[];
+  view: string;
+  order: string[];
+  visible: Record<string, boolean>;
+  widths: Record<string, number>;
+}
+function viewFilters(filters: DashboardFilters): DashboardView['filters'] {
+  return Object.fromEntries(
+    Object.entries(filters).map(([key, value]) => [
+      key,
+      value instanceof Set
+        ? [...value].filter(
+            (item): item is string | number =>
+              typeof item === 'string' ||
+              (typeof item === 'number' && Number.isFinite(item)),
+          )
+        : value,
+    ]),
+  );
+}
+function dashboardColumns(saved: {
+  order?: unknown;
+  visible?: unknown;
+  widths?: unknown;
+}) {
+  const storedVisible =
+    saved.visible && typeof saved.visible === 'object'
+      ? (saved.visible as Record<string, unknown>)
+      : {};
+  const storedWidths =
+    saved.widths && typeof saved.widths === 'object'
+      ? (saved.widths as Record<string, unknown>)
+      : {};
+  const order = orderedDashboardColumns([
+    ...new Set(
+      Array.isArray(saved.order)
+        ? saved.order.filter(
+            (key): key is string =>
+              typeof key === 'string' && ALL_KEYS.includes(key),
+          )
+        : ALL_KEYS,
+    ),
+  ]).map((column) => column.key);
+  let visible = Object.fromEntries(
+    ALL_KEYS.map((key) => [key, storedVisible[key] !== false]),
+  );
+  if (!Object.values(visible).some(Boolean))
+    visible = Object.fromEntries(ALL_KEYS.map((key) => [key, true]));
+  const widths = Object.fromEntries(
+    ALL_KEYS.flatMap((key) => {
+      const width = storedWidths[key];
+      return typeof width === 'number' && Number.isFinite(width) && width >= 40
+        ? [[key, Math.min(width, 1200)]]
+        : [];
+    }),
+  );
+  return { order, visible, widths };
 }
 function MultiFilter({
   field,
@@ -216,24 +278,23 @@ function Work({
     [search, setSearch] = useState(urlInitial.filters.search),
     [openFilter, setOpenFilter] = useState<string | null>(null),
     [detail, setDetail] = useState<DashboardRow | null>(null);
-  const [order, setOrder] = useState(() =>
-      loadJSON<string[]>('dash.colOrder', ALL_KEYS),
-    ),
-    [visible, setVisible] = useState(() =>
-      loadJSON<Record<string, boolean>>(
-        'dash.colVisible',
-        Object.fromEntries(ALL_KEYS.map((k) => [k, true])),
-      ),
-    ),
-    [widths, setWidths] = useState(() =>
-      loadJSON<Record<string, number>>('dash.colWidth', {}),
-    ),
+  const [storedColumns] = useState(() =>
+    dashboardColumns({
+      order: loadJSON<unknown>('dash.colOrder', ALL_KEYS),
+      visible: loadJSON<unknown>('dash.colVisible', {}),
+      widths: loadJSON<unknown>('dash.colWidth', {}),
+    }),
+  );
+  const [order, setOrder] = useState(storedColumns.order),
+    [visible, setVisible] = useState(storedColumns.visible),
+    [widths, setWidths] = useState(storedColumns.widths),
     [columnConfig, setColumnConfig] = useState<{
       order: string[];
       visible: Record<string, boolean>;
     } | null>(null),
     [dragging, setDragging] = useState<string | null>(null),
     [drop, setDrop] = useState<{ key: string; left: boolean } | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const interacted = useRef(false),
     prefs = useRef({ order, visible, widths }),
     resizeCleanup = useRef<(() => void) | undefined>(undefined);
@@ -330,6 +391,109 @@ function Work({
     setApplied(next);
     setSearch('');
   }
+  function changeView(next: string) {
+    interacted.current = true;
+    setView(next === 'group' ? 'group' : 'flat');
+  }
+  function openColumns() {
+    setColumnConfig({
+      order: orderedDashboardColumns(order).map((column) => column.key),
+      visible: { ...visible },
+    });
+  }
+  function applyView(saved: DashboardView) {
+    const next = initialFilters();
+    for (const key of Object.keys(next)) {
+      const value = saved.filters?.[key];
+      if (next[key] instanceof Set) {
+        next[key] = new Set(
+          Array.isArray(value)
+            ? value
+                .slice(0, 200)
+                .filter(
+                  (item) =>
+                    ((typeof item === 'string' && item.length <= 2000) ||
+                      (typeof item === 'number' && Number.isFinite(item))) &&
+                    (key !== 'entry_cond' ||
+                      entries.some(([entry]) => entry === item)),
+                )
+            : [],
+        );
+      } else next[key] = typeof value === 'string' ? value.slice(0, 2000) : '';
+    }
+    const sortKeys = new Set(
+      COLUMNS.map((column) => column.sortKey || column.key),
+    );
+    const nextSort = Array.isArray(saved.sort)
+      ? saved.sort
+          .slice(0, COLUMNS.length)
+          .filter(
+            (item, index, all) =>
+              item &&
+              sortKeys.has(item.key) &&
+              ['asc', 'desc'].includes(item.dir) &&
+              all.findIndex((other) => other?.key === item.key) === index,
+          )
+          .map(({ key, dir }) => ({ key, dir }))
+      : structuredClone(DEFAULT_SORT);
+    const {
+      order: nextOrder,
+      visible: nextVisible,
+      widths: nextWidths,
+    } = dashboardColumns(saved);
+    interacted.current = true;
+    setFilters(next);
+    setApplied(next);
+    setSearch(next.search);
+    setSort(nextSort);
+    setView(saved.view === 'group' ? 'group' : 'flat');
+    setOrder(nextOrder);
+    setVisible(nextVisible);
+    setWidths(nextWidths);
+    setOpenFilter(null);
+    try {
+      preference({
+        order: nextOrder,
+        visible: nextVisible,
+        widths: nextWidths,
+      });
+    } catch {
+      toast(
+        '보기는 적용했습니다. 컬럼 설정을 브라우저에 저장하지 못했습니다.',
+        'warn',
+      );
+    }
+  }
+  const modalOpen = !!detail || !!columnConfig || showMe;
+  useWorkspaceActions([
+    {
+      id: 'dashboard-search',
+      title: '코스표 검색',
+      description: '대시보드의 검색 입력으로 이동합니다.',
+      run: () => searchInput.current?.focus(),
+      disabled: modalOpen,
+    },
+    {
+      id: 'dashboard-reset',
+      title: '코스표 필터 초기화',
+      description: '검색어와 상세 필터를 모두 해제합니다.',
+      run: resetFilters,
+      disabled: modalOpen || !activeCount,
+    },
+    {
+      id: 'dashboard-view',
+      title: view === 'flat' ? '코스별 보기로 전환' : '목록 보기로 전환',
+      run: () => changeView(view === 'flat' ? 'group' : 'flat'),
+      disabled: modalOpen,
+    },
+    {
+      id: 'dashboard-columns',
+      title: '코스표 컬럼 설정',
+      description: '표시할 컬럼과 순서를 설정합니다.',
+      run: openColumns,
+      disabled: modalOpen,
+    },
+  ]);
   function changeFilter(key: string, value: Set<unknown>) {
     interacted.current = true;
     setFilters((old) => ({ ...old, [key]: value }));
@@ -626,6 +790,7 @@ function Work({
           <div className="dashboard-query">
             <input
               id="search-input"
+              ref={searchInput}
               type="search"
               aria-label="코스표 검색"
               placeholder="전체 컬럼 검색 (기사명·전화번호 포함)"
@@ -660,10 +825,7 @@ function Work({
                   }
                   data-view={key}
                   aria-pressed={view === key}
-                  onClick={() => {
-                    interacted.current = true;
-                    setView(key);
-                  }}
+                  onClick={() => changeView(key)}
                 >
                   {text}
                 </button>
@@ -677,6 +839,29 @@ function Work({
                   : `총 ${filtered.length}건 (전체 ${rows.length}건 중)`}
             </span>
           </div>
+          <SavedViews<DashboardView>
+            scope="dashboard"
+            value={{
+              filters: viewFilters(filters),
+              sort,
+              view,
+              order: orderedDashboardColumns(order).map((column) => column.key),
+              visible: Object.fromEntries(
+                ALL_KEYS.map((key) => [key, visible[key] !== false]),
+              ),
+              widths,
+            }}
+            defaultValue={{
+              filters: viewFilters(initialFilters()),
+              sort: structuredClone(DEFAULT_SORT),
+              view: 'flat',
+              order: [...ALL_KEYS],
+              visible: Object.fromEntries(ALL_KEYS.map((key) => [key, true])),
+              widths: {},
+            }}
+            onApply={applyView}
+            disabled={loading || modalOpen}
+          />
           <details className="dashboard-filter-details">
             <summary>
               상세 필터{' '}
@@ -762,12 +947,7 @@ function Work({
                 id="btn-col-config"
                 type="button"
                 className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-100"
-                onClick={() =>
-                  setColumnConfig({
-                    order: orderedDashboardColumns(order).map((c) => c.key),
-                    visible: { ...visible },
-                  })
-                }
+                onClick={openColumns}
               >
                 ⚙️ 컬럼 설정
               </button>
