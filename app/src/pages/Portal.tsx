@@ -17,6 +17,7 @@ import {
 import { PortalNotifications } from '../components/portal/PortalNotifications';
 import { PortalPermissions as PortalPermissionsView } from '../components/portal/PortalPermissions';
 import { PortalTrash } from '../components/portal/PortalTrash';
+import { PortalConnections } from '../components/portal/PortalConnections';
 import { PortalMembers } from '../components/portal/PortalMembers';
 import { PortalBriefing } from '../components/portal/PortalBriefing';
 import { portalBriefing } from '../lib/portal-ai';
@@ -56,6 +57,15 @@ import type {
   PortalTask,
   PortalPermissions,
 } from '../domain/portal-types';
+const separateViews = [
+  'history',
+  'search',
+  'surveys',
+  'briefing',
+  'members',
+  'permissions',
+  'connections',
+];
 const failure = (error: unknown, fallback = '') =>
   error && typeof error === 'object' && 'message' in error
     ? String(error.message)
@@ -735,6 +745,9 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'connections' && !denied ? (
+              <PortalConnections />
+            ) : null}
             {state.view === 'permissions' && !denied ? (
               <PortalPermissionsView />
             ) : null}
@@ -745,14 +758,7 @@ function Work({ profile }: { profile: Profile }) {
             ) : null}
             {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {![
-              'history',
-              'search',
-              'surveys',
-              'briefing',
-              'members',
-              'permissions',
-            ].includes(state.view) ? (
+            {!separateViews.includes(state.view) ? (
               <section
                 id="quick-actions"
                 className="quick-actions"
@@ -968,14 +974,7 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {![
-              'history',
-              'search',
-              'surveys',
-              'briefing',
-              'members',
-              'permissions',
-            ].includes(state.view) ? (
+            {!separateViews.includes(state.view) ? (
               <div className="workspace">
                 <section className="list">
                   <div className="list-heading">

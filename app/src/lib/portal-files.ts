@@ -14,6 +14,9 @@ export const operationsFiles = {
   health: () => oneDriveCall<{ rootAccessible: boolean }>('operations-health'),
   settings: () =>
     oneDriveCall<{
+      folderUrl?: string;
+      connected?: boolean;
+      folderConfigured?: boolean;
       root_name?: string;
       root_url?: string;
       configured?: boolean;
