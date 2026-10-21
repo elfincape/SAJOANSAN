@@ -12,6 +12,7 @@ const NotionHealth = lazy(() => import('./pages/NotionHealth'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
 const Vehicles = lazy(() => import('./pages/Vehicles'));
 const Companies = lazy(() => import('./pages/Companies'));
+const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Drivers = lazy(() => import('./pages/Drivers'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
@@ -26,6 +27,7 @@ const pages = {
   '/admin/vehicles.html': Vehicles,
   '/admin/companies.html': Companies,
   '/admin/drivers.html': Drivers,
+  '/admin/delivery-points.html': DeliveryPoints,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
 };

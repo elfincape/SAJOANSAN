@@ -8,7 +8,7 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Pre-flight: auth/session, center, permission context and page queries must retain contracts. Move queries to src/lib; no DB/schema/Edge changes.
 - Pre-flight: legacy tests include scripts with production writes; run relevant isolated checks only. AGENTS.md forbids separate committed test files; use existing tests and private temporary browser assertions.
 - Setup: complete. Baseline legacy npm run build passed (existing large-chunk warning).
-- Screens: 12/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log, vehicles, companies, drivers). Portal internal views require separate commits.
+- Screens: 13/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log, vehicles, companies, drivers, delivery points). Portal internal views require separate commits.
 
 - Login: npm run build passed (TypeScript + Vite); existing username-auth and menu-permissions checks passed; temporary Playwright assertions passed for empty fields, invalid username/email credentials, inactive reason, theme and mobile overflow. No live backend requests. Redirect allowlist assertions passed. Impeccable detector: no findings.
 
@@ -37,3 +37,5 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - User confirmed the referenced PYT template does not exist. Preserve missing-template behavior; do not invent or substitute a workbook. This no longer needs a user answer.
 
 - Drivers: paginated center queries/document chunks, health schema fallback, KST expiry priority, eight kinds and PDF logic ported. Browser verified linked selection, expiry ordering/checks, cancel, filtered list and whole-center PDF missing-doc skips. Typed date assertions passed; existing PDF batch scenarios passed against new typed module (sequential, partial failure, stop, save verification). TypeScript/Vite and detector passed. Live DB and OneDrive not used.
+
+- Delivery points: original fields/layout converted to controlled React form; separate typed photo/time helpers and query/schema retry adapter. Browser passed linked selection, contact/radio compatibility, region extraction, 00:00-based time normalization, photo add/delete/cancel, search/filter/new validation. TypeScript/Vite and detector passed. Existing legacy blur warning text retained even though actual shared time policy is 00:00–23:59. Cross-screen mocked CRUD write/error contracts still need final integration verification; live writes remain unperformed.
