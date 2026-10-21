@@ -83,6 +83,9 @@ export function FileArea({ as = 'div', hint = true, accept, multiple = false, di
   const images = imageAccept(accept);
   return createElement(as, { ...props, ref: element, className: `${className}${active ? ' file-drop-active' : ''}${images ? ' file-paste-target' : ''}`, tabIndex: props.tabIndex ?? (images ? 0 : undefined), onClick: (event: React.MouseEvent<HTMLElement>) => {
     props.onClick?.(event);
-    if (images && event.target instanceof Element && !event.target.closest('input,textarea,select,button,a,[contenteditable=true],[role=textbox]')) event.currentTarget.focus({ preventScroll: true });
+    if (images && event.target instanceof Element && !event.target.closest('input,textarea,select,button,a,[contenteditable=true],[role=textbox]')) {
+      const focusTarget = event.target.closest<HTMLElement>('[tabindex]:not([tabindex="-1"])');
+      if (!focusTarget || focusTarget === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
+    }
   } }, children, images && hint ? <p className="file-paste-hint" data-file-paste-hint="">사진 영역을 클릭하고 Ctrl+V로 붙여넣기</p> : null, feedback ? <span className="file-drop-feedback" data-file-drop-feedback="" role="status">{feedback}</span> : null);
 }

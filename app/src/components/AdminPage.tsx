@@ -96,17 +96,20 @@ function Shell({ title, children, actions, centerTarget }: { title: string; chil
 export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-zinc-900 text-zinc-100 min-h-screen', children, actions, centerTarget }: {
   title: string; feature?: string; minRole?: 'viewer' | 'editor' | 'admin'; bodyClass?: string; children: ReactNode; actions?: ReactNode; centerTarget?: string;
 }) {
+  const params = new URLSearchParams(location.search);
+  const portalEmbedded = params.has('portal_task') && parent !== window;
+  const embedded = params.get('embedded') === '1' || portalEmbedded;
   const [auth, setAuth] = useState<AuthContext | null>(null);
   const [error, setError] = useState('');
   const [center, setCenter] = useState(() => new URLSearchParams(location.search).get('selectCenter') === '1' ? null : getSelectedCenter());
   useEffect(() => {
     document.title = `${title} · 이안물류`;
-    document.body.className = `workspace-ui work-shell app-shell ${bodyClass}`;
+    document.body.className = `workspace-ui work-shell ${embedded ? 'work-embedded' : 'app-shell'} ${bodyClass}`;
     document.body.dataset.appArea = 'admin';
     let active = true;
     void loadAuthContext().then(context => { if (active) setAuth(context); }).catch(() => { if (active) setError('로그인 상태를 확인하지 못했습니다. 연결을 확인한 뒤 새로고침해 주세요.'); });
     return () => { active = false; };
-  }, [title, bodyClass]);
+  }, [title, bodyClass, embedded]);
   if (error) return <p className="text-sm text-red-400 p-3" role="alert">{error}</p>;
   if (!auth) return null;
   if (!center) return <div id="center-selection-overlay" className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4"><div className="w-full max-w-md rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-6"><div className="text-center mb-5"><div className="text-lg font-semibold">센터를 선택하세요</div></div><div className="grid grid-cols-1 gap-3">{CENTERS.map(item => <button key={item.code} type="button" data-center-code={item.code} className="rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-emerald-600/20 hover:border-emerald-500 p-4 text-left transition" onClick={() => setCenter(setSelectedCenterCode(item.code))}><div className="text-sm font-semibold">{item.name}</div><div className="text-xs text-zinc-500 mt-1">이 센터 데이터로 이동합니다</div></button>)}</div></div></div>;
@@ -117,5 +120,5 @@ export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-
   if (denied) return <div id="modal-root"><div role="dialog" aria-modal="true" aria-label="접근 권한" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"><div className="w-full max-w-md mx-4 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-5"><p>{resource ? '이 목록의 열람 권한이 없습니다.' : `이 페이지에 접근할 권한이 없습니다. 필요 권한: ${minRole} 현재 권한: ${auth.profile.role}`}</p><button type="button" className="btn btn-primary mt-4" onClick={() => location.replace(resource ? '/portal/' : '/')}>확인</button></div></div></div>;
   if (feature && !loadPrivateFeatures(auth.profile)[feature]) { location.replace(withCenterParam('/admin/', center)); return null; }
   const editable = !resource || permissionAllowed(auth.permissions, resource, 'edit', center.code);
-  return <Context.Provider value={{ ...auth, center, editable }}><Shell title={title} actions={actions} centerTarget={centerTarget}>{children}</Shell></Context.Provider>;
+  return <Context.Provider value={{ ...auth, center, editable }}>{embedded ? <>{portalEmbedded ? null : <header className="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur"><div className="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3"><a href={withCenterParam('/admin/',center)} className="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a><h1 className="text-base font-semibold">{title}</h1><div className="flex-1"/><span id="user-badge" className="text-xs text-zinc-400">{auth.profile.display_name || auth.profile.email || ''} ({auth.profile.role})</span>{actions}</div></header>}{children}</> : <Shell title={title} actions={actions} centerTarget={centerTarget}>{children}</Shell>}</Context.Provider>;
 }
