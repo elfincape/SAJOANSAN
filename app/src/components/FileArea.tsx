@@ -71,7 +71,7 @@ export function FileTransfers({ children }: { children: ReactNode }) {
   return <Registry.Provider value={registrations.current}>{children}</Registry.Provider>;
 }
 
-export function FileArea({ as = 'div', hint = true, accept, multiple = false, disabled = false, onFiles, children, className = '', ...props }: Options & Omit<HTMLAttributes<HTMLElement>, 'onDrop'> & { as?: 'div' | 'section' | 'article' | 'button' | 'main'; hint?: boolean; children: ReactNode; type?: 'button' }) {
+export function FileArea({ as = 'div', hint = true, accept, multiple = false, disabled = false, onFiles, children, className = '', ...props }: Options & Omit<HTMLAttributes<HTMLElement>, 'onDrop'> & { as?: 'div' | 'section' | 'article' | 'button' | 'main' | 'aside'; hint?: boolean; children: ReactNode; type?: 'button' }) {
   const registry = useContext(Registry), key = useRef(Symbol());
   const element = useRef<HTMLElement | null>(null);
   const [active, setActive] = useState(false), [feedback, setFeedback] = useState('');

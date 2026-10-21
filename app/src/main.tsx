@@ -4,6 +4,7 @@ import { FileTransfers } from './components/FileArea';
 
 const GimhaeDispatch = lazy(() => import('./pages/GimhaeDispatch'));
 const PyeongtaekDispatch = lazy(() => import('./pages/PyeongtaekDispatch'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Login = lazy(() => import('./pages/Login'));
 const ImageStraightener = lazy(() => import('./pages/ImageStraightener'));
 const DispatchParser = lazy(() => import('./pages/DispatchParser'));
@@ -34,6 +35,8 @@ const Drivers = lazy(() => import('./pages/Drivers'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
   '/login.html': Login,
+  '/': Dashboard,
+  '/index.html': Dashboard,
   '/admin/pyeongtaek-dispatch.html': PyeongtaekDispatch,
   '/admin/gimhae-dispatch.html': GimhaeDispatch,
   '/admin/image-straightener.html': ImageStraightener,
