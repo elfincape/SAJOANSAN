@@ -1,0 +1,68 @@
+
+    .drop-card {
+      border: 1px dashed #52525b;
+      background: linear-gradient(180deg, rgba(39,39,42,0.78), rgba(24,24,27,0.58));
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+    .drop-card:hover,
+    .drop-card.dragover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+      transform: translateY(-1px);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .editor-table th,
+    .editor-table td {
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .editor-input,
+    .editor-select {
+      width: 100%;
+      min-width: 7rem;
+      border: 1px solid #3f3f46;
+      border-radius: 0.375rem;
+      background: rgba(24, 24, 27, 0.95);
+      color: #f4f4f5;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.75rem;
+      outline: none;
+    }
+    .editor-input:focus,
+    .editor-select:focus {
+      border-color: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+    }
+    .role-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      border: 1px solid rgba(113, 113, 122, 0.5);
+      background: rgba(63, 63, 70, 0.5);
+    }
+    .role-fixed { color: #34d399; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.08); }
+    .role-wide { color: #38bdf8; border-color: rgba(14, 165, 233, 0.4); background: rgba(14, 165, 233, 0.08); }
+    .role-temp { color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); }
+    #toast {
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    #toast.show {
+      opacity: 1 !important;
+      transform: translateX(-50%) translateY(0) !important;
+    }
+  
