@@ -252,7 +252,7 @@ function ParentTask({ id }: { id: string }) {
   return (
     <PortalDialog
       id="parent-task-dialog"
-      label="상위 업무"
+      label="상위 업무 상세"
       onClose={() =>
         update((s) => {
           s.parentTaskId = null;
@@ -294,8 +294,8 @@ export function PortalTickets() {
       {state.ticket ? (
         <PortalDialog
           id="task-ticket-dialog"
-          label="업무 티켓"
-          className="task-ticket-dialog"
+          label="업무 티켓 상세"
+          className="parent-task-dialog"
           onClose={close}
         >
           {state.ticketMode !== 'incident-create' ? (

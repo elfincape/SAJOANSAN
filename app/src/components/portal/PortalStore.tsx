@@ -14,6 +14,7 @@ import type {
 } from '../../domain/portal-types';
 export interface PortalState {
   view: string;
+  refreshVersion: number;
   registrationTab: string;
   unit: string;
   layout: string;

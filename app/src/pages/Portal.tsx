@@ -15,6 +15,7 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalHistoryView } from '../components/portal/PortalHistoryView';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
 import { PortalTickets } from '../components/portal/PortalTickets';
 import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
@@ -88,6 +89,7 @@ function Icon({ kind }: { kind: string }) {
 function Work({ profile }: { profile: Profile }) {
   const [state, setState] = useState<PortalState>(() => ({
       view: 'center',
+      refreshVersion: 0,
       registrationTab: 'templates',
       unit: 'week',
       layout: 'calendar',
@@ -193,8 +195,12 @@ function Work({ profile }: { profile: Profile }) {
     }
     if (
       ['mail', 'search', 'backups', 'connections', 'history'].includes(s.view)
-    )
+    ) {
+      update((s) => {
+        s.refreshVersion++;
+      });
       return;
+    }
     const period = periodBounds(s.date, s.unit),
       [
         tasks,
@@ -700,11 +706,14 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
-            <section
-              id="quick-actions"
-              className="quick-actions"
-              aria-label="업무 등록"
-            />
+            {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
+            {state.view !== 'history' ? (
+              <section
+                id="quick-actions"
+                className="quick-actions"
+                aria-label="업무 등록"
+              />
+            ) : null}
             <div
               className="filters task-toolbar"
               role="region"
@@ -914,42 +923,70 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            <div className="workspace">
-              <section className="list">
-                <div className="list-heading">
-                  <strong id="list-title">
-                    {state.view === 'notifications'
-                      ? '내 알림'
-                      : hq
-                        ? '업무와 지원 요청'
-                        : state.view === 'incidents'
-                          ? '특이사항'
-                          : '업무목록'}
-                  </strong>
-                  <span id="count">{denied ? '' : count + '건'}</span>
-                </div>
-                <div id="items" className="portal-items">
-                  {!denied && state.view === 'notifications' ? (
-                    <PortalNotifications />
-                  ) : null}
-                  {!denied && hq ? <PortalHeadquarters /> : null}
-                  {!denied && state.view === 'incidents' ? (
-                    <>
-                      <PortalIncidentList />
-                      {!count ? (
-                        <div className="portal-empty">
-                          <strong>표시할 항목이 없습니다.</strong>
-                          <p>등록된 항목이 있으면 여기에 표시됩니다.</p>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {state.context && !denied && state.view === 'center' ? (
-                    <>
-                      {overdue.length ? (
-                        <>
-                          <h3>이전 기간 미완료 · {overdue.length}건</h3>
-                          {overdue.map((task) => (
+            {state.view !== 'history' ? (
+              <div className="workspace">
+                <section className="list">
+                  <div className="list-heading">
+                    <strong id="list-title">
+                      {state.view === 'notifications'
+                        ? '내 알림'
+                        : hq
+                          ? '업무와 지원 요청'
+                          : state.view === 'incidents'
+                            ? '특이사항'
+                            : '업무목록'}
+                    </strong>
+                    <span id="count">{denied ? '' : count + '건'}</span>
+                  </div>
+                  <div id="items" className="portal-items">
+                    {!denied && state.view === 'notifications' ? (
+                      <PortalNotifications />
+                    ) : null}
+                    {!denied && hq ? <PortalHeadquarters /> : null}
+                    {!denied && state.view === 'incidents' ? (
+                      <>
+                        <PortalIncidentList />
+                        {!count ? (
+                          <div className="portal-empty">
+                            <strong>표시할 항목이 없습니다.</strong>
+                            <p>등록된 항목이 있으면 여기에 표시됩니다.</p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {state.context && !denied && state.view === 'center' ? (
+                      <>
+                        {overdue.length ? (
+                          <>
+                            <h3>이전 기간 미완료 · {overdue.length}건</h3>
+                            {overdue.map((task) => (
+                              <PortalTaskWithChildren
+                                key={task.id}
+                                task={task}
+                                incidents={state.incidents}
+                                centerName={centerName}
+                                onChoose={choose}
+                              />
+                            ))}
+                          </>
+                        ) : null}
+                        <h3>
+                          {period.from}
+                          {period.from === period.through
+                            ? ''
+                            : ' ~ ' + period.through}
+                        </h3>
+                        {state.layout === 'calendar' ? (
+                          <PortalCalendar
+                            tasks={inPeriod}
+                            date={state.date}
+                            unit={state.unit}
+                            participants={state.participants}
+                            centerName={centerName}
+                            onChoose={choose}
+                          />
+                        ) : (
+                          inPeriod.map((task) => (
                             <PortalTaskWithChildren
                               key={task.id}
                               task={task}
@@ -957,66 +994,40 @@ function Work({ profile }: { profile: Profile }) {
                               centerName={centerName}
                               onChoose={choose}
                             />
-                          ))}
-                        </>
-                      ) : null}
-                      <h3>
-                        {period.from}
-                        {period.from === period.through
-                          ? ''
-                          : ' ~ ' + period.through}
-                      </h3>
-                      {state.layout === 'calendar' ? (
-                        <PortalCalendar
-                          tasks={inPeriod}
-                          date={state.date}
-                          unit={state.unit}
-                          participants={state.participants}
-                          centerName={centerName}
-                          onChoose={choose}
-                        />
-                      ) : (
-                        inPeriod.map((task) => (
-                          <PortalTaskWithChildren
-                            key={task.id}
-                            task={task}
-                            incidents={state.incidents}
-                            centerName={centerName}
-                            onChoose={choose}
-                          />
-                        ))
-                      )}
-                      {!count ? (
-                        <div className="portal-empty">
-                          <strong>조회 조건에 맞는 업무가 없습니다.</strong>
-                          <p>
-                            기간이나 상태를 변경해 확인하세요. 새 업무는
-                            상단에서 등록할 수 있습니다.
-                          </p>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              </section>
-              <aside id="detail" aria-label="업무 처리">
-                {state.selected?.type === 'incident' && !state.ticket ? (
-                  <PortalIncidentDetail
-                    key={
-                      state.selected.row.id + ':' + state.selected.row.version
-                    }
-                    row={state.selected.row}
-                  />
-                ) : state.selected?.type === 'task' && !state.ticket ? (
-                  <PortalTaskDetail
-                    key={state.selected.row.id}
-                    task={state.selected.row}
-                  />
-                ) : (
-                  <p>목록에서 항목을 선택하세요.</p>
-                )}
-              </aside>
-            </div>
+                          ))
+                        )}
+                        {!count ? (
+                          <div className="portal-empty">
+                            <strong>조회 조건에 맞는 업무가 없습니다.</strong>
+                            <p>
+                              기간이나 상태를 변경해 확인하세요. 새 업무는
+                              상단에서 등록할 수 있습니다.
+                            </p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </section>
+                <aside id="detail" aria-label="업무 처리">
+                  {state.selected?.type === 'incident' && !state.ticket ? (
+                    <PortalIncidentDetail
+                      key={
+                        state.selected.row.id + ':' + state.selected.row.version
+                      }
+                      row={state.selected.row}
+                    />
+                  ) : state.selected?.type === 'task' && !state.ticket ? (
+                    <PortalTaskDetail
+                      key={state.selected.row.id}
+                      task={state.selected.row}
+                    />
+                  ) : (
+                    <p>목록에서 항목을 선택하세요.</p>
+                  )}
+                </aside>
+              </div>
+            ) : null}
           </main>
         </div>
       </PortalShell>
