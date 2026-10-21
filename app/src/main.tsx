@@ -8,6 +8,7 @@ const PalletSlips = lazy(() => import('./pages/PalletSlips'));
 const ExcelCompare = lazy(() => import('./pages/ExcelCompare'));
 const Settings = lazy(() => import('./pages/Settings'));
 const NotionHealth = lazy(() => import('./pages/NotionHealth'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
   '/login.html': Login,
@@ -17,6 +18,7 @@ const pages = {
   '/admin/excel-compare.html': ExcelCompare,
   '/admin/settings.html': Settings,
   '/admin/notion-health.html': NotionHealth,
+  '/admin/audit-log.html': AuditLog,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
 };
