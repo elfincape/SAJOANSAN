@@ -15,6 +15,7 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalRegistration } from '../components/portal/PortalRegistration';
 import { PortalSearch } from '../components/portal/PortalSearch';
 import { PortalHistoryView } from '../components/portal/PortalHistoryView';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
@@ -657,7 +658,21 @@ function Work({ profile }: { profile: Profile }) {
                     ? '관리자에게 이 목록의 열람 권한을 요청하세요.'
                     : hq
                       ? '확인 필요한 업무와 특이사항을 센터 속성으로 확인하고 여기에서 처리하세요.'
-                      : '진행 중 업무는 날짜가 지나도 계속 표시됩니다.'}
+                      : state.view === 'surveys'
+                        ? state.registrationTab === 'surveys'
+                          ? '조사한 업무 내용과 검토 진행 상태를 확인하세요.'
+                          : '센터 업무 양식을 등록·수정하고 실행 주기를 관리하세요.'
+                        : ((
+                            {
+                              incidents:
+                                '센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.',
+                              history:
+                                '센터 업무와 특이사항의 실제 처리 내역을 확인하세요.',
+                              search:
+                                '업무와 운영 마스터, 과거 특이사항을 유형별로 찾으세요.',
+                            } as Record<string, string>
+                          )[state.view] ??
+                          '진행 중 업무는 날짜가 지나도 계속 표시됩니다.')}
                 </p>
               </div>
               <div className="heading-actions">
@@ -709,9 +724,12 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'surveys' && !denied ? (
+              <PortalRegistration key={state.center} />
+            ) : null}
             {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {!['history', 'search'].includes(state.view) ? (
+            {!['history', 'search', 'surveys'].includes(state.view) ? (
               <section
                 id="quick-actions"
                 className="quick-actions"
@@ -927,7 +945,7 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {!['history', 'search'].includes(state.view) ? (
+            {!['history', 'search', 'surveys'].includes(state.view) ? (
               <div className="workspace">
                 <section className="list">
                   <div className="list-heading">

@@ -24,6 +24,7 @@ export interface PortalSpec {
     capture_range?: string;
     worksheet?: string;
     dispatch_field?: string;
+    step_keys?: Record<string, string>;
   };
   [key: string]: unknown;
 }
