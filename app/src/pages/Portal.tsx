@@ -17,6 +17,7 @@ import {
 import { PortalNotifications } from '../components/portal/PortalNotifications';
 import { PortalPermissions as PortalPermissionsView } from '../components/portal/PortalPermissions';
 import { PortalTrash } from '../components/portal/PortalTrash';
+import { PortalBackups } from '../components/portal/PortalBackups';
 import { PortalConnections } from '../components/portal/PortalConnections';
 import { PortalMembers } from '../components/portal/PortalMembers';
 import { PortalBriefing } from '../components/portal/PortalBriefing';
@@ -65,6 +66,7 @@ const separateViews = [
   'members',
   'permissions',
   'connections',
+  'backups',
 ];
 const failure = (error: unknown, fallback = '') =>
   error && typeof error === 'object' && 'message' in error
@@ -745,6 +747,7 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'backups' && !denied ? <PortalBackups /> : null}
             {state.view === 'connections' && !denied ? (
               <PortalConnections />
             ) : null}

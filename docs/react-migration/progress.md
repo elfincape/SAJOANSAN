@@ -109,3 +109,5 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Portal internal screen 12 (trash): deleted task list and shared read-only deleted-record detail/restore connected. Browser passed original note display, absent task editor, expected-version restore payload, closed dialog and empty-list guidance. Build/Impeccable passed; mock restoration only.
 
 - Portal internal screen 13 (OneDrive settings): saved folder/status, configure, connection health and existing OAuth handoff ported. Browser passed loaded status, exact configuration payload, health feedback and server-value refresh. Build/Impeccable passed; OAuth redirect was not executed and all storage requests were mocked.
+
+- Portal internal screen 14 (backups): saved/baseline/failed archive status, current master comparison, binary export and same-source retry ported. Browser passed comparison counts/changed fields/limit guidance, download ID/filename and failed-source retry/list refresh. Build/Impeccable passed; archive operations used mock endpoints only.
