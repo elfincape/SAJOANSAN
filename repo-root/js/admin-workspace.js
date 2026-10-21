@@ -1,3 +1,4 @@
+import { subscribePrivateFeatures } from './private-features.js';
 import { getCurrentProfile, signOut } from './auth.js';
 import { getAdminMenus } from './admin-menu.js';
 import { categoryForPath } from './admin-hub.js';
@@ -34,6 +35,12 @@ function mountWorkspace() {
   });
   let navigationContext;
   let navigationCenter;
+  const stopFeatures = subscribePrivateFeatures(() => {
+    if (navigationContext) renderNavigation();
+  });
+  addEventListener('pagehide', (event) => {
+    if (!event.persisted) stopFeatures();
+  });
   updateCenter();
   const centerHost = document.getElementById('center-switcher');
   if (centerHost)

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../repo-root/admin/image-straightener.html',import.meta.url),'utf8');
-const hub=readFileSync(new URL('../repo-root/admin/index.html',import.meta.url),'utf8');
+import {FEATURE_CATALOG} from '../repo-root/js/feature-catalog.mjs';
+const hub=JSON.stringify(FEATURE_CATALOG);
 
 assert.match(hub,/image-straightener\.html/, 'management hub should link to the image straightener');
-assert.match(hub,/title: '기울기 보정'/, 'management hub should use the requested feature name');
+assert.match(hub,/기울기 보정/, 'management hub should use the requested feature name');
 assert.match(page,/clipboardData\.items/, 'clipboard images should be accepted');
 assert.match(page,/paste-target'\)\.addEventListener\('click',[^\n]+\.focus\(\)/, 'clicking the plus target should prepare it for pasting');
 assert.match(page,/event\.key==='ArrowLeft'/, 'left keyboard navigation should be available');
