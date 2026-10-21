@@ -13,6 +13,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog'));
 const Vehicles = lazy(() => import('./pages/Vehicles'));
 const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
+const Routes = lazy(() => import('./pages/Routes'));
 const Drivers = lazy(() => import('./pages/Drivers'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
@@ -28,6 +29,7 @@ const pages = {
   '/admin/companies.html': Companies,
   '/admin/drivers.html': Drivers,
   '/admin/delivery-points.html': DeliveryPoints,
+  '/admin/routes.html': Routes,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
 };
