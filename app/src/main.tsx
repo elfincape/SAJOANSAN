@@ -15,6 +15,7 @@ const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Routes = lazy(() => import('./pages/Routes'));
 const RouteEdit = lazy(() => import('./pages/RouteEdit'));
+const HaulCalculator = lazy(() => import('./pages/HaulCalculator'));
 const PdfTools = lazy(() => import('./pages/PdfTools'));
 const CoupangEntry = lazy(() => import('./pages/CoupangEntry'));
 const OneTopWork = lazy(() => import('./pages/OneTopWork'));
@@ -47,6 +48,7 @@ const pages = {
   '/admin/one-top-two-room-work.html': OneTopWork,
   '/admin/coupang-entry.html': CoupangEntry,
   '/admin/pdf-image-converter.html': PdfTools,
+  '/admin/haul-dispatch-calculator.html': HaulCalculator,
   '/admin/route-edit.html': RouteEdit,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
