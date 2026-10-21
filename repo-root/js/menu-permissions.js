@@ -35,7 +35,7 @@ export function installMenuPermissions(context,profile){
    return !permissionAllowed(context,explicit.dataset.permissionResource||key,explicit.dataset.permissionAction,explicit.dataset.permissionCenter||center);
   }
   if(editable||scopedProfileEdit(control)||control.closest('#filters,#app-header,#app-account-menu'))return false;
-  return /등록|저장|삭제|수정|추가|신규|편집|일괄 적용|갱신|완료 처리|처리완료|재개|복원|불러와 적용/.test([control.textContent,control.title,control.getAttribute('aria-label'),control.value].join(' '));
+  return /등록|저장|삭제|수정|추가|신규|일괄 적용|갱신|완료 처리|처리완료|재개|복원|불러와 적용/.test([control.textContent,control.title,control.getAttribute('aria-label'),control.value].join(' '));
  };
  const apply=()=>{
   for(const link of document.querySelectorAll('a[href]')){const target=new URL(link.href,location.href);if(target.origin!==location.origin)continue;const resource=resourceForPath(target.pathname);if(resource){const denied=!permissionAllowed(context,resource,'read',permissionCenterForUrl(target,center));link.hidden=denied||link.dataset.hubFiltered==='true';if(denied){link.style.display='none';link.dataset.permissionHidden='true';}else if(link.dataset.permissionHidden){link.style.removeProperty('display');delete link.dataset.permissionHidden;}}}
