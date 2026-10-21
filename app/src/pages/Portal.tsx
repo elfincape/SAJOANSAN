@@ -10,6 +10,8 @@ import type { Profile } from '../lib/auth';
 import { portalApi, portalHasMailbox, portalRecord } from '../lib/portal';
 import { finishOneDrive } from '../lib/onedrive';
 import { permissionAllowed } from '../lib/permissions';
+import { PortalTickets } from '../components/portal/PortalTickets';
+import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
 import { PortalShell } from '../components/portal/PortalShell';
 import { PortalStore } from '../components/portal/PortalStore';
 import type { PortalState } from '../components/portal/PortalStore';
@@ -120,6 +122,9 @@ function Work({ profile }: { profile: Profile }) {
       message: '',
       messageError: false,
       ticket: false,
+      ticketMode: 'detail',
+      ticketParent: null,
+      parentTaskId: null,
       parentTask: null,
       hqReviewOpen: false,
       unread: 0,
@@ -128,6 +133,18 @@ function Work({ profile }: { profile: Profile }) {
     retry = useRef<{ key: string; requestId: string } | null>(null),
     initialized = useRef(false),
     mounted = useRef(true);
+  const taskDrafts = useRef(
+      new Map<
+        string,
+        {
+          version: number;
+          inputs: import('../domain/portal-types').PortalInputs;
+        }
+      >(),
+    ).current,
+    workflowRequests = useRef(
+      new Map<string, { key: string; id: string }>(),
+    ).current;
   function update(fn: (s: PortalState) => void) {
     const next = { ...current.current };
     fn(next);
@@ -335,6 +352,8 @@ function Work({ profile }: { profile: Profile }) {
   function choose(selection: PortalSelection) {
     update((s) => {
       s.parentTask = null;
+      s.parentTaskId = null;
+      s.ticketMode = 'detail';
       s.selected = selection;
       if (s.view !== 'hq' && (selection.type === 'task' || s.view === 'center'))
         s.ticket = true;
@@ -585,6 +604,8 @@ function Work({ profile }: { profile: Profile }) {
     <PortalStore.Provider
       value={{
         profile,
+        taskDrafts,
+        workflowRequests,
         state,
         update,
         refresh,
@@ -634,6 +655,12 @@ function Work({ profile }: { profile: Profile }) {
                   새로고침
                 </button>
                 <button
+                  onClick={() =>
+                    update((s) => {
+                      s.ticket = true;
+                      s.ticketMode = 'issue';
+                    })
+                  }
                   id="issue-task"
                   type="button"
                   hidden={state.view !== 'center' || !canWrite(state.center)}
@@ -642,6 +669,12 @@ function Work({ profile }: { profile: Profile }) {
                   업무 발행
                 </button>
                 <button
+                  onClick={() =>
+                    update((s) => {
+                      s.ticket = true;
+                      s.ticketMode = 'create';
+                    })
+                  }
                   id="new-task"
                   className="primary"
                   type="button"
@@ -938,12 +971,20 @@ function Work({ profile }: { profile: Profile }) {
                 </div>
               </section>
               <aside id="detail" aria-label="업무 처리">
-                <p>목록에서 항목을 선택하세요.</p>
+                {state.selected?.type === 'task' && !state.ticket ? (
+                  <PortalTaskDetail
+                    key={state.selected.row.id}
+                    task={state.selected.row}
+                  />
+                ) : (
+                  <p>목록에서 항목을 선택하세요.</p>
+                )}
               </aside>
             </div>
           </main>
         </div>
       </PortalShell>
+      <PortalTickets />
     </PortalStore.Provider>
   );
 }

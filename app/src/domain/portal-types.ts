@@ -100,6 +100,7 @@ export interface PortalMember {
   [key: string]: unknown;
 }
 export interface ParticipantSubject {
+  eligible?: boolean;
   id: string;
   kind: string;
   name: string;

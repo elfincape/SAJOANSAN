@@ -38,12 +38,23 @@ export interface PortalState {
   message: string;
   messageError: boolean;
   ticket: boolean;
+  ticketMode: string;
+  ticketParent: PortalTask | null;
+  parentTaskId: string | null;
   parentTask: PortalTask | null;
   hqReviewOpen: boolean;
   unread: number;
 }
 export interface PortalStoreValue {
   profile: Profile;
+  taskDrafts: Map<
+    string,
+    {
+      version: number;
+      inputs: import('../../domain/portal-types').PortalInputs;
+    }
+  >;
+  workflowRequests: Map<string, { key: string; id: string }>;
   state: PortalState;
   update: (fn: (s: PortalState) => void) => void;
   refresh: () => Promise<void>;
