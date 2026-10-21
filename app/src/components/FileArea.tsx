@@ -71,7 +71,7 @@ export function FileTransfers({ children }: { children: ReactNode }) {
   return <Registry.Provider value={registrations.current}>{children}</Registry.Provider>;
 }
 
-export function FileArea({ as = 'div', accept, multiple = false, disabled = false, onFiles, children, className = '', ...props }: Options & Omit<HTMLAttributes<HTMLElement>, 'onDrop'> & { as?: 'div' | 'section' | 'article' | 'button'; children: ReactNode; type?: 'button' }) {
+export function FileArea({ as = 'div', hint = true, accept, multiple = false, disabled = false, onFiles, children, className = '', ...props }: Options & Omit<HTMLAttributes<HTMLElement>, 'onDrop'> & { as?: 'div' | 'section' | 'article' | 'button' | 'main'; hint?: boolean; children: ReactNode; type?: 'button' }) {
   const registry = useContext(Registry), key = useRef(Symbol());
   const element = useRef<HTMLElement | null>(null);
   const [active, setActive] = useState(false), [feedback, setFeedback] = useState('');
@@ -84,5 +84,5 @@ export function FileArea({ as = 'div', accept, multiple = false, disabled = fals
   return createElement(as, { ...props, ref: element, className: `${className}${active ? ' file-drop-active' : ''}${images ? ' file-paste-target' : ''}`, tabIndex: props.tabIndex ?? (images ? 0 : undefined), onClick: (event: React.MouseEvent<HTMLElement>) => {
     props.onClick?.(event);
     if (images && event.target instanceof Element && !event.target.closest('input,textarea,select,button,a,[contenteditable=true],[role=textbox]')) event.currentTarget.focus({ preventScroll: true });
-  } }, children, images ? <p className="file-paste-hint" data-file-paste-hint="">사진 영역을 클릭하고 Ctrl+V로 붙여넣기</p> : null, feedback ? <span className="file-drop-feedback" data-file-drop-feedback="" role="status">{feedback}</span> : null);
+  } }, children, images && hint ? <p className="file-paste-hint" data-file-paste-hint="">사진 영역을 클릭하고 Ctrl+V로 붙여넣기</p> : null, feedback ? <span className="file-drop-feedback" data-file-drop-feedback="" role="status">{feedback}</span> : null);
 }

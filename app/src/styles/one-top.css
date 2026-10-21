@@ -1,0 +1,31 @@
+
+    .step-card { border:1px solid #3f3f46; background:rgba(39,39,42,.45); border-radius:.75rem; padding:1rem; }
+    .step-badge { display:inline-flex; width:1.6rem; height:1.6rem; align-items:center; justify-content:center; border-radius:999px; background:rgba(16,185,129,.14); color:#34d399; border:1px solid rgba(16,185,129,.35); font-size:.75rem; font-weight:700; }
+    .camera-frame { --capture-inset:18.75%; position:relative; width:100%; aspect-ratio:4/3; overflow:hidden; border:2px solid #10b981; border-radius:.75rem; background:#09090b; }
+    .camera-frame video { width:100%; height:100%; object-fit:cover; }
+    .camera-frame::before { content:''; position:absolute; inset:0; z-index:3; background:rgba(255,255,255,.72); opacity:0; pointer-events:none; }
+    .camera-frame::after { content:''; position:absolute; inset:var(--capture-inset); border:2px dashed rgba(255,255,255,.8); border-radius:.45rem; pointer-events:none; }
+    .camera-frame.capture-feedback { border-color:#6ee7b7; box-shadow:0 0 0 4px rgba(16,185,129,.28); }
+    .camera-frame.capture-feedback::before { animation:camera-flash .28s ease-out; }
+    .camera-feedback-label { position:absolute; left:50%; bottom:1rem; z-index:4; transform:translate(-50%,.4rem); padding:.5rem .9rem; border-radius:999px; background:rgba(6,78,59,.96); color:#d1fae5; font-size:.86rem; font-weight:800; opacity:0; transition:opacity .12s ease,transform .12s ease; pointer-events:none; white-space:nowrap; }
+    .camera-feedback-label.is-visible { opacity:1; transform:translate(-50%,0); }
+    .camera-capture-button { grid-column:1 / -1; display:block; width:100%; min-height:3.5rem; padding:.9rem 1rem; font-size:1.12rem; font-weight:800; }
+    .camera-capture-button.capture-feedback { background:#047857; filter:brightness(1.18); transform:scale(.98); }
+    .thumb { position:relative; border:1px solid #3f3f46; border-radius:.5rem; overflow:hidden; background:#18181b; }
+    .thumb img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+    .paste-tile { aspect-ratio:4/3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; border:2px dashed #52525b; border-radius:.5rem; background:#18181b; color:#a1a1aa; cursor:text; text-align:center; padding:.75rem; }
+    .paste-tile:hover,.paste-tile:focus { border-color:#10b981; background:rgba(6,78,59,.18); color:#d4d4d8; outline:none; }
+    .capture-check { position:absolute; top:.45rem; left:.45rem; z-index:2; width:1.15rem; height:1.15rem; accent-color:#10b981; }
+    .supplement-paste { position:relative; width:3rem; height:3rem; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px dashed #71717a; border-radius:.4rem; background:#18181b; color:#a1a1aa; font-size:1.25rem; cursor:copy; }
+    .supplement-paste:focus,.supplement-paste:hover { border-color:#10b981; outline:none; }
+    .supplement-paste img { width:100%; height:100%; object-fit:cover; }
+    .supplement-clear { position:absolute; top:0; right:0; width:1rem; height:1rem; border-radius:0 0 0 .25rem; background:rgba(0,0,0,.75); color:#fff; font-size:.65rem; line-height:1; }
+    .status-ok { color:#34d399; } .status-warn { color:#fbbf24; } .status-error { color:#fb7185; }
+    .result-table th,.result-table td { white-space:nowrap; vertical-align:middle; }
+    .analysis-hover-preview { position:fixed; inset:33.333%; z-index:80; display:flex; align-items:center; justify-content:center; padding:.5rem; border:1px solid #52525b; border-radius:.75rem; background:rgba(9,9,11,.94); box-shadow:0 24px 70px rgba(0,0,0,.65); opacity:0; visibility:hidden; transform:scale(.96); transition:opacity .14s ease,transform .14s ease,visibility .14s; pointer-events:none; }
+    .analysis-hover-preview.is-visible { opacity:1; visibility:visible; transform:scale(1); }
+    .analysis-hover-preview img { display:block; width:100%; height:100%; object-fit:contain; border-radius:.45rem; }
+    @keyframes camera-flash { 0% { opacity:.72; } 100% { opacity:0; } }
+    @media (prefers-reduced-motion:reduce) { .camera-frame.capture-feedback::before { animation:none; } .camera-feedback-label { transition:none; } }
+    @media (max-width:768px) { .analysis-hover-preview { inset:20%; } }
+  
