@@ -15,6 +15,7 @@ const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Routes = lazy(() => import('./pages/Routes'));
 const RouteEdit = lazy(() => import('./pages/RouteEdit'));
+const KakaoRoutes = lazy(() => import('./pages/KakaoRoutes'));
 const HaulCalculator = lazy(() => import('./pages/HaulCalculator'));
 const PdfTools = lazy(() => import('./pages/PdfTools'));
 const CoupangEntry = lazy(() => import('./pages/CoupangEntry'));
@@ -49,6 +50,7 @@ const pages = {
   '/admin/coupang-entry.html': CoupangEntry,
   '/admin/pdf-image-converter.html': PdfTools,
   '/admin/haul-dispatch-calculator.html': HaulCalculator,
+  '/admin/ansan-gimhae-busan-ansan.html': KakaoRoutes,
   '/admin/route-edit.html': RouteEdit,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
