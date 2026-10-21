@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { FileTransfers } from './components/FileArea';
 
+const GimhaeDispatch = lazy(() => import('./pages/GimhaeDispatch'));
 const Login = lazy(() => import('./pages/Login'));
 const ImageStraightener = lazy(() => import('./pages/ImageStraightener'));
 const DispatchParser = lazy(() => import('./pages/DispatchParser'));
@@ -32,6 +33,7 @@ const Drivers = lazy(() => import('./pages/Drivers'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
   '/login.html': Login,
+  '/admin/gimhae-dispatch.html': GimhaeDispatch,
   '/admin/image-straightener.html': ImageStraightener,
   '/admin/dispatch-parser.html': DispatchParser,
   '/admin/pallet-slips.html': PalletSlips,

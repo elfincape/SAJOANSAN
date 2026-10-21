@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { loadAuthContext, signOut } from '../lib/auth';
 import type { AuthContext } from '../lib/auth';
@@ -13,7 +13,8 @@ import '../styles/workspace-ui.css';
 import '../styles/admin-workspace.css';
 import '../styles/theme.css';
 
-interface PageContext extends AuthContext { center: Center; editable: boolean; controlsDisabled: boolean; setControlsDisabled: (disabled:boolean)=>void }
+type CenterChangeGuard=()=>boolean|Promise<boolean>;
+interface PageContext extends AuthContext { center: Center; editable: boolean; controlsDisabled: boolean; centerChangeGuard: React.MutableRefObject<CenterChangeGuard|null>; setCenterChangeGuard:(guard:CenterChangeGuard|null)=>void; setControlsDisabled: (disabled:boolean)=>void }
 const Context = createContext<PageContext | null>(null);
 export function useAdminPage() {
   const context = useContext(Context);
@@ -28,8 +29,8 @@ function activePath(href: string) {
   return path === location.pathname;
 }
 
-function Shell({ title, children, actions, centerTarget }: { title: string; children: ReactNode; actions?: ReactNode; centerTarget?: string }) {
-  const { profile, permissions, center, controlsDisabled } = useAdminPage();
+function Shell({ title, children, actions, centerTarget, mainId = 'work-main' }: { title: string; children: ReactNode; actions?: ReactNode; centerTarget?: string; mainId?:string }) {
+  const { profile, permissions, center, controlsDisabled, centerChangeGuard } = useAdminPage();
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 1000px)').matches);
   const [drawer, setDrawer] = useState(false);
@@ -64,7 +65,7 @@ function Shell({ title, children, actions, centerTarget }: { title: string; chil
   const canManage = manager || Object.keys(permissions.access || {}).some(resource => !portalResources.has(resource) && permissionAllowed(permissions, resource, 'read', center.code));
   const menus = FEATURE_CATALOG.filter(f => f.href && f.hub !== false && f.href !== '/portal/' && featureAvailable(f, profile, center.code) && (!f.ownerOnly || isPrivateFeatureOwner(profile)) && (f.fixed || features[f.id]) && (!f.resource || permissionAllowed(permissions, f.resource, 'read', center.code)));
   return <>
-    <a className="app-skip" href="#work-main">본문으로 이동</a>
+    <a className="app-skip" href={`#${mainId}`}>본문으로 이동</a>
     <dialog ref={sidebar} id="app-sidebar" aria-label="이안물류 업무 탐색" onCancel={() => setDrawer(false)} onClick={event => { if (event.target === event.currentTarget) closeDrawer(); }}>
       <div className="app-brand"><a href={withCenterParam('/portal/', center)}>이안물류<small>통합 업무</small></a><button disabled={controlsDisabled} ref={close} type="button" data-navigation-toggle aria-label="메뉴 닫기" title="메뉴 닫기" onClick={() => closeDrawer()}>×</button></div>
       <nav id="app-workspace-navigation" aria-label="주요 화면">{[
@@ -81,8 +82,10 @@ function Shell({ title, children, actions, centerTarget }: { title: string; chil
       <button disabled={controlsDisabled} ref={toggle} type="button" className="app-menu-toggle" data-navigation-toggle aria-label="업무 메뉴 열기" title="업무 메뉴 열기" aria-controls="app-sidebar" aria-expanded={drawer} onClick={() => setDrawer(true)}>☰</button>
       <nav className="app-location" aria-label="현재 위치">{title !== '관리 허브' ? <><a href={withCenterParam('/admin/', center)}>관리 허브</a><span className="app-path-divider" aria-hidden="true">/</span></> : null}<h1>{title}</h1></nav>
       <div className="app-page-actions">{actions}</div>
-      <div className="app-header-controls"><label id="center-switcher" data-app-center="true"><span>센터</span><select disabled={controlsDisabled} id="app-center-select" aria-label="작업 센터" value={center.code} onChange={event => {
-        const next = setSelectedCenterCode(event.target.value);
+      <div className="app-header-controls"><label id="center-switcher" data-app-center="true"><span>센터</span><select disabled={controlsDisabled} id="app-center-select" aria-label="작업 센터" value={center.code} onChange={async event => {
+        const code=event.target.value;
+        if(centerChangeGuard.current && !await centerChangeGuard.current()) return;
+        const next = setSelectedCenterCode(code);
         if (next) location.replace(withCenterParam(centerTarget || location.pathname + location.search + location.hash, next));
       }}><option value="" disabled>센터 선택</option>{CENTERS.map(item => <option key={item.code} value={item.code}>{item.shortName}</option>)}</select></label>
         <button disabled={controlsDisabled} type="button" id="app-account-toggle" popoverTarget="app-account-menu" aria-label="사용자 메뉴" title="사용자 메뉴"><span id="app-profile-label">{profile.display_name || profile.email || '사용자'}</span><span aria-hidden="true">⌄</span></button><ThemeToggle disabled={controlsDisabled} />
@@ -93,8 +96,8 @@ function Shell({ title, children, actions, centerTarget }: { title: string; chil
   </>;
 }
 
-export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-zinc-900 text-zinc-100 min-h-screen', children, actions, centerTarget }: {
-  title: string; feature?: string; minRole?: 'viewer' | 'editor' | 'admin'; bodyClass?: string; children: ReactNode; actions?: ReactNode; centerTarget?: string;
+export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-zinc-900 text-zinc-100 min-h-screen', children, actions, centerTarget, mainId }: {
+  title: string; feature?: string; minRole?: 'viewer' | 'editor' | 'admin'; bodyClass?: string; children: ReactNode; actions?: ReactNode; centerTarget?: string; mainId?:string;
 }) {
   const params = new URLSearchParams(location.search);
   const portalEmbedded = params.has('portal_task') && parent !== window;
@@ -102,6 +105,8 @@ export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-
   const [auth, setAuth] = useState<AuthContext | null>(null);
   const [error, setError] = useState('');
   const [controlsDisabled,setControlsDisabled] = useState(false);
+  const centerChangeGuard=useRef<CenterChangeGuard|null>(null);
+  const setCenterChangeGuard=useCallback((guard:CenterChangeGuard|null)=>{centerChangeGuard.current=guard;},[]);
   const [center, setCenter] = useState(() => new URLSearchParams(location.search).get('selectCenter') === '1' ? null : getSelectedCenter());
   useEffect(() => {
     document.title = `${title} · 이안물류`;
@@ -121,5 +126,5 @@ export function AdminPage({ title, feature, minRole = 'editor', bodyClass = 'bg-
   if (denied) return <div id="modal-root"><div role="dialog" aria-modal="true" aria-label="접근 권한" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"><div className="w-full max-w-md mx-4 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-5"><p>{resource ? '이 목록의 열람 권한이 없습니다.' : `이 페이지에 접근할 권한이 없습니다. 필요 권한: ${minRole} 현재 권한: ${auth.profile.role}`}</p><button type="button" className="btn btn-primary mt-4" onClick={() => location.replace(resource ? '/portal/' : '/')}>확인</button></div></div></div>;
   if (feature && !loadPrivateFeatures(auth.profile)[feature]) { location.replace(withCenterParam('/admin/', center)); return null; }
   const editable = !resource || permissionAllowed(auth.permissions, resource, 'edit', center.code);
-  return <Context.Provider value={{ ...auth, center, editable, controlsDisabled, setControlsDisabled }}>{embedded ? <>{portalEmbedded ? null : <header className="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur"><div className="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3"><a href={withCenterParam('/admin/',center)} className="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a><h1 className="text-base font-semibold">{title}</h1><div className="flex-1"/><span id="user-badge" className="text-xs text-zinc-400">{auth.profile.display_name || auth.profile.email || ''} ({auth.profile.role})</span>{actions}</div></header>}{children}</> : <Shell title={title} actions={actions} centerTarget={centerTarget}>{children}</Shell>}</Context.Provider>;
+  return <Context.Provider value={{ ...auth, center, editable, controlsDisabled, setControlsDisabled, centerChangeGuard, setCenterChangeGuard }}>{embedded ? <>{portalEmbedded ? null : <header className="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur"><div className="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3"><a href={withCenterParam('/admin/',center)} className="text-xs text-zinc-400 hover:text-zinc-100">← 관리 허브</a><h1 className="text-base font-semibold">{title}</h1><div className="flex-1"/><span id="user-badge" className="text-xs text-zinc-400">{auth.profile.display_name || auth.profile.email || ''} ({auth.profile.role})</span>{actions}</div></header>}{children}</> : <Shell title={title} actions={actions} centerTarget={centerTarget} mainId={mainId}>{children}</Shell>}</Context.Provider>;
 }
