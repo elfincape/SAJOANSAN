@@ -10,6 +10,10 @@ import type { Profile } from '../lib/auth';
 import { portalApi, portalHasMailbox, portalRecord } from '../lib/portal';
 import { finishOneDrive } from '../lib/onedrive';
 import { permissionAllowed } from '../lib/permissions';
+import {
+  PortalIncidentList,
+  PortalIncidentDetail,
+} from '../components/portal/PortalIncidents';
 import { PortalTickets } from '../components/portal/PortalTickets';
 import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
 import { PortalShell } from '../components/portal/PortalShell';
@@ -20,6 +24,7 @@ import {
   PortalTaskRow,
   PortalTaskWithChildren,
 } from '../components/portal/PortalTaskList';
+import { assignedToMe } from '../domain/portal-assignment';
 import { koreaDate } from '../domain/operations';
 import { validDate } from '../domain/driver-health';
 import { orderTasks, finished } from '../domain/portal-model';
@@ -39,7 +44,6 @@ import {
 import type {
   PortalSelection,
   PortalTask,
-  ParticipantSubject,
   PortalPermissions,
 } from '../domain/portal-types';
 const failure = (error: unknown, fallback = '') =>
@@ -77,22 +81,6 @@ function Icon({ kind }: { kind: string }) {
         />
       )}
     </svg>
-  );
-}
-export function assignedToMe(
-  task: PortalTask,
-  profile: Profile,
-  participants: ParticipantSubject[],
-) {
-  if (task.owner_id === profile.id) return true;
-  const subject = participants.find((s) => s.id === task.handler_subject_id),
-    person = participants.find((s) => s.user_id === profile.id);
-  return (
-    (subject?.kind === 'role' &&
-      subject.role_key === 'delivery_team' &&
-      profile.role === 'admin') ||
-    (subject?.kind === 'center' &&
-      (person?.centers ?? []).includes(subject.center_code || ''))
   );
 }
 function Work({ profile }: { profile: Profile }) {
@@ -388,7 +376,13 @@ function Work({ profile }: { profile: Profile }) {
           s.mailAvailable = mailAvailable;
           if (profile.role === 'admin' && !requested) s.view = 'hq';
           const view = params.get('view');
-          if (view && allowed(viewResource(view))) s.view = view;
+          if (
+            view &&
+            (view === 'mail'
+              ? mailAvailable
+              : permissionAllowed(permissions, viewResource(view), 'read'))
+          )
+            s.view = view;
         });
         if (
           !allowed(
@@ -572,7 +566,12 @@ function Work({ profile }: { profile: Profile }) {
       overlapsPeriod(t, period.from, period.through),
     ),
     overdue = visible.filter((t) => taskEnd(t) < period.from && !finished(t)),
-    count = state.view === 'center' ? inPeriod.length + overdue.length : 0;
+    count =
+      state.view === 'center'
+        ? inPeriod.length + overdue.length
+        : state.view === 'incidents'
+          ? state.incidents.length
+          : 0;
   const title = !state.context
     ? '업무목록'
     : denied
@@ -911,10 +910,23 @@ function Work({ profile }: { profile: Profile }) {
             <div className="workspace">
               <section className="list">
                 <div className="list-heading">
-                  <strong id="list-title">업무목록</strong>
+                  <strong id="list-title">
+                    {state.view === 'incidents' ? '특이사항' : '업무목록'}
+                  </strong>
                   <span id="count">{denied ? '' : count + '건'}</span>
                 </div>
                 <div id="items" className="portal-items">
+                  {!denied && state.view === 'incidents' ? (
+                    <>
+                      <PortalIncidentList />
+                      {!count ? (
+                        <div className="portal-empty">
+                          <strong>표시할 항목이 없습니다.</strong>
+                          <p>등록된 항목이 있으면 여기에 표시됩니다.</p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                   {state.context && !denied && state.view === 'center' ? (
                     <>
                       {overdue.length ? (
@@ -971,7 +983,14 @@ function Work({ profile }: { profile: Profile }) {
                 </div>
               </section>
               <aside id="detail" aria-label="업무 처리">
-                {state.selected?.type === 'task' && !state.ticket ? (
+                {state.selected?.type === 'incident' && !state.ticket ? (
+                  <PortalIncidentDetail
+                    key={
+                      state.selected.row.id + ':' + state.selected.row.version
+                    }
+                    row={state.selected.row}
+                  />
+                ) : state.selected?.type === 'task' && !state.ticket ? (
                   <PortalTaskDetail
                     key={state.selected.row.id}
                     task={state.selected.row}

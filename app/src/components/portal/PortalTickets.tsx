@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PortalDialog } from './PortalDialog';
+import { PortalIncidentDetail } from './PortalIncidents';
 import { PortalTaskDetail } from './PortalTaskDetail';
 import { usePortal } from './PortalStore';
 import { portalApi, portalRecord } from '../../lib/portal';
@@ -321,6 +322,13 @@ export function PortalTickets() {
               key={state.ticketParent.id}
               task={state.ticketParent}
             />
+          ) : selected?.type === 'incident' ? (
+            <div className="task-detail-content">
+              <PortalIncidentDetail
+                key={selected.row.id + ':' + selected.row.version}
+                row={selected.row}
+              />
+            </div>
           ) : selected?.type === 'task' ? (
             <PortalTaskDetail key={selected.row.id} task={selected.row} popup />
           ) : null}
