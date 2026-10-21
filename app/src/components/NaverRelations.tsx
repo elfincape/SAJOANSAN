@@ -74,9 +74,9 @@ export function NaverRelations({
   }));
   const current = useRef(view),
     file = useRef<HTMLInputElement>(null),
-    pairDetails = useRef<HTMLDetailsElement>(null),
     mounted = useRef(true),
     { download, downloadLink } = useDownload();
+  const [pairOpen, setPairOpen] = useState(false);
   const [search, setSearch] = useState(''),
     [destinationId, setDestinationId] = useState('');
   function update(change: (next: View) => void) {
@@ -284,7 +284,7 @@ export function NaverRelations({
         [selected.code, selected.name].filter(Boolean).join(' · ') +
         (side === 'from' ? ' · 출발지 선택됨' : ' · 도착지 선택됨');
     });
-    if (pairDetails.current) pairDetails.current.open = true;
+    setPairOpen(true);
   }
   async function singlePair() {
     const s = current.current,
@@ -647,7 +647,11 @@ export function NaverRelations({
           )}
         </div>
       </details>
-      <details ref={pairDetails} id="relation-single-pair">
+      <details
+        open={pairOpen}
+        onToggle={(e) => setPairOpen(e.currentTarget.open)}
+        id="relation-single-pair"
+      >
         <summary>단일 구간 추가 조회</summary>
         <div className="pd-fields">
           <label>
