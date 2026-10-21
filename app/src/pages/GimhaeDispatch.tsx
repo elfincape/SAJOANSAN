@@ -94,8 +94,8 @@ function Work() {
   const current = useRef(view);
   const file = useRef<HTMLInputElement>(null),
     photo = useRef<HTMLImageElement>(null),
-    reply = useRef<HTMLTextAreaElement>(null),
-    truckDetails = useRef<HTMLDetailsElement>(null);
+    reply = useRef<HTMLTextAreaElement>(null);
+  const [trucksOpen, setTrucksOpen] = useState(false);
   const fixedDialog = useRef<HTMLDialogElement>(null),
     previewDialog = useRef<HTMLDialogElement>(null),
     messageAreas = useRef(new Map<string, HTMLTextAreaElement>());
@@ -448,8 +448,7 @@ function Work() {
         s.replyState = '반영 완료';
       });
       status('운수사 회신을 반영했습니다.');
-      if (next.trucks.some((t) => !t.requestId) && truckDetails.current)
-        truckDetails.current.open = true;
+      if (next.trucks.some((t) => !t.requestId)) setTrucksOpen(true);
     } catch (error) {
       update((s) => {
         s.replyState = messageOf(error);
@@ -1157,7 +1156,8 @@ function Work() {
           </section>
         </div>
         <details
-          ref={truckDetails}
+          open={trucksOpen}
+          onToggle={(e) => setTrucksOpen(e.currentTarget.open)}
           id="gm-truck-details"
           className="gm-settings gm-band"
         >
