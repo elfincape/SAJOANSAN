@@ -16,6 +16,7 @@ import {
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
 import { PortalPermissions as PortalPermissionsView } from '../components/portal/PortalPermissions';
+import { PortalTrash } from '../components/portal/PortalTrash';
 import { PortalMembers } from '../components/portal/PortalMembers';
 import { PortalBriefing } from '../components/portal/PortalBriefing';
 import { portalBriefing } from '../lib/portal-ai';
@@ -590,12 +591,14 @@ function Work({ profile }: { profile: Profile }) {
         ? inPeriod.length + overdue.length
         : state.view === 'incidents'
           ? state.incidents.length
-          : state.view === 'notifications'
-            ? state.notifications.length
-            : hq
-              ? tasks.filter((t) => !finished(t)).length +
-                state.incidents.filter((i) => i.status === 'open').length
-              : 0;
+          : state.view === 'trash'
+            ? state.tasks.length
+            : state.view === 'notifications'
+              ? state.notifications.length
+              : hq
+                ? tasks.filter((t) => !finished(t)).length +
+                  state.incidents.filter((i) => i.status === 'open').length
+                : 0;
   const title = !state.context
     ? '업무목록'
     : denied
@@ -977,17 +980,20 @@ function Work({ profile }: { profile: Profile }) {
                 <section className="list">
                   <div className="list-heading">
                     <strong id="list-title">
-                      {state.view === 'notifications'
-                        ? '내 알림'
-                        : hq
-                          ? '업무와 지원 요청'
-                          : state.view === 'incidents'
-                            ? '특이사항'
-                            : '업무목록'}
+                      {state.view === 'trash'
+                        ? '휴지통의 업무'
+                        : state.view === 'notifications'
+                          ? '내 알림'
+                          : hq
+                            ? '업무와 지원 요청'
+                            : state.view === 'incidents'
+                              ? '특이사항'
+                              : '업무목록'}
                     </strong>
                     <span id="count">{denied ? '' : count + '건'}</span>
                   </div>
                   <div id="items" className="portal-items">
+                    {!denied && state.view === 'trash' ? <PortalTrash /> : null}
                     {!denied && state.view === 'notifications' ? (
                       <PortalNotifications />
                     ) : null}
