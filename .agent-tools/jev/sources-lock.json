@@ -1,0 +1,20 @@
+[
+  {
+    "name": "ultrafast",
+    "repository": "browser-use/jev-ultrafast",
+    "revision": "1231850a0bf1a0c0341fe408ef1668dbbfdfac46",
+    "sha256": "3bed2171ef064135c5192bad354b4a187f71ec397639d5ab676d02be37822211"
+  },
+  {
+    "name": "mcp",
+    "repository": "jiawei686/jev-ultrafast-mcp",
+    "revision": "6b2e275a98a4429c2f91135f67092fb5cf062f8a",
+    "sha256": "bbaf2331bf608a09e5462084b4ad4fd762de7f28153fce9e0a97a7d728ad2d15"
+  },
+  {
+    "name": "hermes",
+    "repository": "kerpopule/hermes-jev-skills",
+    "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+    "sha256": "4cb26d639e392c5eaa42b975021df021677df80697061c5e3b39ecccf8df1e62"
+  }
+]

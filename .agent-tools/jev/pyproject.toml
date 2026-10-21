@@ -1,0 +1,9 @@
+[project]
+name = "sajo-jev-tools"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["jev-ultrafast", "jev-ultrafast-mcp"]
+
+[tool.uv.sources]
+jev-ultrafast = { path = "sources/ultrafast" }
+jev-ultrafast-mcp = { path = "sources/mcp" }
