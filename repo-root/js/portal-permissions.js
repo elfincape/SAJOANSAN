@@ -202,6 +202,16 @@ export function renderPermissions({
         String(row.dataset.resource === selected),
       );
     panel.replaceChildren(node('h2', config.title + ' 권한'));
+    if (['routes', 'delivery_points'].includes(config.resource)) {
+      panel.append(node('p', '대시보드 코스 조회에는 코스와 납품처의 열람 권한이 모두 필요합니다. 기사·차량·운수사 정보도 각 페이지의 열람 조건을 따릅니다.'));
+    }
+    if (['charter', 'delivery_points'].includes(config.resource)) {
+      panel.append(node('p', '평택 가배차·용차 작업은 용차 권한, 가배차 화면의 기사 상차 기준·착지 관계 설정은 납품처 권한을 따릅니다.'));
+    }
+    if (config.resource === 'dispatch_parser') {
+      panel.append(node('p', '배차정보 파서, 김해 가배차와 요청·회신 초안에 함께 적용됩니다.'));
+    }
+
     if (config.admin_only) {
       panel.append(
         node(
