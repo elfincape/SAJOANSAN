@@ -1,3 +1,4 @@
+import { useWorkspaceScroll } from '../useWorkspaceScroll';
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -36,6 +37,31 @@ export function PortalShell({
   onCenter: (center: string) => void;
   children: ReactNode;
 }) {
+  const [groups, setGroups] = useState(
+    () => new Set(['center', 'hq', 'lookup']),
+  );
+  function group(name: string, open: boolean) {
+    setGroups((previous) => {
+      if (previous.has(name) === open) return previous;
+      const next = new Set(previous);
+      if (open) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+  }
+  useEffect(() => {
+    const name = ['center', 'incidents'].includes(view)
+      ? 'center'
+      : view === 'surveys'
+        ? 'registration'
+        : ['hq', 'briefing'].includes(view)
+          ? 'hq'
+          : ['mail', 'search', 'notifications'].includes(view)
+            ? 'lookup'
+            : 'manage';
+    group(name, true);
+  }, [view, center, permissions]);
+  useWorkspaceScroll();
   const sidebar = useRef<HTMLDialogElement>(null),
     toggle = useRef<HTMLButtonElement>(null),
     close = useRef<HTMLButtonElement>(null),
@@ -185,7 +211,11 @@ export function PortalShell({
           ) : null}
         </nav>
         <div className="app-local-menu">
-          <details className="sidebar-group" open>
+          <details
+            className="sidebar-group"
+            open={groups.has('center')}
+            onToggle={(e) => group('center', e.currentTarget.open)}
+          >
             <summary>
               <span className="sidebar-group-label">센터 업무</span>
             </summary>
@@ -201,7 +231,11 @@ export function PortalShell({
               {nav('incidents', '특이사항')}
             </nav>
           </details>
-          <details className="sidebar-group">
+          <details
+            className="sidebar-group"
+            open={groups.has('registration')}
+            onToggle={(e) => group('registration', e.currentTarget.open)}
+          >
             <summary>
               <span className="sidebar-group-label">업무 등록·조사</span>
             </summary>
@@ -216,7 +250,11 @@ export function PortalShell({
             id="hq-navigation"
             hidden={!allowed('hq') && !allowed('briefing')}
           >
-            <details className="sidebar-group" open>
+            <details
+              className="sidebar-group"
+              open={groups.has('hq')}
+              onToggle={(e) => group('hq', e.currentTarget.open)}
+            >
               <summary>
                 <span className="sidebar-group-label">배송팀</span>
               </summary>
@@ -226,7 +264,11 @@ export function PortalShell({
               </nav>
             </details>
           </section>
-          <details className="sidebar-group" open>
+          <details
+            className="sidebar-group"
+            open={groups.has('lookup')}
+            onToggle={(e) => group('lookup', e.currentTarget.open)}
+          >
             <summary>
               <span className="sidebar-group-label">조회·알림</span>
             </summary>
@@ -236,7 +278,11 @@ export function PortalShell({
               {nav('notifications', '알림함')}
             </nav>
           </details>
-          <details className="sidebar-group">
+          <details
+            className="sidebar-group"
+            open={groups.has('manage')}
+            onToggle={(e) => group('manage', e.currentTarget.open)}
+          >
             <summary>
               <span className="sidebar-group-label">포털 관리</span>
             </summary>

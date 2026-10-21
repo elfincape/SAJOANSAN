@@ -8,7 +8,7 @@
 
 ## 1. 조사 범위
 
-직접 작성한 HTML/JS/CSS, 연결된 API·서버·Supabase Edge 함수·SQL, 배포 설정·워크플로·검사 코드를 읽었다. 파일별 읽기 기록은 이 문서 옆 *-read.json에 보관한다. 패키지 잠금 파일은 의존성 데이터로 분석했고, 외부 라이브러리·생성된 dist는 재작성 대상에서 제외한다. 엑셀·이미지 바이너리는 코드처럼 읽었다고 간주하지 않으며 경로·참조·해시를 조사한다.
+직접 작성한 HTML/JS/CSS, 연결된 API·서버·Supabase Edge 함수·SQL, 배포 설정·워크플로·검사 코드를 읽었다. 파일별 읽기 기록은 작업용 비공개 검증 디렉토리에 보관하며, 이 문서에는 페이지·기능 목록과 이전 순서를 정리한다. 패키지 잠금 파일은 의존성 데이터로 분석했고, 외부 라이브러리·생성된 dist는 재작성 대상에서 제외한다. 엑셀·이미지 바이너리는 코드처럼 읽었다고 간주하지 않으며 경로·참조·해시를 조사한다.
 
 현재 앱은 이미 Vite 8 기반 다중 HTML 빌드다. React 전환은 빌드 도구 도입보다 DOM 렌더링·상태·공유 셸 이전이 중심이다. 실제 앱 진입 HTML은 33개(관리 30, 대시보드·로그인·포털 각 1)이며 포털과 평택 배차는 한 URL에 여러 화면을 포함한다.
 
@@ -108,7 +108,7 @@
 
 ## 5. 사전에 드러난 확인 항목
 
-1. 사용자 수정 승인: Vercel Root Directory는 저장소 루트로 유지한다. api와 server를 app으로 이동하거나 재번들하지 않는다. Install은 cd app && npm ci, Build는 cd app && npm run build, Output은 app/dist로 설정한다. 기존 Node 함수의 루트 npm 의존성 추적·설치, 실행 지역 icn1·30/90초 제한을 최종 배포 검증에 포함한다.
+1. 사용자 수정 승인: Vercel Root Directory는 저장소 루트로 유지한다. api와 server를 app으로 이동하거나 재번들하지 않는다. Build는 cd app && npm run build, Output은 app/dist로 설정한다. 최종 설치 검증에서 루트 메일 함수의 postal-mime 의존성이 app만 설치하면 해석되지 않음을 확인하여, Install은 npm ci --omit=dev && cd app && npm ci로 보완했다. 기존 Node 함수의 루트 npm 의존성 추적·설치, 실행 지역 icn1·30/90초 제한을 최종 배포 검증에 포함한다.
 2. `/templates/one-top-two-room-template_PYT.xlsx` 참조에 대응하는 파일이 저장소에 없다. 사용자가 파일이 없다고 확인했다. 해당 경로의 파일 부재와 기존 실패 동작을 보존하며 다른 양식으로 임의 대체하지 않는다.
 3. root/templates와 assets/templates의 같은 이름 1탑2실 파일은 내용이 다르다. 이름만 보고 통합하지 않는다. 쿠팡 안내 양식명과 실제 fetch 양식명도 구별한다.
 4. `charter-fuel-estimator.html`은 현재 거리 계산 화면이다. 연결되지 않은 유류비 UI/검사를 잘못 가져와 화면을 바꾸지 않는다.
@@ -123,6 +123,6 @@
 - 외부 쓰기·배포·동기화가 섞인 check 스크립트는 이름만 보고 실행하지 않는다. 읽기 전용/모의 검증을 먼저 수행한다.
 - 인증·권한·센터 격리, 수정 취소·중복 저장 방지·버전 충돌·부분 실패·초안 복구, 파일/사진/PDF/엑셀 셀·서식·사진·다운로드 검증.
 - 배차는 원본 물량=배정+미배정, 실제 상차한도와 CJ 참고량 구분, 90%는 분할 검토 경계이며 실을 수 있는 본인 물량을 빼는 기준이 아님, 이력/당일 대조자료 구별·시간/방향별 주행·수동 조정·저장복원을 보존.
-- 최종 Vercel 안내: Root Directory=저장소 루트 유지, install=`cd app && npm ci`, build=`cd app && npm run build`, Output=`app/dist`, Vite 환경변수·기존 링크 rewrite·API 함수 번들/지역/제한 확인. 모든 화면 동등성 확인 전 운영 설정을 바꾸지 않는다.
+- 최종 Vercel 안내: Root Directory=저장소 루트 유지, install=`npm ci --omit=dev && cd app && npm ci`, build=`cd app && npm run build`, Output=`app/dist`, Vite 환경변수·기존 URL별 HTML·페이지 제목 출력과 루트 API 함수 로딩/지역/제한 확인. 모든 화면 동등성 확인 전 운영 설정을 바꾸지 않는다.
 
 승인 요청: 위 목록·순서를 확인하면 app 기반 작업부터 시작한다. 현재 이전 완료 화면은 0개이며 빌드/실제 기능 동등성 검증은 아직 수행하지 않았다.

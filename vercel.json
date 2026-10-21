@@ -1,14 +1,16 @@
 {
   "framework": null,
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "outputDirectory": "repo-root/dist",
+  "installCommand": "npm ci --omit=dev && cd app && npm ci",
+  "buildCommand": "cd app && npm run build",
+  "outputDirectory": "app/dist",
   "functions": {
     "api/private-mail-diagnostic.mjs": {
       "maxDuration": 30
     },
     "api/private-mail-collect.mjs": {
-      "regions": ["icn1"],
+      "regions": [
+        "icn1"
+      ],
       "maxDuration": 90
     }
   }

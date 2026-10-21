@@ -3,12 +3,15 @@
 Spec: user instructions in this conversation. Plan: docs/react-migration/plan.md.
 Base: f083c1e. Branch: react-migration. Original files remain intact.
 
-- User-approved correction: keep Vercel Root Directory at repository root; keep api/ and server/ in place. Install/build run in app; output app/dist. Production settings remain unchanged until parity verification.
+- User-approved correction: keep Vercel Root Directory at repository root; keep api/ and server/ in place. Root runtime dependencies and app dependencies are both installed; app builds to app/dist. Root APIs remain in place. Production project settings and main have not been changed.
 - Pre-flight: common CSS has direct body-child selectors. React mounts at body so no additional root wrapper changes geometry. Shared shell and page-local style load order must remain equivalent.
 - Pre-flight: auth/session, center, permission context and page queries must retain contracts. Move queries to src/lib; no DB/schema/Edge changes.
 - Pre-flight: legacy tests include scripts with production writes; run relevant isolated checks only. AGENTS.md forbids separate committed test files; use existing tests and private temporary browser assertions.
-- Setup: complete. Baseline legacy npm run build passed (existing large-chunk warning).
-- Screens: 32/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log, vehicles, companies, drivers, delivery points, routes, route-stop editor, users, course export, CSV import, transfers, daily temperature, one-top work, Coupang entry, PDF tools, haul calculator, Kakao routes, destination distance, Naver browser jobs, Pyeongtaek charter records, Gimhae dispatch, Pyeongtaek dispatch, dashboard, operations). Portal internal views require separate commits.
+- Setup and migration: complete. Baseline legacy build and final clean-install React TypeScript/Vite builds passed (existing large-chunk warnings).
+- Final verification: isolated Vercel install/build and both unchanged root API fetch handlers passed. All 33 HTML entries and original titles, 38 URL mappings, and 63 byte-identical static resources verified. Nine original/React desktop/mobile/theme scenarios matched the measured geometry/fonts/colors. Scoped CRUD failure/retry/delete and portal, dispatch, spreadsheet, file and permission flows were checked with mocks.
+- Remaining manual deployment setup: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for the target Vercel environment, review react-migration, then choose when to merge/deploy. No production DB mutations, actual mail collection, external AI requests or main deployment were performed. See app/README.md for exact commands.
+- Entries below record validation at each implementation stage; the final status above supersedes historical pending notes.
+- Screens: 33/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log, vehicles, companies, drivers, delivery points, routes, route-stop editor, users, course export, CSV import, transfers, daily temperature, one-top work, Coupang entry, PDF tools, haul calculator, Kakao routes, destination distance, Naver browser jobs, Pyeongtaek charter records, Gimhae dispatch, Pyeongtaek dispatch, dashboard, operations, portal). Portal internal views and shared workflows have separate commits.
 
 - Login: npm run build passed (TypeScript + Vite); existing username-auth and menu-permissions checks passed; temporary Playwright assertions passed for empty fields, invalid username/email credentials, inactive reason, theme and mobile overflow. No live backend requests. Redirect allowlist assertions passed. Impeccable detector: no findings.
 
@@ -129,3 +132,8 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Final Coupang entry screen check: multiline placeholder examples match the original HTML exactly; browser attribute comparison passed. No parser/matching/workbook logic changed.
 
 - Final portal parity: restored the original view descriptions and retained submitted search filters even when the search fails, including navigation away/back and refresh. The failure/retry browser scenario passed with mock RPC errors.
+
+
+- Final shared integration: retained Lenis 1.3.27 with desktop eligibility, reduced-motion/mobile teardown, native dashboard behavior and cleanup; active portal navigation groups open without discarding other groups. Browser scroll checks passed.
+- Final packaging: a shared path/title manifest drives lazy React entry loading and Vite HTML output. Existing directory aliases and original runtime titles passed browser checks. Original assets/templates/SQL are copied unchanged; no SQL was run and the nonexistent PYT workbook remains absent. No CDN library imports remain in app source.
+- Final deployment rehearsal: root production dependencies plus app dependencies installed in a temporary copy without credentials, node_modules or build cache; TypeScript/Vite build, artifact checks and both root API fetch handler imports passed. Root API source, server source, Supabase source and legacy source match origin/main. App src/lib owns all Supabase queries/client setup.
