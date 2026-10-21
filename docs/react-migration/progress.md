@@ -123,3 +123,5 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Final UI binding: Gimhae reply handling now opens the truck details through React state. The existing photo/fixed/reply/CJ/manual-retention/dirty-center browser scenario passed after this binding change.
 
 - Final UI binding: road-pair detail expansion now uses React state. The existing relation selection, collection, workbook and cancellation browser scenario passed.
+
+- Final temperature screen check: placeholder newlines, tabs and literal backslash separators now match the original HTML attributes exactly. The default workbook and temperature behavior remain unchanged; browser attribute comparison passed.
