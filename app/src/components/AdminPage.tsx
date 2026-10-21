@@ -22,13 +22,14 @@ import { permissionAllowed, resourceForPath } from '../lib/permissions';
 import {
   FEATURE_CATALOG,
   FEATURE_CATEGORIES,
-  featureAvailable,
 } from '../domain/feature-catalog';
 import {
-  isPrivateFeatureOwner,
   loadPrivateFeatures,
   subscribePrivateFeatures,
 } from '../lib/private-features';
+import { featureAccessible } from '../lib/feature-access';
+import { WorkspaceCommands } from './WorkspaceCommands';
+import type { WorkspaceCommand } from './WorkspaceCommands';
 import { ThemeToggle } from './ThemeToggle';
 import '../styles/common.css';
 import '../styles/workspace-ui.css';
@@ -158,13 +159,21 @@ function Shell({
             f.href &&
             f.hub !== false &&
             f.href !== '/portal/' &&
-            featureAvailable(f, profile, center.code) &&
-            (!f.ownerOnly || isPrivateFeatureOwner(profile)) &&
-            (f.fixed || features[f.id]) &&
-            (!f.resource ||
-              permissionAllowed(permissions, f.resource, 'read', center.code)),
+            featureAccessible(f, profile, permissions, center.code, features),
         )
       : [];
+  function navigateTo(href: string) {
+    void (async () => {
+      if (controlsDisabled || centerChangeGuard.current && !await centerChangeGuard.current()) return;
+      location.assign(withCenterParam(href, center));
+    })();
+  }
+  const commands: WorkspaceCommand[] = FEATURE_CATALOG.filter(f => f.href && f.hub !== false && featureAccessible(f, profile, permissions, center.code, features)).map(f => ({
+    id: f.id, title: f.title, description: f.desc, group: FEATURE_CATEGORIES[f.category],
+    run: () => navigateTo(f.href!),
+  }));
+  if (canManage) commands.unshift({ id: 'adminHub', title: '관리 허브', description: '관리 도구 전체 보기', group: '주요 화면', run: () => navigateTo('/admin/') });
+  if (manager) commands.unshift({ id: 'dashboard', title: '대시보드', description: '코스·납품 현황 조회', group: '주요 화면', run: () => navigateTo('/') });
   return (
     <>
       <a className="app-skip" href={`#${mainId}`}>
@@ -209,7 +218,7 @@ function Shell({
                 href={withCenterParam(item.href, center)}
                 aria-current={
                   item.href === (area === 'dashboard' ? '/' : '/admin/')
-                    ? 'page'
+                    ? (activePath(item.href) ? 'page' : 'location')
                     : undefined
                 }
               >
@@ -248,6 +257,7 @@ function Shell({
             })}
           </nav>
         </div>
+        <div className="workspace-current-location"><span>현재 화면</span><strong>{title}</strong><small>{center.shortName} · {profile.role === 'admin' ? '관리자' : profile.role === 'editor' ? '업무 담당' : '조회 전용'}</small></div>
       </dialog>
       <header ref={header} id="app-header">
         <div className="app-header-row">
@@ -278,6 +288,7 @@ function Shell({
           </nav>
           <div className="app-page-actions">{actions}</div>
           <div className="app-header-controls">
+            <WorkspaceCommands commands={commands} disabled={controlsDisabled} />
             <label id="center-switcher" data-app-center="true">
               <span>센터</span>
               <select
@@ -422,7 +433,7 @@ export function AdminPage({
         {error}
       </p>
     );
-  if (!auth) return null;
+  if (!auth) return <div className="workspace-loading" role="status"><span className="workspace-spinner" aria-hidden="true"/>로그인과 작업 권한을 확인하고 있습니다.</div>;
   if (!center)
     return (
       <div

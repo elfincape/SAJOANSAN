@@ -1,24 +1,19 @@
 import { useEffect, useState } from 'react';
 
 export interface Notice { id: number; text: string; type: 'success' | 'error' | 'info' | 'warn' }
-const styles = {
-  info: 'bg-zinc-800 border-zinc-600 text-zinc-100',
-  success: 'bg-emerald-900/90 border-emerald-600 text-emerald-50',
-  error: 'bg-red-900/90 border-red-600 text-red-50',
-  warn: 'bg-amber-900/90 border-amber-600 text-amber-50',
-};
-
 function Toast({ notice, dismiss }: { notice: Notice; dismiss: (id: number) => void }) {
-  const [visible, setVisible] = useState(false);
+  const [paused, setPaused] = useState(false);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setVisible(true));
-    const fade = setTimeout(() => setVisible(false), 2800);
-    const remove = setTimeout(() => dismiss(notice.id), 3020);
-    return () => { cancelAnimationFrame(frame); clearTimeout(fade); clearTimeout(remove); };
-  }, [notice.id, dismiss]);
-  return <div className={`pointer-events-auto px-4 py-2.5 rounded-md border shadow-lg text-sm transition-all duration-200 ${visible ? '' : 'opacity-0 translate-y-[-4px]'} ${styles[notice.type]}`}>{notice.text}</div>;
+    if (paused || notice.type === 'error') return;
+    const timer = setTimeout(() => dismiss(notice.id), notice.type === 'warn' ? 12000 : 6500);
+    return () => clearTimeout(timer);
+  }, [notice.id, notice.type, paused, dismiss]);
+  return <div data-notice={notice.type} role={notice.type === 'error' ? 'alert' : 'status'} className="pointer-events-auto px-4 py-2.5 rounded-md border shadow-lg text-sm"
+    onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
+    <span className="notice-text">{notice.type === 'error' ? '오류 · ' : notice.type === 'warn' ? '확인 · ' : ''}{notice.text}</span>
+    <button type="button" aria-label="알림 닫기" onClick={() => dismiss(notice.id)}>닫기</button>
+  </div>;
 }
-
 export function Toasts({ notices, dismiss }: { notices: Notice[]; dismiss: (id: number) => void }) {
-  return <div id="toast-container" className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" aria-live="polite">{notices.map(notice => <Toast key={notice.id} notice={notice} dismiss={dismiss} />)}</div>;
+  return <div id="toast-container" className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" aria-label="처리 결과 알림">{notices.map(notice => <Toast key={notice.id} notice={notice} dismiss={dismiss} />)}</div>;
 }

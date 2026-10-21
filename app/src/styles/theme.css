@@ -1,4 +1,5 @@
 @import './app-shell.css';
+@import './workspace-experience.css';
 
 :root {
   --theme-primary: #087f5b;

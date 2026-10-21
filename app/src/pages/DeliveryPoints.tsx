@@ -1,3 +1,4 @@
+import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
@@ -29,7 +30,7 @@ function DeliveryPointsContent() {
   const [photoMessage, setPhotoMessage] = useState<{ text: string; error?: boolean } | null>(null), [photoBusy, setPhotoBusy] = useState(false);
   const photoBusyRef = useRef(false), savingRef = useRef(false), generation = useRef(0), nameInput = useRef<HTMLInputElement>(null);
   const initial = useRef<ReturnType<typeof loadDeliveryPoints> | undefined>(undefined);
-  function select(row?: DeliveryPoint, focus = false) { generation.current++; setSelected(row?.id || null); setDraft(pointToDraft(row)); setPhotoMessage(null); if (focus) nameInput.current?.focus(); }
+  function select(row?: DeliveryPoint, focus = false, force = false) { if (!force && (saving || photoBusy)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 납품처 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } generation.current++; setSelected(row?.id || null); setDraft(pointToDraft(row)); setPhotoMessage(null); if (focus) nameInput.current?.focus(); }
   useEffect(() => {
     let active = true; const request = initial.current ??= loadDeliveryPoints(center.code);
     void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked) select(linked); }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
@@ -56,6 +57,8 @@ function DeliveryPointsContent() {
   const rows = data.filter(row => (!region || row.region === region) && (!method || row.delivery_method === method) && (!debouncedSearch || [row.code, row.name, row.address, row.security_key_location, row.security_password].filter(Boolean).join(' ').toLowerCase().includes(debouncedSearch.toLowerCase()))).sort((a, b) => String(a[sort === 'name' ? 'name' : 'code'] ?? '').localeCompare(String(b[sort === 'name' ? 'name' : 'code'] ?? ''), 'ko', { numeric: true }));
   const regions = [...new Set(data.map(row => row.region).filter((region): region is string => !!region))].sort((a, b) => a.localeCompare(b, 'ko'));
   const selectedRow = data.find(row => row.id === selected);
+  const dirty = editable && JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
+  useEditorGuard(dirty, saving || photoBusy, confirm);
   function extractRegion() { const region = extractRegionFromAddress(draft.address.trim()); if (region) { update('region', region); toast(`지역을 "${region}"으로 설정했습니다.`, 'success'); } else toast('주소에서 지역을 추출하지 못했습니다.', 'warn'); }
   function normalizeDeadline() {
     const value = draft.deadline.trim(); if (!value) return;
@@ -87,8 +90,8 @@ function DeliveryPointsContent() {
       const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, center.code));
       if (error) { toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       if (removedColumns.length) console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
-      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const row = next.find(row => row.id === saved?.id); if (row) select(row);
-    } catch (error) { console.error('[delivery-points] 저장 후 처리 중 오류', error); }
+      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const row = next.find(row => row.id === saved?.id); if (row) select(row, false, true);
+    } catch (error) { toast(`납품처 저장 중 오류가 발생했습니다. ${error instanceof Error ? error.message : ''}`, 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   }
   async function remove() {
@@ -97,7 +100,7 @@ function DeliveryPointsContent() {
     let message = `"${selectedRow?.name || '이 납품처'}"를 삭제할까요?`;
     if (inUse > 0) message += `\n\n⚠ 이 납품처가 ${inUse}개 코스에 등록되어 있습니다.\n코스에 등록된 상태이면 DB 제약상 삭제가 거부됩니다.\n먼저 해당 코스에서 제거한 뒤 다시 시도하세요.`;
     if (!await confirm(message, { okText: '삭제', cancelText: '취소', danger: true })) return;
-    try { const { error } = await deleteDeliveryPoint(center.code, draft.id); if (error) { toast(error.code === '23503' ? '코스에 등록된 납품처라 삭제할 수 없습니다.' : `삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); select(); } catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
+    try { const { error } = await deleteDeliveryPoint(center.code, draft.id); if (error) { toast(error.code === '23503' ? '코스에 등록된 납품처라 삭제할 수 없습니다.' : `삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); select(undefined, false, true); } catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
@@ -160,7 +163,8 @@ function DeliveryPointsContent() {
           <span id="form-meta" className="text-[11px] text-zinc-500">{draft.id && selectedRow?.updated_at ? `최종수정: ${new Date(selectedRow.updated_at).toLocaleString("ko-KR")}` : ""}</span>
         </div>
 
-        <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}>
+        <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} />
+        <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}><fieldset className="editor-fields space-y-4" disabled={!editable || saving}>
           <input type="hidden" id="f-id" value={draft.id} />
 
           <div className="grid grid-cols-2 gap-3">
@@ -290,12 +294,12 @@ function DeliveryPointsContent() {
           </div>
 
           <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving}>저장</button>
-            <button type="button" id="btn-cancel" className="btn btn-ghost" onClick={() => select(selectedRow)}>취소</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button>
+            <button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => select(selectedRow, false, true)}>취소</button>
             <div className="flex-1"></div>
             <button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? "" : " hidden"}`} onClick={() => void remove()} disabled={!editable}>삭제</button>
           </div>
-        </form>
+        </fieldset></form>
       </section>
     </div>
   </main>

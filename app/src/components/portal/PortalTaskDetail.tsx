@@ -171,6 +171,9 @@ export function PortalTaskDetail({
       }}
     >
       <h3 className="task-input-heading">업무 입력</h3>
+      <p className="editor-status" data-state={busy ? 'saving' : !disabled && JSON.stringify(values) !== JSON.stringify(task.inputs ?? {}) ? 'dirty' : 'ready'} role="status" aria-live="polite">
+        <span className="editor-status-dot" aria-hidden="true"/>{busy ? '요청을 처리하고 있습니다.' : disabled ? '저장된 업무 내용을 보고 있습니다.' : JSON.stringify(values) !== JSON.stringify(task.inputs ?? {}) ? '아직 서버에 저장되지 않았습니다. 저장 또는 업무 완료로 반영하세요.' : '입력한 뒤 저장하거나, 처리가 끝나면 업무 완료를 선택하세요.'}
+      </p>
       {fields.map((f) => (
         <PortalField key={f.key}>
           {f.label}

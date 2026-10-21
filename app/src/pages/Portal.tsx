@@ -30,6 +30,7 @@ import { PortalHistoryView } from '../components/portal/PortalHistoryView';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
 import { PortalTickets } from '../components/portal/PortalTickets';
 import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
+import { portalViewTitle } from '../domain/portal-navigation';
 import { PortalShell } from '../components/portal/PortalShell';
 import { PortalStore } from '../components/portal/PortalStore';
 import type { PortalState } from '../components/portal/PortalStore';
@@ -548,7 +549,7 @@ function Work({ profile }: { profile: Profile }) {
         ? ' permissions-workspace'
         : '');
     document.body.dataset.appArea = 'portal';
-    document.title = '업무 포털 · 이안물류';
+    document.title = `${portalViewTitle(state.view)} · 업무 포털 · 이안물류`;
   }, [state.view, state.layout, state.registrationTab]);
   function navigate(view: string, center?: string) {
     if (current.current.busy) return;
@@ -558,11 +559,10 @@ function Work({ profile }: { profile: Profile }) {
       s.ticket = false;
       if (center) s.center = center;
     });
-    if (center) {
-      const url = new URL(location.href);
-      url.searchParams.set('center', center);
-      history.replaceState(null, '', url.pathname + url.search);
-    }
+    const url = new URL(location.href);
+    url.searchParams.set('view', view);
+    if (center) url.searchParams.set('center', center);
+    history.replaceState(null, '', url.pathname + url.search);
     void refresh();
   }
   function changeCenter(center: string) {
@@ -674,8 +674,8 @@ function Work({ profile }: { profile: Profile }) {
         onCenter={changeCenter}
       >
         <div id="portal-content" className="app-main" tabIndex={-1}>
-          <main id="portal-main" tabIndex={-1}>
-            <div className="heading">
+          <main id="portal-main" tabIndex={-1} data-view={state.view} aria-busy={state.busy}>
+            <div className="heading" key={state.view}>
               <div>
                 <h1 id="portal-title" tabIndex={-1}>
                   {title}
@@ -754,8 +754,8 @@ function Work({ profile }: { profile: Profile }) {
             </div>
             <div
               id="message"
-              role="status"
-              aria-live="polite"
+              role={state.messageError ? 'alert' : 'status'}
+              aria-live={state.messageError ? 'assertive' : 'polite'}
               className={state.messageError ? 'error' : ''}
             >
               {state.message}

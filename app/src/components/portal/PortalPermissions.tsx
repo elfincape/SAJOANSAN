@@ -1,3 +1,6 @@
+import { FEATURE_CATALOG } from '../../domain/feature-catalog';
+import { PORTAL_VIEWS } from '../../domain/portal-navigation';
+import { viewResource } from '../../domain/portal-types';
 import { MentionText } from './PortalMentions';
 import { Fragment, useState } from 'react';
 import type {
@@ -8,6 +11,12 @@ import { centerEditResources } from '../../domain/portal-permissions';
 import { PortalPermissionPreview } from './PortalPermissionPreview';
 import { usePortal } from './PortalStore';
 import { portalApi } from '../../lib/portal';
+function relatedPages(resource: string) {
+  return [...new Set([
+    ...FEATURE_CATALOG.filter(feature => feature.resource === resource).map(feature => feature.title),
+    ...PORTAL_VIEWS.filter(view => viewResource(view.id) === resource).map(view => view.title),
+  ])];
+}
 function RuleEditor({
   title,
   name,
@@ -174,6 +183,7 @@ function PermissionEditor({ config }: { config: PermissionConfig }) {
       {config.resource === 'dispatch_parser' ? (
         <p>배차정보 파서, 김해 가배차와 요청·회신 초안에 함께 적용됩니다.</p>
       ) : null}
+      <section className="permission-related-pages" aria-label="권한이 적용되는 화면"><h3>이 권한이 적용되는 화면</h3><p>{relatedPages(config.resource).join(' · ') || config.title}</p><small>기능 목록에 등록된 화면이 함께 반영됩니다. 실제 접근은 역할·센터·자료 범위 조건을 모두 따릅니다.</small></section>
       {config.admin_only ? (
         <p>
           계정·권한·외부 연결과 원본을 관리하는 관리자 전용 기능입니다. 일반
@@ -283,7 +293,7 @@ export function PortalPermissions() {
     configs = [...state.permissions.rules]
       .sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section))
       .filter((c) =>
-        c.title.toLowerCase().includes(search.trim().toLowerCase()),
+        [c.title, ...relatedPages(c.resource)].join(' ').toLowerCase().includes(search.trim().toLowerCase()),
       ),
     config = state.permissions.rules.find((c) => c.resource === selected);
   let section = '';

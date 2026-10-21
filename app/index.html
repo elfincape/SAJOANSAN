@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <title>코스표 관리 시스템</title>
+    <style>
+      html { background: var(--theme-page, #f6f7f8); color: var(--theme-text, #20252b); }
+      html[data-theme='dark'] { background: var(--theme-page, #181a19); color: var(--theme-text, #e6ece8); color-scheme: dark; }
+      .workspace-boot { display: grid; place-items: center; min-height: 50vh; padding: 24px; font: 14px/1.6 system-ui, sans-serif; }
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition { navigation: auto; }
+        ::view-transition-old(root) { animation-duration: 120ms; }
+        ::view-transition-new(root) { animation-duration: 180ms; }
+      }
+    </style>
     <script>
       try { document.documentElement.dataset.theme = localStorage.getItem('sajo.appearance.v1') === 'dark' ? 'dark' : 'light'; } catch {}
     </script>

@@ -12,7 +12,7 @@ if (Page)
   createRoot(document.body).render(
     <StrictMode>
       <FileTransfers>
-        <Suspense fallback={null}>
+        <Suspense fallback={<div className="workspace-boot" role="status">화면을 불러오고 있습니다…</div>}>
           <Page />
         </Suspense>
       </FileTransfers>

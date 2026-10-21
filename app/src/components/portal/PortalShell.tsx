@@ -1,3 +1,9 @@
+import { FEATURE_CATALOG, FEATURE_CATEGORIES } from '../../domain/feature-catalog';
+import { featureAccessible } from '../../lib/feature-access';
+import { loadPrivateFeatures, subscribePrivateFeatures } from '../../lib/private-features';
+import type { WorkspaceCommand } from '../WorkspaceCommands';
+import { WorkspaceCommands } from '../WorkspaceCommands';
+import { PORTAL_VIEWS, PORTAL_NAV_GROUPS, portalViewTitle } from '../../domain/portal-navigation';
 import { useWorkspaceScroll } from '../useWorkspaceScroll';
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
@@ -37,6 +43,8 @@ export function PortalShell({
   onCenter: (center: string) => void;
   children: ReactNode;
 }) {
+  const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
+  useEffect(() => subscribePrivateFeatures(() => setFeatures(loadPrivateFeatures(profile))), [profile]);
   const [groups, setGroups] = useState(
     () => new Set(['center', 'hq', 'lookup']),
   );
@@ -50,15 +58,8 @@ export function PortalShell({
     });
   }
   useEffect(() => {
-    const name = ['center', 'incidents'].includes(view)
-      ? 'center'
-      : view === 'surveys'
-        ? 'registration'
-        : ['hq', 'briefing'].includes(view)
-          ? 'hq'
-          : ['mail', 'search', 'notifications'].includes(view)
-            ? 'lookup'
-            : 'manage';
+    const section = PORTAL_VIEWS.find(item => item.id === (view === 'access' ? 'members' : view))?.group;
+    const name = PORTAL_NAV_GROUPS.find(item => item.title === section)?.id ?? 'center';
     group(name, true);
   }, [view, center, permissions]);
   useWorkspaceScroll();
@@ -118,14 +119,15 @@ export function PortalShell({
         type="button"
         data-view={name}
         data-center={code}
-        aria-pressed={name === view && (!code || code === center)}
+        aria-pressed={(name === view || name === 'members' && view === 'access') && (!code || code === center)}
+        aria-current={(name === view || name === 'members' && view === 'access') && (!code || code === center) ? 'page' : undefined}
         disabled={busy}
         onClick={() => {
           onNavigate(name, code);
           closeDrawer(false);
         }}
       >
-        {text}
+        {code ? text : portalViewTitle(name)}
         {name === 'notifications' ? (
           <>
             {' '}
@@ -160,6 +162,22 @@ export function PortalShell({
             'trash',
           ].includes(resource) && allowed(resource),
       );
+  const commands: WorkspaceCommand[] = PORTAL_VIEWS.flatMap(item => {
+    const codes = 'byCenter' in item && item.byCenter ? centers.map(c => c.code) : [undefined];
+    return codes.filter(code => allowed(viewResource(item.id), code)).map(code => ({
+      id: item.id + (code || ''), title: (code ? portalCenterName(code, centers) + ' · ' : '') + item.title,
+      group: item.group, description: item.id === view && (!code || code === center) ? '현재 보고 있는 화면' : '업무 포털',
+      run: () => { if (!busy) { onNavigate(item.id, code); closeDrawer(false); } },
+    }));
+  });
+  if (selected) {
+    for (const feature of FEATURE_CATALOG) {
+      if (!feature.href?.startsWith('/admin/') || feature.hub === false || !featureAccessible(feature, profile, permissions, selected.code, features)) continue;
+      commands.push({ id: 'hub-' + feature.id, title: feature.title, description: feature.desc, group: FEATURE_CATEGORIES[feature.category], run: () => { if (!busy) location.assign(withCenterParam(feature.href!, selected)); } });
+    }
+    if (manager) commands.unshift({ id: 'hub', title: '관리 허브', description: '관리 도구 전체 보기', group: '주요 화면', run: () => { if (!busy) location.assign(withCenterParam('/admin/', selected)); } });
+    if (['editor', 'admin'].includes(profile.role)) commands.unshift({ id: 'dashboard', title: '대시보드', description: '코스·납품 현황 조회', group: '주요 화면', run: () => { if (!busy) location.assign(withCenterParam('/', selected)); } });
+  }
   return (
     <>
       <a className="app-skip" href="#portal-content">
@@ -190,7 +208,7 @@ export function PortalShell({
           </button>
         </div>
         <nav id="app-workspace-navigation" aria-label="주요 화면">
-          <a className="workspace-link" href={portalUrl} aria-current="page">
+          <a className="workspace-link" href={portalUrl} aria-current="location">
             업무 포털
           </a>
           {manager ? (
@@ -211,99 +229,25 @@ export function PortalShell({
           ) : null}
         </nav>
         <div className="app-local-menu">
-          <details
-            className="sidebar-group"
-            open={groups.has('center')}
-            onToggle={(e) => group('center', e.currentTarget.open)}
-          >
-            <summary>
-              <span className="sidebar-group-label">센터 업무</span>
-            </summary>
-            <nav
-              id="center-navigation"
-              data-center-view="center"
-              aria-label="센터 업무"
-            >
-              {centers.map((c) =>
-                nav('center', portalCenterName(c.code, centers), c.code),
-              )}
-              {!centers.length ? <p>접근 가능한 센터가 없습니다.</p> : null}
-              {nav('incidents', '특이사항')}
-            </nav>
-          </details>
-          <details
-            className="sidebar-group"
-            open={groups.has('registration')}
-            onToggle={(e) => group('registration', e.currentTarget.open)}
-          >
-            <summary>
-              <span className="sidebar-group-label">업무 등록·조사</span>
-            </summary>
-            <nav data-center-view="surveys" aria-label="센터별 업무 등록">
-              {centers.map((c) =>
-                nav('surveys', portalCenterName(c.code, centers), c.code),
-              )}
-              {!centers.length ? <p>접근 가능한 센터가 없습니다.</p> : null}
-            </nav>
-          </details>
-          <section
-            id="hq-navigation"
-            hidden={!allowed('hq') && !allowed('briefing')}
-          >
-            <details
-              className="sidebar-group"
-              open={groups.has('hq')}
-              onToggle={(e) => group('hq', e.currentTarget.open)}
-            >
-              <summary>
-                <span className="sidebar-group-label">배송팀</span>
-              </summary>
-              <nav aria-label="배송팀 업무">
-                {nav('hq', '전체 업무·지원 요청')}
-                {nav('briefing', 'AI 브리핑')}
-              </nav>
-            </details>
-          </section>
-          <details
-            className="sidebar-group"
-            open={groups.has('lookup')}
-            onToggle={(e) => group('lookup', e.currentTarget.open)}
-          >
-            <summary>
-              <span className="sidebar-group-label">조회·알림</span>
-            </summary>
-            <nav aria-label="조회와 알림">
-              {nav('mail', '개인 메일함')}
-              {nav('search', '통합 검색')}
-              {nav('notifications', '알림함')}
-            </nav>
-          </details>
-          <details
-            className="sidebar-group"
-            open={groups.has('manage')}
-            onToggle={(e) => group('manage', e.currentTarget.open)}
-          >
-            <summary>
-              <span className="sidebar-group-label">포털 관리</span>
-            </summary>
-            <nav aria-label="운영 기록">
-              {nav('history', '처리 기록')}
-              {nav('permissions', '페이지별 권한')}
-              {nav('connections', 'OneDrive 관리')}
-              {nav('members', '사용자 권한·센터')}
-              {nav('trash', '휴지통')}
-              {nav('backups', '운영 원본 보관')}
-              {selected && allowed('audit', center) ? (
-                <a
-                  id="audit-navigation"
-                  href={withCenterParam('/admin/audit-log.html', selected)}
-                >
-                  변경 이력
-                </a>
-              ) : null}
-            </nav>
-          </details>
+          {PORTAL_NAV_GROUPS.map(section => {
+            const items = PORTAL_VIEWS.filter(item => item.group === section.title);
+            const entries = items.flatMap(item => 'byCenter' in item && item.byCenter
+              ? centers.map(c => nav(item.id, portalCenterName(c.code, centers), c.code))
+              : [nav(item.id, item.title)]).filter(Boolean);
+            const audit = section.id === 'manage' && selected && allowed('audit', center);
+            if (!entries.length && !audit) return null;
+            return <section key={section.id} id={section.id === 'hq' ? 'hq-navigation' : undefined}>
+              <details className="sidebar-group" open={groups.has(section.id)} onToggle={e => group(section.id, e.currentTarget.open)}>
+                <summary><span className="sidebar-group-label">{section.title}</span></summary>
+                <nav id={section.id === 'center' ? 'center-navigation' : undefined} data-center-view={section.id === 'center' ? 'center' : section.id === 'registration' ? 'surveys' : undefined} aria-label={section.title}>
+                  {entries}
+                  {audit && selected ? <a id="audit-navigation" href={withCenterParam('/admin/audit-log.html', selected)}>변경 이력</a> : null}
+                </nav>
+              </details>
+            </section>;
+          })}
         </div>
+        <div className="workspace-current-location"><span>현재 화면</span><strong>{portalViewTitle(view)}</strong><small>{portalCenterName(center, centers)} · {profile.role === 'admin' ? '관리자' : profile.role === 'editor' ? '업무 담당' : '조회 전용'}</small></div>
       </dialog>
       <header ref={header} id="app-header">
         <div className="app-header-row">
@@ -321,10 +265,11 @@ export function PortalShell({
             ☰
           </button>
           <nav className="app-location" aria-label="현재 위치">
-            <strong>업무 포털</strong>
+            <span className="workspace-area-label">업무 포털</span><span className="app-path-divider" aria-hidden="true">/</span><strong>{portalViewTitle(view)}</strong>
           </nav>
           <div className="app-page-actions" />
           <div className="app-header-controls">
+            <WorkspaceCommands disabled={busy} commands={commands} />
             <label id="center-switcher" data-app-center="true">
               <span>센터</span>
               <select
