@@ -34,7 +34,10 @@ export function PortalDialog({
       id={id}
       className={className}
       aria-label={label}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.stopPropagation();
+        if (event.target === event.currentTarget) onClose();
+      }}
       onPointerDown={(event) => {
         outside.current = event.target === event.currentTarget && beyond(event);
       }}

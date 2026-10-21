@@ -10,7 +10,8 @@ import {
 } from '../../domain/portal-calendar';
 import { statusLabels } from '../../domain/operations';
 import { portalApi } from '../../lib/portal';
-import { usePortal } from './PortalStore';
+import { usePortal, PortalStore } from './PortalStore';
+import { PortalCoupang } from './PortalCoupang';
 import { PortalParticipants } from './PortalParticipants';
 import { subjectLabel, PortalTaskRow } from './PortalTaskList';
 import { PortalRecordHistory } from './PortalHistory';
@@ -29,9 +30,13 @@ export function PortalTaskDetail({
   readOnly?: boolean;
   popup?: boolean;
 }) {
+  const portal = usePortal();
+  const [workflowBusy, setWorkflowBusy] = useState(false),
+    busy = portal.state.busy || workflowBusy;
   const {
       state,
       taskDrafts,
+      workflowRequests,
       update,
       message,
       mutate,
@@ -39,7 +44,7 @@ export function PortalTaskDetail({
       canWrite,
       allowed,
       centerName,
-    } = usePortal(),
+    } = portal,
     cached = taskDrafts.get(task.id),
     initial =
       !readOnly && cached?.version === task.version
@@ -77,7 +82,7 @@ export function PortalTaskDetail({
       state.participants.find((s) => s.id === task.handler_subject_id) ??
       state.participants.find((s) => s.user_id === task.owner_id),
     children = state.incidents.filter((i) => i.task_id === task.id),
-    disabled = state.busy || finished(task) || !writable;
+    disabled = busy || finished(task) || !writable;
   function collect() {
     const visible = Object.fromEntries(
       fields.map((f) => [
@@ -236,7 +241,7 @@ export function PortalTaskDetail({
                   <>
                     <button
                       type="button"
-                      disabled={state.busy}
+                      disabled={busy}
                       onClick={() =>
                         save(task.status, {
                           step: step.key,
@@ -248,7 +253,7 @@ export function PortalTaskDetail({
                     </button>
                     <button
                       type="button"
-                      disabled={state.busy}
+                      disabled={busy}
                       onClick={() =>
                         save(task.status, {
                           step: step.key,
@@ -319,11 +324,7 @@ export function PortalTaskDetail({
       {!readOnly &&
       canWrite(task.center_code, 'trash') &&
       canWrite(task.center_code) ? (
-        <button
-          className="primary"
-          disabled={state.busy}
-          onClick={() => trash(true)}
-        >
+        <button className="primary" disabled={busy} onClick={() => trash(true)}>
           업무 복원
         </button>
       ) : null}
@@ -360,7 +361,7 @@ export function PortalTaskDetail({
           canWrite(task.center_code) ? (
             <button
               className="trash-button"
-              disabled={state.busy}
+              disabled={busy}
               onClick={() => trash(false)}
             >
               휴지통으로 이동
@@ -405,7 +406,65 @@ export function PortalTaskDetail({
           완료 확정 · {portalStamp(task.completed_at)}
         </p>
       ) : null}
-      {entry}
+      {coupang ? (
+        <PortalCoupang
+          task={task}
+          dispatch={String(
+            values[
+              task.template_snapshot?.spec?.integration?.dispatch_field ?? ''
+            ] ?? '',
+          )}
+          writable={writable && !finished(task)}
+          collect={collect}
+          onBusy={setWorkflowBusy}
+          persist={async (inputs) => {
+            if (state.busy)
+              throw Error('저장 중입니다. 잠시 후 다시 시도하세요.');
+            const key = JSON.stringify([task.id, task.version, inputs]);
+            let request = workflowRequests.get(task.id);
+            if (request?.key !== key) {
+              request = { key, id: crypto.randomUUID() };
+              workflowRequests.set(task.id, request);
+            }
+            update((s) => {
+              s.busy = true;
+            });
+            try {
+              const row = await portalApi.save({
+                requestId: request.id,
+                task,
+                center: task.center_code,
+                title: task.title,
+                date: task.work_date,
+                endDate: taskEnd(task),
+                inputs,
+                status: 'in_progress',
+              });
+              if (row?.id !== task.id || !Number.isInteger(row.version))
+                throw Error(
+                  '업무 저장 결과를 확인하지 못했습니다. 다시 시도하세요.',
+                );
+              update((s) => {
+                s.tasks = s.tasks.map((task) =>
+                  task.id === row.id ? row : task,
+                );
+                if (s.selected?.row.id === task.id)
+                  s.selected = { type: 'task', row };
+              });
+              taskDrafts.delete(task.id);
+              workflowRequests.delete(task.id);
+            } finally {
+              update((s) => {
+                s.busy = false;
+              });
+            }
+          }}
+        >
+          {entry}
+        </PortalCoupang>
+      ) : (
+        entry
+      )}
       {writable && !finished(task) ? (
         <div
           className="task-secondary-actions"
@@ -414,18 +473,18 @@ export function PortalTaskDetail({
         >
           <button
             type="button"
-            disabled={state.busy}
+            disabled={busy}
             onClick={() => setHandlerRequest((v) => v + 1)}
           >
             담당자 변경
           </button>
-          <button type="button" disabled={state.busy} onClick={changeDeadline}>
+          <button type="button" disabled={busy} onClick={changeDeadline}>
             마감시간 변경
           </button>
           {!coupang ? (
             <button
               type="button"
-              disabled={state.busy}
+              disabled={busy}
               onClick={() => save('not_applicable')}
             >
               해당 없음
@@ -435,7 +494,7 @@ export function PortalTaskDetail({
             <button
               type="button"
               className="task-exception"
-              disabled={state.busy}
+              disabled={busy}
               onClick={() => {
                 stash();
                 update((s) => {
@@ -504,7 +563,7 @@ export function PortalTaskDetail({
             <input
               name="due"
               type="datetime-local"
-              disabled={state.busy}
+              disabled={busy}
               value={deadline.due}
               onChange={(e) =>
                 setDeadline((s) => (s ? { ...s, due: e.target.value } : s))
@@ -515,7 +574,7 @@ export function PortalTaskDetail({
             기존 마감 변경 사유
             <input
               name="reason"
-              disabled={state.busy}
+              disabled={busy}
               value={deadline.reason}
               onChange={(e) =>
                 setDeadline((s) => (s ? { ...s, reason: e.target.value } : s))
@@ -523,12 +582,12 @@ export function PortalTaskDetail({
             />
           </label>
           <div className="actions">
-            <button type="submit" className="primary" disabled={state.busy}>
+            <button type="submit" className="primary" disabled={busy}>
               마감시간 저장
             </button>
             <button
               type="button"
-              disabled={state.busy}
+              disabled={busy}
               onClick={() => setDeadline(null)}
             >
               취소
@@ -540,7 +599,7 @@ export function PortalTaskDetail({
     </>
   );
   return (
-    <>
+    <PortalStore.Provider value={{ ...portal, state: { ...state, busy } }}>
       {popup ? <div className="task-detail-content">{body}</div> : body}
       {!task.deleted_at && writable ? (
         <div
@@ -551,7 +610,7 @@ export function PortalTaskDetail({
           {finished(task) ? (
             <button
               type="button"
-              disabled={state.busy}
+              disabled={busy}
               onClick={() =>
                 void mutate(
                   'reopen:' + task.id + ':' + task.version,
@@ -565,7 +624,7 @@ export function PortalTaskDetail({
             <>
               <button
                 type="button"
-                disabled={state.busy}
+                disabled={busy}
                 onClick={() => save('in_progress')}
               >
                 저장
@@ -573,7 +632,7 @@ export function PortalTaskDetail({
               <button
                 type="button"
                 className="primary"
-                disabled={state.busy}
+                disabled={busy}
                 onClick={() => save('completed')}
               >
                 업무 완료
@@ -582,6 +641,6 @@ export function PortalTaskDetail({
           )}
         </div>
       ) : null}
-    </>
+    </PortalStore.Provider>
   );
 }

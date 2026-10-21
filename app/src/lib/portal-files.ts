@@ -1,6 +1,8 @@
 import { oneDriveCall } from './onedrive';
 export interface PortalFile {
   id: string;
+  file?: { id: string };
+  mime_type?: string;
   file_name: string;
   original_name: string;
   byte_size: number;
