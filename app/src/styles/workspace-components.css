@@ -1,0 +1,646 @@
+/* Shared work surfaces. Legacy utility classes retain their layout and behavior. */
+.workspace-ui:not(.portal-shell) [role='dialog'][aria-modal='true'] {
+  background: #172e3f99;
+}
+.workspace-ui :is(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+.workspace-ui:not(.portal-shell) :is(#status:not(.error), .note) {
+  color: var(--theme-muted);
+}
+.workspace-ui [hidden] {
+  display: none !important;
+}
+.workspace-ui *,
+.workspace-ui *::before,
+.workspace-ui *::after {
+  box-sizing: border-box;
+}
+.workspace-ui ::selection {
+  background: #c7e7dc;
+  color: var(--theme-selected-text);
+}
+.workspace-ui * {
+  scrollbar-color: #a4b5c0 transparent;
+}
+.workspace-ui ::-webkit-scrollbar-track {
+  background: var(--theme-soft);
+}
+.workspace-ui ::-webkit-scrollbar-thumb {
+  background: #b4c2cc;
+}
+.workspace-ui :where(input, textarea) {
+  caret-color: var(--accent);
+}
+.workspace-ui
+  :where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid #087f72;
+  outline-offset: 3px;
+}
+.workspace-ui:not(.portal-shell) :is(.bg-zinc-950, [class*='bg-zinc-950/']) {
+  background-color: var(--theme-page);
+}
+.workspace-ui:not(.portal-shell)
+  :is(
+    .bg-zinc-900,
+    [class*='bg-zinc-900/'],
+    .bg-zinc-800,
+    [class*='bg-zinc-800/']
+  ) {
+  background-color: var(--theme-panel);
+}
+.workspace-ui:not(.portal-shell)
+  :is(.bg-zinc-700, [class*='bg-zinc-700/'], .bg-zinc-600) {
+  background-color: var(--theme-soft);
+}
+.workspace-ui:not(.portal-shell)
+  :is(.text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--theme-text);
+}
+.workspace-ui:not(.portal-shell)
+  :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--theme-muted);
+}
+.workspace-ui:not(.portal-shell)
+  :is([class*='border-zinc-'], [class*='divide-zinc-']) {
+  border-color: var(--theme-border);
+}
+.workspace-ui:not(.portal-shell) :is([class*='hover:bg-zinc-']):hover {
+  background-color: var(--theme-hover);
+}
+.workspace-ui:not(.portal-shell)
+  :is(
+    .text-emerald-300,
+    .text-emerald-400,
+    .text-emerald-500,
+    .text-green-400
+  ) {
+  color: #087567;
+}
+.workspace-ui:not(.portal-shell)
+  :is(.text-sky-300, .text-sky-400, .text-cyan-400, .text-blue-400) {
+  color: #17628a;
+}
+.workspace-ui:not(.portal-shell)
+  :is(.text-amber-300, .text-amber-400, .text-yellow-400) {
+  color: var(--theme-warn);
+}
+.workspace-ui:not(.portal-shell)
+  :is(.text-rose-300, .text-rose-400, .text-red-400) {
+  color: var(--theme-danger);
+}
+.workspace-ui:not(.portal-shell) :is(.text-violet-300, .text-violet-400) {
+  color: #67499c;
+}
+.workspace-ui:not(.portal-shell) :is(.bg-emerald-600, .bg-emerald-500) {
+  background-color: #087f72;
+  color: #fff;
+}
+.workspace-ui:not(.portal-shell)
+  :is(
+    .app-input,
+    .app-select,
+    .app-textarea,
+    input:not([type='checkbox']):not([type='radio']),
+    select,
+    textarea
+  ) {
+  background-color: var(--theme-panel);
+  color: var(--theme-text);
+  min-height: 38px;
+}
+.workspace-ui:not(.portal-shell) :is(header, .panel, dialog, [role='dialog']) {
+  background-color: var(--theme-panel);
+  color: var(--theme-text);
+  border-color: var(--theme-border);
+}
+.workspace-ui:not(.portal-shell) > header {
+  min-height: 64px;
+  height: auto;
+}
+.workspace-ui:not(.portal-shell) header h1 {
+  font-size: 20px;
+  line-height: 1.4;
+}
+.workspace-ui:not(.portal-shell) main {
+  min-width: 0;
+}
+.workspace-ui .btn {
+  justify-content: center;
+  gap: 7px;
+}
+.workspace-ui .btn:not(.btn-primary):not(.btn-danger):hover {
+  background-color: var(--theme-hover);
+  color: var(--theme-text);
+}
+.workspace-ui .btn-primary,
+.workspace-ui .primary {
+  background: #087f72;
+  color: #fff;
+  border-color: #087f72;
+}
+.workspace-ui .btn-primary:hover,
+.workspace-ui .primary:hover {
+  background: #066b60;
+  color: #fff;
+}
+.workspace-ui:not(.portal-shell) :is(.panel, .list, aside, .card) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+}
+.workspace-ui:not(.portal-shell) :is(table, .app-table, .data-table) {
+  color: var(--theme-text);
+  font-variant-numeric: tabular-nums;
+}
+.workspace-ui:not(.portal-shell) table th {
+  background: var(--theme-soft);
+  color: var(--theme-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workspace-ui:not(.portal-shell) table td {
+  border-color: var(--theme-border-soft);
+  line-height: 1.6;
+}
+.workspace-ui:not(.portal-shell) table tbody tr:nth-child(even) td {
+  background: var(--theme-stripe);
+}
+.workspace-ui:not(.portal-shell) table tbody tr:hover td {
+  background: var(--theme-hover);
+}
+.workspace-ui:not(.portal-shell) table tbody tr.selected td {
+  background: var(--theme-selected);
+}
+.workspace-ui:not(.portal-shell) :is(.row-link, .task-row) {
+  color: var(--theme-text);
+}
+.workspace-ui:not(.portal-shell) :is(code, pre) {
+  background: var(--theme-soft);
+  color: var(--theme-text);
+}
+.workspace-ui:not(.portal-shell) .table-scroll {
+  border-radius: 8px;
+  border: 1px solid var(--theme-border);
+}
+.workspace-ui:not(.portal-shell) nav button[aria-pressed='true'] {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
+}
+.workspace-ui:not(.portal-shell) .badge {
+  background: var(--theme-soft);
+  color: var(--theme-muted);
+}
+.workspace-ui:not(.portal-shell) .badge.done {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+}
+.workspace-ui:not(.portal-shell) .badge.open {
+  background: var(--theme-warn-bg);
+  color: var(--theme-warn);
+}
+.workspace-ui:not(.portal-shell) #message.error {
+  color: var(--theme-danger);
+}
+.workspace-ui:not(.portal-shell) input[type='file']::file-selector-button {
+  background: #edf4f2;
+  color: var(--theme-selected-text);
+  border-color: #b7cdc3;
+  min-height: 32px;
+}
+
+/* Hub: searchable existing tools, no additional destinations. */
+.workspace-ui:not(.portal-shell) :is(.data-table, .filter-box) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+}
+.workspace-ui:not(.portal-shell) table tbody td {
+  background: var(--theme-panel);
+}
+body.workspace-ui tr.health-expired > td {
+  background: #fff0f0 !important;
+}
+body.workspace-ui tr.health-soon > td {
+  background: #fff6df !important;
+}
+body.workspace-ui tr.health-missing > td {
+  background: #fff2e6 !important;
+}
+.hub-heading {
+  margin: 12px 0 24px;
+}
+.hub-heading h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  letter-spacing: -0.025em;
+  color: var(--theme-text);
+}
+.hub-heading p {
+  margin: 0;
+  color: var(--theme-muted);
+}
+.hub-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: var(--theme-panel);
+}
+.hub-search {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 340px);
+  font-size: 13px;
+  color: var(--theme-muted);
+}
+.hub-search input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+}
+.hub-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hub-categories button {
+  border: 1px solid #d6e1e7;
+  background: var(--theme-panel);
+  color: var(--theme-muted);
+  border-radius: 7px;
+  padding: 8px 14px;
+  min-height: 38px;
+  font: inherit;
+  cursor: pointer;
+}
+.hub-categories button[aria-pressed='true'] {
+  background: #173b3b;
+  color: #fff;
+  border-color: #173b3b;
+}
+.hub-result-count {
+  margin: 12px 0;
+  color: var(--theme-muted);
+  font-size: 13px;
+}
+.hub-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--theme-muted);
+  border: 1px dashed var(--theme-border);
+  border-radius: 10px;
+}
+.workspace-ui #menu-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.workspace-ui #menu-grid > a {
+  display: block;
+  position: relative;
+  padding-right: 34px;
+  text-decoration: none;
+}
+.workspace-ui #menu-grid > a > strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+.workspace-ui #menu-grid > a::after {
+  content: '›';
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--theme-muted);
+  font-size: 22px;
+}
+.workspace-ui #menu-grid > a h3 {
+  color: var(--theme-text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.workspace-ui #menu-grid > a p {
+  font-size: 13px;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.workspace-ui #menu-grid > a svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Course dashboard: search first, supporting filters in a disclosure. */
+.workspace-ui:has(#app) {
+  padding: 12px;
+}
+.workspace-ui #app {
+  box-shadow: none;
+  border: 1px solid #d5e0e7;
+  border-radius: 12px;
+}
+.workspace-ui #app > header {
+  background: #172e3f;
+  color: #fff;
+}
+.workspace-ui #app > header .btn {
+  color: #e4edf3;
+  border-color: #496171;
+}
+.workspace-ui #app > header .btn:hover {
+  background: #294554;
+  color: #fff;
+}
+.workspace-ui #app > header #user-badge {
+  color: #c1d1dc;
+}
+.workspace-ui #filter-bar {
+  background: var(--theme-panel);
+  padding: 0;
+  border-color: var(--theme-border);
+}
+.dashboard-query {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+}
+.dashboard-query #search-input {
+  width: 100%;
+  min-height: 42px;
+  padding-left: 14px;
+  font-size: 14px;
+}
+.dashboard-query .view-toggle {
+  min-height: 38px;
+  min-width: 62px;
+}
+.dashboard-query #result-count {
+  min-width: 70px;
+  text-align: right;
+  font-size: 13px;
+}
+.dashboard-filter-details {
+  padding: 0 20px 14px;
+}
+.dashboard-filter-details > summary {
+  width: max-content;
+  font-size: 13px;
+  color: var(--theme-muted);
+  cursor: pointer;
+  padding: 5px 0;
+}
+.dashboard-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+.dashboard-filter-controls .app-input {
+  width: auto;
+}
+.dashboard-filter-controls :is(button, label) {
+  font-size: 13px;
+}
+.workspace-ui #table-area,
+.workspace-ui #flat-view {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+}
+.workspace-ui #flat-view {
+  border-radius: 0;
+  border-inline: 0;
+  border-bottom: 0;
+}
+.workspace-ui #flat-view table th {
+  padding-block: 12px;
+}
+.workspace-ui #flat-view table td {
+  padding-block: 10px;
+  font-size: 13px;
+}
+.workspace-ui #flat-view table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+}
+.workspace-ui #flat-view table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--theme-panel);
+  border-right: 1px solid #cad8e0;
+}
+.workspace-ui #flat-view table tr:nth-child(even) td:first-child {
+  background: var(--theme-stripe);
+}
+.dashboard-empty {
+  padding: 52px 20px;
+  text-align: center;
+}
+.dashboard-empty strong {
+  display: block;
+  color: var(--theme-text);
+  font-size: 16px;
+}
+.dashboard-empty p {
+  margin: 8px 0 18px;
+  color: var(--theme-muted);
+  font-size: 14px;
+}
+
+/* Portal: light tokens stay local to the work surface; the sidebar owns its dark palette. */
+.workspace-ui.portal-shell
+  .task-calendar.calendar-week.is-empty
+  .calendar-span-week
+  > .calendar-cell,
+.workspace-ui.portal-shell
+  .task-calendar.calendar-day.is-empty
+  .calendar-span-week
+  > .calendar-cell {
+  min-height: 180px;
+}
+.workspace-ui.portal-shell .task-calendar:focus-visible {
+  outline: 2px solid #087f72;
+  outline-offset: 3px;
+}
+.workspace-ui.portal-shell .portal-header {
+  color: var(--theme-muted);
+  min-height: 60px;
+  height: 60px;
+}
+.workspace-ui.portal-shell .portal-identity {
+  color: var(--theme-muted);
+}
+.workspace-ui.portal-shell .portal-sidebar {
+  --text: #e6eef3;
+  --muted: #a7bdca;
+  --green: #9ee0c6;
+}
+.workspace-ui.portal-shell .portal-sidebar nav button[aria-pressed='true'] {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-radius: 6px;
+}
+.workspace-ui.portal-shell
+  .portal-sidebar
+  nav
+  button[aria-pressed='true']:hover {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+}
+.workspace-ui.portal-shell .sidebar-brand {
+  border-bottom: 1px solid #304553;
+}
+.workspace-ui.portal-shell .sidebar-content {
+  padding-block: 14px;
+}
+.workspace-ui.portal-shell main {
+  padding-top: 24px;
+}
+.workspace-ui.portal-shell .task-toolbar {
+  padding: 16px 18px;
+}
+.workspace-ui.portal-shell .toolbar-bottom {
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.workspace-ui.portal-shell .view-buttons > button[aria-pressed='true'] {
+  box-shadow: none;
+  border-color: var(--theme-selected-border);
+  color: var(--theme-selected-text);
+  background: var(--theme-panel);
+}
+.workspace-ui.portal-shell .list-heading {
+  padding: 14px 18px;
+  background: #fbfcfd;
+}
+.workspace-ui.portal-shell .task-row {
+  border-radius: 0;
+}
+.workspace-ui.portal-shell .task-row.selected {
+  background: #e4f2ea;
+  border-color: var(--theme-selected-border);
+  border-radius: 6px;
+}
+.workspace-ui.portal-shell .portal-form {
+  gap: 14px;
+}
+.workspace-ui.portal-shell
+  .portal-form
+  :is(input, select, textarea):focus-visible {
+  border-color: #087f72;
+}
+.workspace-ui.portal-shell .history-entry {
+  padding-block: 16px;
+}
+.workspace-ui.portal-shell .history-entry > p:first-child {
+  font-weight: 600;
+  color: var(--theme-text);
+}
+.workspace-ui.portal-shell .history-entry button {
+  margin-top: 10px;
+}
+.workspace-ui.portal-shell .document-search-results {
+  margin-top: 24px;
+  border-top: 1px solid var(--theme-border);
+  padding-top: 20px;
+}
+.workspace-ui.portal-shell .ui-switch-track {
+  background: #7a8e9c;
+  border-color: #7a8e9c;
+}
+.workspace-ui.portal-shell .ui-switch input:checked + .ui-switch-track {
+  background: #087567;
+  border-color: #087567;
+}
+
+@media (max-width: 1000px) {
+  .workspace-ui #menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hub-search {
+    width: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .workspace-ui:has(#app) {
+    padding: 0;
+  }
+  .workspace-ui #app {
+    border-radius: 0;
+    border: 0;
+  }
+  .workspace-ui:not(.portal-shell) > header > div {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .workspace-ui:not(.portal-shell) > header h1 {
+    font-size: 18px;
+  }
+  .workspace-ui:not(.portal-shell) :is(.btn, .app-input, .app-select) {
+    min-height: 42px;
+  }
+  .workspace-ui #menu-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui #menu-grid > a {
+    min-height: 100px;
+  }
+  .hub-heading h2 {
+    font-size: 24px;
+  }
+  .hub-controls {
+    padding: 16px;
+  }
+  .hub-categories button {
+    padding-inline: 10px;
+    min-height: 42px;
+    font-size: 13px;
+  }
+  .dashboard-query {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 12px;
+  }
+  .dashboard-query #search-input {
+    grid-column: 1/-1;
+  }
+  .dashboard-query #result-count {
+    text-align: right;
+  }
+  .dashboard-filter-details {
+    padding-inline: 12px;
+  }
+  .dashboard-filter-controls {
+    gap: 8px;
+  }
+  .workspace-ui.portal-shell .portal-header {
+    padding-inline: 14px;
+  }
+  .workspace-ui.portal-shell h1 {
+    font-size: 23px;
+  }
+  .workspace-ui.portal-shell .task-toolbar {
+    padding: 12px;
+  }
+  .workspace-ui.portal-shell .toolbar-period {
+    gap: 8px;
+  }
+}
+@media print {
+  .workspace-ui,
+  .workspace-ui #app {
+    background: var(--theme-panel);
+    color: #000;
+  }
+  .dashboard-filter-details,
+  .hub-categories,
+  .hub-search {
+    display: none;
+  }
+}

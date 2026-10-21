@@ -1,0 +1,466 @@
+/* Application chrome is owned here, not by individual workspace themes. */
+html[data-theme] body.workspace-ui.app-shell {
+  --app-sidebar-width: 236px;
+  --app-header-height: 64px;
+  --work-nav-width: var(--app-sidebar-width);
+  --sidebar-width: var(--app-sidebar-width);
+  --accent: var(--theme-primary);
+  --green: var(--theme-accent);
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: var(--theme-page);
+  color: var(--theme-text);
+  letter-spacing: 0;
+}
+html[data-theme] body.workspace-ui.app-shell > .app-main {
+  width: calc(100% - var(--app-sidebar-width));
+  max-width: none;
+  min-width: 0;
+  margin: 0 0 0 var(--app-sidebar-width);
+  padding: 24px;
+  scroll-margin-top: calc(var(--app-header-height) + 12px);
+  background: var(--theme-page);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-theme] body.workspace-ui.app-shell > #portal-content {
+  padding: 0;
+}
+html[data-theme] body.workspace-ui.app-shell #portal-main {
+  padding: 24px;
+}
+html[data-theme] body.workspace-ui.app-shell > #app {
+  height: calc(100dvh - var(--app-header-height));
+  background: var(--theme-page);
+  padding: 0;
+  overflow: hidden;
+}
+html[data-theme] body.workspace-ui.app-shell #app-header {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  width: calc(100% - var(--app-sidebar-width));
+  margin: 0 0 0 var(--app-sidebar-width);
+  padding: 0;
+  min-height: 64px;
+  height: 64px;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+  border: 0;
+  border-bottom: 1px solid var(--theme-border-soft);
+  backdrop-filter: none;
+}
+html[data-theme] body.workspace-ui.app-shell #app-header > .app-header-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 63px;
+  height: 63px;
+  max-width: none;
+  padding: 12px 24px;
+  flex-wrap: nowrap;
+}
+html[data-theme] body.workspace-ui.app-shell #app-header .app-location {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-header
+  .app-location
+  :is(h1, strong, a) {
+  margin: 0;
+  color: var(--theme-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+#app-header .app-path-divider {
+  color: var(--theme-muted);
+}
+#app-header :is(.app-header-controls, .app-page-actions) {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+#app-header .app-page-actions:empty {
+  display: none;
+}
+html[data-theme] body.workspace-ui.app-shell #center-switcher {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--theme-muted);
+}
+html[data-theme] body.workspace-ui.app-shell #app-center-select {
+  width: 126px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+  font-size: 13px;
+  line-height: 22px;
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  max-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+  font-size: 12px;
+}
+#app-profile-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-theme] body.workspace-ui.app-shell #app-header .theme-toggle {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  width: var(--app-sidebar-width);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--theme-sidebar);
+  color: var(--theme-sidebar-text);
+  overflow: hidden;
+}
+#app-sidebar:not([open]) {
+  display: none;
+}
+#app-sidebar::backdrop {
+  background: #0009;
+}
+#app-sidebar:not([open]) summary::after {
+  content: none;
+}
+#app-sidebar[open] {
+  display: flex;
+  flex-direction: column;
+}
+#app-sidebar .app-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  min-height: 88px;
+  padding: 20px;
+  border-bottom: 1px solid var(--theme-sidebar-border);
+}
+#app-sidebar .app-brand a {
+  color: #f0f4f1;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 28px;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+#app-sidebar .app-brand small {
+  display: block;
+  margin-top: 2px;
+  color: var(--theme-sidebar-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+html[data-theme] body.workspace-ui.app-shell #app-workspace-navigation {
+  flex: none;
+  display: grid;
+  gap: 4px;
+  margin: 12px 12px 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--theme-sidebar-border);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :where(
+    .workspace-link,
+    .app-local-menu a,
+    .app-local-menu button[data-view]
+  ) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 40px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--theme-sidebar-text);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 22px;
+  text-align: left;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar .workspace-link {
+  min-height: 42px;
+  font-size: 14px;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is(a, button[data-view]):hover {
+  color: #fff;
+  background: var(--theme-sidebar-hover);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is([aria-current='page'], button[aria-pressed='true']) {
+  color: var(--theme-selected-text);
+  background: var(--theme-selected);
+  font-weight: 650;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  [aria-disabled='true'] {
+  color: var(--theme-sidebar-muted);
+  background: transparent;
+  cursor: not-allowed;
+}
+#app-sidebar .app-local-menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+#app-sidebar :is(.sidebar-content, nav) {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+#app-sidebar .app-local-menu nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#app-sidebar :is(.sidebar-group, .work-nav-group) {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--theme-sidebar-muted);
+  background: transparent;
+  border-radius: 6px;
+}
+#app-sidebar summary::-webkit-details-marker {
+  display: none;
+}
+#app-sidebar summary::after {
+  content: '›';
+  margin-left: auto;
+  font-size: 18px;
+  transform: none;
+}
+#app-sidebar details[open] > summary::after {
+  transform: rotate(90deg);
+}
+#app-sidebar .sidebar-group-label {
+  display: inline;
+}
+#app-sidebar :is(.sidebar-group-label svg, .work-nav-icon) {
+  display: none;
+}
+#app-sidebar :is(.app-function-link, summary)::before,
+.app-function-title::before {
+  content: '';
+  display: inline-block;
+  flex: none;
+  width: 3px;
+  height: 3px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--theme-muted);
+  vertical-align: middle;
+}
+.app-function-title {
+  letter-spacing: 0 !important;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(#portal-title, .hub-heading h2) {
+  font-size: 24px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+body.app-shell .hub-heading h2::before {
+  display: none;
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-menu {
+  inset: 60px 24px auto auto;
+  min-width: 160px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+  box-shadow: 0 6px 20px #0002;
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-menu > button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text);
+  font-size: 13px;
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-menu > button:hover {
+  background: var(--theme-hover);
+}
+#app-sidebar .app-brand button,
+#app-header .app-menu-toggle {
+  display: none;
+}
+.app-skip {
+  position: fixed;
+  top: -100px;
+  left: 248px;
+  z-index: 10000;
+  padding: 10px 16px;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+}
+.app-skip:focus {
+  top: 8px;
+}
+@media (max-width: 1000px) {
+  html[data-theme] body.workspace-ui.app-shell {
+    --app-sidebar-width: 0px;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar {
+    width: 252px;
+    max-width: calc(100vw - 32px);
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-brand button,
+  html[data-theme] body.workspace-ui.app-shell #app-header .app-menu-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    border: 1px solid var(--theme-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theme-text);
+    font-size: 22px;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-brand button {
+    color: var(--theme-sidebar-text);
+    border-color: var(--theme-sidebar-border);
+  }
+  .app-skip {
+    left: 12px;
+  }
+}
+@media (max-width: 640px) {
+  html[data-theme] body.workspace-ui.app-shell #app-header > .app-header-row {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-header {
+    height: auto;
+  }
+  #app-header .app-location {
+    flex-basis: calc(100% - 50px);
+  }
+  #app-header .app-header-controls {
+    justify-content: flex-end;
+    width: 100%;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-header .app-page-actions {
+    flex-wrap: wrap;
+  }
+  html[data-theme] body.workspace-ui.app-shell #center-switcher > span {
+    display: none;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-center-select {
+    width: 112px;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-account-toggle {
+    max-width: 136px;
+  }
+  html[data-theme] body.workspace-ui.app-shell > .app-main,
+  html[data-theme] body.workspace-ui.app-shell #portal-main {
+    padding: 20px 14px;
+  }
+  html[data-theme] body.workspace-ui.app-shell > #portal-content {
+    padding: 0;
+  }
+  html[data-theme] body.workspace-ui.app-shell > #app {
+    height: calc(100dvh - var(--app-header-height));
+    padding: 0;
+  }
+}
+@media print {
+  #app-sidebar,
+  #app-header,
+  .app-skip {
+    display: none !important;
+  }
+  html[data-theme] body.workspace-ui.app-shell {
+    --app-sidebar-width: 0px;
+  }
+}
