@@ -5,7 +5,7 @@ import type { TemperatureTemplate } from '../domain/daily-temperature';
 export async function readTemperatureTemplate(buffer:ArrayBuffer):Promise<TemperatureTemplate>{
  const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(buffer);const sheet=workbook.worksheets[0];if(!sheet)throw new Error('Sheet1을 찾을 수 없습니다.');
  const rows=sortRowsByRole(extractRows(sheet));renumberRows(rows);
- return {workbook,worksheetName:sheet.name,rows,sourceRowCount:rows.length,sourceLastRow:Math.max(sheet.actualRowCount||sheet.rowCount||0,TABLE_START_ROW-1),roleHeaderRows:collectRoleHeaderRows(sheet)};
+ return {workbook,worksheetName:sheet.name,rows,sourceRowCount:rows.length,sourceLastRow:Math.max(sheet.rowCount||0,sheet.actualRowCount||0,TABLE_START_ROW-1),roleHeaderRows:collectRoleHeaderRows(sheet)};
 }
 export async function downloadTemperatureWorkbook(template:TemperatureTemplate){
  const buffer=await template.workbook.xlsx.writeBuffer(),workbook=new ExcelJS.Workbook();await workbook.xlsx.load(buffer);

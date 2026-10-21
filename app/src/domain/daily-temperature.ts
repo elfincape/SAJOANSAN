@@ -71,7 +71,7 @@ End Sub`;
   export const FIELDS = Object.keys(COLS) as TemperatureField[];
   export function extractRows(worksheet: ExcelJS.Worksheet) {
     const rows = [];
-    const lastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW);
+    const lastRow = Math.max(worksheet.rowCount || 0, worksheet.actualRowCount || 0, TABLE_START_ROW);
     for (let rowNumber = TABLE_START_ROW; rowNumber <= lastRow; rowNumber++) {
       const row = worksheet.getRow(rowNumber);
       const record = { _sourceRow: rowNumber, _styleSourceRole: normalizeRole(cellText(row.getCell(COLS.vehicle_type))) || '고정' } as TemperatureRow;
@@ -91,7 +91,7 @@ End Sub`;
 
   export function collectRoleHeaderRows(worksheet: ExcelJS.Worksheet) {
     const headers: Record<string,number> = {};
-    const lastRow = Math.max(worksheet.actualRowCount || worksheet.rowCount || 0, TABLE_START_ROW);
+    const lastRow = Math.max(worksheet.rowCount || 0, worksheet.actualRowCount || 0, TABLE_START_ROW);
     for (let rowNumber = TABLE_START_ROW; rowNumber <= lastRow; rowNumber++) {
       const row = worksheet.getRow(rowNumber);
       const role = normalizeRole(cellText(row.getCell(COLS.vehicle_type)));
