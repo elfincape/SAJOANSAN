@@ -17,8 +17,8 @@
   box-sizing: border-box;
 }
 .workspace-ui ::selection {
-  background: #c7e7dc;
-  color: var(--theme-selected-text);
+  background: var(--theme-selection-bg);
+  color: var(--theme-selection-text);
 }
 .workspace-ui * {
   scrollbar-color: #a4b5c0 transparent;
@@ -34,23 +34,23 @@
 }
 .workspace-ui
   :where(button, a, input, select, textarea, summary):focus-visible {
-  outline: 2px solid #087f72;
+  outline: 2px solid var(--theme-accent);
   outline-offset: 3px;
 }
-.workspace-ui:not(.portal-shell) :is(.bg-zinc-950, [class*='bg-zinc-950/']) {
+.workspace-ui:not(.portal-shell) :is(.bg-zinc-950, [class^='bg-zinc-950/'], [class*=' bg-zinc-950/']) {
   background-color: var(--theme-page);
 }
 .workspace-ui:not(.portal-shell)
   :is(
     .bg-zinc-900,
-    [class*='bg-zinc-900/'],
+    [class^='bg-zinc-900/'], [class*=' bg-zinc-900/'],
     .bg-zinc-800,
-    [class*='bg-zinc-800/']
+    [class^='bg-zinc-800/'], [class*=' bg-zinc-800/']
   ) {
   background-color: var(--theme-panel);
 }
 .workspace-ui:not(.portal-shell)
-  :is(.bg-zinc-700, [class*='bg-zinc-700/'], .bg-zinc-600) {
+  :is(.bg-zinc-700, [class^='bg-zinc-700/'], [class*=' bg-zinc-700/'], .bg-zinc-600) {
   background-color: var(--theme-soft);
 }
 .workspace-ui:not(.portal-shell)
@@ -62,7 +62,7 @@
   color: var(--theme-muted);
 }
 .workspace-ui:not(.portal-shell)
-  :is([class*='border-zinc-'], [class*='divide-zinc-']) {
+  :is([class^='border-zinc-'], [class*=' border-zinc-'], [class^='divide-zinc-'], [class*=' divide-zinc-']) {
   border-color: var(--theme-border);
 }
 .workspace-ui:not(.portal-shell) :is([class*='hover:bg-zinc-']):hover {
@@ -523,7 +523,7 @@ body.workspace-ui tr.health-missing > td {
   border-radius: 0;
 }
 .workspace-ui.portal-shell .task-row.selected {
-  background: #e4f2ea;
+  background: var(--theme-selected);
   border-color: var(--theme-selected-border);
   border-radius: 6px;
 }

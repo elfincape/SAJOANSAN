@@ -38,8 +38,8 @@
   scrollbar-color: #a5b5bf transparent;
 }
 .portal-shell ::selection {
-  background: var(--theme-selected);
-  color: var(--theme-selected-text);
+  background: var(--theme-selection-bg);
+  color: var(--theme-selection-text);
 }
 .portal-shell :where(input, textarea, [contenteditable]) {
   caret-color: var(--accent);

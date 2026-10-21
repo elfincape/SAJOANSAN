@@ -19,6 +19,9 @@
   --theme-selected: #e6f3ed;
   --theme-selected-text: #165e3b;
   --theme-selected-border: #aacaba;
+  --theme-selection-bg: #b5dfce;
+  --theme-selection-text: #143c2a;
+  --theme-control-border: #7b8b83;
   --theme-accent: #087f5b;
   --theme-success: #176140;
   --theme-success-bg: #e2f3e8;
@@ -47,6 +50,9 @@ html[data-theme='dark'] {
   --theme-selected: #244a37;
   --theme-selected-text: #b6efd0;
   --theme-selected-border: #518b6b;
+  --theme-selection-bg: #9fe3c4;
+  --theme-selection-text: #14291f;
+  --theme-control-border: #718278;
   --theme-accent: #6bd5a4;
   --theme-success: #a6e2ba;
   --theme-success-bg: #244333;
@@ -227,7 +233,7 @@ html[data-theme='dark']
 html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   :is(
-    [class*='border-zinc-'],
+    [class^='border-zinc-'], [class*=' border-zinc-'],
     .document-kind,
     .document-file,
     .feature-panel,
@@ -237,16 +243,16 @@ html[data-theme='dark']
 }
 html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
-  :is(.bg-zinc-950, [class*='bg-zinc-950/']) {
+  :is(.bg-zinc-950, [class^='bg-zinc-950/'], [class*=' bg-zinc-950/']) {
   background: var(--theme-page);
 }
 html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   :is(
     .bg-zinc-900,
-    [class*='bg-zinc-900/'],
+    [class^='bg-zinc-900/'], [class*=' bg-zinc-900/'],
     .bg-zinc-800,
-    [class*='bg-zinc-800/'],
+    [class^='bg-zinc-800/'], [class*=' bg-zinc-800/'],
     .panel,
     .card,
     .filter-box,
@@ -265,7 +271,7 @@ html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   :is(
     .bg-zinc-700,
-    [class*='bg-zinc-700/'],
+    [class^='bg-zinc-700/'], [class*=' bg-zinc-700/'],
     .bg-zinc-600,
     code,
     kbd,
@@ -767,4 +773,98 @@ html[data-theme] body.workspace-ui #route-grid .route-action-delete {
 html[data-theme] body.workspace-ui #route-grid .route-action-delete:hover {
   background: var(--theme-danger-bg);
   border-color: var(--theme-danger);
+}
+
+/* State colors pair their own ink and surface, independent of row selection. */
+html[data-theme] body.workspace-ui ::selection {
+  background: var(--theme-selection-bg);
+  color: var(--theme-selection-text);
+  text-shadow: none;
+}
+html[data-theme] body.workspace-ui
+  :is(input, select, textarea, .mention-editor):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']) {
+  border-color: var(--theme-control-border);
+}
+html[data-theme] body.workspace-ui
+  :is(button, a, input, select, textarea, summary, [tabindex], [contenteditable='true']):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 3px;
+}
+html[data-theme] body.workspace-ui
+  :is(input, select, textarea, .mention-editor):focus-visible {
+  border-color: var(--theme-accent);
+}
+html[data-theme] body.workspace-ui
+  :is(button, input, select, textarea):disabled:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+html[data-theme] body.workspace-ui :is(#dispatch-app, #gm-app)
+  :is(button, input, select, textarea):disabled:not([type='checkbox']):not([type='radio']):not([type='hidden']) {
+  opacity: 1;
+  color: var(--theme-muted);
+  -webkit-text-fill-color: currentColor;
+  background: var(--theme-soft);
+  border-color: var(--theme-border);
+  border-style: dashed;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+html[data-theme] body.workspace-ui
+  :is(.document-upload-label, .ui-switch):has(input:disabled) {
+  opacity: 1;
+  color: var(--theme-muted);
+  cursor: not-allowed;
+}
+html[data-theme] body.workspace-ui .document-upload-label:has(input:disabled) {
+  background: var(--theme-soft);
+  border: 1px dashed var(--theme-border);
+}
+html[data-theme] body.workspace-ui
+  :is(button, input, select, textarea):disabled > :is(span, svg) {
+  color: inherit;
+}
+html[data-theme] body.workspace-ui
+  :is(.btn[aria-pressed='true']:not(.theme-toggle):not(:disabled), [role='tab'][aria-selected='true']:not(:disabled)) {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
+}
+html[data-theme] body.workspace-ui
+  :is(.btn[aria-pressed='true']:not(.theme-toggle):not(:disabled), [role='tab'][aria-selected='true']:not(:disabled)):hover:not(:disabled) {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-accent);
+}
+html[data-theme] body.workspace-ui :is(.app-table, .data-table) tbody tr.selected > td {
+  background: var(--theme-selected);
+}
+html[data-theme] body.workspace-ui :is(.th-grip, .drag-handle) {
+  color: var(--theme-muted);
+}
+html[data-theme] body.workspace-ui
+  :is(.th-draggable:hover .th-grip, .drag-handle:hover) {
+  color: var(--theme-accent);
+}
+html[data-theme] body.workspace-ui :is(.col-item.opacity-40, .sortable-ghost, .sortable-chosen, .sortable-drag) {
+  opacity: 1;
+  color: var(--theme-text);
+  background: var(--theme-selected);
+  outline: 2px dashed var(--theme-accent);
+  outline-offset: -2px;
+}
+html[data-theme] body.workspace-ui
+  :is(.sortable-ghost, .sortable-chosen, .sortable-drag) > td {
+  background: var(--theme-selected);
+}
+html[data-theme] body.workspace-ui .file-drop-active {
+  outline-color: var(--theme-accent) !important;
+  background-color: var(--theme-selected) !important;
+}
+html[data-theme] body.workspace-ui .file-drop-feedback {
+  color: var(--theme-warn);
+}
+html[data-theme] body.workspace-ui :is(dialog, [role='dialog'], .table-wrap, .table-scroll, #route-grid) {
+  overscroll-behavior: contain;
+}
+html[data-theme] body.workspace-ui
+  :is(button, a, input, select, textarea, summary, [tabindex]) {
+  scroll-margin-block: calc(var(--app-header-height, 64px) + 12px) 16px;
 }
