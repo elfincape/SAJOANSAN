@@ -15,6 +15,7 @@ import {
   PortalIncidentDetail,
 } from '../components/portal/PortalIncidents';
 import { PortalNotifications } from '../components/portal/PortalNotifications';
+import { PortalMembers } from '../components/portal/PortalMembers';
 import { PortalBriefing } from '../components/portal/PortalBriefing';
 import { portalBriefing } from '../lib/portal-ai';
 import { PortalRegistration } from '../components/portal/PortalRegistration';
@@ -730,13 +731,14 @@ function Work({ profile }: { profile: Profile }) {
             >
               {state.message}
             </div>
+            {state.view === 'members' && !denied ? <PortalMembers /> : null}
             {state.view === 'briefing' && !denied ? <PortalBriefing /> : null}
             {state.view === 'surveys' && !denied ? (
               <PortalRegistration key={state.center} />
             ) : null}
             {state.view === 'search' && !denied ? <PortalSearch /> : null}
             {state.view === 'history' && !denied ? <PortalHistoryView /> : null}
-            {!['history', 'search', 'surveys', 'briefing'].includes(
+            {!['history', 'search', 'surveys', 'briefing', 'members'].includes(
               state.view,
             ) ? (
               <section
@@ -954,7 +956,7 @@ function Work({ profile }: { profile: Profile }) {
                 </label>
               </div>
             </div>
-            {!['history', 'search', 'surveys', 'briefing'].includes(
+            {!['history', 'search', 'surveys', 'briefing', 'members'].includes(
               state.view,
             ) ? (
               <div className="workspace">
