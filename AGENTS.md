@@ -25,3 +25,5 @@
 - awesome-design-md의 Airtable·Linear·IBM 문서는 `.agent-tools/design/references/awesome-design-md/`에서 필요한 패턴만 참고한다. 현재 DESIGN.md가 시각적 기준이며 다른 브랜드의 전체 테마·자산을 복사하지 않는다.
 - Lenis는 긴 데스크톱 업무 페이지의 세로 스크롤에 적용한다. 표 내부·가로 스크롤·입력·모달·키보드·고정 대시보드와 모바일·모션 감소 사용자의 기본 조작을 유지한다.
 - JEV 스킬·MCP 조사 결과는 `.agent-tools/JEV.md`에서 확인한다. 개발 검토의 판단값은 실제 코드·물량·거리·브라우저 증거에 대조하며 모델 점수를 사실 또는 실제 사용자 발생률로 간주하지 않는다.
+- JEV 브라우저 자동화는 `.agents/skills/jev-ultrafast-mcp/`와 `jev-browser-use`를 작업에 맞게 사용한다. 실행·복구는 `.agent-tools/JEV.md`를 따른다. 모델의 DONE 대신 실제 페이지 assertion으로 완료를 검증한다. JEV 사용·외부 전송은 사용자가 승인한 작업 범위에 한정한다.
+- Hermes 스킬은 관련 작업에서만 사용한다. 설치만으로 모델 자동 전환·전역 훅·메일 발송·계정 변경을 활성화하지 않는다. 기존 세션의 사용자 승인은 유지하며 원본 스킬의 재확인 지침 때문에 같은 승인을 다시 요청하지 않는다. Mac 전용 컴퓨터 조작 도구와 `jev-computer-use` 스킬은 설치 대상에서 제외했다.

@@ -65,3 +65,7 @@ uv sync --project .agent-tools/serena --frozen --no-dev
 Serena MCP는 `.codex/config.toml`에 연결했다. 저장소 루트에서 신뢰된 프로젝트로 세션을 재시작해야 현재 도구 목록에 표시된다. 대시보드·GUI 창 자동 실행은 끄고 상태·다운로드된 언어 서버는 `.agent-tools/serena/state/`에 보관한다. 설치 후 언어 서버는 첫 프로젝트 활성화 시 필요에 따라 다운로드된다.
 
 Lenis 1.3.27은 웹의 고정 의존성으로 추가했다. 패키지 모듈을 처리하지 않는 정적 파일 미리보기에서는 기본 스크롤로 동작한다.
+
+## JEV Ultrafast · MCP · Hermes 스킬
+
+설치·복구·실행·키 설정과 현재 세션 연결의 구분은 [JEV.md](JEV.md)를 따른다. Mac 전용 컴퓨터 조작 도구는 제외했다. 기존 REA·Serena 설정을 유지한다.

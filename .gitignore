@@ -20,3 +20,6 @@ __pycache__/
 **/.impeccable/live/previews/
 **/.impeccable/live/annotations/
 **/.impeccable/live/cache/
+.agent-tools/jev/sources/
+.agent-tools/jev/state/
+.agent-tools/jev/.env.local

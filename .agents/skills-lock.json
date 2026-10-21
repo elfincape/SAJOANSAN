@@ -1078,6 +1078,231 @@
           "sha256": "c60a093c2845fd9fb82f9c6f742ece31f379f8190b535309d32d66c45ccffdcb"
         }
       ]
+    },
+    {
+      "name": "jev-ultrafast-mcp",
+      "repository": "https://github.com/jiawei686/jev-ultrafast-mcp",
+      "revision": "6b2e275a98a4429c2f91135f67092fb5cf062f8a",
+      "source": "skills/jev-ultrafast-mcp",
+      "path": ".agents/skills/jev-ultrafast-mcp",
+      "files": [
+        {
+          "path": ".agents/skills/jev-ultrafast-mcp/SKILL.md",
+          "sha256": "f6c72dc83d36f4d5bab309a52722454444ca2ff0323f1a69241d6480b6f57e94"
+        },
+        {
+          "path": ".agents/skills/jev-ultrafast-mcp/upstream-licenses/LICENSE",
+          "sha256": "fb1f4b22f81ffa4e90a51761594354474ac24ffef90ca7a175e281f351606417"
+        }
+      ]
+    },
+    {
+      "name": "jev-blender",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-blender",
+      "path": ".agents/skills/jev-blender",
+      "files": [
+        {
+          "path": ".agents/skills/jev-blender/SKILL.md",
+          "sha256": "92c751c46afdcc073dc2a986dc28f7da35e100a4c5597292c054658194f0e488"
+        },
+        {
+          "path": ".agents/skills/jev-blender/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-browser-use",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-browser-use",
+      "path": ".agents/skills/jev-browser-use",
+      "files": [
+        {
+          "path": ".agents/skills/jev-browser-use/SKILL.md",
+          "sha256": "b0706ebbce75851eb89c7b271b27d736b01002aba96be622ac639ccf08e9e206"
+        },
+        {
+          "path": ".agents/skills/jev-browser-use/scripts/jev_browser_agent.py",
+          "sha256": "845f767d6741f2b8e60411ee540d7abe902f2a2baff02b54c4787020f9298df1"
+        },
+        {
+          "path": ".agents/skills/jev-browser-use/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-compaction",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-compaction",
+      "path": ".agents/skills/jev-compaction",
+      "files": [
+        {
+          "path": ".agents/skills/jev-compaction/SKILL.md",
+          "sha256": "b7b94aab22d415693c972ed258dd80f678683499b0fd800065305eae89ece7f5"
+        },
+        {
+          "path": ".agents/skills/jev-compaction/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-frontier-work",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-frontier-work",
+      "path": ".agents/skills/jev-frontier-work",
+      "files": [
+        {
+          "path": ".agents/skills/jev-frontier-work/SKILL.md",
+          "sha256": "905d47ad1febab3daacdcff192477404213a7424da345bcab37269521dc5f0cc"
+        },
+        {
+          "path": ".agents/skills/jev-frontier-work/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-mailbox",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-mailbox",
+      "path": ".agents/skills/jev-mailbox",
+      "files": [
+        {
+          "path": ".agents/skills/jev-mailbox/SKILL.md",
+          "sha256": "48ea7a543bee19570b658c4503581e6bc418f92e47099f5ae077c0e2fa527935"
+        },
+        {
+          "path": ".agents/skills/jev-mailbox/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-memory",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-memory",
+      "path": ".agents/skills/jev-memory",
+      "files": [
+        {
+          "path": ".agents/skills/jev-memory/SKILL.md",
+          "sha256": "fd923f90d504716e76af694b9941349c0d228df781869de42560379bab94d985"
+        },
+        {
+          "path": ".agents/skills/jev-memory/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-model-routing",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-model-routing",
+      "path": ".agents/skills/jev-model-routing",
+      "files": [
+        {
+          "path": ".agents/skills/jev-model-routing/SKILL.md",
+          "sha256": "0f0090336ec859b1584d6a57eb4a01418b3cb24f8c95732b342ff8ede600f321"
+        },
+        {
+          "path": ".agents/skills/jev-model-routing/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-search",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-search",
+      "path": ".agents/skills/jev-search",
+      "files": [
+        {
+          "path": ".agents/skills/jev-search/SKILL.md",
+          "sha256": "43746f730f67b757542d4f43069f3a96adf639b911518a542343418c0b9800f7"
+        },
+        {
+          "path": ".agents/skills/jev-search/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-setup",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-setup",
+      "path": ".agents/skills/jev-setup",
+      "files": [
+        {
+          "path": ".agents/skills/jev-setup/SKILL.md",
+          "sha256": "9d9bb7bffd4d47fa8abe8a7e0c601cddc9a7e5b2879a4117d73fd3a29624c383"
+        },
+        {
+          "path": ".agents/skills/jev-setup/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-skill-select",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-skill-select",
+      "path": ".agents/skills/jev-skill-select",
+      "files": [
+        {
+          "path": ".agents/skills/jev-skill-select/SKILL.md",
+          "sha256": "a73a84acad69d3be82e45dc5dd1ad7eaaad4c72988b676ab6cd70f0dc38f2caf"
+        },
+        {
+          "path": ".agents/skills/jev-skill-select/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-social-research",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-social-research",
+      "path": ".agents/skills/jev-social-research",
+      "files": [
+        {
+          "path": ".agents/skills/jev-social-research/SKILL.md",
+          "sha256": "b84dc89931326faf22c9d7cf18e70bac3e4b151fed430107acdda5fed752fdff"
+        },
+        {
+          "path": ".agents/skills/jev-social-research/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
+    },
+    {
+      "name": "jev-video-qa",
+      "repository": "https://github.com/kerpopule/hermes-jev-skills",
+      "revision": "53dbc1d0e33d3129f44e230a81aef4c5c3cdb4c0",
+      "source": "skills/jev-video-qa",
+      "path": ".agents/skills/jev-video-qa",
+      "files": [
+        {
+          "path": ".agents/skills/jev-video-qa/SKILL.md",
+          "sha256": "735f50ead8e803f66b2207ebfdcaa4b7c121091a93f7dae9042b9cd7d097a89a"
+        },
+        {
+          "path": ".agents/skills/jev-video-qa/upstream-licenses/LICENSE",
+          "sha256": "52284e0902df9f7587c25c58a04502c4f9c0a4fb6e7403d324a873f3f565f582"
+        }
+      ]
     }
   ],
   "existing": [
