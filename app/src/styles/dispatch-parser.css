@@ -1,0 +1,87 @@
+
+    /* ── 토스트 ────────────────────────────────────── */
+    #toast {
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    #toast.show {
+      opacity: 1 !important;
+      transform: translateX(-50%) translateY(0) !important;
+    }
+
+    /* ── textarea 모노 ─────────────────────────────── */
+    #raw-input {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+      resize: vertical;
+    }
+
+    /* ── 컬럼 헤더 (클릭으로 열 전체 복사) ────────── */
+    th.col-copy {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    th.col-copy:hover {
+      background: rgba(16, 185, 129, 0.15) !important;
+      color: #10b981;
+    }
+    th.col-copy:active {
+      background: rgba(16, 185, 129, 0.28) !important;
+    }
+    th.col-copy .copy-icon {
+      margin-left: 4px;
+      font-size: 10px;
+      opacity: 0.4;
+      transition: opacity 0.12s;
+    }
+    th.col-copy:hover .copy-icon {
+      opacity: 1;
+    }
+
+    /* ── 결과값 셀 말줄임 ──────────────────────────── */
+    .result-cell {
+      max-width: 340px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── 파싱 경고 행 ──────────────────────────────── */
+    .row-warn td { color: #f59e0b; }
+
+    /* ── 결과 행 드래그 정렬 ─────────────────────────── */
+    #result-body tr.result-row {
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    #result-body tr.result-row.dragging {
+      opacity: 0.62;
+      background: rgba(16, 185, 129, 0.12);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+    #result-body tr.result-row.drag-over {
+      outline: 1px solid rgba(16, 185, 129, 0.75);
+      outline-offset: -1px;
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .drag-handle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 0.45rem;
+      color: #94a3b8;
+      cursor: grab;
+      user-select: none;
+      transition: color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+    }
+    .drag-handle:hover {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+      transform: scale(0.96);
+    }
+  
