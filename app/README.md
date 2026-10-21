@@ -33,8 +33,12 @@ npm run build
 
 Vercel의 해당 배포 환경에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 설정해야 합니다. 기존 메일 서버 환경변수는 그대로 유지합니다. 로컬 Vite 서버만으로 루트 메일 수신 함수를 실행하지는 않습니다.
 
+2026-10-21 운영 배포에는 위 설정과 기존 Supabase 공개 클라이언트 환경변수를 적용했습니다. 동일 공개 설정을 `react-migration` 브랜치의 Preview에만 제한하여 등록했습니다. `react-migration`의 `55d3736`을 운영 환경으로 빌드한 뒤 검증한 동일 배포를 `https://sajoansan.vercel.app`에 연결했습니다. 운영 배포 ID는 `dpl_DRZ7UTKKMUmKsuMinAa2iMEFGvBB`입니다.
+
+main 브랜치는 변경하지 않았습니다. Git 자동 배포의 기준은 여전히 main이므로 다음 main 변경을 Push하기 전에 PR #38을 병합해야 합니다. 새 루트 빌드 설정은 `react-migration`의 `app/`을 필요로 합니다.
+
 ## 확인 범위
 
-TypeScript/Vite 빌드, 기존 모델과의 비교, 모의 DB·AI·OneDrive·메일 응답을 사용한 브라우저 검증을 수행했습니다. 원본과 같은 데이터로 주요 화면의 밝은/어두운 테마 및 데스크톱/모바일 배치를 비교했습니다. 운영 DB 변경, 실제 메일 수집, 실제 AI 호출 및 main 배포는 수행하지 않았습니다.
+TypeScript/Vite 빌드, 기존 모델과의 비교, 모의 DB·AI·OneDrive·메일 응답을 사용한 브라우저 검증을 수행했습니다. 원본과 같은 데이터로 주요 화면의 밝은/어두운 테마 및 데스크톱/모바일 배치를 비교했습니다. 배포 후 실제 운영 주소 38개와 로그인 화면, 비로그인 접근 제한, 두 메일 API의 GET 405 응답을 확인했습니다. 운영 계정 로그인과 인증된 실데이터 CRUD, 운영 DB 변경, 실제 메일 수집, 실제 AI 호출 및 main 병합은 수행하지 않았습니다.
 
 사용자가 없다고 확인한 평택 `one-top-two-room-template_PYT.xlsx`는 만들지 않았으며 기존 누락 안내를 유지합니다. 이전의 상세 기록은 `../docs/react-migration/progress.md`를 참고하세요.
