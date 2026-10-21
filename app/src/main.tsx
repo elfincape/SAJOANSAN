@@ -15,6 +15,7 @@ const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Routes = lazy(() => import('./pages/Routes'));
 const RouteEdit = lazy(() => import('./pages/RouteEdit'));
+const Users = lazy(() => import('./pages/Users'));
 const Drivers = lazy(() => import('./pages/Drivers'));
 const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
@@ -31,6 +32,7 @@ const pages = {
   '/admin/drivers.html': Drivers,
   '/admin/delivery-points.html': DeliveryPoints,
   '/admin/routes.html': Routes,
+  '/admin/users.html': Users,
   '/admin/route-edit.html': RouteEdit,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
