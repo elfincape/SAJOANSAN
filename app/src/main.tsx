@@ -15,6 +15,7 @@ const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Routes = lazy(() => import('./pages/Routes'));
 const RouteEdit = lazy(() => import('./pages/RouteEdit'));
+const PdfTools = lazy(() => import('./pages/PdfTools'));
 const CoupangEntry = lazy(() => import('./pages/CoupangEntry'));
 const OneTopWork = lazy(() => import('./pages/OneTopWork'));
 const DailyTemperature = lazy(() => import('./pages/DailyTemperature'));
@@ -45,6 +46,7 @@ const pages = {
   '/admin/daily-temperature.html': DailyTemperature,
   '/admin/one-top-two-room-work.html': OneTopWork,
   '/admin/coupang-entry.html': CoupangEntry,
+  '/admin/pdf-image-converter.html': PdfTools,
   '/admin/route-edit.html': RouteEdit,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
