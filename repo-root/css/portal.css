@@ -1943,3 +1943,24 @@
     scroll-behavior: auto !important;
   }
 }
+
+.permission-simulation {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.permission-simulation fieldset { margin: 12px 0; }
+.permission-preview-table { overflow-x: auto; margin-top: 12px; }
+.permission-preview-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.permission-preview-table th, .permission-preview-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.permission-preview-table thead th { background: var(--panel); }
+.permission-preview-table tbody th { font-weight: 550; }
+.permission-row[aria-pressed="true"], .member-row[aria-pressed="true"] { background: var(--selected); outline: 1px solid var(--accent); outline-offset: -1px; }
+.portal-shell .permission-row, .portal-shell .member-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+.portal-shell .permission-row small, .portal-shell .member-row small { width: 100%; }

@@ -40,6 +40,8 @@ actor={role:'admin',active:true};existing={id:'old'};assert.equal((await call({a
 assert.deepEqual(queried,{col:'username',val:'newuser'});existing=null;
 assert.equal((await call({action:'create',username:'newuser',password:'short',role:'editor'})).status,400);
 r=await call({action:'create',username:'평택담당자',password:'password123',role:'editor',display_name:'담당자'});assert.equal(r.status,200);assert.equal(profile.username,'평택담당자');assert(!('password' in profile));
+r=await call({action:'create',username:'vieweruser',password:'password123',role:'viewer'});assert.equal(r.status,200);assert.equal(profile.role,'viewer');
+assert.equal((await call({action:'create',username:'badrole',password:'password123',role:'owner'})).status,400);
 saveError={code:'23505'};assert.equal((await call({action:'create',username:'newuser',password:'password123',role:'editor'})).status,409);assert(removed);
 const sql=fs.readFileSync(new URL('../repo-root/sql/username-accounts.sql',import.meta.url),'utf8');
 assert(sql.includes('lower(username)'));assert(sql.includes('revoke all on function public.account_login_email(text) from public,anon,authenticated'));

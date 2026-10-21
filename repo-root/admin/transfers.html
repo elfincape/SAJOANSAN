@@ -131,7 +131,7 @@
     </div>
 
     <div class="work-form-actions flex items-center gap-2 mt-4">
-      <button id="btn-add" class="btn btn-primary">행 추가</button>
+      <button id="btn-add" data-permission-action="edit" class="btn btn-primary">행 추가</button>
       <button id="btn-clear-form" class="btn btn-ghost">입력 초기화</button>
       <div class="flex-1"></div>
       <span class="text-xs text-zinc-500">사진은 각 파일 1MB 이하로 압축됩니다.</span>
@@ -145,9 +145,9 @@
       <div class="flex-1"></div>
 
       <button id="btn-reload-db" class="btn btn-ghost text-xs">DB 새로고침</button>
-      <button id="btn-delete-selected" class="btn btn-ghost text-xs text-rose-300">선택 삭제</button>
-      <button id="btn-clear-list" class="btn btn-ghost text-xs text-rose-400">전체 초기화</button>
-      <button id="btn-save-db" class="btn btn-primary text-xs">DB 저장</button>
+      <button id="btn-delete-selected" data-permission-action="edit" class="btn btn-ghost text-xs text-rose-300">선택 삭제</button>
+      <button id="btn-clear-list" data-permission-action="edit" class="btn btn-ghost text-xs text-rose-400">전체 초기화</button>
+      <button id="btn-save-db" data-permission-action="edit" class="btn btn-primary text-xs">DB 저장</button>
     </div>
 
     <div class="table-wrap" style="border:none;border-radius:0;max-height:360px;">
@@ -550,8 +550,8 @@ function renderRows() {
       <td>${escapeHtml(r.memo || '')}</td>
       <td class="${savedClass} text-xs">${savedText}</td>
       <td class="text-right">
-        <button type="button" class="btn btn-ghost text-xs" data-edit="${i}" aria-label="이배송 ${i + 1}행 수정">수정</button>
-        <button type="button" class="btn btn-ghost text-xs text-rose-400" data-del="${i}" aria-label="이배송 ${i + 1}행 삭제">삭제</button>
+        <button type="button" class="btn btn-ghost text-xs" data-permission-action="edit" data-edit="${i}" aria-label="이배송 ${i + 1}행 수정">수정</button>
+        <button type="button" class="btn btn-ghost text-xs text-rose-400" data-permission-action="edit" data-del="${i}" aria-label="이배송 ${i + 1}행 삭제">삭제</button>
       </td>
     `;
     tbody.appendChild(tr);
