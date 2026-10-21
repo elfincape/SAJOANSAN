@@ -1,0 +1,333 @@
+@import './ui-foundation.css';
+@import './workspace-components.css';
+
+body.workspace-ui {
+  color-scheme: light;
+  --bg: #f3f6f8;
+  --bg-page: #f3f6f8;
+  --bg-soft: #f1f5f7;
+  --bg-softer: #e8eef2;
+  --panel: #fff;
+  --fg: #203443;
+  --text: #203443;
+  --fg-mute: #526776;
+  --muted: #526776;
+  --border: #cbd7df;
+  --border-soft: #e0e7ec;
+  --accent: #087f72;
+  --green: #087567;
+  --ui-focus: #087f72;
+  background-color: var(--bg-page);
+  color: var(--fg);
+  text-rendering: optimizeLegibility;
+  line-height: 1.55;
+  font-family:
+    'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.workspace-ui :where(input, select, textarea, button) {
+  font-family: inherit;
+}
+
+.workspace-ui
+  :where(input, select, textarea):not([type='checkbox']):not(
+    [type='radio']
+  ):not([type='hidden']) {
+  border-radius: 8px;
+  border-color: var(--border);
+}
+
+.workspace-ui :where(input, textarea)::placeholder {
+  color: var(--theme-muted);
+}
+.workspace-ui :where(input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+.workspace-ui .btn {
+  min-height: 36px;
+  border-radius: 8px;
+  font-weight: 550;
+}
+.workspace-ui .btn-primary {
+  background: #116447;
+  border-color: #238761;
+  color: #effff8;
+}
+.workspace-ui .btn-primary:hover {
+  background: #177c57;
+}
+.workspace-ui .btn-ghost:hover {
+  background: var(--theme-hover);
+}
+.workspace-ui :where(button, a)[aria-current='page'] {
+  color: var(--green);
+}
+.workspace-ui table :where(th, td) {
+  border-color: var(--border-soft);
+}
+.workspace-ui table th {
+  font-weight: 600;
+}
+.workspace-ui table tbody tr:hover {
+  background-color: var(--theme-hover);
+}
+.workspace-ui :where(dialog, [role='dialog']) {
+  max-width: calc(100vw - 24px);
+}
+.workspace-ui dialog::backdrop {
+  background: #050b12b8;
+}
+.workspace-ui
+  :where(fieldset, .table-scroll, .workspace, .list, #items, #detail) {
+  min-width: 0;
+}
+.workspace-ui :where(.table-scroll, #flat-view) {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.workspace-ui #menu-grid {
+  gap: 16px;
+}
+.workspace-ui #menu-grid > a {
+  min-height: 112px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--panel);
+  border-color: var(--border);
+}
+.workspace-ui #menu-grid > a:hover {
+  border-color: #6aab95;
+  background: var(--theme-hover);
+}
+.workspace-ui #menu-grid > a:focus-visible {
+  outline-offset: 4px;
+}
+.workspace-ui #menu-grid h3 {
+  font-size: 16px;
+}
+.workspace-ui #menu-grid p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.workspace-ui #filter-bar {
+  padding-bottom: 4px;
+}
+.workspace-ui #app {
+  background: var(--panel);
+  border-color: var(--border);
+}
+
+.workspace-ui.portal-shell .portal-header {
+  background: var(--theme-panel);
+  border-color: var(--border-soft);
+}
+.workspace-ui.portal-shell h1 {
+  font-size: 26px;
+  letter-spacing: -0.025em;
+}
+.workspace-ui.portal-shell .portal-sidebar {
+  background: #121c23;
+  border-color: var(--border-soft);
+}
+.workspace-ui.portal-shell .sidebar-brand {
+  min-height: 86px;
+}
+.workspace-ui.portal-shell .task-row {
+  border-radius: 8px;
+}
+.workspace-ui.portal-shell .list-heading {
+  padding: 16px 20px;
+}
+.workspace-ui.portal-shell .calendar-week .calendar-cell,
+.workspace-ui.portal-shell .calendar-week .calendar-span-week > .calendar-cell {
+  min-height: clamp(280px, calc(100dvh - 390px), 540px);
+}
+.workspace-ui.portal-shell .calendar-bars {
+  position: relative;
+}
+.workspace-ui.portal-shell .calendar-span-week {
+  min-height: min-content;
+}
+.workspace-ui.portal-shell .calendar-today {
+  background: var(--theme-hover);
+  border-color: var(--theme-selected-border);
+}
+.workspace-ui.portal-shell .calendar-cell h4 {
+  padding-inline: 0;
+  white-space: nowrap;
+  color: var(--theme-muted);
+}
+.workspace-ui.portal-shell .calendar-today h4 {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--theme-selected-text);
+}
+.workspace-ui.portal-shell .calendar-today h4::after {
+  content: '오늘';
+  display: inline-block;
+  flex: 0 0 auto;
+  padding: 1px 2px;
+  border-radius: 4px;
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-bars {
+  margin-inline: 0;
+}
+.workspace-ui.portal-shell .calendar-task-bar.task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px 8px;
+  justify-self: center;
+  width: calc(100% - 8px);
+  min-height: 68px;
+  padding: 8px 10px;
+  background: #e7f3ed;
+  border-color: var(--theme-selected-border);
+  border-radius: 6px;
+}
+.workspace-ui.portal-shell .calendar-task-bar .task-row-copy {
+  display: contents;
+}
+.workspace-ui.portal-shell .calendar-task-bar .task-row-name {
+  flex: 0 0 100%;
+  min-width: 0;
+  color: var(--theme-selected-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar small {
+  min-width: 0;
+  max-width: calc(100% - 52px);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--theme-selected-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar .badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.workspace-ui.portal-shell .calendar-task-bar.task-row:hover:not(:disabled),
+.workspace-ui.portal-shell .calendar-task-bar.task-row.selected {
+  background: #d8ecdf;
+  border-color: var(--theme-selected-border);
+}
+.workspace-ui.portal-shell .task-calendar {
+  max-width: 100%;
+}
+.workspace-ui.portal-shell .portal-form {
+  gap: 18px;
+}
+
+@media (max-width: 760px) {
+  .workspace-ui :where(header > div, .heading-actions, .actions) {
+    flex-wrap: wrap;
+  }
+  .workspace-ui header > div {
+    row-gap: 10px;
+  }
+  .workspace-ui .btn {
+    min-height: 40px;
+  }
+  .workspace-ui
+    :where(input, select, textarea):not([type='checkbox']):not([type='radio']) {
+    font-size: 16px;
+  }
+  .workspace-ui.portal-shell #portal-content {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+  .workspace-ui.portal-shell main {
+    padding: 20px 14px;
+  }
+  .workspace-ui.portal-shell .heading-actions {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .workspace-ui.portal-shell .portal-header {
+    padding: 0 14px;
+  }
+  .workspace-ui.portal-shell .workspace {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.portal-shell .calendar-week .calendar-cell,
+  .workspace-ui.portal-shell
+    .calendar-week
+    .calendar-span-week
+    > .calendar-cell {
+    min-height: 320px;
+  }
+  .workspace-ui.portal-shell .list {
+    overflow: hidden;
+  }
+  .workspace-ui.portal-shell .toolbar-period {
+    gap: 10px;
+  }
+  .workspace-ui.portal-shell .date-navigation {
+    max-width: 100%;
+  }
+  .workspace-ui.portal-shell dl {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+  .workspace-ui #menu-grid > a {
+    min-height: 92px;
+    padding: 18px;
+  }
+}
+
+@media print {
+  .workspace-ui {
+    background: white;
+    color: black;
+  }
+  .workspace-ui.portal-shell .portal-sidebar,
+  .workspace-ui.portal-shell .portal-header {
+    display: none;
+  }
+  .workspace-ui.portal-shell #portal-content {
+    margin-left: 0;
+  }
+}
+
+.workflow-guide {
+  margin-block: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.workflow-guide summary {
+  cursor: pointer;
+  color: var(--green);
+}
+.workflow-guide iframe {
+  display: block;
+  width: 100%;
+  height: 480px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+  .workspace-ui .toolbar label {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .workspace-ui input[type='file'] {
+    max-width: 100%;
+  }
+}

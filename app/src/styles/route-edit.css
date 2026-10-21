@@ -1,0 +1,10 @@
+
+    /* 드래그 중 행 스타일 */
+    .stop-row.sortable-ghost  { opacity: 0.35; }
+    .stop-row.sortable-chosen { background: rgba(16,185,129,0.10) !important; }
+    .drag-handle {
+      cursor: grab; user-select: none;
+      color: #71717a;
+    }
+    .drag-handle:hover { color: #f4f4f5; }
+  

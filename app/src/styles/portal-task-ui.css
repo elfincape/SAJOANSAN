@@ -1,0 +1,290 @@
+/* One palette for filter selections, task badges and calendar entries. */
+.workspace-ui.portal-shell [data-task-state='all'] {
+  --task-color: var(--theme-text);
+  --task-bg: var(--theme-soft);
+}
+.workspace-ui.portal-shell [data-task-state='active'] {
+  --task-color: var(--theme-info);
+  --task-bg: var(--theme-info-bg);
+}
+.workspace-ui.portal-shell [data-task-state='completed'] {
+  --task-color: var(--theme-success);
+  --task-bg: var(--theme-success-bg);
+}
+.workspace-ui.portal-shell [data-task-state='delayed'] {
+  --task-color: var(--theme-danger);
+  --task-bg: var(--theme-danger-bg);
+}
+html[data-theme] body.workspace-ui.portal-shell .task-toolbar {
+  background: transparent;
+  padding: 16px 0;
+  margin-bottom: 20px;
+}
+.workspace-ui.portal-shell :is(.toolbar-period-group, .toolbar-status-group) {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.workspace-ui.portal-shell .filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--theme-muted);
+}
+.workspace-ui.portal-shell :is(.toolbar-top, .toolbar-bottom) {
+  align-items: end;
+  gap: 16px;
+}
+.workspace-ui.portal-shell .toolbar-bottom {
+  margin-top: 16px;
+}
+.workspace-ui.portal-shell .toolbar-bottom .check {
+  min-height: 40px;
+}
+.workspace-ui.portal-shell #task-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  height: auto;
+}
+.workspace-ui.portal-shell #task-status > button {
+  gap: 4px;
+  min-height: 36px;
+  height: auto;
+  padding: 6px 10px;
+  color: var(--theme-muted);
+  border: 1px solid var(--theme-border);
+  background: var(--theme-panel);
+}
+.workspace-ui.portal-shell
+  #task-status
+  > button:not([data-task-state='all'])::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--task-color);
+}
+.workspace-ui.portal-shell
+  #task-status
+  > button:is([aria-pressed='true'], :hover:not(:disabled)) {
+  color: var(--task-color);
+  background: var(--task-bg);
+  border-color: var(--task-color);
+}
+.workspace-ui.portal-shell #task-status .status-count {
+  color: inherit;
+}
+.workspace-ui.portal-shell :is([data-task-state] > .badge, .task-state-badge) {
+  color: var(--task-color);
+  background: var(--task-bg);
+}
+.workspace-ui.portal-shell .calendar-task-bar.task-row[data-task-state] {
+  color: var(--task-color);
+  background: var(--task-bg);
+  border-color: var(--task-color);
+  box-shadow: inset 3px 0 var(--task-color);
+}
+.workspace-ui.portal-shell .calendar-task-bar[data-task-state] .task-row-name {
+  color: var(--task-color);
+}
+.workspace-ui.portal-shell
+  .calendar-task-bar[data-task-state]:is(:hover:not(:disabled), .selected) {
+  outline: 2px solid var(--task-color);
+  outline-offset: -2px;
+}
+.workspace-ui.portal-shell .task-summary-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.workspace-ui.portal-shell .task-state-badge {
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.workspace-ui.portal-shell .task-detail-info {
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  line-height: 1.6;
+}
+.workspace-ui.portal-shell .task-detail-content .task-detail-info {
+  grid-template-columns: 72px minmax(0, 1fr) 72px minmax(0, 1fr);
+}
+.workspace-ui.portal-shell .task-detail-summary {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--theme-border-soft);
+}
+.workspace-ui.portal-shell .task-entry-form {
+  margin-top: 20px;
+  gap: 12px;
+}
+.workspace-ui.portal-shell
+  .task-entry-form
+  :is(textarea:not(.mention-source), .mention-editor[data-multiline='true']) {
+  height: 128px;
+}
+.workspace-ui.portal-shell .task-input-heading {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+.workspace-ui.portal-shell .task-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 0;
+  border-block: 1px solid var(--theme-border-soft);
+}
+.workspace-ui.portal-shell .task-secondary-actions > button {
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.workspace-ui.portal-shell .task-secondary-actions > .task-exception {
+  color: var(--theme-danger);
+  border-color: var(--theme-danger-border);
+  background: transparent;
+}
+.workspace-ui.portal-shell .task-primary-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 16px 0 calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--theme-border);
+  background: var(--theme-panel);
+}
+.workspace-ui.portal-shell .task-primary-actions > button {
+  min-width: 104px;
+  min-height: 42px;
+  margin: 0;
+  padding: 10px 20px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.workspace-ui.portal-shell .task-primary-actions > .primary {
+  min-width: 128px;
+}
+.workspace-ui.portal-shell
+  #task-ticket-dialog:has(> .task-detail-content)[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+.workspace-ui.portal-shell
+  #task-ticket-dialog:has(> .task-detail-content)
+  > .parent-dialog-heading {
+  flex: none;
+  position: static;
+  margin: 0;
+  padding: 20px 32px;
+}
+.workspace-ui.portal-shell .task-detail-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 24px 32px;
+}
+.workspace-ui.portal-shell .task-detail-content > h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+  line-height: 28px;
+  letter-spacing: 0;
+}
+.workspace-ui.portal-shell #task-ticket-dialog > .task-primary-actions {
+  flex: none;
+  margin: 0;
+  padding-inline: 32px;
+}
+@media (max-width: 760px) {
+  .workspace-ui.portal-shell .toolbar-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .workspace-ui.portal-shell .toolbar-period-group {
+    display: contents;
+  }
+  .workspace-ui.portal-shell .toolbar-period {
+    display: contents;
+  }
+  .workspace-ui.portal-shell .toolbar-period-group > .filter-label,
+  .workspace-ui.portal-shell .date-navigation {
+    grid-column: 1 / -1;
+  }
+  .workspace-ui.portal-shell #task-layout {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .workspace-ui.portal-shell #task-unit {
+    justify-self: start;
+  }
+  .workspace-ui.portal-shell #task-unit > button {
+    min-width: 32px;
+    padding-inline: 8px;
+  }
+  .workspace-ui.portal-shell .toolbar-bottom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .workspace-ui.portal-shell .toolbar-status-group {
+    display: contents;
+  }
+  .workspace-ui.portal-shell #task-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .workspace-ui.portal-shell .toolbar-bottom .check {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 26px;
+  }
+  .workspace-ui.portal-shell #task-status > button {
+    padding-inline: 6px;
+    min-height: 42px;
+    font-size: 12px;
+  }
+  .workspace-ui.portal-shell .task-secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-ui.portal-shell .task-secondary-actions > button {
+    min-height: 42px;
+  }
+  .workspace-ui.portal-shell .task-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-ui.portal-shell .task-primary-actions > button {
+    min-width: 0;
+    padding-inline: 12px;
+  }
+  .workspace-ui.portal-shell .task-detail-content {
+    padding: 20px 16px;
+  }
+  .workspace-ui.portal-shell .task-detail-content .task-detail-info {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+  .workspace-ui.portal-shell
+    #task-ticket-dialog:has(> .task-detail-content)
+    > .parent-dialog-heading {
+    padding: 16px;
+  }
+  .workspace-ui.portal-shell #task-ticket-dialog > .task-primary-actions {
+    padding-inline: 16px;
+  }
+}

@@ -1,0 +1,29 @@
+
+    /* diff 시각화 */
+    .diff-table { width: 100%; font-size: 0.8125rem; }
+    .diff-table th, .diff-table td {
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid #27272a;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .diff-table th {
+      text-align: left;
+      color: #a1a1aa;
+      font-weight: 600;
+      background: #27272a;
+      position: sticky; top: 0;
+    }
+    .diff-row.changed   { background: rgba(245, 158, 11, 0.06); }
+    .diff-row.added     { background: rgba(16, 185, 129, 0.08); }
+    .diff-row.removed   { background: rgba(244, 63, 94, 0.08); }
+    .diff-old { color: #fb7185; text-decoration: line-through; opacity: 0.85; }
+    .diff-new { color: #34d399; }
+    .diff-mute { color: #71717a; }
+    .json-preview {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  

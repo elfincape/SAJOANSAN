@@ -1,0 +1,30 @@
+
+    .drop-card {
+      border: 1px dashed #52525b;
+      background: linear-gradient(180deg, rgba(39,39,42,0.72), rgba(24,24,27,0.55));
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+    .drop-card:hover,
+    .drop-card.dragover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+      transform: translateY(-1px);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .preview-table td,
+    .preview-table th {
+      white-space: nowrap;
+    }
+  

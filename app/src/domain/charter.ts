@@ -1,0 +1,214 @@
+import type * as SheetJS from 'xlsx';
+export type CharterValue=string|number|null;
+export type FieldKey=typeof FIELDS[number][1];
+export type FieldKind=typeof FIELDS[number][3];
+export interface CharterIssue {cell:string|undefined;field:string;deliveryId:string|null;message:string;resolved:boolean}
+interface FieldValues extends Partial<Record<FieldKey,CharterValue>> {}
+export interface CharterDelivery extends FieldValues {id:string;stopId:string;sourceRow:number|null;sourceCells:Partial<Record<FieldKey,string>>;code:string|null;name:string|null;address:string|null;customer:string|null;quantity:number|null;frozen:number|null;chilled:number|null;region:string|null}
+export interface CharterTrip extends FieldValues {id:string;centerCode:string;sourceName:string;sheetName:string;sourceRow:number|null;sourceCells:Partial<Record<FieldKey,string>>;issues:CharterIssue[];deliveries:CharterDelivery[];createdAt?:string;updatedAt?:string;date:string|null;type:string|null;course:string|null;vehicleSequence:string|null;providedStopCount:number|null;courseQuantity:number|null;arrivalTime:string|null;departureTime:string|null;tons:number|null;driver:string|null;vehicleNumber:string|null;phone:string|null}
+export interface CharterOptions {centerCode?:string;sourceName?:string;sheetName?:string;year?:number;date1904?:boolean}
+interface ReadCell {key:string;value:CharterValue;raw:string|null;error:string|null}
+import { CHARTER_RATES } from './charter-rates';
+import { charterRegion } from './charter-rates';
+export const SCHEMA_VERSION = 2;
+export const FIELDS = [
+ ['B','date','일자','date','trip'],['C','type','형태','text','trip'],['D','course','코스','text','trip'],
+ ['E','vehicleSequence','호차','text','trip'],['F','code','납품처코드','text','delivery'],
+ ['G','name','납품처명','text','delivery'],['H','address','주소','text','delivery'],
+ ['I','customer','고객사','text','delivery'],['J','quantity','총 수량','number','delivery'],
+ ['K','frozen','냉동','number','delivery'],['L','chilled','냉장','number','delivery'],
+ ['M','providedStopCount','착수','number','trip'],['N','courseQuantity','총 배송량','number','trip'],
+ ['O','arrivalTime','입차시간','time','trip'],['P','departureTime','비고','text','trip'],
+ ['Q','tons','톤수','number','trip'],['R','driver','기사명','text','trip'],
+ ['S','vehicleNumber','차량번호','text','trip'],['T','phone','연락처','text','trip'],
+ ['U','region','권역(구간)','text','delivery']
+] as const;
+const ERROR = /^#(?:N\/?A|VALUE!?|REF!?|DIV\/0!?|NAME\?|NUM!?|NULL!?|SPILL!?|CALC!?|GETTING_DATA|FIELD!?|BLOCKED!?|UNKNOWN!?|CONNECT!?|BUSY!?|PYTHON!?)$/i;
+const empty = (value:unknown) => value == null || String(value).trim() === '';
+const numeric = (value:unknown) => typeof value === 'number' ? value : Number(String(value).replace(/,/g,'').trim());
+export const clone = <T,>(value:T):T => JSON.parse(JSON.stringify(value));
+export function validDate(value:unknown):value is string {
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value)))return false;
+ const d=new Date(value+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;
+}
+export function normalizeValue(value:unknown, kind:FieldKind, {XLSX,year,date1904=false}:{XLSX?:typeof SheetJS;year?:number;date1904?:boolean}={}):CharterValue {
+ if(empty(value)||ERROR.test(String(value).trim()))return null;
+ if(kind==='number'){const n=numeric(value);return Number.isFinite(n)&&n>=0?n:null;}
+ if(kind==='date'){
+  if(typeof value==='number'&&XLSX){const d=XLSX.SSF.parse_date_code(value,{date1904});if(d){const s=[d.y,String(d.m).padStart(2,'0'),String(d.d).padStart(2,'0')].join('-');return validDate(s)?s:null;}}
+  const raw=String(value).trim(), full=raw.match(/^(\d{4})[년./-]\s*(\d{1,2})[월./-]\s*(\d{1,2})(?:일)?(?:\s.*)?$/);
+  const short=raw.match(/^(\d{1,2})[월./-]\s*(\d{1,2})(?:일)?$/);
+  const parts=full?full.slice(1):short&&year?[String(year),...short.slice(1)]:null;
+  if(!parts)return null;const s=parts.map((v,i)=>i?String(Number(v)).padStart(2,'0'):v).join('-');return validDate(s)?s:null;
+ }
+ if(kind==='time'){
+  if(typeof value==='number'){
+   if(!Number.isFinite(value)||value<0)return null;
+   const minutes=Math.floor((value%1)*1440+1e-8)%1440;
+   return [Math.floor(minutes/60),minutes%60].map(v=>String(v).padStart(2,'0')).join(':');
+  }
+  const raw=String(value).trim(),match=raw.match(/(?:^|[^\d])([01]?\d|2[0-3]):([0-5]\d)(?!\d)/);
+  if(!match)return null;
+  const time=match[1].padStart(2,'0')+':'+match[2];
+  return (/전일/.test(raw)?'전일 ':'')+time;
+ }
+ return String(value).trim();
+}
+export function parseNormalizedSheet(sheet:SheetJS.WorkSheet,XLSX:typeof SheetJS,{centerCode='002',sourceName='',sheetName='',year=new Date().getFullYear(),date1904=false}:CharterOptions={}) {
+ if(!sheet?.['!ref'])throw new Error('선택한 시트가 비어 있습니다.');
+ const range=XLSX.utils.decode_range(sheet['!ref']);
+ if(range.e.r>100002)throw new Error('데이터 100,000행까지 지원합니다.');
+ const merges=new Map<string,SheetJS.Range>(),cache=new Map<string,ReadCell>();
+ for(const m of sheet['!merges']||[]){
+  if(m.s.r<3)continue;
+  for(let c=Math.max(1,m.s.c);c<=Math.min(20,m.e.c);c++)for(let r=m.s.r;r<=Math.min(range.e.r,m.e.r);r++){
+   const key=XLSX.utils.encode_cell({r,c});if(merges.has(key))throw new Error(key+' 병합 영역이 겹칩니다.');merges.set(key,m);
+  }
+ }
+ function read(r:number,col:string,kind:FieldKind):ReadCell{
+  const c=XLSX.utils.decode_col(col),m=merges.get(XLSX.utils.encode_cell({r,c}));
+  const key=XLSX.utils.encode_cell({r:m?.s.r??r,c:m?.s.c??c}),cacheKey=key+':'+kind;
+  if(cache.has(cacheKey))return cache.get(cacheKey)!;
+  const cell=sheet[key],raw=cell?.v;
+  const failed=cell?.t==='e'||ERROR.test(String(raw??'').trim())||(cell?.f&&raw==null);
+  const value=failed?null:normalizeValue(kind==='text'&&cell?.t==='n'&&cell?.z?XLSX.utils.format_cell(cell):raw,kind,{XLSX,year,date1904});
+  const result={key,value,raw:empty(raw)?null:String(raw),error:failed?(cell?.w||String(raw??'수식 결과 없음')):!empty(raw)&&value===null?'값 형식 확인':null};
+  cache.set(cacheKey,result);return result;
+ }
+ const trips:CharterTrip[]=[],counters=new Map<string,number>();let previous:CharterTrip|null=null,previousAnchor='';
+ for(let r=3;r<=range.e.r;r++){
+  const row=Object.fromEntries(FIELDS.map(([col,key,,kind])=>[key,read(r,col,kind)])) as Record<FieldKey,ReadCell>;
+  if(FIELDS.filter(([,,, ,scope])=>scope==='delivery').every(([,key])=>empty(row[key].value)&&!row[key].error)&&(['type','course','vehicleSequence','vehicleNumber','tons','driver','courseQuantity'] as FieldKey[]).every(key=>empty(row[key].value)&&!row[key].error))continue;
+  const anchor=row.date.key;
+  const split=!previous||anchor!==previousAnchor||(['course','vehicleSequence','vehicleNumber'] as FieldKey[]).some(key=>!empty(row[key].value)&&!empty(previous?.[key])&&row[key].value!==previous?.[key]);
+  if(split){
+   previous={id:'',centerCode,sourceName,sheetName,sourceRow:r+1,sourceCells:{},issues:[],deliveries:[],createdAt:new Date().toISOString()} as unknown as CharterTrip;
+   trips.push(previous);previousAnchor=anchor;
+  }
+  const trip=previous!;
+  const delivery={id:'d-'+(r+1),sourceRow:r+1,stopId:row.address.key,sourceCells:{}} as CharterDelivery;
+  for(const [col,key,label,kind,scope] of FIELDS){
+   const value=row[key],target=scope==='trip'?trip:delivery;
+   target.sourceCells[key]=target.sourceCells[key]||value.key;
+   const failedBefore=scope==='trip'&&trip.issues.some(i=>i.field===key&&i.deliveryId===null&&i.message.includes('→ 빈칸'));
+   if(value.error||scope==='delivery'||(!failedBefore&&(!(key in target)||target[key]===null)))target[key]=value.value;
+   else if(!failedBefore&&value.value!==null&&target[key]!==value.value&&!trip.issues.some(i=>i.cell===value.key&&i.field===key))trip.issues.push({cell:value.key,field:key,deliveryId:null,message:label+' 값이 운행 안에서 다릅니다.',resolved:false});
+   if(value.error&&!trip.issues.some(i=>i.cell===value.key&&i.field===key&&i.deliveryId===(scope==='delivery'?delivery.id:null)))trip.issues.push({cell:value.key,field:key,deliveryId:scope==='delivery'?delivery.id:null,message:label+': '+value.error+' → 빈칸',resolved:false});
+  }
+  trip.deliveries.push(delivery);
+ }
+ for(const trip of trips){
+  const identity=[centerCode,trip.date??'미정',trip.type??'',trip.course??'',trip.vehicleSequence??'',trip.vehicleNumber??''];
+  if(!trip.date)identity.push(sourceName,sheetName,String(trip.sourceRow));
+  const base=identity.map(v=>encodeURIComponent(v)).join('|'),n=(counters.get(base)||0)+1;counters.set(base,n);
+  trip.id='charter|'+base+'|'+n;
+  if(!trip.date)trip.issues.push({cell:trip.sourceCells.date,field:'date',deliveryId:null,message:'일자가 비어 있습니다. DB 확인에서 수정해 주세요.',resolved:false});
+ }
+ if(!trips.length)throw new Error('4행 이후에 처리할 데이터가 없습니다.');
+ return trips;
+}
+export function resolveRegion(delivery:CharterDelivery) {
+ const explicit=String(delivery.region||'').trim(),addressRegion=charterRegion(delivery.address||'').name;
+ const named=CHARTER_RATES.find(r=>r.name===explicit);
+ const name=named?explicit:addressRegion||explicit;
+ return {name,rate:CHARTER_RATES.find(r=>r.name===name)?.rates||null};
+}
+export function orderedStops(trip:CharterTrip) {
+ const map=new Map<string,{id:string;deliveries:CharterDelivery[];region:ReturnType<typeof resolveRegion>;hasAddress:boolean}>();
+ for(const d of trip.deliveries){
+  const key=d.stopId||d.id;if(!map.has(key))map.set(key,{id:key,deliveries:[],region:resolveRegion(d),hasAddress:!empty(d.address)});
+  const stop=map.get(key)!;stop.deliveries.push(d);stop.hasAddress||=!empty(d.address);
+  if(!stop.region.name)stop.region=resolveRegion(d);
+ }
+ const stops=[...map.values()],ton=String(trip.tons);
+ if(CHARTER_RATES.some(r=>r.rates[ton]!=null))stops.sort((a,b)=>(b.region.rate?.[ton]??-1)-(a.region.rate?.[ton]??-1));
+ return stops;
+}
+export function calculatedStops(trip:CharterTrip){return orderedStops(trip).filter(s=>s.hasAddress).length;}
+export function activeIssues(trip:CharterTrip){return trip.issues.filter(i=>!i.resolved);}
+export function updateField(trip:CharterTrip,deliveryId:string|null,field:FieldKey,value:unknown) {
+ const definition=FIELDS.find(([,key,,,scope])=>key===field&&(deliveryId?scope==='delivery':scope==='trip'));
+ if(!definition)throw new Error('수정할 필드가 올바르지 않습니다.');
+ const target=deliveryId?trip.deliveries.find(d=>d.id===deliveryId):trip;if(!target)throw new Error('납품처를 찾을 수 없습니다.');
+ const normalized=normalizeValue(value,definition[3]);
+ if(!empty(value)&&normalized===null)throw new Error(definition[2]+' 값을 확인해 주세요.');
+ target[field]=normalized;
+ for(const issue of trip.issues)if(issue.field===field&&issue.deliveryId===(deliveryId||null))issue.resolved=true;
+ trip.updatedAt=new Date().toISOString();
+}
+export function makeArchive(trips:CharterTrip[],centerCode:string) {
+ return {schemaVersion:SCHEMA_VERSION,centerCode,exportedAt:new Date().toISOString(),trips:clone(trips)};
+}
+export function readArchive(value:{schemaVersion?:unknown;centerCode?:unknown;trips?:Partial<CharterTrip>[]} | null | undefined,centerCode:string) {
+ if(value?.schemaVersion!==SCHEMA_VERSION||value.centerCode!==centerCode||!Array.isArray(value.trips)||value.trips.length>100000)throw new Error('현재 센터의 용차 JSON(v2) 파일을 선택해 주세요.');
+ const ids=new Set();
+ return value.trips.map(raw=>{
+  if(!raw||typeof raw.id!=='string'||!raw.id||raw.centerCode!==centerCode||!Array.isArray(raw.deliveries)||raw.deliveries.length>100000||ids.has(raw.id))throw new Error('JSON 운행ID·센터·납품처 구조를 확인해 주세요.');
+  ids.add(raw.id);const trip={id:raw.id,centerCode,sourceName:String(raw.sourceName||''),sheetName:String(raw.sheetName||''),sourceRow:raw.sourceRow??null,sourceCells:{},issues:[],deliveries:[]} as unknown as CharterTrip;
+  for(const [,key,,kind,scope] of FIELDS)if(scope==='trip')(trip as FieldValues)[key]=normalizeValue(raw[key],kind);
+  trip.sourceCells=Object.fromEntries(FIELDS.filter(x=>x[4]==='trip').map(([,key])=>[key,String(raw.sourceCells?.[key]||'')]));
+  trip.issues=(Array.isArray(raw.issues)?raw.issues:[]).map(i=>({cell:String(i.cell||''),field:String(i.field||''),deliveryId:i.deliveryId==null?null:String(i.deliveryId),message:String(i.message||''),resolved:i.resolved===true}));
+  const deliveryIds=new Set();
+  for(const [index,d] of raw.deliveries.entries()){
+   const id=String(d?.id||'d-'+index);if(deliveryIds.has(id))throw new Error('납품처ID가 중복됩니다.');deliveryIds.add(id);
+   const next={id,stopId:String(d?.stopId||id),sourceRow:d?.sourceRow??null,sourceCells:{}} as CharterDelivery;
+   for(const [,key,,kind,scope] of FIELDS)if(scope==='delivery'){(next as FieldValues)[key]=normalizeValue(d?.[key],kind);next.sourceCells[key]=String(d?.sourceCells?.[key]||'');}
+   trip.deliveries.push(next);
+  }
+  if(!trip.date&&!trip.issues.some(i=>i.field==='date'&&!i.resolved))trip.issues.push({cell:'',field:'date',deliveryId:null,message:'일자가 비어 있습니다.',resolved:false});
+  return trip;
+ });
+}
+const sum = (trips:CharterDelivery[],key:FieldKey) => {const values=trips.map(d=>d[key]).filter((v):v is number=>typeof v==='number');return values.length?values.reduce((s,v)=>s+v,0):null;};
+
+const exportQuantity=(value:CharterValue|undefined)=>typeof value==='number'?Math.floor(value):value??null;
+export function horizontalData(trips:CharterTrip[]) {
+ const ordered=trips.map(t=>orderedStops(t)),maxDeliveries=ordered.reduce((m,s)=>Math.max(m,s.reduce((n,x)=>n+x.deliveries.length,0)),0);
+ if(maxDeliveries>1500)throw new Error('운행당 납품처가 너무 많습니다. 분리해서 내려받아 주세요.');
+ const headers=Array(40).fill('');
+ Object.assign(headers,{0:'형태',1:'코스',2:'일자',3:'호차',4:'차량번호',5:'기사명',6:'연락처',7:'톤수',32:'총착지',33:'지역이동',34:'입차시간',35:'비고',36:'원본 착수',37:'코스 총물량',38:'운행ID'});
+ for(let i=0;i<12;i++){headers[8+i]='납품처'+(i+1);headers[20+i]='지역'+(i+1);}
+ const detail=['납품처명','고객사','냉동','냉장','총수량'];
+ for(let i=0;i<maxDeliveries;i++)for(const label of detail)headers.push(label+(i+1));
+ headers.push('확인 필요','착지수확인');
+ const rows=trips.map((t,index)=>{
+  const stops=ordered[index],regions=stops.filter(s=>s.hasAddress).map(s=>s.region.name||null);
+  if(regions.length>12)throw new Error((t.date||'미정')+' '+(t.course||t.id)+': 지역이 12개를 초과합니다.');
+  const row:CharterValue[]=Array(headers.length).fill(null);
+  [t.type,t.course,t.date,t.vehicleSequence,t.vehicleNumber,t.driver,t.phone,t.tons].forEach((v,i)=>row[i]=v);
+  const deliveries=stops.flatMap(s=>s.deliveries);
+  deliveries.slice(0,12).forEach((d,i)=>row[8+i]=d.name);
+  regions.forEach((name,i)=>row[20+i]=name);
+  const filled=regions.filter(Boolean),moves=filled.reduce((n,name,i)=>n+(i>0&&name!==filled[i-1]?1:0),0);
+  [filled.length,moves,t.arrivalTime,t.departureTime,exportQuantity(t.providedStopCount),exportQuantity(t.courseQuantity),t.id].forEach((v,i)=>row[32+i]=v);
+  deliveries.forEach((d,i)=>[d.name,d.customer,exportQuantity(d.frozen),exportQuantity(d.chilled),exportQuantity(d.quantity)].forEach((v,j)=>row[40+i*5+j]=v));
+  row[headers.length-2]=activeIssues(t).length;
+  row[headers.length-1]=typeof t.providedStopCount==='number'?filled.length-(exportQuantity(t.providedStopCount) as number):null;
+  return row;
+ });
+ return {headers,rows};
+}
+export function buildNormalizedWorkbook(trips:CharterTrip[],XLSX:typeof SheetJS) {
+ const {headers,rows}=horizontalData(trips),sheet=XLSX.utils.aoa_to_sheet([[],[],headers,...rows]);
+ sheet['!cols']=headers.map((_,i)=>({wch:i===38?50:i<8?18:24,...((i>=13&&i<=19)||(i>=25&&i<=31)?{hidden:true}:{})}));
+ const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,sheet,'평택 용차내역');
+ return wb;
+}
+export function routingSummary(trips:CharterTrip[],term='') {
+ const query=term.trim().toLowerCase(),items:{trip:CharterTrip;delivery:CharterDelivery}[]=[],companions=new Map<string,number>(),weekdays=Array(7).fill(0);
+ for(const t of trips){
+  const matching=t.deliveries.filter(d=>!query||[d.code,d.name,d.customer].some(v=>String(v||'').toLowerCase().includes(query)));
+  if(!matching.length)continue;
+  items.push(...matching.map(d=>({trip:t,delivery:d})));
+  if(t.date)weekdays[new Date(t.date+'T00:00:00Z').getUTCDay()]++;
+  if(query)for(const name of new Set(t.deliveries.filter(d=>!matching.includes(d)).map(d=>d.name).filter((name):name is string=>!!name)))companions.set(name,(companions.get(name)||0)+1);
+ }
+ const daily=new Map<string,CharterDelivery[]>();for(const {trip,delivery} of items){const key=trip.date||'미정';if(!daily.has(key))daily.set(key,[]);daily.get(key)!.push(delivery);}
+ return {count:items.length,frozen:sum(items.map(i=>i.delivery),'frozen'),chilled:sum(items.map(i=>i.delivery),'chilled'),quantity:sum(items.map(i=>i.delivery),'quantity'),daily:[...daily].map(([date,ds])=>({date,frozen:sum(ds,'frozen'),chilled:sum(ds,'chilled'),quantity:sum(ds,'quantity')})),weekdays,companions:[...companions].sort((a,b)=>b[1]-a[1]),average:daily.size&&items.some(i=>i.delivery.quantity!==null)?sum(items.map(i=>i.delivery),'quantity')!/daily.size:null};
+}
+
+export function charterWorkbookFilename(trips:CharterTrip[]){
+ const dates=[...new Set(trips.map(t=>t.date).filter(validDate))].sort();
+ const date=dates.length>1?dates[0]+'~'+dates[dates.length-1]:dates[0]||'일자미정';
+ return date+'_평택센터_용차내역서_내부.xlsx';
+}

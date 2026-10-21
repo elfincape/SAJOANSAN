@@ -1,0 +1,604 @@
+body.workspace-ui.work-shell {
+  --work-nav-width: 236px;
+  --bg: #f6f7f8;
+  --bg-page: #f6f7f8;
+  --bg-soft: #f2f4f5;
+  --bg-softer: #e9edef;
+  --panel: #fff;
+  --fg: #20252b;
+  --text: #20252b;
+  --fg-mute: #626d78;
+  --muted: #626d78;
+  --border: #d7dde2;
+  --border-soft: #e7ebee;
+  --accent: #087f5b;
+  --green: #087f5b;
+  --ui-focus: #087f5b;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--fg);
+  letter-spacing: 0;
+}
+
+body.workspace-ui.work-shell:has(#app) {
+  padding: 0;
+}
+
+.workspace-ui.work-shell:not(.portal-shell)
+  [role='dialog'][aria-modal='true']
+  > div {
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.sample, .empty, .column-choices) {
+  background: var(--theme-soft);
+  color: var(--theme-muted);
+  border-color: var(--theme-border);
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.number, .step-badge) {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
+}
+.workspace-ui.work-shell:not(.portal-shell) .drop-card {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  box-shadow: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) .drop-card.dragover {
+  background: var(--theme-selected);
+  border-color: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-ok, .true-cell, .good, .diff-new) {
+  color: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-warn, .false-cell, .warn) {
+  color: var(--theme-warn);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.status-error, .cell-false, .diff-old) {
+  color: var(--theme-danger);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .feature-switch[aria-checked='true'] {
+  background: #087f5b;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .file-label
+  input::file-selector-button {
+  background: var(--theme-hover);
+  color: var(--theme-selected-text);
+  border-color: var(--theme-selected-border);
+}
+
+@media (max-width: 640px) {
+  .workspace-ui.work-shell:not(.portal-shell) .work-list {
+    min-height: 240px !important;
+  }
+}
+
+.workspace-ui.work-shell:not(.portal-shell) :where(h1, h2, h3, h4) {
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-ui.work-shell:not(.portal-shell) :where(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(button, a, input, select, textarea, summary):focus-visible {
+  outline-color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input, select, textarea):not([type='checkbox']):not(
+    [type='radio']
+  ):not([type='hidden']) {
+  border-radius: 6px;
+  background: var(--theme-panel);
+  color: var(--fg);
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input, textarea)::placeholder {
+  color: var(--theme-muted);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn {
+  border-radius: 6px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: normal;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.btn-primary, .primary) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) :is(.btn-primary, .primary):hover {
+  background: #076b4d;
+  border-color: #076b4d;
+  color: #fff;
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-ghost {
+  background: var(--theme-panel);
+  border-color: var(--border);
+  color: var(--theme-muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-ghost:hover {
+  background: var(--theme-hover);
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-danger {
+  background: var(--theme-danger-bg);
+  border-color: var(--theme-danger-border);
+  color: var(--theme-danger);
+}
+.workspace-ui.work-shell:not(.portal-shell) .btn-danger:hover {
+  background: var(--theme-danger-bg);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(button, input, select, textarea):disabled {
+  opacity: 0.55;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :where(.muted, .hint, .note, .footer-note, .app-label) {
+  color: var(--muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) .app-label {
+  font-size: 12px;
+  font-weight: 550;
+  margin-bottom: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .issue {
+  color: var(--theme-warn);
+}
+
+.workspace-ui.work-shell:not(.portal-shell) > header,
+.workspace-ui.work-shell:not(.portal-shell) #app > header {
+  height: auto;
+  min-height: 64px;
+  margin-left: var(--work-nav-width);
+  width: calc(100% - var(--work-nav-width));
+  padding: 0;
+  background: var(--theme-panel);
+  color: var(--fg);
+  border-color: var(--border-soft);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) > header > div,
+.workspace-ui.work-shell:not(.portal-shell) #app > header > div {
+  max-width: none;
+  min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+}
+.workspace-ui.work-shell:not(.portal-shell) > header :is(h1, strong),
+.workspace-ui.work-shell:not(.portal-shell) #app > header .font-semibold {
+  font-size: 18px;
+  font-weight: 650;
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header .btn {
+  color: var(--theme-muted);
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header .btn:hover {
+  color: var(--fg);
+  background: var(--theme-hover);
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header #user-badge {
+  color: var(--muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) #user-badge {
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) > main {
+  width: calc(100% - var(--work-nav-width));
+  max-width: none;
+  min-width: 0;
+  margin: 0 0 0 var(--work-nav-width);
+  padding: 24px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  :where(
+    section,
+    article,
+    fieldset,
+    aside,
+    .grid,
+    .toolbar,
+    .fields,
+    .edit-grid
+  ) {
+  min-width: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  > :is(section.panel, section[class*='border'], .feature-panel),
+.workspace-ui.work-shell:not(.portal-shell) > main > fieldset > section.panel {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 20px 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  > :is(section.panel, section[class*='border']):first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  > main
+  :is(
+    .panel,
+    .card,
+    .feature-panel,
+    .mode-card,
+    .table-wrap,
+    .table-scroll,
+    .data-table,
+    .metric,
+    dialog
+  ) {
+  border-color: var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  :is(.feature-panel, .mode-card, .file-label, .metric) {
+  background: var(--theme-panel);
+}
+.workspace-ui.work-shell:not(.portal-shell) .mode-card:has(input:checked) {
+  border-color: var(--theme-selected-border);
+  background: var(--theme-selected);
+}
+.workspace-ui.work-shell:not(.portal-shell) .file-card {
+  box-shadow: none;
+  padding: 16px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-list,
+.workspace-ui.work-shell:not(.portal-shell) .work-editor {
+  background: var(--theme-panel);
+  border-color: var(--border);
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-editor {
+  align-self: start;
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-form-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--theme-panel);
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  z-index: 2;
+}
+.workspace-ui.work-shell:not(.portal-shell) :where(h2, h3) {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.workspace-ui.work-shell:not(.portal-shell) .table-wrap,
+.workspace-ui.work-shell:not(.portal-shell) .table-scroll,
+.workspace-ui.work-shell:not(.portal-shell) .scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--theme-panel);
+}
+.workspace-ui.work-shell:not(.portal-shell) table {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.workspace-ui.work-shell:not(.portal-shell) table :is(th, td) {
+  border-color: var(--border-soft);
+}
+.workspace-ui.work-shell:not(.portal-shell) table th {
+  background: var(--theme-soft);
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody td {
+  background: var(--theme-panel);
+  font-size: 13px;
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr:nth-child(even) td {
+  background: var(--theme-stripe);
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr:hover td {
+  background: var(--theme-hover);
+}
+.workspace-ui.work-shell:not(.portal-shell) table tbody tr.selected td {
+  background: var(--theme-selected);
+}
+.workspace-ui.work-shell:not(.portal-shell) .work-section-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 20px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.work-section-navigation a {
+  text-decoration: none;
+  color: var(--theme-muted);
+  padding: 4px 0;
+}
+.work-section-navigation a:hover {
+  color: var(--accent);
+}
+.workspace-ui.work-shell:not(.portal-shell) > main section[id] {
+  scroll-margin-top: 88px;
+}
+.workspace-ui.work-shell:not(.portal-shell) [role='dialog'][aria-modal='true'] {
+  background: #20252b80;
+}
+.workspace-ui.work-shell:not(.portal-shell) dialog::backdrop {
+  background: #20252b80;
+}
+.workspace-ui.work-shell:not(.portal-shell) #center-switcher > div {
+  border-color: var(--border);
+  background: var(--theme-soft);
+  border-radius: 6px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #center-switcher button {
+  min-height: 30px;
+  min-width: 46px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: var(--theme-muted);
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  #center-switcher
+  button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading {
+  margin: 0 0 20px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading h2 {
+  margin: 0;
+  font-size: 25px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-heading p:empty {
+  display: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-controls {
+  padding: 16px 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-color: var(--border);
+  background: transparent;
+  gap: 16px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-search {
+  width: min(100%, 420px);
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-categories {
+  gap: 4px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .hub-categories button {
+  border-radius: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  background: var(--theme-panel);
+  border-color: var(--border);
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .hub-categories
+  button[aria-pressed='true'] {
+  background: var(--theme-selected);
+  border-color: var(--theme-selected-border);
+  color: var(--theme-selected-text);
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a {
+  padding: 16px 30px 16px 16px;
+  min-height: 98px;
+  border-radius: 6px;
+  border-color: var(--border);
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a h3 {
+  color: var(--fg);
+  font-size: 14px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #menu-grid > a p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-ui.work-shell:not(.portal-shell) #app {
+  width: calc(100% - var(--work-nav-width));
+  height: 100dvh;
+  min-height: 0;
+  margin-left: var(--work-nav-width);
+  background: var(--theme-panel);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.workspace-ui.work-shell:not(.portal-shell) #app > header {
+  margin-left: 0;
+  width: 100%;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-query {
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  padding: 16px 24px 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-query #search-input {
+  min-height: 38px;
+  font-size: 13px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-details {
+  padding: 0 24px 12px;
+}
+.workspace-ui.work-shell:not(.portal-shell)
+  .dashboard-filter-details
+  > summary {
+  color: var(--theme-muted);
+}
+.workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-controls {
+  gap: 8px;
+}
+.workspace-ui.work-shell:not(.portal-shell) .view-toggle {
+  min-height: 34px;
+  color: var(--theme-muted);
+  background: var(--theme-panel);
+}
+.workspace-ui.work-shell:not(.portal-shell) .view-toggle[aria-pressed='true'] {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+}
+.workspace-ui.work-shell:not(.portal-shell) .ms-menu {
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 8px 24px #20252b15;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: var(--theme-panel);
+}
+.workspace-ui.work-shell:not(.portal-shell) #table-area {
+  padding: 0;
+  border-top: 1px solid var(--border);
+  min-height: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view table th {
+  padding-block: 10px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #flat-view table td {
+  padding-block: 8px;
+}
+.workspace-ui.work-shell:not(.portal-shell) #group-view {
+  padding: 16px 24px;
+  background: var(--bg-page);
+}
+.workspace-ui.work-shell:not(.portal-shell) #route-grid {
+  --ag-accent-color: #087f5b;
+  --ag-background-color: #fff;
+  --ag-header-background-color: #f1f3f5;
+  --ag-border-color: #d7dde2;
+  --ag-foreground-color: #20252b;
+}
+.workspace-ui.work-shell:not(.portal-shell) .drag-handle:hover {
+  color: var(--accent);
+}
+
+body.workspace-ui.work-shell:not(.portal-shell).work-embedded {
+  --work-nav-width: 0px;
+}
+@media (max-width: 1280px) {
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    > main
+    > .grid:has(> .work-editor) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1000px) {
+  body.workspace-ui.work-shell {
+    --work-nav-width: 0px;
+  }
+}
+@media (max-width: 640px) {
+  .workspace-ui.work-shell:not(.portal-shell) > main {
+    padding: 18px 14px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > header > div,
+  .workspace-ui.work-shell:not(.portal-shell) #app > header > div {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > header :is(h1, strong) {
+    font-size: 16px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :is(.btn, .primary, .hub-categories button) {
+    min-height: 42px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #center-switcher button {
+    min-height: 36px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #menu-grid > a {
+    min-height: 88px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .hub-heading h2 {
+    font-size: 22px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :where(.toolbar, .fields, .filters, .edit-grid, .file-grid, .import-grid) {
+    max-width: 100%;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    :is(.file-grid, .import-grid, .mode-options) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .toolbar label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) > main > .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-query {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 14px 8px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-query #search-input {
+    grid-column: 1/-1;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .dashboard-filter-details {
+    padding: 0 14px 10px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell)
+    .dashboard-filter-controls
+    > [data-multi] {
+    flex: 1 1 135px;
+    min-width: 0;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) #group-view {
+    padding: 12px;
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .ms-menu {
+    width: min(280px, calc(100vw - 32px));
+  }
+  .workspace-ui.work-shell:not(.portal-shell) .work-section-navigation {
+    gap: 4px 12px;
+  }
+}

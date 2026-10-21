@@ -1,0 +1,25 @@
+
+    #route-grid { height:calc(100vh - 200px); min-height:420px; }
+    .route-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+    .route-toolbar #search-input { flex:1 1 320px; min-width:200px; }
+    .route-toolbar #filter-company { width:172px; }
+    .route-toolbar .btn { min-height:38px; white-space:nowrap; }
+    .route-toolbar [aria-pressed="true"] { background:#e7f3ee; border-color:#087f72; color:#08634f; }
+    .route-filter-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:0 2px 10px; color:#526776; font-size:12px; }
+    #route-grid .ag-sort-order { display:none; }
+    #route-grid .ag-header-cell, #route-grid .ag-cell { padding-inline:12px; }
+    #route-grid .route-grid-action-cell { padding-inline:8px; }
+    .route-grid-actions { display:flex; justify-content:flex-start; gap:6px; height:100%; align-items:center; }
+    #route-grid .route-grid-actions .btn { min-height:36px; padding:0 10px; font-size:12px; line-height:1; }
+    #route-grid .route-action-stops { background:#e8f3ee; color:#08634f; border-color:#c1dace; font-weight:600; }
+    #route-grid .route-action-delete { border-color:transparent; background:transparent; color:#b42332; }
+    #route-grid .route-action-delete:hover { background:#fff0f0; border-color:#efc2c7; }
+    .route-grid-days { display:flex; flex-wrap:wrap; align-items:center; gap:.25rem; height:100%; }
+    .route-grid-day { font-size:.6875rem; line-height:1.4; padding:.125rem .25rem; border-radius:.25rem; background:#fff1f2; border:1px solid #f2c9cf; color:#a51e36; }
+    @media (max-width:640px) {
+      .route-toolbar #search-input { flex-basis:100%; min-width:0; }
+      .route-toolbar #filter-company { flex:1; min-width:120px; }
+      .route-toolbar .btn, #route-grid .route-grid-actions .btn { min-height:42px; }
+      #route-grid { height:calc(100vh - 285px); }
+    }
+  

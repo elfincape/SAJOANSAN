@@ -23,3 +23,10 @@ __pycache__/
 .agent-tools/jev/sources/
 .agent-tools/jev/state/
 .agent-tools/jev/.env.local
+
+# Vite application environment; commit the variable names only.
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.vercel

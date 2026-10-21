@@ -1,0 +1,93 @@
+.health-badge { display:inline-block; font-size:11px; border-radius:4px; padding:2px 5px; white-space:nowrap; }
+.health-badge.health-expired { color:#fecaca; background:#7f1d1d; font-weight:700; }
+.health-badge.health-soon { color:#fde68a; background:#78350f; font-weight:700; }
+tr.health-expired > td { background:rgba(127,29,29,.32) !important; }
+tr.health-soon > td { background:rgba(120,53,15,.3) !important; }
+.driver-document-preview { cursor:zoom-in; }
+.driver-document-zoom {
+  display:none;
+  position:fixed;
+  inset:5vh 5vw;
+  width:90vw;
+  height:90vh;
+  padding:16px;
+  object-fit:contain;
+  background:rgba(9,9,11,.96);
+  border:1px solid #52525b;
+  border-radius:8px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);
+  pointer-events:none;
+  z-index:100;
+}
+.driver-document-preview:hover ~ .driver-document-zoom,
+.driver-document-preview:focus-visible ~ .driver-document-zoom { display:block; }
+
+/* Keep the driver list readable while leaving room for the document editor. */
+.driver-management-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.driver-management-layout > section { min-width:0; }
+@media (min-width:1440px) {
+  .driver-management-layout { grid-template-columns:minmax(0,1fr) 380px; }
+}
+table.driver-list-table th, table.driver-list-table td { white-space:nowrap; padding:8px; }
+.driver-document-checks { display:flex; flex-wrap:nowrap; align-items:center; gap:10px; }
+.driver-document-check { display:inline-flex; flex-direction:row; align-items:center; gap:4px; font-size:12px; white-space:nowrap; }
+.driver-document-checkbox:disabled {
+  appearance:none; -webkit-appearance:none; display:inline-block;
+  width:16px; height:16px; flex:none; margin:0; border:1px solid #71717a;
+  border-radius:3px; background-color:#27272a; opacity:1; pointer-events:none;
+}
+.driver-document-checkbox:disabled:checked {
+  background-color:#10b981; border-color:#34d399;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.health-badge.health-missing { color:#fed7aa; background:#9a3412; font-weight:700; }
+tr.health-missing > td { background:rgba(234,88,12,.22) !important; }
+/* Keep document actions together, with a single primary upload control. */
+.workspace-ui .document-manager { display:grid; gap:12px; font-size:14px; }
+.workspace-ui .document-manager-title { margin:0; font-size:16px; font-weight:700; }
+.workspace-ui .document-manager-notice { margin:0; font-size:13px; line-height:1.6; color:#52677c; overflow-wrap:anywhere; }
+.workspace-ui .document-kind { min-width:0; border-top:1px solid #d5e0e9; }
+.workspace-ui .document-kind-heading { display:flex; align-items:center; gap:12px; min-height:52px; cursor:pointer; font-size:14px; font-weight:600; list-style:revert; }
+.workspace-ui .document-kind-heading::before { content:''; width:7px; height:7px; margin:0 4px 0 1px; border-right:1.5px solid #52677c; border-bottom:1.5px solid #52677c; transform:rotate(-45deg); }
+.workspace-ui .document-kind-details[open] > summary::before { transform:rotate(45deg); }
+.workspace-ui .document-count { margin-left:auto; font-size:13px; font-weight:400; color:#52677c; white-space:nowrap; }
+.workspace-ui .document-kind-content { display:grid; gap:12px; padding:0 0 16px; }
+.workspace-ui .document-upload-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.workspace-ui .document-upload-label { position:relative; display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:8px 14px; border-radius:6px; background:#087760; color:#fff; font-size:14px; font-weight:600; cursor:pointer; overflow:hidden; }
+.workspace-ui .document-upload-label:focus-within { outline:2px solid #047857; outline-offset:3px; }
+.workspace-ui .document-file-input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.workspace-ui .document-upload-label:has(input:disabled) { opacity:.5; cursor:not-allowed; }
+.workspace-ui .document-manager .btn { min-height:40px; padding:8px 12px; font-size:13px; }
+.workspace-ui .document-company-replace { flex-basis:auto; color:#52677c; background:transparent; }
+.workspace-ui .document-hint, .workspace-ui .document-empty { margin:0; font-size:13px; line-height:1.6; color:#52677c; }
+.workspace-ui .document-file-list { display:grid; }
+.workspace-ui .document-file { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:12px 0; border-top:1px solid #e3eaf0; min-width:0; }
+.workspace-ui .document-file-info { flex:1 1 180px; min-width:0; }
+.workspace-ui .document-file-name { margin:0; font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.workspace-ui .document-file-date { margin:4px 0 0; color:#52677c; font-size:12px; line-height:1.5; }
+.workspace-ui .document-file-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.workspace-ui .document-file-actions .btn:last-child { color:#b42336; }
+.workspace-ui .document-file > div:empty { display:none; }
+.workspace-ui .document-file > div:has(>img) { flex-basis:100%; }
+.workspace-ui .driver-storage-status { margin:0 0 8px; font-size:13px; color:#52677c; }
+.workspace-ui .driver-storage-settings summary { min-height:40px; cursor:pointer; font-size:14px; font-weight:600; }
+.workspace-ui .driver-storage-controls { display:flex; flex-wrap:wrap; gap:8px; padding-top:8px; }
+.workspace-ui .driver-storage-controls > div { width:100%; }
+.workspace-ui .driver-storage-controls > .btn { min-height:40px; }
+.workspace-ui.drivers-page .driver-editor { min-width:0; }
+.workspace-ui.drivers-page .driver-editor .app-label { font-size:14px; }
+@media (min-width:1280px) {
+  .drivers-page .driver-management-layout { grid-template-columns:minmax(0,1fr) 460px; }
+}
+@media (max-width:600px) {
+  .workspace-ui .document-manager .btn, .workspace-ui .document-upload-label { min-height:44px; }
+  .workspace-ui .document-file-info { flex-basis:100%; }
+}
+
+.workspace-ui.drivers-page .btn-danger { background:#b42336; border-color:#b42336; color:#fff; }
+.workspace-ui.drivers-page .btn-danger:hover { background:#941b2b; border-color:#941b2b; }
+.workspace-ui.drivers-page input::placeholder { color:#52677c; }
+.workspace-ui.drivers-page h1 { font-size:20px; }
+
+.workspace-ui .document-kind:has(> details:not([open])) > .file-paste-hint { display:none; }

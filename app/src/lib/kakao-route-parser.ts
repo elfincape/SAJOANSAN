@@ -1,0 +1,4 @@
+import { supabase } from './supabase';
+export interface DirectionRow {date:string;weekday?:string;truck1:number|string|null;truck2:number|string|null}
+export type Direction='ansan-gimhae'|'busan-ansan';
+export async function requestDirection(direction:Direction,text:string):Promise<DirectionRow[]>{const {data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw new Error('로그인이 필요합니다.');const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/,'')}/functions/v1/kakao-route-parser`,{method:'POST',headers:{'content-type':'application/json',apikey:import.meta.env.VITE_SUPABASE_ANON_KEY,authorization:`Bearer ${session.access_token}`},body:JSON.stringify({text,direction})});const payload=await response.json().catch(()=>null);if(!response.ok||payload?.error)throw new Error(payload?.error?.message||payload?.error||`API HTTP ${response.status}`);return Array.isArray(payload?.rows)?payload.rows:[];}
