@@ -7,6 +7,7 @@ const DispatchParser = lazy(() => import('./pages/DispatchParser'));
 const PalletSlips = lazy(() => import('./pages/PalletSlips'));
 const ExcelCompare = lazy(() => import('./pages/ExcelCompare'));
 const Settings = lazy(() => import('./pages/Settings'));
+const AdminHub = lazy(() => import('./pages/AdminHub'));
 const pages = {
   '/login.html': Login,
   '/admin/image-straightener.html': ImageStraightener,
@@ -14,6 +15,8 @@ const pages = {
   '/admin/pallet-slips.html': PalletSlips,
   '/admin/excel-compare.html': ExcelCompare,
   '/admin/settings.html': Settings,
+  '/admin/': AdminHub,
+  '/admin/index.html': AdminHub,
 };
 const Page = pages[location.pathname as keyof typeof pages];
 if (Page) createRoot(document.body).render(<StrictMode><Suspense fallback={null}><Page /></Suspense></StrictMode>);
