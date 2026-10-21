@@ -8,7 +8,7 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Pre-flight: auth/session, center, permission context and page queries must retain contracts. Move queries to src/lib; no DB/schema/Edge changes.
 - Pre-flight: legacy tests include scripts with production writes; run relevant isolated checks only. AGENTS.md forbids separate committed test files; use existing tests and private temporary browser assertions.
 - Setup: complete. Baseline legacy npm run build passed (existing large-chunk warning).
-- Screens: 9/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log). Portal internal views require separate commits.
+- Screens: 10/33 migrated (login, image straightener, dispatch parser, pallet slips, Excel compare, settings, admin hub, paused Notion health, audit log, vehicles). Portal internal views require separate commits.
 
 - Login: npm run build passed (TypeScript + Vite); existing username-auth and menu-permissions checks passed; temporary Playwright assertions passed for empty fields, invalid username/email credentials, inactive reason, theme and mobile overflow. No live backend requests. Redirect allowlist assertions passed. Impeccable detector: no findings.
 
@@ -27,3 +27,5 @@ Base: f083c1e. Branch: react-migration. Original files remain intact.
 - Notion health: paused notice and four disabled actions retained; browser verified no sync call. TypeScript/Vite and detector passed.
 
 - Audit log: queries isolated under src/lib; 51 mock records verified 50-row server pagination, before/after values, ignored updated_at noise, raw JSON and Escape; empty/filter/reset also passed. TypeScript/Vite and Impeccable passed.
+
+- Vehicles: TypeScript/Vite and detector passed. Isolated browser verified list/counts, selection, draft cancel, tonnage normalization, company filter, relation-aware deletion confirmation/cancel, required plate, viewer read-only write block. Actual CRUD not exercised against live DB; mutation contract verification remains mock-only.
