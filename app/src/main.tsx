@@ -15,6 +15,7 @@ const Companies = lazy(() => import('./pages/Companies'));
 const DeliveryPoints = lazy(() => import('./pages/DeliveryPoints'));
 const Routes = lazy(() => import('./pages/Routes'));
 const RouteEdit = lazy(() => import('./pages/RouteEdit'));
+const CharterParser = lazy(() => import('./pages/CharterParser'));
 const NaverDistance = lazy(() => import('./pages/NaverDistance'));
 const DistanceCalculator = lazy(() => import('./pages/DistanceCalculator'));
 const KakaoRoutes = lazy(() => import('./pages/KakaoRoutes'));
@@ -55,6 +56,7 @@ const pages = {
   '/admin/ansan-gimhae-busan-ansan.html': KakaoRoutes,
   '/admin/charter-fuel-estimator.html': DistanceCalculator,
   '/admin/naver-shortest-distance.html': NaverDistance,
+  '/admin/pyeongtaek-charter-parser.html': CharterParser,
   '/admin/route-edit.html': RouteEdit,
   '/admin/': AdminHub,
   '/admin/index.html': AdminHub,
