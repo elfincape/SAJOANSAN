@@ -5,11 +5,11 @@ const source=readFileSync(new URL('../repo-root/js/menu-permissions.js',import.m
 const loadModule=async path=>import('data:text/javascript;base64,'+Buffer.from(readFileSync(new URL(path,import.meta.url),'utf8')).toString('base64'));
 const {permissionAllowed}=await loadModule('../repo-root/js/portal-permissions.js');
 const {normalizeCenterCode}=await loadModule('../repo-root/js/center.js');
-function mount(hrefs,current='/admin/?center=ansan'){
+function mount(hrefs,current='/admin/?center=ansan',storedCenter){
  const links=hrefs.map(href=>({href:new URL(href,'https://sajoansan.vercel.app').href,hidden:false,dataset:{},style:{display:'',removeProperty(key){this[key]='';}}}));
  const url=new URL(current,'https://sajoansan.vercel.app');
  let observer;
- const sandbox={URL,URLSearchParams,permissionAllowed,normalizeCenterCode,location:{href:url.href,origin:url.origin,pathname:url.pathname,search:url.search},document:{querySelectorAll:selector=>selector==='a[href]'?links:[],getElementById:()=>null,body:{}},MutationObserver:class{constructor(fn){observer=fn;}observe(){}disconnect(){}},addEventListener(){}};
+ const sandbox={URL,URLSearchParams,permissionAllowed,normalizeCenterCode,getSelectedCenter:()=>storedCenter?{code:storedCenter}:null,location:{href:url.href,origin:url.origin,pathname:url.pathname,search:url.search},document:{querySelectorAll:selector=>selector==='a[href]'?links:[],getElementById:()=>null,body:{}},MutationObserver:class{constructor(fn){observer=fn;}observe(){}disconnect(){}},addEventListener(){}};
  vm.createContext(sandbox);
  vm.runInContext(source.replace(/^import .*;\r?\n/gm,'').replace(/\bexport /g,'')+'\nglobalThis.resourceForPath=resourceForPath;',sandbox);
  return {links,sandbox,install:context=>sandbox.installMenuPermissions(context,{role:'admin'}),refresh:()=>observer()};
@@ -53,3 +53,10 @@ decorateCenterLinks({querySelectorAll:()=>fixedLinks},{slug:'ansan'});
 assert.equal(fixedLinks[0].href,'/admin/charter-fuel-estimator.html?center=pyeongtaek');
 assert.equal(fixedLinks[1].href,'/admin/drivers.html?center=ansan');
 console.log('PASS: fixed Pyeongtaek fuel link remains scoped to its DB while other center links still follow selection');
+
+const stored=mount(['/admin/drivers.html'],'/admin/drivers.html','001');
+assert.equal(stored.sandbox.currentPermissionCenter(),'001');
+assert.equal(stored.sandbox.permissionCenterForUrl('/admin/drivers.html',stored.sandbox.currentPermissionCenter()),'001');
+const explicit=mount([],'/admin/drivers.html?center=pyeongtaek','001');
+assert.equal(explicit.sandbox.currentPermissionCenter(),'002');
+console.log('PASS: stored center scopes direct URLs; explicit URL center takes precedence');

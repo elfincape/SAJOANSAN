@@ -24,7 +24,7 @@ export function makeHandler(env,createClient){
     if(authError||!auth?.user)return reply(401,{error:'로그인이 필요합니다.'});
     const {data:actor}=await admin.from('user_profiles').select('role,active').eq('id',auth.user.id).maybeSingle();
     if(!actor?.active||actor.role!=='admin')return reply(403,{error:'관리자만 계정을 생성할 수 있습니다.'});
-    if(!['editor','admin'].includes(body.role)||typeof body.password!=='string'||body.password.length<8||body.password.length>256)
+    if(!['viewer','editor','admin'].includes(body.role)||typeof body.password!=='string'||body.password.length<8||body.password.length>256)
       return reply(400,{error:'역할을 확인하고 비밀번호를 8자 이상 입력하세요.'});
     const {data:existing,error:lookupError}=await admin.from('user_profiles').select('id').eq('username',username).maybeSingle();
     if(lookupError)throw lookupError;

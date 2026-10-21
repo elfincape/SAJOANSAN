@@ -8,7 +8,7 @@ import {permissionAllowed} from './portal-permissions.js';
 
 import { supabase } from './supabase.js';
 import { toast, confirmDialog } from './ui.js';
-import { clearSelectedCenter } from './center.js';
+import { clearSelectedCenter, requireSelectedCenter, forceCenterSelectionFromUrl } from './center.js';
 
 const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
 
@@ -75,6 +75,7 @@ export async function requireAuth() {
     return null;
   }
   if(location.pathname.startsWith('/admin/')){
+    await requireSelectedCenter({force:forceCenterSelectionFromUrl()});
     const permissions=await menuPermissions(),resource=resourceForPath(location.pathname);
     if(resource&&!permissionAllowed(permissions,resource,'read',currentPermissionCenter())){
       await confirmDialog('이 목록의 열람 권한이 없습니다.',{okOnly:true,okText:'확인'});

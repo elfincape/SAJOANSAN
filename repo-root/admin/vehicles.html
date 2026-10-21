@@ -40,7 +40,7 @@
             <option value="company">운수사순</option>
             <option value="updated">수정 최신순</option>
           </select>
-          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+          <button id="new-btn" data-permission-action="edit" class="btn btn-primary">+ 신규</button>
         </div>
         <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
           <table class="app-table">
@@ -73,7 +73,7 @@
           <div class="flex-1"></div>
           <span id="form-meta" class="text-[11px] text-zinc-500"></span>
         </div>
-        <form id="form" class="p-4 space-y-3" novalidate>
+        <form data-permission-action="edit" id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
             <label class="app-label" for="f-plate">차량번호 *</label>
@@ -102,10 +102,10 @@
             <textarea id="f-memo" rows="2" class="app-textarea"></textarea>
           </div>
           <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
-            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+            <button type="button" id="btn-delete" data-permission-action="edit" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
       </section>

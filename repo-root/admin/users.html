@@ -28,8 +28,8 @@
   <main class="flex-1 max-w-[1300px] w-full mx-auto px-4 py-3 space-y-4">
 
     <section class="border border-zinc-700 rounded-lg p-4 text-sm">
-      <p>신규 계정은 아이디·비밀번호·표시이름·역할을 입력해 저장하세요. 이메일은 필요하지 않습니다.</p>
-      <p class="mt-2 text-xs text-zinc-400">기존 계정은 목록에서 선택해 아이디를 지정하세요. 기존 비밀번호와 이메일 로그인은 유지됩니다.</p>
+      <p>신규 계정의 아이디·비밀번호와 기본 역할을 설정합니다. 기존 사용자의 역할·담당 센터는 사용자 권한 설정에서 함께 관리합니다.</p>
+      <p class="mt-2 text-xs text-zinc-400">계정 활성 상태는 접근 가능 여부, 역할·담당 센터와 페이지 조건은 실제 업무 범위를 정합니다.</p>
     </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] gap-4">
@@ -41,8 +41,9 @@
                  class="app-input flex-1 min-w-[180px]">
           <select id="filter-role" class="app-select w-32" aria-label="역할 필터">
             <option value="">역할(전체)</option>
-            <option value="admin">admin</option>
-            <option value="editor">editor</option>
+            <option value="admin">관리자 · 배송팀</option>
+            <option value="editor">센터 업무 담당</option>
+                <option value="viewer">조회 전용</option>
           </select>
           <select id="filter-active" class="app-select w-28" aria-label="계정 활성 상태 필터">
             <option value="">상태(전체)</option>
@@ -107,8 +108,9 @@
             <div>
               <label class="app-label" for="f-role">역할 *</label>
               <select id="f-role" class="app-select">
-                <option value="editor">editor</option>
-                <option value="admin">admin</option>
+                <option value="editor">센터 업무 담당</option>
+                <option value="viewer">조회 전용</option>
+                <option value="admin">관리자 · 배송팀</option>
               </select>
             </div>
             <div>
@@ -117,6 +119,7 @@
             </div>
           </div>
 
+          <a id="permission-settings-link" href="/portal/?view=members" class="btn btn-ghost hidden">역할·담당 센터와 적용 권한 확인</a>
           <div id="self-warn" class="hidden text-xs text-amber-300 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2" role="status" aria-live="polite" aria-atomic="true"></div>
 
           <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
@@ -278,7 +281,7 @@
         viewer: 'bg-zinc-700/60 border-zinc-600 text-zinc-200'
       };
       const cls = map[role] || map.viewer;
-      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${cls}">${escapeHtml(role || '-')}</span>`;
+      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${cls}">${escapeHtml(({admin:'관리자',editor:'센터 업무 담당',viewer:'조회 전용'})[role] || '-')}</span>`;
     }
 
     // -------------------------------------------------------------------------
@@ -314,6 +317,9 @@
 
       $('f-name').value    = r?.display_name || '';
       $('f-role').value    = r?.role || 'editor';
+      $('f-role').disabled = isEdit;
+      $('permission-settings-link').classList.toggle('hidden', !isEdit);
+      if(isEdit)$('permission-settings-link').href=withCenterParam('/portal/?view=members&user='+encodeURIComponent(r.id));
       $('f-active').checked = r ? !!r.active : true;
 
       $('form-title').textContent =
@@ -450,8 +456,8 @@
         email: emptyToNull(email),
         username,
         display_name: emptyToNull(name),
-        role,
-        active
+        active,
+        ...(!isEdit?{role}:{})
       };
 
       $('btn-save').disabled = true;
@@ -459,7 +465,7 @@
         if (!isEdit) {
           const result = await accountRequest(supabase, { action: 'create', username, password, display_name: name, role, active });
           $('f-password').value = '';
-          toast('계정이 생성되었습니다.', 'success');
+          toast('계정을 생성했습니다. 역할·담당 센터 설정에서 업무 범위를 확인하세요.', 'success');
           await loadAll(); selectRow(result.profile.id); return;
         }
         const q = isEdit

@@ -37,7 +37,7 @@
             <option value="name">이름순</option>
             <option value="updated">수정 최신순</option>
           </select>
-          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+          <button id="new-btn" data-permission-action="edit" class="btn btn-primary">+ 신규</button>
         </div>
 
         <div class="table-wrap" style="max-height: calc(100vh - 220px); border: none; border-radius: 0;">
@@ -72,7 +72,7 @@
           <div class="flex-1"></div>
           <span id="form-meta" class="text-[11px] text-zinc-500"></span>
         </div>
-        <form id="form" class="p-4 space-y-3" novalidate>
+        <form data-permission-action="edit" id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
             <label class="app-label" for="f-name">이름 *</label>
@@ -84,16 +84,16 @@
             <textarea id="f-memo" rows="3" class="app-textarea"></textarea>
           </div>
           <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
-            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+            <button type="button" id="btn-delete" data-permission-action="edit" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
         <div id="company-storage" class="hidden p-4 border-t border-zinc-700 space-y-2">
           <label class="app-label" for="company-folder">운수사 인허가 파일 저장소</label>
           <input id="company-folder" class="app-input" type="url" value="https://1drv.ms/f/c/6dace80ad4c07b59/IgCRF6DHb-8GQLZozZ3qz83pAVln53UZ6lkCVgU3kr9L0Fw?e=9tBipw">
-          <button id="company-folder-register" type="button" class="btn btn-ghost">저장소 등록</button>
+          <button id="company-folder-register" data-permission-action="edit" type="button" class="btn btn-ghost">저장소 등록</button>
           <p id="company-folder-status" role="status" class="text-xs text-zinc-400"></p>
         </div>
         <div id="company-documents" class="p-4 border-t border-zinc-700 space-y-3"></div>

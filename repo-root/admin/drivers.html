@@ -42,7 +42,7 @@
           </select>
           <label class="text-xs flex items-center gap-1"><input id="pdf-include-company" type="checkbox" checked> PDF 파일명에 운수사 포함</label>
           <button type="button" id="pdf-center-btn" class="btn btn-ghost">센터 전체 PDF 생성</button>
-          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+          <button id="new-btn" data-permission-action="edit" class="btn btn-primary">+ 신규</button>
         </div>
         <div class="px-3 py-2 border-b border-zinc-700 space-y-2">
           <p class="text-xs text-zinc-400">센터 전체 PDF는 검색·운수사 필터와 관계없이 현재 센터의 모든 기사를 개별 파일로 OneDrive에 저장합니다. 서류 미등록 기사는 건너뜁니다.</p>
@@ -82,7 +82,7 @@
           <div class="flex-1"></div>
           <span id="form-meta" class="text-[11px] text-zinc-500"></span>
         </div>
-        <form id="form" class="p-4 space-y-3" novalidate>
+        <form data-permission-action="edit" id="form" class="p-4 space-y-3" novalidate>
           <input type="hidden" id="f-id">
           <div>
             <label class="app-label" for="f-name">이름 *</label>
@@ -109,10 +109,10 @@
             <p id="health-expiry-help" class="text-xs text-zinc-400 mt-1">한국 시간 기준 · 만료일이 오늘부터 1개월 미만이면 우선 표시됩니다.</p>
           </div>
           <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
-            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+            <button type="button" id="btn-delete" data-permission-action="edit" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
         <div class="driver-storage-settings px-4 py-3 border-t border-zinc-700">

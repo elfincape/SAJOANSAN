@@ -48,7 +48,7 @@
             <option value="code">코드순</option>
             <option value="name">이름순</option>
           </select>
-          <button id="new-btn" class="btn btn-primary">+ 신규</button>
+          <button id="new-btn" data-permission-action="edit" class="btn btn-primary">+ 신규</button>
           <button id="notion-points-sync" class="btn btn-ghost hidden" type="button">노션 동기화</button>
         </div>
         <p id="notion-points-status" class="px-3 text-xs text-zinc-400" role="status" aria-live="polite"></p>
@@ -217,10 +217,10 @@
           </div>
 
           <div class="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" class="btn btn-primary">저장</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" class="btn btn-primary">저장</button>
             <button type="button" id="btn-cancel" class="btn btn-ghost">취소</button>
             <div class="flex-1"></div>
-            <button type="button" id="btn-delete" class="btn btn-danger hidden">삭제</button>
+            <button type="button" id="btn-delete" data-permission-action="edit" class="btn btn-danger hidden">삭제</button>
           </div>
         </form>
       </section>
@@ -825,7 +825,7 @@
           <button type="button" data-photo-view="${idx}" class="block h-24 w-full">
             <img src="${escapeAttr(photo.dataUrl)}" alt="납품처 사진 ${idx + 1}" class="h-full w-full object-cover">
           </button>
-          <button type="button" data-photo-delete="${idx}" aria-label="납품처 사진 ${idx + 1} 삭제" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
+          <button type="button" data-permission-action="edit" data-photo-delete="${idx}" aria-label="납품처 사진 ${idx + 1} 삭제" class="absolute right-1 top-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] text-white">삭제</button>
         </div>`).join('');
       grid.querySelectorAll('[data-photo-view]').forEach(btn => {
         btn.addEventListener('click', () => openPhotoPreview(state.draftPhotos[Number(btn.dataset.photoView)]));

@@ -45,7 +45,7 @@
 
     <!-- 툴바 -->
     <div class="flex flex-wrap items-center gap-2 mb-2">
-      <button id="add-stop-btn" class="btn btn-primary">+ 납품처 추가</button>
+      <button id="add-stop-btn" data-permission-action="edit" class="btn btn-primary">+ 납품처 추가</button>
       <div class="flex-1"></div>
       <span id="result-count" class="text-xs text-zinc-400"></span>
     </div>
@@ -258,8 +258,8 @@
           <td class="max-w-[120px] truncate" title="${escapeAttr(dp?.security_password || '')}">${escapeHtml(dp?.security_password || '')}</td>
           <td class="max-w-[180px] truncate" title="${escapeAttr(s.memo || '')}">${escapeHtml(s.memo || '')}</td>
           <td class="text-right whitespace-nowrap">
-            <button class="btn btn-ghost text-xs" data-act="edit"   data-id="${s.id}">편집</button>
-            <button class="btn btn-ghost text-xs text-rose-400" data-act="delete" data-id="${s.id}">삭제</button>
+            <button class="btn btn-ghost text-xs" data-permission-action="edit" data-act="edit"   data-id="${s.id}">편집</button>
+            <button class="btn btn-ghost text-xs text-rose-400" data-permission-action="edit" data-act="delete" data-id="${s.id}">삭제</button>
           </td>
         `;
         frag.appendChild(tr);
@@ -339,7 +339,7 @@
           <h2 class="text-base font-semibold">${isEdit ? '납품처 편집' : '납품처 추가'}</h2>
           <button data-x class="btn btn-ghost text-xs">닫기</button>
         </div>
-        <form id="stop-form" class="space-y-3" novalidate>
+        <form data-permission-action="edit" id="stop-form" class="space-y-3" novalidate>
           <div>
             <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px] gap-2 items-end">
               <div>
