@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { operationsFiles } from '../../lib/portal-files';
@@ -124,16 +125,23 @@ export function PortalFiles({
     <section className="attachments">
       <div>
         {error ? (
-          <p className="error">{error}</p>
+          <p className="error">
+            <MentionText>{error}</MentionText>
+          </p>
         ) : !files.length ? (
           <p>첨부된 파일이 없습니다.</p>
         ) : (
           files.map((file) => (
             <div key={file.id} className="history-entry">
-              <p>{file.file_name}</p>
+              <p>
+                <MentionText>{file.file_name}</MentionText>
+              </p>
               <small>
-                {file.original_name} · {(file.byte_size / 1024).toFixed(1)}KB ·{' '}
-                {portalStamp(file.created_at)}
+                <MentionText>{file.original_name}</MentionText> ·
+                <MentionText> </MentionText>
+                <MentionText>{(file.byte_size / 1024).toFixed(1)}</MentionText>
+                KB ·<MentionText> </MentionText>
+                <MentionText>{portalStamp(file.created_at)}</MentionText>
               </small>
               {file.status === 'saved' ? (
                 <button
@@ -167,10 +175,12 @@ export function PortalFiles({
               ) : (
                 <>
                   <p>
-                    {file.status === 'failed'
-                      ? '저장 실패 · ' +
-                        (file.last_error ?? '다시 시도해 주세요.')
-                      : '저장 확인 중'}
+                    <MentionText>
+                      {file.status === 'failed'
+                        ? '저장 실패 · ' +
+                          (file.last_error ?? '다시 시도해 주세요.')
+                        : '저장 확인 중'}
+                    </MentionText>
                   </p>
                   {writable && file.uploaded_by === profile.id ? (
                     <button
@@ -230,7 +240,9 @@ export function PortalFiles({
                 }}
               />
             </label>
-            <p>{hint}</p>
+            <p>
+              <MentionText>{hint}</MentionText>
+            </p>
             <button className="primary" disabled={state.busy}>
               파일 올리기
             </button>

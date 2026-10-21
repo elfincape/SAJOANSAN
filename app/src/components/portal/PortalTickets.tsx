@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { PortalDialog } from './PortalDialog';
 import { PortalIncidentDetail } from './PortalIncidents';
@@ -81,30 +82,31 @@ function TaskCreate({ issue = false }: { issue?: boolean }) {
         }}
       >
         {!issue ? (
-          <label>
+          <PortalField>
             업무명
-            <input
+            <PortalInput
               name="title"
               required
               maxLength={200}
               value={title}
               disabled={state.busy}
-              onChange={(e) => setTitle(e.target.value)}
+              onValue={(mentionValue) => setTitle(mentionValue)}
             />
-          </label>
+          </PortalField>
         ) : null}
         {periods}
         {!issue ? (
           <>
-            <label>
+            <PortalField>
               필요한 내용
-              <textarea
+              <PortalInput
                 name="note"
                 value={note}
                 disabled={state.busy}
-                onChange={(e) => setNote(e.target.value)}
+                onValue={(mentionValue) => setNote(mentionValue)}
+                multiline
               />
-            </label>
+            </PortalField>
             <button className="primary" disabled={state.busy}>
               등록
             </button>
@@ -166,7 +168,9 @@ function IncidentCreate({ task }: { task: PortalTask }) {
   return (
     <>
       <h2>특이사항 발생</h2>
-      <p>상위 업무 · {task.title}</p>
+      <p>
+        상위 업무 · <MentionText>{task.title}</MentionText>
+      </p>
       <form
         className="portal-form"
         onSubmit={(e) => {
@@ -204,26 +208,27 @@ function IncidentCreate({ task }: { task: PortalTask }) {
             ))}
           </select>
         </label>
-        <label>
+        <PortalField>
           제목
-          <input
+          <PortalInput
             name="title"
             required
             value={title}
             disabled={state.busy}
-            onChange={(e) => setTitle(e.target.value)}
+            onValue={(mentionValue) => setTitle(mentionValue)}
           />
-        </label>
-        <label>
+        </PortalField>
+        <PortalField>
           발생 내용
-          <textarea
+          <PortalInput
             name="note"
             required
             value={note}
             disabled={state.busy}
-            onChange={(e) => setNote(e.target.value)}
+            onValue={(mentionValue) => setNote(mentionValue)}
+            multiline
           />
-        </label>
+        </PortalField>
         <button className="primary" disabled={state.busy}>
           처리중으로 등록
         </button>
@@ -276,7 +281,11 @@ function ParentTask({ id }: { id: string }) {
         {task ? (
           <PortalTaskDetail key={task.id} task={task} readOnly />
         ) : (
-          <p>{error || '상위 업무를 불러오는 중입니다…'}</p>
+          <p>
+            <MentionText>
+              {error || '상위 업무를 불러오는 중입니다…'}
+            </MentionText>
+          </p>
         )}
       </div>
     </PortalDialog>
@@ -301,11 +310,13 @@ export function PortalTickets() {
           {state.ticketMode !== 'incident-create' ? (
             <div className="parent-dialog-heading">
               <strong>
-                {state.ticketMode === 'create'
-                  ? '일회성 업무등록'
-                  : state.ticketMode === 'issue'
-                    ? '업무 발행'
-                    : '업무 티켓'}
+                <MentionText>
+                  {state.ticketMode === 'create'
+                    ? '일회성 업무등록'
+                    : state.ticketMode === 'issue'
+                      ? '업무 발행'
+                      : '업무 티켓'}
+                </MentionText>
               </strong>
               <button type="button" disabled={state.busy} onClick={close}>
                 닫기

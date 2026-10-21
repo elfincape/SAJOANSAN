@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { operationsFiles } from '../../lib/portal-files';
@@ -98,7 +99,11 @@ export function PortalConnections() {
           >
             OneDrive 계정 연결
           </button>
-          {status ? <p>{status}</p> : null}
+          {status ? (
+            <p>
+              <MentionText>{status}</MentionText>
+            </p>
+          ) : null}
         </aside>
       </div>
     </>

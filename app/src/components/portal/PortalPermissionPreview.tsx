@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { effectivePermission } from '../../domain/portal-permissions';
 import type { PermissionConfig, PortalMember } from '../../domain/portal-types';
 import { usePortal } from './PortalStore';
@@ -24,27 +25,33 @@ export function PortalPermissionPreview({
             <tr>
               <th>페이지·업무</th>
               {centers.map((c) => (
-                <th key={c.code}>{centerName(c.code)}</th>
+                <th key={c.code}>
+                  <MentionText>{centerName(c.code)}</MentionText>
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rules.map((config) => (
               <tr key={config.resource}>
-                <th>{config.title}</th>
+                <th>
+                  <MentionText>{config.title}</MentionText>
+                </th>
                 {centers.map((c) => {
                   const access = effectivePermission(config, person, c.code);
                   return (
                     <td key={c.code}>
-                      {access.edit
-                        ? config.resource === 'notifications'
-                          ? '알림 확인'
-                          : config.resource === 'incidents'
-                            ? '열람·처리 상태 변경'
-                            : '열람·수정'
-                        : access.read
-                          ? '열람 전용'
-                          : '접근 불가'}
+                      <MentionText>
+                        {access.edit
+                          ? config.resource === 'notifications'
+                            ? '알림 확인'
+                            : config.resource === 'incidents'
+                              ? '열람·처리 상태 변경'
+                              : '열람·수정'
+                          : access.read
+                            ? '열람 전용'
+                            : '접근 불가'}
+                      </MentionText>
                     </td>
                   );
                 })}

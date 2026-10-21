@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { Fragment, useState } from 'react';
 import type {
   PermissionConfig,
@@ -33,7 +34,9 @@ function RuleEditor({
   }
   return (
     <fieldset>
-      <legend>{title}</legend>
+      <legend>
+        <MentionText>{title}</MentionText>
+      </legend>
       <label className="member-choice">
         활성 사용자 전체
         <input
@@ -110,13 +113,15 @@ function RuleEditor({
       </fieldset>
       {write ? (
         <p>
-          {centerEditResources.includes(resource)
-            ? '실제 수정은 센터 업무 담당자의 담당 센터 안에서만 가능합니다. 전체 센터 자료를 선택해도 담당 밖 수정은 허용되지 않습니다.'
-            : resource === 'incidents'
-              ? '조회 전용도 허용 조건에 따라 처리완료·재개할 수 있습니다. 내용 작성·수정은 센터 담당 권한이 필요합니다.'
-              : resource === 'notifications'
-                ? '알림 확인에 적용됩니다. 업무 내용 수정 권한을 부여하지 않습니다.'
-                : '조회 전용 사용자는 업무 내용을 수정할 수 없습니다.'}
+          <MentionText>
+            {centerEditResources.includes(resource)
+              ? '실제 수정은 센터 업무 담당자의 담당 센터 안에서만 가능합니다. 전체 센터 자료를 선택해도 담당 밖 수정은 허용되지 않습니다.'
+              : resource === 'incidents'
+                ? '조회 전용도 허용 조건에 따라 처리완료·재개할 수 있습니다. 내용 작성·수정은 센터 담당 권한이 필요합니다.'
+                : resource === 'notifications'
+                  ? '알림 확인에 적용됩니다. 업무 내용 수정 권한을 부여하지 않습니다.'
+                  : '조회 전용 사용자는 업무 내용을 수정할 수 없습니다.'}
+          </MentionText>
         </p>
       ) : null}
     </fieldset>
@@ -151,7 +156,9 @@ function PermissionEditor({ config }: { config: PermissionConfig }) {
     data = { read: normalize(read, false), write: normalize(write, true) };
   return (
     <>
-      <h2>{config.title} 권한</h2>
+      <h2>
+        <MentionText>{config.title}</MentionText> 권한
+      </h2>
       {['routes', 'delivery_points'].includes(config.resource) ? (
         <p>
           대시보드 코스 조회에는 코스와 납품처의 열람 권한이 모두 필요합니다.
@@ -312,7 +319,9 @@ export function PortalPermissions() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">운영관리·포털 목록</strong>
-            <span id="count">{state.permissions.rules.length}개 목록</span>
+            <span id="count">
+              <MentionText>{state.permissions.rules.length}</MentionText>개 목록
+            </span>
           </div>
           <div id="items" className="portal-items">
             <p>
@@ -335,7 +344,11 @@ export function PortalPermissions() {
                 section = c.section;
                 return (
                   <Fragment key={c.resource}>
-                    {heading ? <h3>{c.section}</h3> : null}
+                    {heading ? (
+                      <h3>
+                        <MentionText>{c.section}</MentionText>
+                      </h3>
+                    ) : null}
                     <button
                       className="task-row permission-row"
                       data-resource={c.resource}

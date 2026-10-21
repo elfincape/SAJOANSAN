@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useRef, useState } from 'react';
 import type { PortalIncident } from '../../domain/portal-types';
 import { portalStamp } from '../../domain/portal-types';
@@ -79,17 +80,23 @@ export function PortalIncidentDetail({ row }: { row: PortalIncident }) {
   }
   return (
     <>
-      <h2>{row.title}</h2>
+      <h2>
+        <MentionText>{row.title}</MentionText>
+      </h2>
       <p>
-        {centerName(center) +
-          ' · ' +
-          row.kind +
-          ' · ' +
-          (row.status === 'resolved' ? '처리완료' : '처리중')}
+        <MentionText>
+          {centerName(center) +
+            ' · ' +
+            row.kind +
+            ' · ' +
+            (row.status === 'resolved' ? '처리완료' : '처리중')}
+        </MentionText>
       </p>
       <p>
-        발생 {portalStamp(row.created_at)}
-        {row.resolved_at ? ' · 처리완료 ' + portalStamp(row.resolved_at) : ''}
+        발생 <MentionText>{portalStamp(row.created_at)}</MentionText>
+        <MentionText>
+          {row.resolved_at ? ' · 처리완료 ' + portalStamp(row.resolved_at) : ''}
+        </MentionText>
       </p>
       {row.task_id ? (
         <button
@@ -113,35 +120,37 @@ export function PortalIncidentDetail({ row }: { row: PortalIncident }) {
           className="portal-form"
           onSubmit={(e) => e.preventDefault()}
         >
-          <label>
+          <PortalField>
             특이사항 제목
-            <input
+            <PortalInput
               name="title"
               required
               disabled={state.busy}
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onValue={(mentionValue) => setTitle(mentionValue)}
             />
-          </label>
-          <label>
+          </PortalField>
+          <PortalField>
             발생 내용
-            <textarea
+            <PortalInput
               name="note"
               required
               disabled={state.busy}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onValue={(mentionValue) => setNote(mentionValue)}
+              multiline
             />
-          </label>
-          <label>
+          </PortalField>
+          <PortalField>
             처리 내용
-            <textarea
+            <PortalInput
               name="progress"
               disabled={state.busy}
               value={progress}
-              onChange={(e) => setProgress(e.target.value)}
+              onValue={(mentionValue) => setProgress(mentionValue)}
+              multiline
             />
-          </label>
+          </PortalField>
           <div className="actions">
             <button
               type="button"
@@ -184,9 +193,15 @@ export function PortalIncidentDetail({ row }: { row: PortalIncident }) {
       ) : (
         <>
           <h3>발생 내용</h3>
-          <p>{String(row.inputs?.발생내용 ?? '')}</p>
+          <p>
+            <MentionText>{String(row.inputs?.발생내용 ?? '')}</MentionText>
+          </p>
           <h3>처리 내용</h3>
-          <p>{String(row.inputs?.처리내용 ?? '처리 내용 기록 없음')}</p>
+          <p>
+            <MentionText>
+              {String(row.inputs?.처리내용 ?? '처리 내용 기록 없음')}
+            </MentionText>
+          </p>
           {row.status === 'resolved' && editable ? (
             <button disabled={state.busy} onClick={() => action('reopen')}>
               다시 처리중으로 열기
@@ -199,15 +214,16 @@ export function PortalIncidentDetail({ row }: { row: PortalIncident }) {
                 action('resolve', { note: progress });
               }}
             >
-              <label>
+              <PortalField>
                 처리 내용
-                <textarea
+                <PortalInput
                   name="note"
                   disabled={state.busy}
                   value={progress}
-                  onChange={(e) => setProgress(e.target.value)}
+                  onValue={(mentionValue) => setProgress(mentionValue)}
+                  multiline
                 />
-              </label>
+              </PortalField>
               <button className="primary" disabled={state.busy}>
                 처리완료
               </button>
@@ -228,16 +244,17 @@ export function PortalIncidentDetail({ row }: { row: PortalIncident }) {
             action('support', { note: support.trim(), done: false });
           }}
         >
-          <label>
+          <PortalField>
             배송팀 조치 내용
-            <textarea
+            <PortalInput
               name="note"
               required
               disabled={state.busy}
               value={support}
-              onChange={(e) => setSupport(e.target.value)}
+              onValue={(mentionValue) => setSupport(mentionValue)}
+              multiline
             />
-          </label>
+          </PortalField>
           <button disabled={state.busy}>조치 기록</button>
         </form>
       ) : null}

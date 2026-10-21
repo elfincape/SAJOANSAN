@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PortalTask, PortalInputs } from '../../domain/portal-types';
@@ -86,7 +87,9 @@ function ImageDialog({
           </button>
         ) : null}
       </div>
-      <p>{status}</p>
+      <p>
+        <MentionText>{status}</MentionText>
+      </p>
       {url ? <img alt="쿠팡 입문확인표" src={url} /> : null}
     </PortalDialog>
   );
@@ -130,7 +133,9 @@ function ResultCard({
   }, [file.id, image]);
   return (
     <div className="coupang-result">
-      <strong>{file.original_name || file.file_name}</strong>
+      <strong>
+        <MentionText>{file.original_name || file.file_name}</MentionText>
+      </strong>
       {image ? (
         <button onClick={() => setPreview(true)}>이미지 확대·복사</button>
       ) : (
@@ -168,7 +173,11 @@ function ResultCard({
           }}
         />
       ) : null}
-      {error ? <p>{error}</p> : null}
+      {error ? (
+        <p>
+          <MentionText>{error}</MentionText>
+        </p>
+      ) : null}
       {preview ? (
         <ImageDialog
           file={file}
@@ -209,7 +218,11 @@ export function PortalCoupang({
     working = useRef(false),
     active = useRef(true),
     ready = useRef(false),
-    run = useRef<{ id: string; dispatch: string; date: string } | null>(null),
+    run = useRef<{
+      id: string;
+      dispatch: string;
+      date: string;
+    } | null>(null),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     settings = task.template_snapshot!.spec!.integration!,
     session = useRef<CoupangSession>(
@@ -541,11 +554,15 @@ export function PortalCoupang({
     <section className="coupang-workflow">
       <h3>배차표 · 입문확인 자료</h3>
       <p className="coupang-entry-date">
-        입문확인 날짜 · {coupangEntryDate(task)}
+        입문확인 날짜 · <MentionText>{coupangEntryDate(task)}</MentionText>
       </p>
       <p className="coupang-progress" role="status">
-        {status ||
-          (!writable ? '저장된 이미지를 클릭하여 확대하거나 복사하세요.' : '')}
+        <MentionText>
+          {status ||
+            (!writable
+              ? '저장된 이미지를 클릭하여 확대하거나 복사하세요.'
+              : '')}
+        </MentionText>
       </p>
       {writable ? (
         <FileArea
@@ -598,7 +615,9 @@ export function PortalCoupang({
       ) : null}
       <div className="coupang-results">
         {resultError ? (
-          <p>{resultError}</p>
+          <p>
+            <MentionText>{resultError}</MentionText>
+          </p>
         ) : !result?.files?.length ? (
           <p>생성한 엑셀과 이미지가 여기에 표시됩니다.</p>
         ) : (
@@ -612,7 +631,10 @@ export function PortalCoupang({
               <ResultCard key={file.id} file={file} onError={setStatus} />
             ))}
             {result.image_error ? (
-              <p>이미지 생성 실패: {result.image_error}</p>
+              <p>
+                이미지 생성 실패:<MentionText> </MentionText>
+                <MentionText>{result.image_error}</MentionText>
+              </p>
             ) : null}
           </>
         )}

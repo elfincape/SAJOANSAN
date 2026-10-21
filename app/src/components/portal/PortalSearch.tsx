@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { portalRecord } from '../../lib/portal';
@@ -59,16 +60,25 @@ function Documents({
       className="document-search-results"
       aria-label="첨부 문서 본문 검색"
     >
-      <h3>첨부 문서 본문{result ? ' · ' + result.total + '건' : ''}</h3>
-      <p role="status">{status}</p>
+      <h3>
+        첨부 문서 본문
+        <MentionText>{result ? ' · ' + result.total + '건' : ''}</MentionText>
+      </h3>
+      <p role="status">
+        <MentionText>{status}</MentionText>
+      </p>
       {result?.items.map((row) => {
         const kind = ['task', 'incident', 'survey'].find(
           (type) => row[type + '_id'],
         );
         return kind ? (
           <div key={row.id} className="history-entry">
-            <strong>{row.title}</strong>
-            <p>{row.excerpt}</p>
+            <strong>
+              <MentionText>{row.title}</MentionText>
+            </strong>
+            <p>
+              <MentionText>{row.excerpt}</MentionText>
+            </p>
             <button onClick={() => open('file', row)}>
               첨부된 원본 기록 열기
             </button>
@@ -84,7 +94,12 @@ function Documents({
 export function PortalSearch() {
   const { state, centerName, message, choose, update, viewState } = usePortal(),
     saved = viewState.get('search') as
-      { term: string; center: string; page: number } | undefined,
+      | {
+          term: string;
+          center: string;
+          page: number;
+        }
+      | undefined,
     [term, setTerm] = useState(saved?.term ?? ''),
     [center, setCenter] = useState(saved?.center ?? ''),
     [query, setQuery] = useState<{
@@ -229,9 +244,11 @@ export function PortalSearch() {
           <div className="list-heading">
             <strong id="list-title">유형별 검색 결과</strong>
             <span id="count">
-              {result
-                ? result.groups.reduce((sum, g) => sum + g.total, 0) + '건'
-                : ''}
+              <MentionText>
+                {result
+                  ? result.groups.reduce((sum, g) => sum + g.total, 0) + '건'
+                  : ''}
+              </MentionText>
             </span>
           </div>
           <div id="items" className="portal-items">
@@ -239,22 +256,30 @@ export function PortalSearch() {
               result.groups.map((group) => (
                 <Fragment key={group.kind}>
                   <h3>
-                    {searchLabels[group.kind] ?? group.kind} · {group.total}건
+                    <MentionText>
+                      {searchLabels[group.kind] ?? group.kind}
+                    </MentionText>
+                    <MentionText> </MentionText>·{' '}
+                    <MentionText>{group.total}</MentionText>건
                   </h3>
                   {group.items.map((row) => {
                     const target = searchTarget(group.kind, row);
                     return (
                       <div key={row.id} className="history-entry">
-                        <p>{row.title}</p>
+                        <p>
+                          <MentionText>{row.title}</MentionText>
+                        </p>
                         <small>
-                          {[
-                            row.center_code
-                              ? centerName(row.center_code)
-                              : '공통',
-                            row.work_date,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
+                          <MentionText>
+                            {[
+                              row.center_code
+                                ? centerName(row.center_code)
+                                : '공통',
+                              row.work_date,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </MentionText>
                         </small>
                         {target ? (
                           <button onClick={() => void open(group.kind, row)}>
@@ -315,12 +340,17 @@ export function PortalSearch() {
             <PortalRecordDetail />
           ) : master ? (
             <>
-              <h2>{master.row.title}</h2>
+              <h2>
+                <MentionText>{master.row.title}</MentionText>
+              </h2>
               <p>
-                {searchLabels[master.kind]} ·{' '}
-                {master.data.center_code
-                  ? centerName(String(master.data.center_code))
-                  : '공통'}
+                <MentionText>{searchLabels[master.kind]}</MentionText> ·
+                <MentionText> </MentionText>
+                <MentionText>
+                  {master.data.center_code
+                    ? centerName(String(master.data.center_code))
+                    : '공통'}
+                </MentionText>
               </p>
               {Object.entries({
                 name: '이름',
@@ -339,8 +369,12 @@ export function PortalSearch() {
                 )
                 .map(([key, label]) => (
                   <Fragment key={key}>
-                    <h4>{label}</h4>
-                    <p>{String(master.data[key])}</p>
+                    <h4>
+                      <MentionText>{label}</MentionText>
+                    </h4>
+                    <p>
+                      <MentionText>{String(master.data[key])}</MentionText>
+                    </p>
                   </Fragment>
                 ))}
               <a href={master.href}>관리 화면 열기</a>

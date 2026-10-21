@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { portalStamp } from '../../domain/portal-types';
@@ -48,8 +49,13 @@ function BackupDetail({
   }
   return (
     <>
-      <h2>{row.file_name}</h2>
-      <p>원본 보관 시각 · {portalStamp(row.captured_at)}</p>
+      <h2>
+        <MentionText>{row.file_name}</MentionText>
+      </h2>
+      <p>
+        원본 보관 시각 ·<MentionText> </MentionText>
+        <MentionText>{portalStamp(row.captured_at)}</MentionText>
+      </p>
       {row.period === 'baseline' ? (
         <p>
           기능 적용 시점의 실제 운영 원본입니다. 월말 원본과 별도로
@@ -58,15 +64,23 @@ function BackupDetail({
       ) : null}
       {Object.entries(row.counts).map(([key, count]) => (
         <p key={key}>
-          {labels[key] ?? key} · {count}건
+          <MentionText>{labels[key] ?? key}</MentionText> ·
+          <MentionText> </MentionText>
+          <MentionText>{count}</MentionText>건
         </p>
       ))}
-      {row.last_error ? <p className="error">{row.last_error}</p> : null}
+      {row.last_error ? (
+        <p className="error">
+          <MentionText>{row.last_error}</MentionText>
+        </p>
+      ) : null}
       <p>
-        저장 시도 · {row.attempts}회
-        {row.verified_at
-          ? ' · 검증 완료 ' + portalStamp(row.verified_at)
-          : ' · DB 원본 보관, OneDrive 저장 대기'}
+        저장 시도 · <MentionText>{row.attempts}</MentionText>회
+        <MentionText>
+          {row.verified_at
+            ? ' · 검증 완료 ' + portalStamp(row.verified_at)
+            : ' · DB 원본 보관, OneDrive 저장 대기'}
+        </MentionText>
       </p>
       {row.status === 'saved' ? (
         <button
@@ -112,21 +126,37 @@ function BackupDetail({
       <section>
         {comparison ? (
           <>
-            <h3>보관 이후 변경 · {comparison.total}건</h3>
+            <h3>
+              보관 이후 변경 · <MentionText>{comparison.total}</MentionText>건
+            </h3>
             {comparison.counts.map((summary) => (
               <p key={summary.table_name}>
-                {labels[summary.table_name] ?? summary.table_name} · 추가{' '}
-                {summary.added} · 삭제 {summary.removed} · 변경{' '}
-                {summary.changed}
+                <MentionText>
+                  {labels[summary.table_name] ?? summary.table_name}
+                </MentionText>
+                <MentionText> </MentionText>· 추가<MentionText> </MentionText>
+                <MentionText>{summary.added}</MentionText> · 삭제
+                <MentionText> </MentionText>
+                <MentionText>{summary.removed}</MentionText> · 변경
+                <MentionText> </MentionText>
+                <MentionText>{summary.changed}</MentionText>
               </p>
             ))}
             {comparison.items.map((item, i) => (
               <Fragment key={i}>
                 <h4>
-                  {labels[item.table_name] ?? item.table_name} · {item.title} ·{' '}
-                  {actions[item.action]}
+                  <MentionText>
+                    {labels[item.table_name] ?? item.table_name}
+                  </MentionText>
+                  <MentionText> </MentionText>·{' '}
+                  <MentionText>{item.title}</MentionText> ·
+                  <MentionText> </MentionText>
+                  <MentionText>{actions[item.action]}</MentionText>
                 </h4>
-                <p>변경 항목 · {item.fields.join(', ')}</p>
+                <p>
+                  변경 항목 ·<MentionText> </MentionText>
+                  <MentionText>{item.fields.join(', ')}</MentionText>
+                </p>
               </Fragment>
             ))}
             {comparison.limited ? (
@@ -199,7 +229,9 @@ export function PortalBackups() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">보관된 운영 원본</strong>
-            <span id="count">{rows ? rows.length + '건' : ''}</span>
+            <span id="count">
+              <MentionText>{rows ? rows.length + '건' : ''}</MentionText>
+            </span>
           </div>
           <div id="items" className="portal-items">
             {rows ? (

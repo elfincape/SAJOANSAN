@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { PortalDesigner } from './PortalDesigner';
@@ -13,7 +14,9 @@ export function PortalRegistration() {
     [designer, setDesigner] = useState<{
       template: PortalTemplate | null;
     } | null>(null),
-    [form, setForm] = useState<{ survey: PortalSurvey | null } | null>(null),
+    [form, setForm] = useState<{
+      survey: PortalSurvey | null;
+    } | null>(null),
     tab = state.registrationTab === 'surveys' ? 'surveys' : 'templates',
     registered = currentTemplates(state.templates),
     writable = canWrite(state.center, 'forms'),
@@ -96,10 +99,15 @@ export function PortalRegistration() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">
-              {tab === 'templates' ? '등록된 업무' : '업무조사'}
+              <MentionText>
+                {tab === 'templates' ? '등록된 업무' : '업무조사'}
+              </MentionText>
             </strong>
             <span id="count">
-              {tab === 'templates' ? registered.length : state.surveys.length}건
+              <MentionText>
+                {tab === 'templates' ? registered.length : state.surveys.length}
+              </MentionText>
+              건
             </span>
           </div>
           <div
@@ -123,16 +131,18 @@ export function PortalRegistration() {
                         </button>
                       ) : (
                         <strong className="registered-task-title">
-                          {t.title}
+                          <MentionText>{t.title}</MentionText>
                         </strong>
                       )}
                       <small>
-                        {(cadenceLabels[t.spec.ui_cadence ?? ''] ??
-                          '기존 업무') +
-                          taskScheduleLabel(t) +
-                          ' · 입력 ' +
-                          (t.spec.fields?.length ?? 0) +
-                          '개'}
+                        <MentionText>
+                          {(cadenceLabels[t.spec.ui_cadence ?? ''] ??
+                            '기존 업무') +
+                            taskScheduleLabel(t) +
+                            ' · 입력 ' +
+                            (t.spec.fields?.length ?? 0) +
+                            '개'}
+                        </MentionText>
                       </small>
                     </div>
                     <div className="registered-task-actions">

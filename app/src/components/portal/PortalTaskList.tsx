@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
@@ -168,7 +169,9 @@ function DailyPopup({
           setOpen((event.nativeEvent as ToggleEvent).newState === 'open')
         }
       >
-        <strong>{date} · 일일 업무</strong>
+        <strong>
+          <MentionText>{date}</MentionText> · 일일 업무
+        </strong>
         {tasks.map((task) => {
           const handler =
             participants.find((s) => s.id === task.handler_subject_id) ??
@@ -246,8 +249,11 @@ export function PortalCalendar({
               style={{ gridColumn: i + 1 }}
             >
               <h4>
-                {day.slice(5)} ·{' '}
-                {'일월화수목금토'[new Date(day + 'T00:00:00Z').getUTCDay()]}
+                <MentionText>{day.slice(5)}</MentionText> ·
+                <MentionText> </MentionText>
+                <MentionText>
+                  {'일월화수목금토'[new Date(day + 'T00:00:00Z').getUTCDay()]}
+                </MentionText>
               </h4>
               {unit === 'month' && daily.some((t) => t.work_date === day) ? (
                 <DailyPopup

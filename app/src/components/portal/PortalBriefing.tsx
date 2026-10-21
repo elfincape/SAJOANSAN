@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { Fragment } from 'react';
 import { usePortal } from './PortalStore';
 import { PortalIncidentList } from './PortalIncidents';
@@ -74,8 +75,12 @@ export function PortalBriefing() {
           <div className="list-heading">
             <strong id="list-title">확인할 운영 기록</strong>
             <span id="count">
-              특이사항 {state.incidents.filter((i) => i.task_id).length}건 · AI
-              요약 {body?.items?.length ?? 0}건
+              특이사항<MentionText> </MentionText>
+              <MentionText>
+                {state.incidents.filter((i) => i.task_id).length}
+              </MentionText>
+              건 · AI 요약 <MentionText>{body?.items?.length ?? 0}</MentionText>
+              건
             </span>
           </div>
           <div id="items" className="portal-items">
@@ -96,24 +101,29 @@ export function PortalBriefing() {
                       className="history-entry"
                     >
                       <p>
-                        {item.title +
-                          (current
-                            ? ' · ' +
-                              (current.status === 'resolved'
-                                ? '처리완료'
-                                : '처리중')
-                            : '')}
+                        <MentionText>
+                          {item.title +
+                            (current
+                              ? ' · ' +
+                                (current.status === 'resolved'
+                                  ? '처리완료'
+                                  : '처리중')
+                              : '')}
+                        </MentionText>
                       </p>
                       <small>
-                        {(body.centers.find((c) => c.code === item.center)
-                          ?.name ??
-                          item.center ??
-                          '센터 확인 필요') +
-                          ' · ' +
-                          (item.reason_label ?? '운영 기록') +
-                          (item.action
-                            ? ' · ' + (actionLabels[item.action] ?? item.action)
-                            : '')}
+                        <MentionText>
+                          {(body.centers.find((c) => c.code === item.center)
+                            ?.name ??
+                            item.center ??
+                            '센터 확인 필요') +
+                            ' · ' +
+                            (item.reason_label ?? '운영 기록') +
+                            (item.action
+                              ? ' · ' +
+                                (actionLabels[item.action] ?? item.action)
+                              : '')}
+                        </MentionText>
                       </small>
                       {['task', 'incident'].includes(item.kind) ? (
                         <button
@@ -166,10 +176,14 @@ export function PortalBriefing() {
                 확인하세요.
               </p>
               {entry?.last_error ? (
-                <p className="error">{entry.last_error}</p>
+                <p className="error">
+                  <MentionText>{entry.last_error}</MentionText>
+                </p>
               ) : null}
               {entry?.dispatch_error ? (
-                <p className="error">{entry.dispatch_error}</p>
+                <p className="error">
+                  <MentionText>{entry.dispatch_error}</MentionText>
+                </p>
               ) : null}
               {entry?.status === 'running' ? (
                 <p>새 브리핑을 생성 중입니다. 잠시 후 새로고침하세요.</p>
@@ -181,7 +195,11 @@ export function PortalBriefing() {
               {body ? (
                 <>
                   <p>
-                    기준일 {body.date} · 생성 {portalStamp(entry?.generated_at)}
+                    기준일 <MentionText>{body.date}</MentionText> · 생성
+                    <MentionText> </MentionText>
+                    <MentionText>
+                      {portalStamp(entry?.generated_at)}
+                    </MentionText>
                   </p>
                   {Object.entries({
                     pending_tasks: '미완료 업무',
@@ -191,7 +209,9 @@ export function PortalBriefing() {
                   }).map(([key, label]) => (
                     <Fragment key={key}>
                       <p>
-                        {label} · {body.counts?.[key] ?? 0}건
+                        <MentionText>{label}</MentionText> ·
+                        <MentionText> </MentionText>
+                        <MentionText>{body.counts?.[key] ?? 0}</MentionText>건
                       </p>
                     </Fragment>
                   ))}

@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useRef, useState } from 'react';
 import type { PortalTemplate } from '../../domain/portal-types';
 import { designerDraft, designerSpec } from '../../domain/portal-designer';
@@ -21,7 +22,10 @@ export function PortalDesigner({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     generated = useRef(new Map<string, string>()).current,
-    retry = useRef<{ key: string; id: string } | null>(null);
+    retry = useRef<{
+      key: string;
+      id: string;
+    } | null>(null);
   function change<K extends keyof DesignerDraft>(
     key: K,
     value: DesignerDraft[K],
@@ -50,17 +54,18 @@ export function PortalDesigner({
     type = 'text',
   ) {
     return (
-      <label>
+      <PortalField>
         {label}
         {type === 'textarea' ? (
-          <textarea
+          <PortalInput
             name={key}
             disabled={busy}
             value={draft[key]}
-            onChange={(e) => change(key, e.target.value)}
+            onValue={(mentionValue) => change(key, mentionValue)}
+            multiline
           />
         ) : (
-          <input
+          <PortalInput
             name={key}
             type={type}
             required={key === 'title'}
@@ -72,10 +77,10 @@ export function PortalDesigner({
             }
             disabled={busy}
             value={draft[key]}
-            onChange={(e) => change(key, e.target.value)}
+            onValue={(mentionValue) => change(key, mentionValue)}
           />
         )}
-      </label>
+      </PortalField>
     );
   }
   return (
@@ -87,8 +92,11 @@ export function PortalDesigner({
     >
       <div className="parent-dialog-heading">
         <h2>
-          {centerName(state.center)} ·{' '}
-          {template ? '업무 양식 수정' : '센터 업무등록'}
+          <MentionText>{centerName(state.center)}</MentionText> ·
+          <MentionText> </MentionText>
+          <MentionText>
+            {template ? '업무 양식 수정' : '센터 업무등록'}
+          </MentionText>
         </h2>
         <button type="button" onClick={onClose}>
           닫기
@@ -241,16 +249,16 @@ export function PortalDesigner({
             return (
               <fieldset key={field.key} className="designer-field">
                 <legend>입력 항목</legend>
-                <label>
+                <PortalField>
                   항목 이름
-                  <input
+                  <PortalInput
                     name="label"
                     required
                     disabled={busy}
                     value={field.label}
-                    onChange={(e) => patch({ label: e.target.value })}
+                    onValue={(mentionValue) => patch({ label: mentionValue })}
                   />
-                </label>
+                </PortalField>
                 <label>
                   입력 방식
                   <select
@@ -272,16 +280,19 @@ export function PortalDesigner({
                     ))}
                   </select>
                 </label>
-                <label hidden={field.control !== 'select'}>
+                <PortalField hidden={field.control !== 'select'}>
                   선택지 (한 줄에 하나)
-                  <textarea
+                  <PortalInput
                     name="options"
                     required={field.control === 'select'}
                     disabled={busy}
                     value={field.options_text}
-                    onChange={(e) => patch({ options_text: e.target.value })}
+                    onValue={(mentionValue) =>
+                      patch({ options_text: mentionValue })
+                    }
+                    multiline
                   />
-                </label>
+                </PortalField>
                 <label>
                   완료할 때 필수 입력
                   <input
@@ -337,7 +348,11 @@ export function PortalDesigner({
         <button className="primary" disabled={busy}>
           저장하고 업무 버튼 생성
         </button>
-        {error ? <p className="designer-error error">{error}</p> : null}
+        {error ? (
+          <p className="designer-error error">
+            <MentionText>{error}</MentionText>
+          </p>
+        ) : null}
       </form>
     </PortalDialog>
   );

@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { privateMail, runMailCollection } from '../../lib/portal-mail';
@@ -48,7 +49,7 @@ function MailReceipt() {
         메일 가져오기
       </button>
       <p role="status" aria-live="polite">
-        {status}
+        <MentionText>{status}</MentionText>
       </p>
     </>
   );
@@ -176,9 +177,12 @@ function MailDetail({ id, current }: { id: string; current: () => boolean }) {
     </p>
   ) : mail ? (
     <>
-      <h2>{mail.subject || '(제목 없음)'}</h2>
+      <h2>
+        <MentionText>{mail.subject || '(제목 없음)'}</MentionText>
+      </h2>
       <p>
-        {mail.sender} · {portalStamp(mail.sent_at)}
+        <MentionText>{mail.sender}</MentionText> ·<MentionText> </MentionText>
+        <MentionText>{portalStamp(mail.sent_at)}</MentionText>
       </p>
       <div className="private-mail-actions">
         {body ? (
@@ -240,7 +244,7 @@ function MailDetail({ id, current }: { id: string; current: () => boolean }) {
         {body ? (
           <>
             <pre className="private-mail-text" hidden={formatted}>
-              {body.text}
+              <MentionText>{body.text}</MentionText>
             </pre>
             {html !== null ? (
               <iframe
@@ -289,9 +293,10 @@ export function PortalMail() {
     [count, setCount] = useState(''),
     [loading, setLoading] = useState(false),
     [listError, setListError] = useState(false),
-    [selected, setSelected] = useState<{ id: string; serial: number } | null>(
-      null,
-    ),
+    [selected, setSelected] = useState<{
+      id: string;
+      serial: number;
+    } | null>(null),
     generation = useRef(0),
     selection = useRef(0),
     [listVersion, setListVersion] = useState(0);
@@ -377,7 +382,9 @@ export function PortalMail() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">받은 메일</strong>
-            <span id="count">{count}</span>
+            <span id="count">
+              <MentionText>{count}</MentionText>
+            </span>
           </div>
           <div id="items" className="portal-items">
             {status === 'loading' ? (
@@ -393,16 +400,24 @@ export function PortalMail() {
                 <p
                   className={box?.last_error || collected?.stale ? 'error' : ''}
                 >
-                  {collected?.label} · 마지막 정상 수집{' '}
-                  {portalStamp(box?.last_success_at) || '없음'}
-                  {counts.oversized || counts.undated || counts.deferred ? (
-                    <span>
-                      {' '}
-                      · 다음 수집 대기 {counts.deferred || 0}건 · 크기 제한 제외{' '}
-                      {counts.oversized || 0}건 · 날짜 확인 필요{' '}
-                      {counts.undated || 0}건
-                    </span>
-                  ) : null}
+                  <MentionText>{collected?.label}</MentionText> · 마지막 정상
+                  수집<MentionText> </MentionText>
+                  <MentionText>
+                    {portalStamp(box?.last_success_at) || '없음'}
+                  </MentionText>
+                  <MentionText>
+                    {counts.oversized || counts.undated || counts.deferred ? (
+                      <span>
+                        <MentionText> </MentionText>· 다음 수집 대기
+                        <MentionText> </MentionText>
+                        <MentionText>{counts.deferred || 0}</MentionText>건 ·
+                        크기 제한 제외<MentionText> </MentionText>
+                        <MentionText>{counts.oversized || 0}</MentionText>건 ·
+                        날짜 확인 필요<MentionText> </MentionText>
+                        <MentionText>{counts.undated || 0}</MentionText>건
+                      </span>
+                    ) : null}
+                  </MentionText>
                 </p>
                 <form
                   className="portal-form"
@@ -456,9 +471,11 @@ export function PortalMail() {
                     ))
                   ) : (
                     <p>
-                      {query
-                        ? '검색 결과가 없습니다.'
-                        : '아직 수신된 메일이 없습니다.'}
+                      <MentionText>
+                        {query
+                          ? '검색 결과가 없습니다.'
+                          : '아직 수신된 메일이 없습니다.'}
+                      </MentionText>
                     </p>
                   )}
                 </div>

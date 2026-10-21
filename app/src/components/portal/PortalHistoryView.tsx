@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { PortalRecordDetail } from './PortalRecordDetail';
@@ -62,31 +63,45 @@ function HistoryRow({
       }}
     >
       <summary className="task-row history-record">
-        <span className="center-property">{centerName(row.center_code)}</span>
-        <strong>{row.title ?? '업무'}</strong>
+        <span className="center-property">
+          <MentionText>{centerName(row.center_code)}</MentionText>
+        </span>
+        <strong>
+          <MentionText>{row.title ?? '업무'}</MentionText>
+        </strong>
         <small>
-          {row.kind === 'task'
-            ? taskPeriod(row as import('../../domain/portal-types').PortalTask)
-            : '특이사항 · ' + portalStamp(row.created_at)}
+          <MentionText>
+            {row.kind === 'task'
+              ? taskPeriod(
+                  row as import('../../domain/portal-types').PortalTask,
+                )
+              : '특이사항 · ' + portalStamp(row.created_at)}
+          </MentionText>
         </small>
         <span className={'badge status-' + row.state}>
-          {historyStatuses[row.state]}
+          <MentionText>{historyStatuses[row.state]}</MentionText>
         </span>
       </summary>
       <div className="history-task-events">
         {error ? (
-          <p className="error">{error}</p>
+          <p className="error">
+            <MentionText>{error}</MentionText>
+          </p>
         ) : events ? (
           events.length ? (
             events.map((event) => (
               <div key={event.id} className="history-entry">
                 <strong>
-                  {(actionLabels[event.action] ?? event.action).replaceAll(
-                    'HQ',
-                    '배송팀',
-                  )}
+                  <MentionText>
+                    {(actionLabels[event.action] ?? event.action).replaceAll(
+                      'HQ',
+                      '배송팀',
+                    )}
+                  </MentionText>
                 </strong>
-                <small>{portalStamp(event.occurred_at)}</small>
+                <small>
+                  <MentionText>{portalStamp(event.occurred_at)}</MentionText>
+                </small>
                 {[
                   event.request_body?.data?.note,
                   event.request_body?.data?.memo,
@@ -95,7 +110,9 @@ function HistoryRow({
                 ]
                   .filter(Boolean)
                   .map((value, i) => (
-                    <p key={i}>{String(value)}</p>
+                    <p key={i}>
+                      <MentionText>{String(value)}</MentionText>
+                    </p>
                   ))}
               </div>
             ))
@@ -115,7 +132,12 @@ export function PortalHistoryView() {
     [filters, setFilters] = useState(
       () =>
         (viewState.get('history') as
-          | { center: string; from: string; through: string; status: string }
+          | {
+              center: string;
+              from: string;
+              through: string;
+              status: string;
+            }
           | undefined) ?? {
           center: '',
           ...periodBounds(koreaDate(), 'month'),
@@ -285,7 +307,9 @@ export function PortalHistoryView() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">업무별 처리 기록</strong>
-            <span id="count">{loaded ? rows.length + '건' : ''}</span>
+            <span id="count">
+              <MentionText>{loaded ? rows.length + '건' : ''}</MentionText>
+            </span>
           </div>
           <div id="items" className="portal-items">
             {rows.map((row) => (
@@ -311,7 +335,9 @@ export function PortalHistoryView() {
             <PortalRecordDetail />
           ) : selected ? (
             <>
-              <h2>{selected.title ?? '업무'}</h2>
+              <h2>
+                <MentionText>{selected.title ?? '업무'}</MentionText>
+              </h2>
               <dl>
                 {[
                   ['센터', centerName(selected.center_code)],
@@ -336,8 +362,12 @@ export function PortalHistoryView() {
                   .filter(([, value]) => value != null && value !== '')
                   .map(([label, value]) => (
                     <span key={label} style={{ display: 'contents' }}>
-                      <dt>{label}</dt>
-                      <dd>{value}</dd>
+                      <dt>
+                        <MentionText>{label}</MentionText>
+                      </dt>
+                      <dd>
+                        <MentionText>{value}</MentionText>
+                      </dd>
                     </span>
                   ))}
               </dl>

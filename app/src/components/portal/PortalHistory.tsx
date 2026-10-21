@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useState } from 'react';
 import type { PortalEvent } from '../../domain/portal-types';
 import { portalStamp } from '../../domain/portal-types';
@@ -48,38 +49,51 @@ export function PortalRecordHistory({
         events.map((event) => (
           <div key={event.id} className="history-entry">
             <small>
-              {portalStamp(event.occurred_at)} ·{' '}
-              {(
-                actionLabels[event.action] ??
-                (event.action === 'task_reopened' ? '업무 재개' : event.action)
-              ).replaceAll('HQ', '배송팀')}
+              <MentionText>{portalStamp(event.occurred_at)}</MentionText> ·
+              <MentionText> </MentionText>
+              <MentionText>
+                {(
+                  actionLabels[event.action] ??
+                  (event.action === 'task_reopened'
+                    ? '업무 재개'
+                    : event.action)
+                ).replaceAll('HQ', '배송팀')}
+              </MentionText>
             </small>
             {event.action === 'task_handoff' ? (
               <>
                 <p>
-                  {label(event.request_body?.from)} →{' '}
-                  {label(event.request_body?.to)}
+                  <MentionText>{label(event.request_body?.from)}</MentionText> →
+                  <MentionText> </MentionText>
+                  <MentionText>{label(event.request_body?.to)}</MentionText>
                 </p>
                 <small>
-                  인계 기록자 ·{' '}
-                  {subjectLabel(
-                    state.participants.find(
-                      (s) => s.user_id === event.actor_id,
-                    ),
-                    centerName,
-                  )}
+                  인계 기록자 ·<MentionText> </MentionText>
+                  <MentionText>
+                    {subjectLabel(
+                      state.participants.find(
+                        (s) => s.user_id === event.actor_id,
+                      ),
+                      centerName,
+                    )}
+                  </MentionText>
                 </small>
               </>
             ) : event.action === 'task_assigned' ? (
-              <p>처리 담당 · {label(event.request_body?.handler)}</p>
+              <p>
+                처리 담당 ·<MentionText> </MentionText>
+                <MentionText>{label(event.request_body?.handler)}</MentionText>
+              </p>
             ) : null}
             {['note', 'memo', 'reason'].map((key) =>
               event.request_body?.data?.[key] ? (
                 <p key={key}>
-                  {String(event.request_body.data[key]).replaceAll(
-                    'HQ',
-                    '배송팀',
-                  )}
+                  <MentionText>
+                    {String(event.request_body.data[key]).replaceAll(
+                      'HQ',
+                      '배송팀',
+                    )}
+                  </MentionText>
                 </p>
               ) : null,
             )}

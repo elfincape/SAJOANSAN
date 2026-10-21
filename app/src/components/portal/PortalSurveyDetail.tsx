@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { Fragment, useEffect, useState } from 'react';
 import type { PortalSpec, PortalSurvey } from '../../domain/portal-types';
 import { surveyFields, surveyStages } from '../../domain/portal-model';
@@ -34,7 +35,12 @@ function TemplateReview({
     [month, setMonth] = useState(''),
     [once, setOnce] = useState(koreaDate),
     [owner, setOwner] = useState(''),
-    [people, setPeople] = useState<{ id: string; name: string }[]>([]),
+    [people, setPeople] = useState<
+      {
+        id: string;
+        name: string;
+      }[]
+    >([]),
     [due, setDue] = useState(''),
     [effective, setEffective] = useState(koreaDate);
   useEffect(() => {
@@ -100,33 +106,36 @@ function TemplateReview({
       }}
     >
       <h3>배송팀 양식 검토</h3>
-      <label>
+      <PortalField>
         처리 단계 (한 줄에 하나)
-        <textarea
+        <PortalInput
           name="steps"
           value={steps}
           disabled={state.busy}
-          onChange={(e) => setSteps(e.target.value)}
+          onValue={(mentionValue) => setSteps(mentionValue)}
+          multiline
         />
-      </label>
-      <label>
+      </PortalField>
+      <PortalField>
         필요한 입력 항목 (한 줄에 하나)
-        <textarea
+        <PortalInput
           name="fields"
           value={fields}
           disabled={state.busy}
-          onChange={(e) => setFields(e.target.value)}
+          onValue={(mentionValue) => setFields(mentionValue)}
+          multiline
         />
-      </label>
-      <label>
+      </PortalField>
+      <PortalField>
         완료 조건 (직접 확인)
-        <textarea
+        <PortalInput
           name="completion_condition"
           value={completion}
           disabled={state.busy}
-          onChange={(e) => setCompletion(e.target.value)}
+          onValue={(mentionValue) => setCompletion(mentionValue)}
+          multiline
         />
-      </label>
+      </PortalField>
       <label>
         모든 입력 항목을 완료 시 필수로 지정
         <input
@@ -266,17 +275,25 @@ export function PortalSurveyDetail({ survey }: { survey: PortalSurvey }) {
   if (editing) return <PortalSurveyForm survey={survey} />;
   return (
     <>
-      <h2>{survey.title}</h2>
+      <h2>
+        <MentionText>{survey.title}</MentionText>
+      </h2>
       <p>
-        {centerName(survey.center_code)} · {surveyStages[survey.stage]}
+        <MentionText>{centerName(survey.center_code)}</MentionText> ·
+        <MentionText> </MentionText>
+        <MentionText>{surveyStages[survey.stage]}</MentionText>
       </p>
       <dl>
         {surveyFields
           .filter(([key]) => survey.details[key])
           .map(([key, label]) => (
             <Fragment key={key}>
-              <dt>{label}</dt>
-              <dd>{survey.details[key]}</dd>
+              <dt>
+                <MentionText>{label}</MentionText>
+              </dt>
+              <dd>
+                <MentionText>{survey.details[key]}</MentionText>
+              </dd>
             </Fragment>
           ))}
       </dl>
@@ -375,12 +392,18 @@ export function PortalSurveyDetail({ survey }: { survey: PortalSurvey }) {
             ['automation', '개선 제안'],
           ].map(([key, label]) => (
             <Fragment key={key}>
-              <h4>{label}</h4>
+              <h4>
+                <MentionText>{label}</MentionText>
+              </h4>
               {draft[key as 'steps' | 'fields' | 'automation'].map(
                 (item, i) => (
                   <Fragment key={i}>
-                    <p>{item.label ?? item.text}</p>
-                    <small>근거 · {item.evidence}</small>
+                    <p>
+                      <MentionText>{item.label ?? item.text}</MentionText>
+                    </p>
+                    <small>
+                      근거 · <MentionText>{item.evidence}</MentionText>
+                    </small>
                   </Fragment>
                 ),
               )}
@@ -393,9 +416,15 @@ export function PortalSurveyDetail({ survey }: { survey: PortalSurvey }) {
             const item = draft[key as 'completion' | 'repeat'];
             return item ? (
               <Fragment key={key}>
-                <h4>{label}</h4>
-                <p>{item.text}</p>
-                <small>근거 · {item.evidence}</small>
+                <h4>
+                  <MentionText>{label}</MentionText>
+                </h4>
+                <p>
+                  <MentionText>{item.text}</MentionText>
+                </p>
+                <small>
+                  근거 · <MentionText>{item.evidence}</MentionText>
+                </small>
               </Fragment>
             ) : null;
           })}
@@ -403,7 +432,9 @@ export function PortalSurveyDetail({ survey }: { survey: PortalSurvey }) {
             <>
               <h4>추가 확인할 내용</h4>
               {draft.questions.map((q, i) => (
-                <p key={i}>{q}</p>
+                <p key={i}>
+                  <MentionText>{q}</MentionText>
+                </p>
               ))}
             </>
           ) : null}

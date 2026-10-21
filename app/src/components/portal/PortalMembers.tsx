@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useState } from 'react';
 import type { PortalMember } from '../../domain/portal-types';
 import { memberRoleLabels } from '../../domain/portal-permissions';
@@ -20,11 +21,15 @@ function MemberEditor({ person }: { person: PortalMember }) {
             : '담당 센터가 없어 센터 업무·기초자료를 수정할 수 없습니다. 센터를 선택하세요.';
   return (
     <>
-      <h2>{person.name} · 역할·센터 설정</h2>
+      <h2>
+        <MentionText>{person.name}</MentionText> · 역할·센터 설정
+      </h2>
       <p>
-        {person.active
-          ? '활성 계정'
-          : '비활성 계정 · 설정을 저장해도 활성화 전에는 접근할 수 없습니다.'}
+        <MentionText>
+          {person.active
+            ? '활성 계정'
+            : '비활성 계정 · 설정을 저장해도 활성화 전에는 접근할 수 없습니다.'}
+        </MentionText>
       </p>
       <form
         className="portal-form"
@@ -40,17 +45,17 @@ function MemberEditor({ person }: { person: PortalMember }) {
           if (saved && person.id === profile.id) location.reload();
         }}
       >
-        <label>
+        <PortalField>
           표시이름
-          <input
+          <PortalInput
             name="name"
             required
             maxLength={100}
             value={name}
             disabled={state.busy}
-            onChange={(e) => setName(e.target.value)}
+            onValue={(mentionValue) => setName(mentionValue)}
           />
-        </label>
+        </PortalField>
         <fieldset>
           <legend>사용자 역할</legend>
           {Object.entries(memberRoleLabels).map(([value, label]) => (
@@ -88,7 +93,9 @@ function MemberEditor({ person }: { person: PortalMember }) {
             </label>
           ))}
         </fieldset>
-        <p>{guidance}</p>
+        <p>
+          <MentionText>{guidance}</MentionText>
+        </p>
         <button className="primary" disabled={state.busy}>
           역할·담당 센터 저장
         </button>
@@ -130,7 +137,9 @@ export function PortalMembers() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">사용자 권한·센터</strong>
-            <span id="count">{state.members.length}명</span>
+            <span id="count">
+              <MentionText>{state.members.length}</MentionText>명
+            </span>
           </div>
           <div id="items" className="portal-items">
             <p>

@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { PortalTask, PortalInputs } from '../../domain/portal-types';
 import { portalStamp } from '../../domain/portal-types';
@@ -54,9 +55,10 @@ export function PortalTaskDetail({
       structuredClone(initial ?? {}),
     ),
     [handlerRequest, setHandlerRequest] = useState(0),
-    [deadline, setDeadline] = useState<{ due: string; reason: string } | null>(
-      null,
-    ),
+    [deadline, setDeadline] = useState<{
+      due: string;
+      reason: string;
+    } | null>(null),
     form = useRef<HTMLFormElement>(null),
     deadlineForm = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -99,7 +101,13 @@ export function PortalTaskDetail({
   function stash() {
     taskDrafts.set(task.id, { version: task.version, inputs: collect() });
   }
-  function save(status: string, step?: { step: string; status: string }) {
+  function save(
+    status: string,
+    step?: {
+      step: string;
+      status: string;
+    },
+  ) {
     try {
       const inputs = collect();
       if (step) inputs.steps = { ...inputs.steps, [step.step]: step.status };
@@ -164,7 +172,7 @@ export function PortalTaskDetail({
     >
       <h3 className="task-input-heading">업무 입력</h3>
       {fields.map((f) => (
-        <label key={f.key}>
+        <PortalField key={f.key}>
           {f.label}
           {f.control === 'select' ? (
             <select
@@ -191,16 +199,17 @@ export function PortalTaskDetail({
               }
             />
           ) : f.control === 'textarea' ? (
-            <textarea
+            <PortalInput
               name={'field_' + f.key}
               value={String(values[f.key] ?? '')}
               disabled={disabled}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, [f.key]: e.target.value }))
+              onValue={(mentionValue) =>
+                setValues((s) => ({ ...s, [f.key]: mentionValue }))
               }
+              multiline
             />
           ) : (
-            <input
+            <PortalInput
               name={'field_' + f.key}
               type={
                 f.type === 'number'
@@ -212,25 +221,26 @@ export function PortalTaskDetail({
               step={f.type === 'number' ? 'any' : undefined}
               value={String(values[f.key] ?? '')}
               disabled={disabled}
-              onChange={(e) =>
-                setValues((s) => ({ ...s, [f.key]: e.target.value }))
+              onValue={(mentionValue) =>
+                setValues((s) => ({ ...s, [f.key]: mentionValue }))
               }
             />
           )}
-        </label>
+        </PortalField>
       ))}
       {!coupang ? (
-        <label>
+        <PortalField>
           업무 내용
-          <textarea
+          <PortalInput
             name="work_note"
             value={String(values.work_note ?? '')}
             disabled={disabled}
-            onChange={(e) =>
-              setValues((s) => ({ ...s, work_note: e.target.value }))
+            onValue={(mentionValue) =>
+              setValues((s) => ({ ...s, work_note: mentionValue }))
             }
+            multiline
           />
-        </label>
+        </PortalField>
       ) : null}
       {!coupang
         ? task.template_snapshot?.spec?.steps?.map((step) => {
@@ -268,14 +278,16 @@ export function PortalTaskDetail({
             return done ? (
               <details key={step.key}>
                 <summary>
-                  {step.label} · {statusLabels[status || ''] ?? ''}
+                  <MentionText>{step.label}</MentionText> ·{' '}
+                  <MentionText>{statusLabels[status || ''] ?? ''}</MentionText>
                 </summary>
                 {actions}
               </details>
             ) : (
               <fieldset key={step.key}>
                 <legend>
-                  {step.label} · {statusLabels[status || ''] ?? ''}
+                  <MentionText>{step.label}</MentionText> ·{' '}
+                  <MentionText>{statusLabels[status || ''] ?? ''}</MentionText>
                 </legend>
                 {actions}
               </fieldset>
@@ -307,17 +319,30 @@ export function PortalTaskDetail({
   );
   const body = task.deleted_at ? (
     <>
-      <h2>{text(task.title)}</h2>
-      <p>휴지통에 보관 중 · {portalStamp(task.deleted_at)}</p>
+      <h2>
+        <MentionText>{text(task.title)}</MentionText>
+      </h2>
       <p>
-        {centerName(task.center_code)} · {task.work_date}
+        휴지통에 보관 중 ·<MentionText> </MentionText>
+        <MentionText>{portalStamp(task.deleted_at)}</MentionText>
       </p>
-      <p>{text(task.inputs?.work_note)}</p>
+      <p>
+        <MentionText>{centerName(task.center_code)}</MentionText> ·
+        <MentionText> </MentionText>
+        <MentionText>{task.work_date}</MentionText>
+      </p>
+      <p>
+        <MentionText>{text(task.inputs?.work_note)}</MentionText>
+      </p>
       <dl>
         {task.template_snapshot?.spec?.fields?.map((f) => (
           <span key={f.key} style={{ display: 'contents' }}>
-            <dt>{f.label}</dt>
-            <dd>{String(task.inputs?.[f.key] ?? '')}</dd>
+            <dt>
+              <MentionText>{f.label}</MentionText>
+            </dt>
+            <dd>
+              <MentionText>{String(task.inputs?.[f.key] ?? '')}</MentionText>
+            </dd>
           </span>
         ))}
       </dl>
@@ -345,16 +370,20 @@ export function PortalTaskDetail({
     </>
   ) : (
     <>
-      <h2>{text(task.title)}</h2>
+      <h2>
+        <MentionText>{text(task.title)}</MentionText>
+      </h2>
       <section className="task-detail-summary">
         <div className="task-summary-top">
           <span
             className="badge task-state-badge"
             data-task-state={taskState(task)}
           >
-            {task.status === 'not_applicable'
-              ? '해당 없음'
-              : taskStateLabels[taskState(task)]}
+            <MentionText>
+              {task.status === 'not_applicable'
+                ? '해당 없음'
+                : taskStateLabels[taskState(task)]}
+            </MentionText>
           </span>
           {!readOnly &&
           canWrite(task.center_code, 'trash') &&
@@ -376,8 +405,12 @@ export function PortalTaskDetail({
             ['마감', task.due_at ? portalStamp(task.due_at) : '미설정'],
           ].map(([label, value]) => (
             <span key={label} style={{ display: 'contents' }}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
+              <dt>
+                <MentionText>{label}</MentionText>
+              </dt>
+              <dd>
+                <MentionText>{value}</MentionText>
+              </dd>
             </span>
           ))}
         </dl>
@@ -387,23 +420,32 @@ export function PortalTaskDetail({
           <summary>외부 업무 프로세스</summary>
           <ol>
             {task.template_snapshot.spec.external_process.map((step, i) => (
-              <li key={i}>{text(step)}</li>
+              <li key={i}>
+                <MentionText>{text(step)}</MentionText>
+              </li>
             ))}
           </ol>
         </details>
       ) : null}
       {!coupang && task.template_snapshot?.spec?.completion_condition ? (
         <p>
-          완료 전 확인 ·{' '}
-          {text(task.template_snapshot.spec.completion_condition)}
+          완료 전 확인 ·<MentionText> </MentionText>
+          <MentionText>
+            {text(task.template_snapshot.spec.completion_condition)}
+          </MentionText>
         </p>
       ) : null}
       {!coupang && task.template_snapshot?.spec?.description ? (
-        <p>{text(task.template_snapshot.spec.description)}</p>
+        <p>
+          <MentionText>
+            {text(task.template_snapshot.spec.description)}
+          </MentionText>
+        </p>
       ) : null}
       {finished(task) ? (
         <p className="completion-confirmed">
-          완료 확정 · {portalStamp(task.completed_at)}
+          완료 확정 ·<MentionText> </MentionText>
+          <MentionText>{portalStamp(task.completed_at)}</MentionText>
         </p>
       ) : null}
       {coupang ? (
@@ -570,17 +612,17 @@ export function PortalTaskDetail({
               }
             />
           </label>
-          <label>
+          <PortalField>
             기존 마감 변경 사유
-            <input
+            <PortalInput
               name="reason"
               disabled={busy}
               value={deadline.reason}
-              onChange={(e) =>
-                setDeadline((s) => (s ? { ...s, reason: e.target.value } : s))
+              onValue={(mentionValue) =>
+                setDeadline((s) => (s ? { ...s, reason: mentionValue } : s))
               }
             />
-          </label>
+          </PortalField>
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>
               마감시간 저장

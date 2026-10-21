@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Profile } from '../../lib/auth';
@@ -325,7 +326,11 @@ export function PortalShell({
         </button>
       </div>
       <div id="app-legacy-hooks" hidden>
-        <span id="user">{profile.display_name || profile.email || ''}</span>
+        <span id="user">
+          <MentionText>
+            {profile.display_name || profile.email || ''}
+          </MentionText>
+        </span>
       </div>
     </>
   );

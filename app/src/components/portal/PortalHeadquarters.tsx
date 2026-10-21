@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { usePortal } from './PortalStore';
 import { PortalTaskRow } from './PortalTaskList';
 import { finished, orderTasks } from '../../domain/portal-model';
@@ -44,7 +45,9 @@ export function PortalHeadquarters() {
       >
         <summary>
           <strong>확인 필요</strong>
-          <span className="badge">{pending.length + incidents.length}건</span>
+          <span className="badge">
+            <MentionText>{pending.length + incidents.length}</MentionText>건
+          </span>
         </summary>
         <div className="hq-review-list">
           {pending.map((task) => (

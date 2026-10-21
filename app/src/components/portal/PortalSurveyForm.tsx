@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { Fragment, useRef, useState } from 'react';
 import type { PortalSurvey } from '../../domain/portal-types';
 import { surveyFields } from '../../domain/portal-model';
@@ -21,8 +22,19 @@ export function PortalSurveyForm({
     [files, setFiles] = useState<File[]>([]),
     [hint, setHint] = useState(''),
     saved = useRef(survey),
-    retry = useRef<{ key: string; id: string } | null>(null),
-    uploads = useRef(new Map<File, { id: string; saved: boolean }>()).current;
+    retry = useRef<{
+      key: string;
+      id: string;
+    } | null>(null),
+    uploads = useRef(
+      new Map<
+        File,
+        {
+          id: string;
+          saved: boolean;
+        }
+      >(),
+    ).current;
   async function save() {
     if (state.busy) return;
     if (files.some((file) => file.size < 1 || file.size > 10 * 1024 * 1024)) {
@@ -107,7 +119,9 @@ export function PortalSurveyForm({
   }
   return (
     <>
-      <h2>{survey ? '업무조사 수정' : '업무조사 등록'}</h2>
+      <h2>
+        <MentionText>{survey ? '업무조사 수정' : '업무조사 등록'}</MentionText>
+      </h2>
       <form
         className="portal-form"
         onSubmit={(e) => {
@@ -115,40 +129,41 @@ export function PortalSurveyForm({
           void save();
         }}
       >
-        <label>
+        <PortalField>
           업무명
-          <input
+          <PortalInput
             name="title"
             required
             value={title}
             disabled={state.busy}
-            onChange={(e) => setTitle(e.target.value)}
+            onValue={(mentionValue) => setTitle(mentionValue)}
           />
-        </label>
+        </PortalField>
         {surveyFields.map(([key, label]) => (
           <Fragment key={key}>
-            <label>
+            <PortalField>
               {label}
               {key === 'sequence' || key === 'problems' ? (
-                <textarea
+                <PortalInput
                   name={key}
                   disabled={state.busy}
                   value={details[key]}
-                  onChange={(e) =>
-                    setDetails((s) => ({ ...s, [key]: e.target.value }))
+                  onValue={(mentionValue) =>
+                    setDetails((s) => ({ ...s, [key]: mentionValue }))
                   }
+                  multiline
                 />
               ) : (
-                <input
+                <PortalInput
                   name={key}
                   disabled={state.busy}
                   value={details[key]}
-                  onChange={(e) =>
-                    setDetails((s) => ({ ...s, [key]: e.target.value }))
+                  onValue={(mentionValue) =>
+                    setDetails((s) => ({ ...s, [key]: mentionValue }))
                   }
                 />
               )}
-            </label>
+            </PortalField>
             {key === 'handoff' ? (
               <div className="survey-files">
                 <FileArea
@@ -182,7 +197,9 @@ export function PortalSurveyForm({
             ) : null}
           </Fragment>
         ))}
-        <p>{hint}</p>
+        <p>
+          <MentionText>{hint}</MentionText>
+        </p>
         <button className="primary" disabled={state.busy}>
           조사 내용·첨부파일 저장
         </button>

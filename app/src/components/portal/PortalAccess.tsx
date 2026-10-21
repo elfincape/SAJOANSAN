@@ -1,3 +1,4 @@
+import { MentionText } from './PortalMentions';
 import { useState } from 'react';
 import { usePortal } from './PortalStore';
 import { portalApi } from '../../lib/portal';
@@ -12,7 +13,9 @@ export function PortalAccess() {
         <section className="list">
           <div className="list-heading">
             <strong id="list-title">활성 직원</strong>
-            <span id="count">{state.staff.length}건</span>
+            <span id="count">
+              <MentionText>{state.staff.length}</MentionText>건
+            </span>
           </div>
           <div id="items" className="portal-items">
             {state.staff.map((p) => (
@@ -40,7 +43,9 @@ export function PortalAccess() {
         <aside id="detail" aria-label="업무 처리">
           {person ? (
             <>
-              <h2>{person.name}</h2>
+              <h2>
+                <MentionText>{person.name}</MentionText>
+              </h2>
               {person.role === 'admin' ? (
                 <p>배송팀은 모든 센터 업무를 처리할 수 있습니다.</p>
               ) : (
@@ -55,7 +60,11 @@ export function PortalAccess() {
                       return (
                         <div key={center.code} className="actions">
                           <span>
-                            {center.name} · {assigned ? '배정됨' : '미배정'}
+                            <MentionText>{center.name}</MentionText> ·
+                            <MentionText> </MentionText>
+                            <MentionText>
+                              {assigned ? '배정됨' : '미배정'}
+                            </MentionText>
                           </span>
                           <button
                             disabled={state.busy}

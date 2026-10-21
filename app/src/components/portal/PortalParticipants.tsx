@@ -1,3 +1,4 @@
+import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { PortalTask, ParticipantSubject } from '../../domain/portal-types';
 import { portalApi } from '../../lib/portal';
@@ -30,7 +31,9 @@ function SubjectChoice({
     visible = choices.filter((s) => s.kind === kind && s.eligible);
   return (
     <fieldset>
-      <legend>{title}</legend>
+      <legend>
+        <MentionText>{title}</MentionText>
+      </legend>
       <div className="view-buttons">
         {[
           ['person', '사람'],
@@ -185,8 +188,12 @@ export function PortalParticipants({
       <dl>
         {relations.map(([name, value]) => (
           <span key={name} style={{ display: 'contents' }}>
-            <dt>{name}</dt>
-            <dd>{subjectLabel(value, centerName)}</dd>
+            <dt>
+              <MentionText>{name}</MentionText>
+            </dt>
+            <dd>
+              <MentionText>{subjectLabel(value, centerName)}</MentionText>
+            </dd>
           </span>
         ))}
       </dl>
@@ -244,17 +251,18 @@ export function PortalParticipants({
                     initial={data.to}
                     onChange={(to) => setData((s) => ({ ...s, to }))}
                   />
-                  <label>
+                  <PortalField>
                     인계 메모
-                    <textarea
+                    <PortalInput
                       name="memo"
                       disabled={state.busy}
                       value={data.memo}
-                      onChange={(e) =>
-                        setData((s) => ({ ...s, memo: e.target.value }))
+                      onValue={(mentionValue) =>
+                        setData((s) => ({ ...s, memo: mentionValue }))
                       }
+                      multiline
                     />
-                  </label>
+                  </PortalField>
                 </>
               ) : (
                 <SubjectChoice
@@ -271,7 +279,11 @@ export function PortalParticipants({
               </button>
             </>
           ) : null}
-          {error ? <p className="error">{error}</p> : null}
+          {error ? (
+            <p className="error">
+              <MentionText>{error}</MentionText>
+            </p>
+          ) : null}
         </form>
       ) : null}
     </details>
