@@ -109,7 +109,7 @@
 ## 5. 사전에 드러난 확인 항목
 
 1. 사용자 수정 승인: Vercel Root Directory는 저장소 루트로 유지한다. api와 server를 app으로 이동하거나 재번들하지 않는다. Install은 cd app && npm ci, Build는 cd app && npm run build, Output은 app/dist로 설정한다. 기존 Node 함수의 루트 npm 의존성 추적·설치, 실행 지역 icn1·30/90초 제한을 최종 배포 검증에 포함한다.
-2. `/templates/one-top-two-room-template_PYT.xlsx` 참조에 대응하는 파일이 저장소에 없다. 평택 양식 화면 이전 전에 원본 위치 확인이 필요하다. 임의 양식으로 대체하지 않는다.
+2. `/templates/one-top-two-room-template_PYT.xlsx` 참조에 대응하는 파일이 저장소에 없다. 사용자가 파일이 없다고 확인했다. 해당 경로의 파일 부재와 기존 실패 동작을 보존하며 다른 양식으로 임의 대체하지 않는다.
 3. root/templates와 assets/templates의 같은 이름 1탑2실 파일은 내용이 다르다. 이름만 보고 통합하지 않는다. 쿠팡 안내 양식명과 실제 fetch 양식명도 구별한다.
 4. `charter-fuel-estimator.html`은 현재 거리 계산 화면이다. 연결되지 않은 유류비 UI/검사를 잘못 가져와 화면을 바꾸지 않는다.
 5. CSV 가져오기 설명과 실제 동작(XLSX 미지원·upsert가 아닌 일부 insert), 사진 압축 안내/실제 fallback 등 기존 불일치는 별도 기록한다. 이번 이전에서 임의로 고치지 않는다.

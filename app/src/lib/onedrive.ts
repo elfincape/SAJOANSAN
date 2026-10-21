@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import type { DocumentAdapter, DocumentRecord, DocumentUpload } from '../domain/driver-documents';
+import type { PdfSaved } from '../domain/driver-documents';
+import { prepareCompilation } from './driver-pdf';
 
 export async function oneDriveCall<T>(action: string, body?: FormData | Record<string, unknown>, binary = false): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -29,6 +31,31 @@ export const companyDocuments: DocumentAdapter = {
   upload: async ({ driverId, kind, file, requestId }: DocumentUpload) => {
     const form = new FormData(); form.set('driverId', driverId); form.set('kind', kind); form.set('file', file); form.set('requestId', requestId);
     return oneDriveCall('company-upload', form);
+  },
+};
+export const oneDriveDocuments: DocumentAdapter & typeof oneDriveConnection & { compilePdf: NonNullable<DocumentAdapter['compilePdf']> } = {
+  ...oneDriveConnection,
+  replaceCompany: (driverId, kind) => oneDriveCall<{ count: number }>('replace-company', { driverId, kind }),
+  compilePdf: async (driverId, onProgress, { includeCompany = true } = {}): Promise<PdfSaved> => {
+    const { versions, images } = await prepareCompilation(oneDriveDocuments, driverId, onProgress);
+    const form = new FormData(); form.set('driverId', driverId); form.set('versions', JSON.stringify(versions)); form.set('includeCompany', String(includeCompany));
+    for (const [kind, blob] of images) form.set(kind, blob, kind + '.jpg');
+    onProgress?.('PDF 생성 및 OneDrive 저장 중…'); return oneDriveCall<PdfSaved>('compile-pdf', form);
+  },
+  remove: (driverId, kind, version, documentId) => oneDriveCall('remove', { driverId, kind, version, documentId }),
+  list: async driverId => (await oneDriveCall<{ documents: DocumentRecord[] }>('list', { driverId })).documents,
+  download: (driverId, kind, version, documentId) => oneDriveCall<Blob>('download', { driverId, kind, version, documentId }, true),
+  upload: async ({ driverId, kind, file, expiresOn, requestId, companyId }) => {
+    const form = new FormData(); form.set('driverId', driverId); form.set('kind', kind); form.set('file', file); form.set('expiresOn', expiresOn || ''); form.set('requestId', requestId);
+    if (companyId !== undefined) form.set('companyId', companyId || '');
+    for (let attempt = 0; ; attempt++) {
+      try { return await oneDriveCall('upload', form); }
+      catch (error) {
+        const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
+        if (attempt >= 2 || ![409, 429, 502, 503].includes(status)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
+    }
   },
 };
 export async function connectOneDrive() {
