@@ -1,3 +1,4 @@
+import { FEATURE_CATALOG, FEATURE_CATEGORIES } from './repo-root/js/feature-catalog.mjs';
 import { cpSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,40 @@ const pages = readdirSync(root, { recursive: true, withFileTypes: true })
       !resolve(entry.parentPath).startsWith(output),
   )
   .map((entry) => resolve(entry.parentPath, entry.name));
+
+const featureIds = FEATURE_CATALOG.map((feature) => feature.id);
+if (new Set(featureIds).size !== featureIds.length)
+  throw new Error('기능 등록 ID가 중복되었습니다.');
+const invalidFeatures = FEATURE_CATALOG.filter(
+  (feature) =>
+    !Object.hasOwn(FEATURE_CATEGORIES,feature.category) ||
+    !feature.title ||
+    typeof feature.defaultEnabled !== 'boolean' ||
+    (feature.href?.startsWith('/admin/') &&
+      feature.href !== '/admin/' &&
+      !feature.resource),
+);
+if (invalidFeatures.length)
+  throw new Error(
+    '기능의 이름·기본값·권한 자원을 확인하세요: ' +
+      invalidFeatures.map((feature) => feature.id).join(', '),
+  );
+
+const registeredAdminPages = new Set(
+  FEATURE_CATALOG.flatMap((feature) => [feature.href, ...feature.aliases])
+    .filter((path) => path?.startsWith('/admin/'))
+    .map((path) => resolve(root, '.' + path.split('?')[0])),
+);
+const missingFeatures = pages.filter(
+  (path) =>
+    path.startsWith(resolve(root, 'admin') + '/') &&
+    !registeredAdminPages.has(path),
+);
+if (missingFeatures.length)
+  throw new Error(
+    '관리 화면을 feature-catalog.mjs에 등록하세요: ' +
+      missingFeatures.join(', '),
+  );
 
 export default defineConfig({
   root,

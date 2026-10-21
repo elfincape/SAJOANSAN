@@ -1,28 +1,6 @@
-const categoryPaths = {
-  reference: ['routes', 'delivery-points', 'drivers', 'vehicles', 'companies'],
-  files: [
-    'pdf-image-converter',
-    'excel-compare',
-    'pallet-slips',
-    'daily-temperature',
-    'export',
-    'import',
-    'image-straightener',
-  ],
-  system: ['notion-health', 'users', 'audit-log', 'settings'],
-};
-
-export function categoryForPath(href) {
-  const path = new URL(href, location.origin).pathname
-    .split('/')
-    .pop()
-    .replace(/\.html$/, '');
-  return (
-    Object.keys(categoryPaths).find((key) =>
-      categoryPaths[key].includes(path),
-    ) || 'work'
-  );
-}
+import { featureForPath } from './feature-catalog.mjs';
+export const categoryForPath = (href) =>
+  featureForPath(href)?.category ?? 'work';
 
 export async function mountAdminHub(grid) {
   const input = document.getElementById('menu-search');
@@ -30,12 +8,9 @@ export async function mountAdminHub(grid) {
   const count = document.getElementById('hub-result-count');
   const empty = document.getElementById('hub-empty');
   const reset = document.getElementById('hub-reset');
-  if (!input || !controls || !count || !empty || !reset) return;
+  if (!input || !controls || !count || !empty || !reset) return () => {};
 
   const context = await menuPermissions();
-  const items = Array.from(grid.children).filter(
-    (item) => item.tagName === 'A',
-  );
   const allowed = (item) => {
     const target = new URL(item.href, location.href);
     const resource = resourceForPath(target.pathname);
@@ -49,19 +24,19 @@ export async function mountAdminHub(grid) {
       )
     );
   };
-  const available = items.filter(allowed);
   const buttons = Array.from(controls.querySelectorAll('[data-hub-category]'));
   let selected = 'all';
 
-  for (const item of items) {
-    item.dataset.category =
-      item.id === 'permission-center-card'
-        ? 'system'
-        : categoryForPath(item.href);
-    item.classList.add('hub-tool');
-  }
-
   function update() {
+    const items = Array.from(grid.children).filter(
+      (item) => item.tagName === 'A',
+    );
+    const available = items.filter(allowed);
+    for (const item of items) {
+      item.dataset.category = categoryForPath(item.href);
+      item.classList.add('hub-tool');
+    }
+
     const term = input.value.trim().toLocaleLowerCase('ko');
     let visible = 0;
     for (const item of items) {
@@ -102,6 +77,11 @@ export async function mountAdminHub(grid) {
     input.focus();
   });
   update();
+  const observer = new MutationObserver(update);
+  observer.observe(grid, { childList: true });
+  addEventListener('pagehide', (event) => {
+    if (!event.persisted) observer.disconnect();
+  });
 }
 import {
   menuPermissions,

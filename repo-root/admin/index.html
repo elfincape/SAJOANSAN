@@ -71,6 +71,7 @@
       requireSelectedCenter,
       withCenterParam
     } from '/js/center.js';
+    import { subscribePrivateFeatures } from '/js/private-features.js';
     import { getAdminMenus } from '/js/admin-menu.js';
     import { mountAdminHub } from '/js/admin-hub.js';
 
@@ -84,6 +85,7 @@
     document.querySelector('a[href="/"]').href = withCenterParam('/', center);
     document.getElementById('logout-btn').addEventListener('click', signOut);
 
+    function renderMenus(){
     const menus = getAdminMenus(profile, center.code);
 
     const grid = document.getElementById('menu-grid');
@@ -99,7 +101,11 @@
       `;
     }).join('');
     decorateCenterLinks(grid, center);
-    mountAdminHub(grid);
+    }
+    renderMenus();
+    const stopFeatures=subscribePrivateFeatures(renderMenus);
+    addEventListener('pagehide',event=>{if(!event.persisted)stopFeatures();});
+    mountAdminHub(document.getElementById('menu-grid'));
 
   </script>
 </body>
