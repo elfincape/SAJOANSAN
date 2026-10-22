@@ -19,12 +19,15 @@ final class Store {
         if (!message.equals(prefs(c).getString("photoStatus", ""))) prefs(c).edit().putString("photoStatus", message).apply();
     }
     static void uploadStatus(Context c, String message) { prefs(c).edit().putString("uploadStatus", message).apply(); }
+    static void cleanupStatus(Context c,String message) { prefs(c).edit().putString("cleanupStatus",message).apply(); }
     static String details(Context c) {
         String detail = prefs(c).getString("status", "설정 후 테스트 방에서 확인하세요");
         String photo = prefs(c).getString("photoStatus", "");
         String upload = prefs(c).getString("uploadStatus", "");
         if (!photo.isEmpty()) detail += "\n사진 수집: " + photo;
         if (!upload.isEmpty()) detail += "\n전송: " + upload;
+        String cleanup=prefs(c).getString("cleanupStatus", "");
+        if(!cleanup.isEmpty())detail+="\n사진 정리: "+cleanup;
         return detail;
     }
     static File queue(Context c) { File d = new File(c.getFilesDir(), "queue"); d.mkdirs(); return d; }

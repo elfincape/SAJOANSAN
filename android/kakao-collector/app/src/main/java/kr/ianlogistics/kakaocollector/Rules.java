@@ -28,6 +28,22 @@ final class Rules {
     static boolean sameSource(int sourceWindow, int currentWindow, String room, String currentRoom) {
         return sourceWindow == currentWindow && room != null && !room.isBlank() && room.equals(currentRoom);
     }
+    static boolean saveChoice(String text, String description, int count) {
+        String wanted=count>1?"묶음사진전체저장":"이사진만저장";
+        for(String value:new String[]{text,description}) {
+            if(value==null)continue;
+            String clean=value.replaceAll("[\\s\\p{Z}]+","");
+            if(wanted.equals(clean) || count==1 && "하나만저장".equals(clean))return true;
+        }
+        return false;
+    }
+    static boolean captureWindowAllowed(boolean sameViewer, boolean exactSaveMenu, boolean viewerWindowPresent) {
+        return sameViewer || exactSaveMenu && viewerWindowPresent;
+    }
+    static boolean canCleanPhoto(boolean uploaded, String savedSignature, String currentSignature, String savedHash, String currentHash) {
+        return uploaded && savedSignature!=null && !savedSignature.isBlank() && savedSignature.equals(currentSignature)
+            && savedHash!=null && !savedHash.isBlank() && savedHash.equals(currentHash);
+    }
     static boolean safeName(String name) { return name != null && name.matches("[a-zA-Z0-9_-]+\\.(jpg|png|webp|json)"); }
     static String roomFolder(String room) {
         if (room == null || room.isBlank()) throw new IllegalArgumentException("대화방 이름이 필요합니다");

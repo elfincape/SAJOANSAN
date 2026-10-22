@@ -44,7 +44,8 @@ final class MediaFiles {
             Image image=images.get(i); byte[] bytes=read(c,image);
             String ext="image/png".equals(image.mime)?"png":"image/webp".equals(image.mime)?"webp":"jpg";
             String name=String.format(Locale.ROOT,"photo-%02d.%s",i+1,ext); Store.write(new File(dir,name),bytes);
-            files.put(new JSONObject().put("name",name).put("mimeType",image.mime).put("byteSize",bytes.length).put("sha256",Rules.sha256(bytes)));
+            files.put(new JSONObject().put("name",name).put("mimeType",image.mime).put("byteSize",bytes.length).put("sha256",Rules.sha256(bytes))
+                .put("sourceMediaId",image.id).put("sourceSignature",image.signature));
         }
         metadata.put("schemaVersion",1).put("receiptId",id).put("captureKey",captureKey).put("photos",files)
             .put("driveId",Store.prefs(c).getString("driveId",""));

@@ -31,6 +31,7 @@ public final class CollectorService extends Service {
             }
             catch (Exception e) { Store.uploadStatus(this, "전송 대기 · " + e.getMessage()); break; }
         }
+        MediaCleanup.run(this);
     }
     @Override public int onStartCommand(Intent i, int flags, int id) {
         if (i != null && "stop".equals(i.getAction())) { Store.prefs(this).edit().putBoolean("enabled", false).apply(); stopSelf(); return START_NOT_STICKY; }

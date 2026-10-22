@@ -25,7 +25,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         ScrollView scroll=new ScrollView(this);LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(28,32,28,32);scroll.addView(l);setContentView(scroll);
         label(l,"이안 카카오 수집 → OneDrive");
-        label(l,"등록한 대화방의 화면에 보이는 사진과 주변 대화를 OneDrive의 이안카카오/대화방 이름 폴더에 한국 시간의 수집 날짜·시간 파일명으로 저장합니다. 전용폰을 켜고 잠금을 해제해 두세요. 과거 대화 전체 수집·재부팅 후 자동 복구는 지원하지 않습니다.");
+        label(l,"등록한 대화방의 화면에 보이는 사진과 주변 대화를 OneDrive의 이안카카오/대화방 이름 폴더에 한국 시간의 수집 날짜·시간 파일명으로 저장합니다. 전용폰을 켜고 잠금을 해제해 두세요. 전송 완료 후 이번 버전에서 수집한 폰 사진을 삭제합니다. 삭제 권한과 파일 일치 여부를 확인하며 확인 실패 시 남깁니다. 과거 대화 전체 수집·재부팅 후 자동 복구는 지원하지 않습니다.");
         label(l,"Microsoft 앱 클라이언트 ID (비밀 키 아님)");client=new EditText(this);client.setSingleLine();client.setText(Store.prefs(this).getString("client",""));l.addView(client);
         label(l,"수집할 대화방 이름 · 한 줄에 하나, 동일 이름 방은 사용 금지");rooms=new EditText(this);rooms.setMinLines(2);rooms.setText(Store.prefs(this).getString("rooms",""));l.addView(rooms);
         button(l,"설정 저장",()->{try{save();Store.status(this,"설정 저장됨");}catch(Exception e){alert(e.getMessage());}});
@@ -33,6 +33,11 @@ public final class MainActivity extends Activity {
         button(l,"2. 사진·알림 권한 허용",()->requestPermissions(Build.VERSION.SDK_INT>=34?new String[]{Manifest.permission.READ_MEDIA_IMAGES,Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,Manifest.permission.POST_NOTIFICATIONS}:new String[]{Manifest.permission.READ_MEDIA_IMAGES,Manifest.permission.POST_NOTIFICATIONS},10));
         button(l,"3. 접근성 설정",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         button(l,"4. 알림 접근 설정",()->startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        button(l,"5. 전송 후 사진 삭제 권한",()->{
+            if(android.provider.MediaStore.canManageMedia(this)){alert("사진 삭제 권한이 허용되어 있습니다. 전송 완료 사진만 정리합니다.");return;}
+            try{startActivity(new Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA,android.net.Uri.parse("package:"+getPackageName())));}
+            catch(ActivityNotFoundException e){alert("이 기기에서 사진 삭제 권한 설정을 열지 못했습니다. 사진은 삭제하지 않고 유지합니다.");}
+        });
         button(l,"수집 시작",this::start);
         button(l,"현재 열린 방 사진 수집",()->{
             try{if(!Store.enabled(this)||!KakaoAccessService.available())throw new Exception("수집 시작과 접근성 연결이 필요합니다");

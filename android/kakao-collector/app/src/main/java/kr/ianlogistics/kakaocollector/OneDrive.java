@@ -135,6 +135,21 @@ final class OneDrive {
         if (body.toString().isBlank()) return "";
         return "대화방: " + receipt.optString("room") + "\n수집 시각: " + receipt.optString("observedAt") + "\n\n" + body;
     }
+    static void verifyPhotoBackups(Context c,JSONObject receipt) throws Exception {
+        String token=access(c);
+        if(!receipt.getString("driveId").equals(graph("/me/drive?$select=id","GET",token,null,null).getString("id")))throw new IOException("사진 전송 계정이 달라 폰 사진 유지");
+        String prefix=Rules.remotePrefix(receipt.getString("observedAt"),receipt.getString("receiptId"));
+        String base="/me/drive/root:/"+segment("이안카카오")+"/"+segment(Rules.roomFolder(receipt.getString("room")))+"/";
+        JSONArray photos=receipt.getJSONArray("photos");
+        for(int i=0;i<photos.length();i++) {
+            JSONObject photo=photos.getJSONObject(i);
+            JSONObject saved=graph(base+segment(Rules.remotePhotoName(prefix,i+1,photo.getString("name")))+"?$select=size,file","GET",token,null,null);
+            if(!saved.has("file")||saved.getLong("size")!=photo.getLong("byteSize"))throw new IOException("OneDrive 사진 보관 확인 실패 · 폰 사진 유지");
+            JSONObject hashes=saved.getJSONObject("file").optJSONObject("hashes");
+            String digest=hashes==null?"":hashes.optString("sha256Hash");
+            if(!digest.isEmpty()&&!digest.equalsIgnoreCase(photo.getString("sha256")))throw new IOException("OneDrive 사진 해시 불일치 · 폰 사진 유지");
+        }
+    }
     static void upload(Context c, File directory) throws Exception {
         JSONObject receipt = Store.read(new File(directory, "receipt.json")); String id = receipt.getString("receiptId");
         if (!id.matches("[0-9a-f-]{36}")) throw new IOException("접수번호 오류");
