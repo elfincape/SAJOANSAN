@@ -172,7 +172,7 @@
 .portal-shell :where(.error) {
   color: var(--theme-danger);
 }
-.portal-icon {
+:where(.portal-shell) .portal-icon {
   display: block;
   width: 18px;
   height: 18px;
@@ -214,7 +214,7 @@
   color: var(--muted);
   font-size: 13px;
 }
-.heading-actions {
+:where(.portal-shell) .heading-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -223,12 +223,12 @@
   flex: 0 0 auto;
   padding-top: 3px;
 }
-.heading-actions #refresh {
+:where(.portal-shell) .heading-actions #refresh {
   color: var(--theme-muted);
   background: transparent;
   border-color: transparent;
 }
-.heading-actions #refresh:hover {
+:where(.portal-shell) .heading-actions #refresh:hover {
   background: var(--theme-hover);
   border-color: #cedbe2;
 }
@@ -248,10 +248,10 @@
   border-color: #efc8c1;
 }
 .portal-shell #message:empty,
-.quick-actions:empty {
+:where(.portal-shell) .quick-actions:empty {
   display: none;
 }
-.skip-link {
+:where(.portal-shell) .skip-link {
   position: fixed;
   top: -100px;
   left: 12px;
@@ -261,20 +261,20 @@
   color: #fff !important;
   border-radius: 7px;
 }
-.skip-link:focus {
+:where(.portal-shell) .skip-link:focus {
   top: 12px;
 }
-.quick-actions {
+:where(.portal-shell) .quick-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin: 0 0 24px;
 }
-.quick-actions > p {
+:where(.portal-shell) .quick-actions > p {
   width: 100%;
 }
-.task-launcher {
+:where(.portal-shell) .task-launcher {
   display: block;
   padding: 20px;
   margin: 0 0 24px;
@@ -282,16 +282,16 @@
   border: 1px solid var(--border);
   border-radius: 10px;
 }
-.task-launcher h2 {
+:where(.portal-shell) .task-launcher h2 {
   margin: 0 0 14px;
   font-size: 15px;
 }
-.task-launch-grid {
+:where(.portal-shell) .task-launch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
   gap: 10px;
 }
-.task-launch-button {
+:where(.portal-shell) .task-launch-button {
   justify-content: flex-start;
   width: 100%;
   min-height: 52px;
@@ -301,7 +301,7 @@
   border-color: #bddbd0;
   color: var(--theme-selected-text);
 }
-.task-launcher .task-launch-hint {
+:where(.portal-shell) .task-launcher .task-launch-hint {
   margin-top: 12px;
   font-size: 12px;
 }
@@ -313,30 +313,30 @@
   border: 1px solid var(--border);
   border-radius: 10px;
 }
-.toolbar-top,
-.toolbar-bottom,
-.toolbar-period,
-.date-navigation {
+:where(.portal-shell) .toolbar-top,
+:where(.portal-shell) .toolbar-bottom,
+:where(.portal-shell) .toolbar-period,
+:where(.portal-shell) .date-navigation {
   display: flex;
   align-items: center;
   min-width: 0;
   gap: 12px;
 }
-.toolbar-top {
+:where(.portal-shell) .toolbar-top {
   justify-content: space-between;
   flex-wrap: wrap;
 }
-.toolbar-period {
+:where(.portal-shell) .toolbar-period {
   flex-wrap: wrap;
 }
-.toolbar-bottom {
+:where(.portal-shell) .toolbar-bottom {
   justify-content: space-between;
   flex-wrap: wrap;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--theme-border-soft);
 }
-.view-buttons {
+:where(.portal-shell) .view-buttons {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -378,7 +378,7 @@
   width: 15px;
   height: 15px;
 }
-.status-count {
+:where(.portal-shell) .status-count {
   min-width: 17px;
   padding: 0 3px;
   color: var(--muted);
@@ -386,29 +386,29 @@
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
-[aria-pressed='true'] .status-count {
+:where(.portal-shell) [aria-pressed='true'] .status-count {
   color: var(--theme-selected-text);
 }
-.date-navigation {
+:where(.portal-shell) .date-navigation {
   gap: 6px;
 }
-.date-navigation button,
-.date-navigation input {
+:where(.portal-shell) .date-navigation button,
+:where(.portal-shell) .date-navigation input {
   height: 40px;
   min-height: 40px;
 }
-.date-navigation input {
+:where(.portal-shell) .date-navigation input {
   width: 154px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-#period-prev,
-#period-next {
+:where(.portal-shell) #period-prev,
+:where(.portal-shell) #period-next {
   width: 34px;
   padding: 6px;
   font-size: 19px;
 }
-#period-today {
+:where(.portal-shell) #period-today {
   padding-inline: 13px;
   font-size: 13px;
 }
@@ -446,7 +446,7 @@
   padding: 17px 22px;
   border-bottom: 1px solid var(--border);
 }
-.list-heading > strong {
+:where(.portal-shell) .list-heading > strong {
   font-size: 14px;
   font-weight: 650;
 }
@@ -462,19 +462,19 @@
 .portal-shell #count:empty {
   display: none;
 }
-.portal-items {
+:where(.portal-shell) .portal-items {
   min-width: 0;
   padding: 8px 14px 16px;
 }
-.portal-items > h3 {
+:where(.portal-shell) .portal-items > h3 {
   margin: 0;
   padding: 20px 10px 12px;
   color: var(--theme-muted);
   font-size: 13px;
   font-weight: 650;
 }
-.portal-items > p,
-.hq-review-list > p {
+:where(.portal-shell) .portal-items > p,
+:where(.portal-shell) .hq-review-list > p {
   margin: 0;
   padding: 22px 12px;
   font-size: 13px;
@@ -508,26 +508,26 @@
   border-bottom-color: #bedbce;
   border-radius: 6px;
 }
-.task-row-copy {
+:where(.portal-shell) .task-row-copy {
   min-width: 0;
 }
-.task-row-name {
+:where(.portal-shell) .task-row-name {
   display: block;
   color: var(--theme-text);
   font-weight: 650;
   font-size: 14px;
 }
-.task-row small {
+:where(.portal-shell) .task-row small {
   display: block;
   margin-top: 5px;
   color: var(--theme-muted);
   font-size: 12px;
   font-weight: 400;
 }
-.task-row .warning {
+:where(.portal-shell) .task-row .warning {
   color: var(--theme-warn);
 }
-.task-row > span:first-child {
+:where(.portal-shell) .task-row > span:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -572,7 +572,7 @@
   background: var(--theme-soft);
   color: var(--theme-muted);
 }
-.center-property {
+:where(.portal-shell) .center-property {
   display: inline-block;
   padding: 2px 7px;
   margin: 0 6px 4px 0;
@@ -584,26 +584,26 @@
   font-weight: 650;
   vertical-align: middle;
 }
-.record-property {
+:where(.portal-shell) .record-property {
   display: inline-block;
   margin-right: 8px;
   color: var(--theme-muted);
   font-size: 11px;
   font-weight: 500;
 }
-.portal-empty {
+:where(.portal-shell) .portal-empty {
   display: grid;
   justify-items: center;
   gap: 8px;
   padding: 40px 20px;
   text-align: center;
 }
-.portal-empty > strong {
+:where(.portal-shell) .portal-empty > strong {
   color: var(--theme-text);
   font-size: 14px;
   font-weight: 600;
 }
-.portal-empty > p {
+:where(.portal-shell) .portal-empty > p {
   max-width: 48ch;
   margin: 0;
   color: var(--muted);
@@ -657,9 +657,9 @@
   min-width: 0;
   margin-top: 24px;
 }
-.portal-form input:not([type='checkbox']):not([type='radio']),
-.portal-form select,
-.portal-form textarea {
+:where(.portal-shell) .portal-form input:not([type='checkbox']):not([type='radio']),
+:where(.portal-shell) .portal-form select,
+:where(.portal-shell) .portal-form textarea {
   width: 100%;
 }
 .portal-shell textarea:not(.mention-source) {
@@ -682,17 +682,17 @@
   border: 1px solid var(--border);
   border-radius: 7px;
 }
-.portal-form legend {
+:where(.portal-shell) .portal-form legend {
   padding: 0 6px;
   color: var(--theme-muted);
   font-size: 13px;
   font-weight: 600;
 }
-.portal-form details {
+:where(.portal-shell) .portal-form details {
   border-top: 1px solid var(--border);
   padding-top: 16px;
 }
-.portal-form .actions {
+:where(.portal-shell) .portal-form .actions {
   padding-top: 16px;
 }
 .portal-shell .portal-form .check {
@@ -701,11 +701,11 @@
 .portal-shell .portal-form p {
   font-size: 13px;
 }
-.portal-form [type='submit'] {
+:where(.portal-shell) .portal-form [type='submit'] {
   justify-self: start;
   min-width: 100px;
 }
-.parent-task-dialog {
+:where(.portal-shell) .parent-task-dialog {
   position: fixed;
   inset: 0 0 0 auto;
   width: min(760px, 100%);
@@ -722,12 +722,12 @@
   scrollbar-gutter: stable;
   box-shadow: -16px 0 64px #112c3d1c;
 }
-.parent-task-dialog::backdrop,
-.task-designer::backdrop,
-.mention-dialog::backdrop {
+:where(.portal-shell) .parent-task-dialog::backdrop,
+:where(.portal-shell) .task-designer::backdrop,
+:where(.portal-shell) .mention-dialog::backdrop {
   background: #102d456b;
 }
-.parent-dialog-heading {
+:where(.portal-shell) .parent-dialog-heading {
   position: sticky;
   top: -24px;
   z-index: 3;
@@ -742,16 +742,16 @@
   color: var(--theme-muted);
   font-size: 12px;
 }
-.parent-dialog-heading button {
+:where(.portal-shell) .parent-dialog-heading button {
   min-height: 34px;
   padding: 5px 12px;
   font-size: 12px;
 }
-.parent-task-dialog > h2 {
+:where(.portal-shell) .parent-task-dialog > h2 {
   margin-bottom: 20px;
   font-size: 25px;
 }
-.parent-task-dialog .portal-form :disabled {
+:where(.portal-shell) .parent-task-dialog .portal-form :disabled {
   opacity: 0.8;
   color: var(--theme-muted);
   background: var(--theme-soft);
@@ -779,14 +779,14 @@
   background: var(--theme-danger-bg);
   border-color: #d5a59e;
 }
-.hq-review {
+:where(.portal-shell) .hq-review {
   margin: 16px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   overflow: hidden;
 }
-.hq-review > summary {
+:where(.portal-shell) .hq-review > summary {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -796,10 +796,10 @@
   background: var(--theme-soft);
   color: var(--theme-text);
 }
-.hq-review > summary::-webkit-details-marker {
+:where(.portal-shell) .hq-review > summary::-webkit-details-marker {
   display: none;
 }
-.hq-review > summary::after {
+:where(.portal-shell) .hq-review > summary::after {
   content: '';
   width: 6px;
   height: 6px;
@@ -808,19 +808,19 @@
   border-right: 1.5px solid currentColor;
   transform: rotate(45deg);
 }
-.hq-review[open] > summary::after {
+:where(.portal-shell) .hq-review[open] > summary::after {
   transform: rotate(135deg);
 }
-.hq-review-list {
+:where(.portal-shell) .hq-review-list {
   padding: 0 10px 8px;
   border-top: 1px solid var(--border);
 }
-.incident-children {
+:where(.portal-shell) .incident-children {
   margin: 0 0 16px 24px;
   padding-left: 12px;
   border-left: 1px solid #b4ccbe;
 }
-.incident-record {
+:where(.portal-shell) .incident-record {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
@@ -849,7 +849,7 @@
 .portal-shell.registration-workspace .list {
   min-height: 240px;
 }
-.task-calendar {
+:where(.portal-shell) .task-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(100px, 1fr));
   gap: 5px;
@@ -858,13 +858,13 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
-.task-calendar.calendar-spans {
+:where(.portal-shell) .task-calendar.calendar-spans {
   display: block;
 }
-.calendar-day {
+:where(.portal-shell) .calendar-day {
   grid-template-columns: 1fr;
 }
-.calendar-span-week {
+:where(.portal-shell) .calendar-span-week {
   display: grid;
   grid-template-columns: repeat(var(--days), minmax(100px, 1fr));
   position: relative;
@@ -872,10 +872,10 @@
   gap: 5px;
   margin-bottom: 8px;
 }
-.calendar-day .calendar-span-week {
+:where(.portal-shell) .calendar-day .calendar-span-week {
   min-width: 0;
 }
-.calendar-cell {
+:where(.portal-shell) .calendar-cell {
   min-width: 95px;
   min-height: 150px;
   padding: 8px;
@@ -883,36 +883,36 @@
   border-radius: 6px;
   background: var(--theme-panel);
 }
-.calendar-span-week > .calendar-cell {
+:where(.portal-shell) .calendar-span-week > .calendar-cell {
   grid-row: 1;
 }
-.calendar-cell h4 {
+:where(.portal-shell) .calendar-cell h4 {
   margin: 0 0 12px;
   padding: 6px 2px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
 }
-.calendar-today {
+:where(.portal-shell) .calendar-today {
   background: var(--theme-hover);
   border-color: #83b99f;
 }
-.calendar-today h4 {
+:where(.portal-shell) .calendar-today h4 {
   color: var(--theme-selected-text);
   font-weight: 750;
 }
-.calendar-week .calendar-cell {
+:where(.portal-shell) .calendar-week .calendar-cell {
   min-height: max(340px, calc(100dvh - 480px));
 }
-.calendar-week .calendar-cell h4 {
+:where(.portal-shell) .calendar-week .calendar-cell h4 {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--theme-border-soft);
 }
-.calendar-week.is-empty .calendar-cell,
-.calendar-day.is-empty .calendar-cell {
+:where(.portal-shell) .calendar-week.is-empty .calendar-cell,
+:where(.portal-shell) .calendar-day.is-empty .calendar-cell {
   min-height: 150px;
 }
-.calendar-bars {
+:where(.portal-shell) .calendar-bars {
   display: grid;
   grid-column: 1/-1;
   grid-row: 1;
@@ -933,19 +933,19 @@
   overflow: hidden;
   font-size: 12px;
 }
-.calendar-task-bar > span:first-child {
+:where(.portal-shell) .calendar-task-bar > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.calendar-task-bar .task-row-name {
+:where(.portal-shell) .calendar-task-bar .task-row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   color: var(--theme-selected-text);
 }
-.calendar-task-bar small {
+:where(.portal-shell) .calendar-task-bar small {
   margin-top: 2px;
   font-size: 11px;
   color: var(--theme-muted);
@@ -954,24 +954,24 @@
   padding: 2px 5px;
   font-size: 10px;
 }
-.calendar-task-bar.continues-before {
+:where(.portal-shell) .calendar-task-bar.continues-before {
   border-left: 3px solid #5a9a7b !important;
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
 }
-.calendar-task-bar.continues-after {
+:where(.portal-shell) .calendar-task-bar.continues-after {
   border-right: 3px solid #5a9a7b !important;
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
-.calendar-span-week:has(.calendar-bars) {
+:where(.portal-shell) .calendar-span-week:has(.calendar-bars) {
   min-height: min-content;
 }
-.calendar-month .calendar-cell {
+:where(.portal-shell) .calendar-month .calendar-cell {
   position: relative;
   padding-bottom: 46px;
 }
-.calendar-month .calendar-bars {
+:where(.portal-shell) .calendar-month .calendar-bars {
   margin-bottom: 52px;
 }
 .portal-shell .calendar-daily-button {
@@ -987,7 +987,7 @@
   border-color: var(--theme-border);
   color: var(--theme-muted);
 }
-.calendar-daily-button::after {
+:where(.portal-shell) .calendar-daily-button::after {
   content: '';
   width: 5px;
   height: 5px;
@@ -995,7 +995,7 @@
   border-right: 1px solid currentColor;
   transform: rotate(45deg);
 }
-.calendar-daily-dropdown {
+:where(.portal-shell) .calendar-daily-dropdown {
   position: fixed;
   inset: auto;
   margin: 0;
@@ -1007,7 +1007,7 @@
   overflow: auto;
   box-shadow: 0 12px 36px #1c3e5726;
 }
-.calendar-daily-dropdown > strong {
+:where(.portal-shell) .calendar-daily-dropdown > strong {
   display: block;
   padding: 4px 8px 10px;
   font-size: 13px;
@@ -1016,11 +1016,11 @@
   min-height: 60px;
   font-size: 13px;
 }
-.calendar-daily-dropdown .task-row small {
+:where(.portal-shell) .calendar-daily-dropdown .task-row small {
   font-size: 11px;
 }
-.task-designer,
-.mention-dialog {
+:where(.portal-shell) .task-designer,
+:where(.portal-shell) .mention-dialog {
   width: min(760px, calc(100vw - 32px));
   max-height: 90dvh;
   padding: 24px;
@@ -1031,7 +1031,7 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
-.designer-field {
+:where(.portal-shell) .designer-field {
   display: grid;
   gap: 12px;
   margin: 16px 0;
@@ -1039,7 +1039,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.designer-days {
+:where(.portal-shell) .designer-days {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -1052,23 +1052,23 @@
   gap: 10px;
   padding: 9px 0;
 }
-.weekday-choice input,
-.member-choice input {
+:where(.portal-shell) .weekday-choice input,
+:where(.portal-shell) .member-choice input {
   flex-shrink: 0;
   margin-top: 3px !important;
 }
-.designer-integration,
-.external-process {
+:where(.portal-shell) .designer-integration,
+:where(.portal-shell) .external-process {
   margin: 16px 0;
 }
-.external-process summary {
+:where(.portal-shell) .external-process summary {
   color: var(--theme-muted);
 }
-.issue-template-list {
+:where(.portal-shell) .issue-template-list {
   display: grid;
   gap: 12px;
 }
-.issue-template-list button {
+:where(.portal-shell) .issue-template-list button {
   justify-content: flex-start;
   min-height: 52px;
   text-align: left;
@@ -1077,64 +1077,64 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
-.task-participants {
+:where(.portal-shell) .task-participants {
   margin-top: 24px;
   padding: 16px;
   background: var(--theme-soft);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.task-participants > summary {
+:where(.portal-shell) .task-participants > summary {
   font-size: 13px;
   font-weight: 650;
   color: var(--theme-muted);
 }
-.task-participants dl {
+:where(.portal-shell) .task-participants dl {
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 8px;
   margin: 16px 0;
 }
-.participant-actions {
+:where(.portal-shell) .participant-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
-.participant-editor {
+:where(.portal-shell) .participant-editor {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
-.subject-options {
+:where(.portal-shell) .subject-options {
   max-height: 230px;
   margin-top: 8px;
   overflow: auto;
 }
-.participant-editor .view-buttons {
+:where(.portal-shell) .participant-editor .view-buttons {
   display: flex;
   height: auto;
   flex-wrap: wrap;
 }
-.permission-columns {
+:where(.portal-shell) .permission-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-.permission-columns > fieldset {
+:where(.portal-shell) .permission-columns > fieldset {
   min-width: 0;
 }
-.permission-form fieldset fieldset {
+:where(.portal-shell) .permission-form fieldset fieldset {
   margin-top: 12px;
 }
-.permission-row {
+:where(.portal-shell) .permission-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
 }
-.permission-row small {
+:where(.portal-shell) .permission-row small {
   width: 100%;
 }
-.permission-columns .member-choice {
+:where(.portal-shell) .permission-columns .member-choice {
   line-height: 1.6;
   overflow-wrap: anywhere;
   font-weight: 450;
@@ -1146,17 +1146,17 @@
 .portal-shell.permissions-workspace .workspace {
   grid-template-columns: minmax(260px, 0.8fr) minmax(440px, 1.2fr);
 }
-.permissions-workspace .list {
+:where(.portal-shell).permissions-workspace .list {
   max-height: calc(100dvh - 240px);
   overflow: auto;
 }
-.permissions-workspace .list-heading {
+:where(.portal-shell).permissions-workspace .list-heading {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--panel);
 }
-.registration-tabs {
+:where(.portal-shell) .registration-tabs {
   display: flex;
   flex-wrap: wrap;
   flex: 1 1 280px;
@@ -1164,11 +1164,11 @@
   width: auto;
   padding-bottom: 0;
 }
-.quick-actions:has(.registration-tabs) {
+:where(.portal-shell) .quick-actions:has(.registration-tabs) {
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
-.quick-actions:has(.registration-tabs) > .primary {
+:where(.portal-shell) .quick-actions:has(.registration-tabs) > .primary {
   margin-left: auto;
 }
 .portal-shell .registration-tabs > [role='tab'] {
@@ -1185,7 +1185,7 @@
   border-color: var(--theme-selected-border);
   font-weight: 700;
 }
-.registered-task-row {
+:where(.portal-shell) .registered-task-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1193,10 +1193,10 @@
   padding: 18px 10px;
   border-bottom: 1px solid var(--theme-border-soft);
 }
-.registered-task-row:hover {
+:where(.portal-shell) .registered-task-row:hover {
   background: var(--theme-hover);
 }
-.registered-task-info {
+:where(.portal-shell) .registered-task-info {
   flex: 1;
   min-width: 0;
 }
@@ -1216,13 +1216,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.registered-task-info > small {
+:where(.portal-shell) .registered-task-info > small {
   display: block;
   margin-top: 6px;
   color: var(--muted);
   font-size: 12px;
 }
-.registered-task-actions {
+:where(.portal-shell) .registered-task-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1242,17 +1242,17 @@
 .portal-shell .registered-task-delete {
   color: var(--theme-danger);
 }
-.survey-list-row {
+:where(.portal-shell) .survey-list-row {
   display: flex;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--theme-border-soft);
 }
-.survey-list-info {
+:where(.portal-shell) .survey-list-info {
   flex: 1;
   min-width: 0;
 }
-.survey-list-info > .task-row {
+:where(.portal-shell) .survey-list-info > .task-row {
   border-bottom: 0;
 }
 .portal-shell .survey-list-row > .registered-task-delete {
@@ -1263,15 +1263,15 @@
   background: transparent;
   font-size: 12px;
 }
-.survey-files {
+:where(.portal-shell) .survey-files {
   display: grid;
   gap: 12px;
   margin-top: 24px;
 }
-.survey-files > .attachments {
+:where(.portal-shell) .survey-files > .attachments {
   margin: 0;
 }
-.survey-files h3 {
+:where(.portal-shell) .survey-files h3 {
   margin-bottom: 0;
 }
 .portal-shell .history-filters {
@@ -1282,7 +1282,7 @@
   width: 100%;
   margin: 0;
 }
-.history-filters > label {
+:where(.portal-shell) .history-filters > label {
   flex: 0 0 155px;
   width: 155px;
 }
@@ -1294,7 +1294,7 @@
   min-height: 40px;
   font-size: 13px;
 }
-.history-filters > .view-buttons {
+:where(.portal-shell) .history-filters > .view-buttons {
   flex: 0 0 155px;
   align-self: end;
   width: 155px;
@@ -1306,7 +1306,7 @@
   min-width: 0;
   padding: 4px 0;
 }
-.history-task {
+:where(.portal-shell) .history-task {
   border-bottom: 1px solid var(--theme-border-soft);
 }
 .portal-shell .history-task > summary {
@@ -1317,10 +1317,10 @@
   border-bottom: 0;
   border-radius: 6px;
 }
-.history-task > summary::-webkit-details-marker {
+:where(.portal-shell) .history-task > summary::-webkit-details-marker {
   display: none;
 }
-.history-task > summary:focus-visible {
+:where(.portal-shell) .history-task > summary:focus-visible {
   outline-offset: -3px;
 }
 .portal-shell .history-record {
@@ -1328,10 +1328,10 @@
   align-items: center;
   gap: 5px 14px;
 }
-.history-record > .center-property {
+:where(.portal-shell) .history-record > .center-property {
   margin: 0;
 }
-.history-record > strong {
+:where(.portal-shell) .history-record > strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1339,16 +1339,16 @@
   font-size: 14px;
   font-weight: 600;
 }
-.history-record > small {
+:where(.portal-shell) .history-record > small {
   grid-column: 2;
   margin: 0;
   font-size: 12px;
 }
-.history-record > .badge {
+:where(.portal-shell) .history-record > .badge {
   grid-column: 3;
   grid-row: 1/3;
 }
-.history-task > summary > strong::before {
+:where(.portal-shell) .history-task > summary > strong::before {
   content: '';
   display: inline-block;
   width: 5px;
@@ -1358,44 +1358,44 @@
   border-right: 1.5px solid #78909e;
   transform: rotate(45deg);
 }
-.history-task[open] > summary > strong::before {
+:where(.portal-shell) .history-task[open] > summary > strong::before {
   transform: rotate(135deg);
   margin-bottom: 4px;
 }
-.history-task[open] > summary {
+:where(.portal-shell) .history-task[open] > summary {
   background: var(--theme-hover);
 }
-.history-task-events {
+:where(.portal-shell) .history-task-events {
   padding: 0 16px 14px 32px;
   background: var(--theme-hover);
 }
-.history-task-events .history-entry {
+:where(.portal-shell) .history-task-events .history-entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 12px;
   padding: 14px 0;
 }
-.history-task-events .history-entry p {
+:where(.portal-shell) .history-task-events .history-entry p {
   grid-column: 1/-1;
   margin: 0;
 }
-.history-task-events .history-entry small {
+:where(.portal-shell) .history-task-events .history-entry small {
   margin: 0;
 }
-.history-entry {
+:where(.portal-shell) .history-entry {
   padding: 12px 0;
   border-bottom: 1px solid var(--theme-border-soft);
   white-space: pre-wrap;
   font-size: 13px;
 }
-.history-entry:last-child {
+:where(.portal-shell) .history-entry:last-child {
   border-bottom: 0;
 }
-.history-entry strong {
+:where(.portal-shell) .history-entry strong {
   font-size: 13px;
   font-weight: 600;
 }
-.history-entry small {
+:where(.portal-shell) .history-entry small {
   color: var(--muted);
 }
 .portal-shell .history {
@@ -1410,7 +1410,7 @@
   font-size: 13px;
   white-space: pre-wrap;
 }
-.mention-field {
+:where(.portal-shell) .mention-field {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1428,7 +1428,7 @@
   opacity: 0 !important;
   pointer-events: none !important;
 }
-.mention-editor {
+:where(.portal-shell) .mention-editor {
   width: 100%;
   min-height: 42px;
   padding: 10px 12px;
@@ -1443,7 +1443,7 @@
   overflow-wrap: anywhere;
   cursor: text;
 }
-.mention-editor[data-multiline='true'] {
+:where(.portal-shell) .mention-editor[data-multiline='true'] {
   height: 160px;
   min-height: 100px;
   max-height: 320px;
@@ -1452,12 +1452,12 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.mention-editor.mention-readonly {
+:where(.portal-shell) .mention-editor.mention-readonly {
   background: var(--theme-soft);
   color: var(--theme-muted);
   cursor: default;
 }
-.mention-preview {
+:where(.portal-shell) .mention-preview {
   display: none !important;
 }
 .portal-shell .db-mention {
@@ -1472,12 +1472,12 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
-.mention-editor .db-mention {
+:where(.portal-shell) .mention-editor .db-mention {
   display: inline !important;
   white-space: nowrap;
   user-select: all;
 }
-.mention-suggestions {
+:where(.portal-shell) .mention-suggestions {
   position: fixed;
   z-index: 1000;
   display: flex;
@@ -1509,26 +1509,26 @@
   background: var(--theme-selected);
   color: var(--theme-selected-text);
 }
-.mention-dialog {
+:where(.portal-shell) .mention-dialog {
   width: min(650px, 92vw);
   max-height: 85dvh;
 }
-.mention-suggestions[hidden],
-.mention-preview[hidden] {
+:where(.portal-shell) .mention-suggestions[hidden],
+:where(.portal-shell) .mention-preview[hidden] {
   display: none;
 }
-.task-period-meta,
-.task-handler-meta {
+:where(.portal-shell) .task-period-meta,
+:where(.portal-shell) .task-handler-meta {
   font: inherit;
   color: inherit;
 }
-.task-period-meta {
+:where(.portal-shell) .task-period-meta {
   margin-bottom: 4px;
 }
-.task-handler-meta {
+:where(.portal-shell) .task-handler-meta {
   margin-top: 0;
 }
-.attachments {
+:where(.portal-shell) .attachments {
   margin-top: 24px;
 }
 .portal-shell input[type='file'] {
@@ -1550,40 +1550,40 @@
   font: inherit;
   cursor: pointer;
 }
-.file-paste-target:focus-visible {
+:where(.portal-shell) .file-paste-target:focus-visible {
   outline: 2px dashed var(--accent);
   outline-offset: 3px;
 }
-.file-paste-hint {
+:where(.portal-shell) .file-paste-hint {
   margin: 8px 0;
   color: var(--muted);
   font-size: 12px;
 }
-.file-drop-active {
+:where(.portal-shell) .file-drop-active {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
   background: var(--theme-selected);
 }
-.file-drop-feedback {
+:where(.portal-shell) .file-drop-feedback {
   display: block;
   margin-top: 8px;
   color: var(--theme-warn);
   font-size: 12px;
 }
-.coupang-photo-input {
+:where(.portal-shell) .coupang-photo-input {
   padding: 16px;
   border: 1px dashed var(--theme-selected-border);
   border-radius: 7px;
   background: var(--theme-soft);
 }
-.coupang-workflow {
+:where(.portal-shell) .coupang-workflow {
   padding: 18px;
   margin: 20px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--theme-soft);
 }
-.coupang-workflow iframe {
+:where(.portal-shell) .coupang-workflow iframe {
   display: block;
   width: 100%;
   height: min(850px, 78vh);
@@ -1592,23 +1592,23 @@
   border: 0;
   border-radius: 7px;
 }
-.coupang-workflow iframe[hidden] {
+:where(.portal-shell) .coupang-workflow iframe[hidden] {
   display: none !important;
 }
-.coupang-progress,
-.coupang-entry-date {
+:where(.portal-shell) .coupang-progress,
+:where(.portal-shell) .coupang-entry-date {
   color: var(--theme-muted);
   font-size: 13px;
 }
-.coupang-results {
+:where(.portal-shell) .coupang-results {
   display: grid;
   gap: 14px;
   margin-top: 20px;
 }
-.coupang-results:empty {
+:where(.portal-shell) .coupang-results:empty {
   display: none;
 }
-.coupang-result {
+:where(.portal-shell) .coupang-result {
   display: grid;
   gap: 10px;
   padding: 14px;
@@ -1616,26 +1616,26 @@
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.coupang-result img {
+:where(.portal-shell) .coupang-result img {
   display: block;
   max-width: 100%;
   max-height: 480px;
   object-fit: contain;
 }
-.coupang-result button {
+:where(.portal-shell) .coupang-result button {
   justify-self: start;
 }
-.coupang-source-preview {
+:where(.portal-shell) .coupang-source-preview {
   display: block;
   max-width: 100%;
   max-height: 200px;
   object-fit: contain;
   margin-top: 12px;
 }
-.coupang-result img[role='button'] {
+:where(.portal-shell) .coupang-result img[role='button'] {
   cursor: zoom-in;
 }
-.coupang-image-dialog {
+:where(.portal-shell) .coupang-image-dialog {
   width: min(1100px, 94vw);
   max-width: 94vw;
   max-height: 92dvh;
@@ -1646,10 +1646,10 @@
   background: var(--panel);
   color: var(--text);
 }
-.coupang-image-dialog::backdrop {
+:where(.portal-shell) .coupang-image-dialog::backdrop {
   background: #102d4599;
 }
-.coupang-image-dialog > .actions {
+:where(.portal-shell) .coupang-image-dialog > .actions {
   position: sticky;
   top: 0;
   display: flex;
@@ -1658,7 +1658,7 @@
   background: var(--panel);
   padding: 8px 0;
 }
-.coupang-image-dialog img {
+:where(.portal-shell) .coupang-image-dialog img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -1713,14 +1713,14 @@
     position: static;
     max-height: none;
   }
-  .permissions-workspace .list {
+  :where(.portal-shell).permissions-workspace .list {
     max-height: 45vh;
   }
   .portal-shell .heading {
     flex-wrap: wrap;
     gap: 16px;
   }
-  .heading-actions {
+  :where(.portal-shell) .heading-actions {
     flex-shrink: 1;
   }
 }
@@ -1738,17 +1738,17 @@
     gap: 16px;
     margin-bottom: 22px;
   }
-  .heading-actions {
+  :where(.portal-shell) .heading-actions {
     width: 100%;
     justify-content: flex-start;
     gap: 8px;
     padding: 0;
   }
-  .heading-actions button {
+  :where(.portal-shell) .heading-actions button {
     font-size: 12px;
     padding: 8px 11px;
   }
-  .heading-actions #refresh {
+  :where(.portal-shell) .heading-actions #refresh {
     margin-left: -8px;
   }
   .portal-shell.sidebar-open {
@@ -1761,14 +1761,14 @@
   .portal-shell .task-toolbar {
     padding: 14px;
   }
-  .toolbar-period {
+  :where(.portal-shell) .toolbar-period {
     gap: 12px;
     width: 100%;
   }
-  .toolbar-top {
+  :where(.portal-shell) .toolbar-top {
     gap: 12px;
   }
-  .toolbar-bottom {
+  :where(.portal-shell) .toolbar-bottom {
     gap: 12px;
     margin-top: 14px;
     padding-top: 14px;
@@ -1777,10 +1777,10 @@
     padding: 15px 16px;
     min-height: 54px;
   }
-  .portal-items {
+  :where(.portal-shell) .portal-items {
     padding: 6px 8px 12px;
   }
-  .portal-items > h3 {
+  :where(.portal-shell) .portal-items > h3 {
     padding: 16px 8px 12px;
   }
   .portal-shell .task-row {
@@ -1788,61 +1788,61 @@
     padding: 14px 10px;
     gap: 8px;
   }
-  .task-launcher {
+  :where(.portal-shell) .task-launcher {
     padding: 16px;
   }
-  .task-launch-grid {
+  :where(.portal-shell) .task-launch-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
-  .task-launch-button {
+  :where(.portal-shell) .task-launch-button {
     padding: 12px;
     min-height: 56px;
     font-size: 12px;
   }
-  .parent-task-dialog {
+  :where(.portal-shell) .parent-task-dialog {
     padding: 20px 16px calc(28px + env(safe-area-inset-bottom));
   }
-  .parent-dialog-heading {
+  :where(.portal-shell) .parent-dialog-heading {
     top: -20px;
   }
-  .parent-task-dialog > h2 {
+  :where(.portal-shell) .parent-task-dialog > h2 {
     font-size: 23px;
   }
-  .calendar-week .calendar-cell {
+  :where(.portal-shell) .calendar-week .calendar-cell {
     min-height: 380px;
   }
-  .calendar-week.is-empty .calendar-cell {
+  :where(.portal-shell) .calendar-week.is-empty .calendar-cell {
     min-height: 140px;
   }
-  .task-calendar {
+  :where(.portal-shell) .task-calendar {
     padding-bottom: 8px;
   }
   .portal-shell #detail {
     padding: 20px;
   }
-  .permission-columns {
+  :where(.portal-shell) .permission-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 480px) {
-  .date-navigation {
+  :where(.portal-shell) .date-navigation {
     display: grid;
     grid-template-columns: 32px minmax(0, 1fr) 32px auto;
     width: 100%;
     gap: 5px;
   }
-  .date-navigation input {
+  :where(.portal-shell) .date-navigation input {
     width: 100%;
     min-width: 0;
     padding-inline: 6px;
     font-size: 12px;
   }
-  #period-prev,
-  #period-next {
+  :where(.portal-shell) #period-prev,
+  :where(.portal-shell) #period-next {
     width: 32px;
   }
-  #period-today {
+  :where(.portal-shell) #period-today {
     padding-inline: 9px;
     font-size: 12px;
   }
@@ -1856,7 +1856,7 @@
     min-width: 0;
     padding-inline: 6px;
   }
-  .status-count {
+  :where(.portal-shell) .status-count {
     min-width: 13px;
     padding: 0 1px;
     font-size: 10px;
@@ -1869,8 +1869,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px 12px;
   }
-  .history-filters > label,
-  .history-filters > .view-buttons,
+  :where(.portal-shell) .history-filters > label,
+  :where(.portal-shell) .history-filters > .view-buttons,
   .portal-shell .history-filters input,
   .portal-shell .history-filters select {
     width: 100%;
@@ -1879,39 +1879,39 @@
   .portal-shell .history-record {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .history-record > .center-property {
+  :where(.portal-shell) .history-record > .center-property {
     grid-column: 1;
     grid-row: 1;
     justify-self: start;
   }
-  .history-record > strong {
+  :where(.portal-shell) .history-record > strong {
     grid-column: 1;
     grid-row: 2;
     white-space: normal;
   }
-  .history-record > small {
+  :where(.portal-shell) .history-record > small {
     grid-column: 1;
     grid-row: 3;
   }
-  .history-record > .badge {
+  :where(.portal-shell) .history-record > .badge {
     grid-column: 2;
     grid-row: 1/4;
   }
-  .history-task-events {
+  :where(.portal-shell) .history-task-events {
     padding: 0 14px 14px;
   }
-  .history-task-events .history-entry {
+  :where(.portal-shell) .history-task-events .history-entry {
     grid-template-columns: minmax(0, 1fr);
   }
-  .registered-task-row {
+  :where(.portal-shell) .registered-task-row {
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 10px;
   }
-  .registered-task-info {
+  :where(.portal-shell) .registered-task-info {
     flex-basis: 100%;
   }
-  .registered-task-actions {
+  :where(.portal-shell) .registered-task-actions {
     margin-left: auto;
   }
   .portal-shell .registered-task-actions > button {
@@ -1923,7 +1923,7 @@
     padding-inline: 10px;
     font-size: 13px;
   }
-  .portal-empty {
+  :where(.portal-shell) .portal-empty {
     padding: 32px 16px;
   }
   .portal-shell dl {
@@ -1944,18 +1944,18 @@
   }
 }
 
-.permission-simulation {
+:where(.portal-shell) .permission-simulation {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--border);
 }
-.permission-simulation fieldset { margin: 12px 0; }
-.permission-preview-table { overflow-x: auto; margin-top: 12px; }
-.permission-preview-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.permission-preview-table th, .permission-preview-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.permission-preview-table thead th { background: var(--panel); }
-.permission-preview-table tbody th { font-weight: 550; }
-.permission-row[aria-pressed="true"], .member-row[aria-pressed="true"] { background: var(--selected); outline: 1px solid var(--accent); outline-offset: -1px; }
+:where(.portal-shell) .permission-simulation fieldset { margin: 12px 0; }
+:where(.portal-shell) .permission-preview-table { overflow-x: auto; margin-top: 12px; }
+:where(.portal-shell) .permission-preview-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+:where(.portal-shell) .permission-preview-table th, :where(.portal-shell) .permission-preview-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+:where(.portal-shell) .permission-preview-table thead th { background: var(--panel); }
+:where(.portal-shell) .permission-preview-table tbody th { font-weight: 550; }
+:where(.portal-shell) .permission-row[aria-pressed="true"], :where(.portal-shell) .member-row[aria-pressed="true"] { background: var(--selected); outline: 1px solid var(--accent); outline-offset: -1px; }
 .portal-shell .permission-row, .portal-shell .member-row {
   display: flex;
   flex-direction: column;

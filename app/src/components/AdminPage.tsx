@@ -5,11 +5,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { loadAuthContext, signOut } from '../lib/auth';
+import { navigateWorkspace, registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
+import { getLoadedAuthContext, loadAuthContext, signOut } from '../lib/auth';
 import type { AuthContext } from '../lib/auth';
 import {
   CENTERS,
@@ -92,6 +94,7 @@ function Shell({
 }) {
   const { profile, permissions, center, controlsDisabled, centerChangeGuard } =
     useAdminPage();
+  useEffect(() => registerWorkspaceNavigationGuard(() => !controlsDisabled), [controlsDisabled]);
   useWorkspaceScroll(area !== 'dashboard');
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
   const [mobile, setMobile] = useState(
@@ -121,7 +124,7 @@ function Shell({
     const dialog = sidebar.current;
     if (!dialog) return;
     if (dialog.open) dialog.close();
-    if (!mobile) dialog.show();
+    if (!mobile) { dialog.show(); dialog.focus({ preventScroll: true }); }
     else if (drawer) {
       dialog.showModal();
       close.current?.focus();
@@ -165,7 +168,7 @@ function Shell({
   function navigateTo(href: string) {
     void (async () => {
       if (controlsDisabled || centerChangeGuard.current && !await centerChangeGuard.current()) return;
-      location.assign(withCenterParam(href, center));
+      navigateWorkspace(withCenterParam(href, center), true);
     })();
   }
   const commands: WorkspaceCommand[] = FEATURE_CATALOG.filter(f => f.href && f.hub !== false && featureAccessible(f, profile, permissions, center.code, features)).map(f => ({
@@ -181,6 +184,7 @@ function Shell({
       </a>
       <dialog
         ref={sidebar}
+        tabIndex={-1}
         id="app-sidebar"
         aria-label="이안물류 업무 탐색"
         onCancel={() => setDrawer(false)}
@@ -235,7 +239,7 @@ function Shell({
                   key={category}
                   className="work-nav-group"
                   open={
-                    category === 'reference' ||
+                    category === 'transport' ||
                     items.some((item) => activePath(item.href!))
                   }
                 >
@@ -393,7 +397,7 @@ export function AdminPage({
   const params = new URLSearchParams(location.search);
   const portalEmbedded = params.has('portal_task') && parent !== window;
   const embedded = params.get('embedded') === '1' || portalEmbedded;
-  const [auth, setAuth] = useState<AuthContext | null>(null);
+  const [auth, setAuth] = useState<AuthContext | null>(() => getLoadedAuthContext() ?? null);
   const [error, setError] = useState('');
   const [controlsDisabled, setControlsDisabled] = useState(false);
   const centerChangeGuard = useRef<CenterChangeGuard | null>(null);
@@ -408,7 +412,7 @@ export function AdminPage({
       ? null
       : getSelectedCenter(),
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.title = pageTitle(location.pathname) ?? `${title} · 이안물류`;
     document.body.className = `workspace-ui work-shell ${embedded ? 'work-embedded' : 'app-shell'} ${bodyClass}`;
     document.body.dataset.appArea = area;

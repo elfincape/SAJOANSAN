@@ -9,6 +9,7 @@ import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Profile } from '../../lib/auth';
+import { navigateWorkspace, registerWorkspaceNavigationGuard } from '../../lib/workspace-navigation';
 import { signOut } from '../../lib/auth';
 import { ThemeToggle } from '../ThemeToggle';
 import { permissionAllowed } from '../../lib/permissions';
@@ -43,6 +44,7 @@ export function PortalShell({
   onCenter: (center: string) => void;
   children: ReactNode;
 }) {
+  useEffect(() => registerWorkspaceNavigationGuard(() => !busy), [busy]);
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
   useEffect(() => subscribePrivateFeatures(() => setFeatures(loadPrivateFeatures(profile))), [profile]);
   const [groups, setGroups] = useState(
@@ -85,7 +87,7 @@ export function PortalShell({
     const element = sidebar.current;
     if (!element) return;
     if (element.open) element.close();
-    if (!mobile) element.show();
+    if (!mobile) { element.show(); element.focus({ preventScroll: true }); }
     else if (drawer) {
       element.showModal();
       close.current?.focus();
@@ -173,10 +175,10 @@ export function PortalShell({
   if (selected) {
     for (const feature of FEATURE_CATALOG) {
       if (!feature.href?.startsWith('/admin/') || feature.hub === false || !featureAccessible(feature, profile, permissions, selected.code, features)) continue;
-      commands.push({ id: 'hub-' + feature.id, title: feature.title, description: feature.desc, group: FEATURE_CATEGORIES[feature.category], run: () => { if (!busy) location.assign(withCenterParam(feature.href!, selected)); } });
+      commands.push({ id: 'hub-' + feature.id, title: feature.title, description: feature.desc, group: FEATURE_CATEGORIES[feature.category], run: () => { if (!busy) navigateWorkspace(withCenterParam(feature.href!, selected)); } });
     }
-    if (manager) commands.unshift({ id: 'hub', title: '관리 허브', description: '관리 도구 전체 보기', group: '주요 화면', run: () => { if (!busy) location.assign(withCenterParam('/admin/', selected)); } });
-    if (['editor', 'admin'].includes(profile.role)) commands.unshift({ id: 'dashboard', title: '대시보드', description: '코스·납품 현황 조회', group: '주요 화면', run: () => { if (!busy) location.assign(withCenterParam('/', selected)); } });
+    if (manager) commands.unshift({ id: 'hub', title: '관리 허브', description: '관리 도구 전체 보기', group: '주요 화면', run: () => { if (!busy) navigateWorkspace(withCenterParam('/admin/', selected)); } });
+    if (['editor', 'admin'].includes(profile.role)) commands.unshift({ id: 'dashboard', title: '대시보드', description: '코스·납품 현황 조회', group: '주요 화면', run: () => { if (!busy) navigateWorkspace(withCenterParam('/', selected)); } });
   }
   return (
     <>
@@ -185,6 +187,7 @@ export function PortalShell({
       </a>
       <dialog
         ref={sidebar}
+        tabIndex={-1}
         id="app-sidebar"
         aria-label="이안물류 업무 탐색"
         onCancel={() => setDrawer(false)}

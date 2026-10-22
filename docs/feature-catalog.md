@@ -1,6 +1,6 @@
 # 기능 추가와 설정 동기화
 
-관리 기능은 repo-root/js/feature-catalog.mjs에서 한 번 등록한다. admin-menu의 별도 메뉴 배열, settings.html의 별도 스위치 배열, private-features의 별도 기본값, admin-hub의 경로 분류와 menu-permissions의 경로별 권한 배열을 따로 수정하지 않는다.
+React 앱의 관리 기능은 `app/src/domain/feature-catalog.ts`에서 한 번 등록한다. `repo-root`의 파일은 이전 원본이다. admin-menu의 별도 메뉴 배열, settings.html의 별도 스위치 배열, private-features의 별도 기본값, admin-hub의 경로 분류와 menu-permissions의 경로별 권한 배열을 따로 수정하지 않는다.
 
 등록 항목에는 id, title, href, category, resource와 필요한 desc/centers/adminOnly/ownerOnly/aliases/defaultEnabled를 둔다. 기본 표시값은 true이며 기존 소유자 전용 추가 기능은 false를 유지한다. 경로 없는 하위 옵션은 parent로 연결한다. 수정·권한 설정과 관리허브 진입처럼 복구에 필요한 항목은 fixed로 유지하고, 기존 비메뉴 화면은 hub:false로 등록한다.
 
@@ -17,3 +17,5 @@
 저장이 성공하면 같은 탭에는 사용자 정의 이벤트, 같은 출처의 다른 탭에는 storage 이벤트로 갱신한다. 새로고침 없이 관리허브 카드·사이드바·결과 수가 갱신되며 현재 검색·분류와 스위치 포커스를 유지한다. 검색 결과 전체 켜기/끄기는 현재 보이는 기능에만 적용한다. 모든 표시 기능을 꺼도 설정·페이지별 권한 경로는 유지한다. 저장이 거부되면 성공 메시지 대신 오류를 표시한다.
 
 이 변경은 기존 기능의 계산·DB·사용자 권한을 변경하지 않는다. 기능 추가가 배포되면 새 등록 정보가 설정에 함께 나타나는 구조이며 이미 열려 있는 옛 배포 화면에 새 코드 자체를 주입하는 기능은 아니다.
+
+현재 업무 분류는 배차·운행 / 운송 정보 관리 / 센터 일상 업무 / 문서·자료 / 사용자·환경 설정의 다섯 가지다. 분류 키와 이름은 같은 카탈로그에서 허브·사이드바·설정·커맨드에 함께 반영하며, 분류를 바꿔도 권한 resource·센터 범위는 바뀌지 않는다.

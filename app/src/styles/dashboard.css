@@ -1,17 +1,17 @@
-html,
-body {
+html:has(body[data-app-area='dashboard']),
+body[data-app-area='dashboard'] {
   height: 100%;
   overflow: hidden;
   box-sizing: border-box;
 }
 
-*,
-*::before,
-*::after {
+body[data-app-area='dashboard'] *,
+body[data-app-area='dashboard'] *::before,
+body[data-app-area='dashboard'] *::after {
   box-sizing: inherit;
 }
 
-body {
+body[data-app-area='dashboard'] {
   padding: 10px 12px;
 }
 

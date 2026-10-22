@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
 import { FileArea } from './FileArea';
 import { DOCUMENT_TYPES, validateDocumentFile } from '../domain/driver-documents';
 import type { DocumentAdapter, DocumentRecord } from '../domain/driver-documents';
@@ -22,9 +23,10 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const clearUrls = () => { urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current.clear(); };
   useEffect(() => {
+    const unregister = registerWorkspaceNavigationGuard(() => !pendingRef.current);
     const unload = (event: BeforeUnloadEvent) => { if (pendingRef.current) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', unload); window.addEventListener('pagehide', clearUrls);
-    return () => { window.removeEventListener('beforeunload', unload); window.removeEventListener('pagehide', clearUrls); clearUrls(); };
+    return () => { unregister(); window.removeEventListener('beforeunload', unload); window.removeEventListener('pagehide', clearUrls); clearUrls(); };
   }, []);
   useLayoutEffect(() => {
     const id = ++generation.current;

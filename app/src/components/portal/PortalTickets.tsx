@@ -1,6 +1,6 @@
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
-import { PortalDialog } from './PortalDialog';
+import { closePortalDialog, PortalDialog } from './PortalDialog';
 import { PortalIncidentDetail } from './PortalIncidents';
 import { PortalTaskDetail } from './PortalTaskDetail';
 import { usePortal } from './PortalStore';
@@ -268,11 +268,7 @@ function ParentTask({ id }: { id: string }) {
         <strong>상위 업무</strong>
         <button
           type="button"
-          onClick={() =>
-            update((s) => {
-              s.parentTaskId = null;
-            })
-          }
+          onClick={closePortalDialog}
         >
           닫기
         </button>
@@ -318,7 +314,7 @@ export function PortalTickets() {
                       : '업무 티켓'}
                 </MentionText>
               </strong>
-              <button type="button" disabled={state.busy} onClick={close}>
+              <button type="button" disabled={state.busy} onClick={closePortalDialog}>
                 닫기
               </button>
             </div>

@@ -7,7 +7,10 @@ export interface AuthContext { profile: Profile; permissions: PermissionContext 
 let pending: Promise<AuthContext | null> | undefined;
 let cached: AuthContext | undefined;
 
-export function loadAuthContext() {
+export function getLoadedAuthContext() { return cached; }
+
+export function loadAuthContext(refresh = false) {
+  if (refresh) cached = undefined;
   if (cached) return Promise.resolve(cached);
   if (!pending) pending = (async () => {
     const { data: { session } } = await supabase.auth.getSession();

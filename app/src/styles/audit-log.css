@@ -26,4 +26,6 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
-  
+
+.audit-results { position: relative; min-height: 160px; }
+.workspace-ui .audit-results > #loading-indicator:not(.hidden) { position: absolute; inset: auto 12px 12px auto; padding: 6px 10px; border-radius: 6px; background: var(--theme-panel); color: var(--theme-muted); font-size: 13px; }

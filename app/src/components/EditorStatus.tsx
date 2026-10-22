@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { navigateWorkspace, registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
 import { useAdminPage } from './AdminPage';
 
 export function EditorStatus({ dirty, saving, editable, existing }: { dirty: boolean; saving: boolean; editable: boolean; existing: boolean }) {
@@ -26,6 +27,7 @@ export function useEditorGuard(dirty: boolean, busy: boolean, confirm: (message:
       return true;
     }
     setCenterChangeGuard(allow);
+    const unregister = registerWorkspaceNavigationGuard(recheck => recheck ? !current.current.busy : allow());
     function unload(event: BeforeUnloadEvent) {
       if (!leaving.current && (current.current.dirty || current.current.busy)) {
         event.preventDefault(); event.returnValue = '';
@@ -39,15 +41,18 @@ export function useEditorGuard(dirty: boolean, busy: boolean, confirm: (message:
       if (next.pathname === location.pathname && next.search === location.search) return;
       if (!current.current.dirty && !current.current.busy) return;
       event.preventDefault();
-      void allow().then(ok => { if (ok) location.assign(link.href); });
+      void allow().then(ok => { if (ok) navigateWorkspace(link.href, true); });
     }
     const resume = () => { leaving.current = false; };
     addEventListener('pageshow', resume);
+    addEventListener('workspace:navigation-end', resume);
     addEventListener('beforeunload', unload);
     document.addEventListener('click', navigate);
     return () => {
+      unregister();
       setCenterChangeGuard(null);
       removeEventListener('pageshow', resume);
+      removeEventListener('workspace:navigation-end', resume);
       removeEventListener('beforeunload', unload);
       document.removeEventListener('click', navigate);
     };

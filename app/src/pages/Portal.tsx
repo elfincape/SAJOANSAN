@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import '../styles/operations.css';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import '../styles/portal.css';
 import '../styles/workspace-ui.css';
 import '../styles/portal-theme.css';
 import '../styles/theme.css';
 import '../styles/portal-task-ui.css';
 import '../styles/portal-workflow.css';
-import { loadAuthContext } from '../lib/auth';
+import { getLoadedAuthContext, loadAuthContext } from '../lib/auth';
 import type { Profile } from '../lib/auth';
 import { portalApi, portalHasMailbox, portalRecord } from '../lib/portal';
 import { finishOneDrive } from '../lib/onedrive';
@@ -165,7 +164,6 @@ function Work({ profile }: { profile: Profile }) {
     ).current;
   const viewState = useRef(new Map<string, unknown>()).current;
   const draftBases = useRef(new Map<string, PortalTask>()).current;
-  const [lastQueryAt, setLastQueryAt] = useState<Date | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -281,7 +279,6 @@ function Work({ profile }: { profile: Profile }) {
       ]),
       parents = await portalApi.parentTasks(incidents.map((i) => i.task_id));
     if (!mounted.current) return;
-    setLastQueryAt(new Date());
     update((s) => {
       s.tasks = tasks;
       s.incidents = incidents;
@@ -324,7 +321,7 @@ function Work({ profile }: { profile: Profile }) {
     update((s) => {
       s.busy = true;
     });
-    message('업무를 불러오는 중입니다…');
+    message('');
     try {
       await loadData();
       message('');
@@ -579,7 +576,7 @@ function Work({ profile }: { profile: Profile }) {
       removeEventListener('pageshow', show);
     };
   }, [!!state.context]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.body.className =
       'workspace-ui portal-shell app-shell' +
       (state.view === 'center' ? ' center-workspace' : '') +
@@ -767,7 +764,8 @@ function Work({ profile }: { profile: Profile }) {
                   onClick={() => void refresh()}
                 >
                   <Icon kind="refresh" />
-                  새로고침
+                  <span>새로고침</span>
+                  <span className="portal-refresh-progress" role="status" aria-live="polite">{state.busy ? '처리 중' : ''}</span>
                 </button>
                 <button
                   onClick={() =>
@@ -803,43 +801,19 @@ function Work({ profile }: { profile: Profile }) {
             </div>
             <div
               id="message"
+              hidden={!state.message}
+              aria-hidden={state.ticket || !!state.parentTaskId || undefined}
               role={state.messageError ? 'alert' : 'status'}
               aria-live={state.messageError ? 'assertive' : 'polite'}
-              className={state.messageError ? 'error' : ''}
+              className={'portal-feedback' + (state.messageError ? ' error' : '')}
             >
-              {state.message}
+              <span>{state.message}</span>{state.message ? <button type="button" aria-label="처리 안내 닫기" onClick={() => message('')}>닫기</button> : null}
             </div>
             {!online ? (
               <p className="portal-offline" role="status">
                 브라우저가 오프라인 상태입니다. 입력은 이 화면에 유지됩니다.
-                연결 후 서버 버전을 확인하고 저장하세요.
+                연결을 확인한 뒤 다시 저장하세요.
               </p>
-            ) : null}
-            {lastQueryAt ? (
-              <p className="portal-query-status">
-                목록 조회 성공{' '}
-                <time dateTime={lastQueryAt.toISOString()}>
-                  {lastQueryAt.toLocaleTimeString('ko-KR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </time>
-                {state.busy ? ' · 요청 처리 중' : ''}
-              </p>
-            ) : state.busy && !state.messageError ? (
-              <div
-                className="portal-initial-loading"
-                role="status"
-                aria-label="업무 목록을 불러오는 중"
-              >
-                <p>업무와 조회 권한을 불러오고 있습니다…</p>
-                <div aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
             ) : null}
             {state.view === 'access' && !denied ? <PortalAccess /> : null}
             {state.view === 'mail' && !denied ? <PortalMail /> : null}
@@ -1189,7 +1163,7 @@ function Work({ profile }: { profile: Profile }) {
   );
 }
 export default function Portal() {
-  const [profile, setProfile] = useState<Profile | null>(null),
+  const [profile, setProfile] = useState<Profile | null>(() => getLoadedAuthContext()?.profile ?? null),
     [error, setError] = useState('');
   useEffect(() => {
     let active = true;

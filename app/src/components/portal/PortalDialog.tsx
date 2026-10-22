@@ -1,6 +1,13 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PortalStore } from './PortalStore';
 import type { ReactNode } from 'react';
+import '../../styles/portal-dialog-motion.css';
+
+export function closePortalDialog(event: React.MouseEvent<HTMLButtonElement>) {
+  event.currentTarget.closest('dialog')?.dispatchEvent(
+    new Event('cancel', { cancelable: true }),
+  );
+}
 export function PortalDialog({
   id,
   label,
@@ -37,7 +44,7 @@ export function PortalDialog({
         closingRef.current = false;
         setClosing(false);
       } else latest.current.onClose();
-    }, 150);
+    }, 220);
   }
   useEffect(() => {
     const element = dialog.current;
@@ -74,6 +81,7 @@ export function PortalDialog({
       id={id}
       className={className}
       aria-label={label}
+      data-portal-motion
       data-closing={closing || undefined}
       onCancel={(event) => {
         event.stopPropagation();
@@ -94,6 +102,18 @@ export function PortalDialog({
       }}
     >
       {children}
+      {portal?.state.messageError && portal.state.message ? (
+        <div className="portal-dialog-error" role="alert">
+          <span>{portal.state.message}</span>
+          <button
+            type="button"
+            aria-label="오류 메시지 닫기"
+            onClick={() => portal.message('')}
+          >
+            닫기
+          </button>
+        </div>
+      ) : null}
     </dialog>
   );
 }

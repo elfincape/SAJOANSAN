@@ -1,0 +1,99 @@
+/* Keep the page still while the document enters from its right edge. */
+html[data-theme] body.workspace-ui dialog[data-portal-motion] .portal-dialog-error {
+  position: fixed;
+  z-index: 20;
+  right: 20px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: max-content;
+  max-width: min(460px, calc(100% - 40px));
+  max-height: 35dvh;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-danger-border);
+  border-radius: 8px;
+  color: var(--theme-danger);
+  background: var(--theme-danger-bg);
+  box-shadow: 0 8px 24px #0003;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.portal-dialog-error span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+html[data-theme] body.workspace-ui dialog[data-portal-motion] .portal-dialog-error button {
+  flex: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+html[data-theme] body.workspace-ui dialog.parent-task-dialog[data-portal-motion][open] {
+  animation: none;
+  transform: translateX(0);
+  opacity: 1;
+  transition: transform 360ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease-out;
+}
+
+html[data-theme] body.workspace-ui dialog[data-portal-motion][open]::backdrop {
+  animation: none;
+  opacity: 1;
+  backdrop-filter: blur(5px);
+  transition: backdrop-filter 360ms linear, opacity 360ms linear;
+}
+
+html[data-theme] body.workspace-ui dialog.parent-task-dialog[data-portal-motion][open][data-closing='true'] {
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(.4, 0, 1, 1);
+}
+
+html[data-theme] body.workspace-ui dialog[data-portal-motion][open][data-closing='true']::backdrop {
+  opacity: 0;
+  backdrop-filter: blur(0);
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  html[data-theme] body.workspace-ui dialog.parent-task-dialog[data-portal-motion][open] {
+    transform: translateX(100%);
+    opacity: .92;
+  }
+
+  html[data-theme] body.workspace-ui dialog[data-portal-motion][open]::backdrop {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] body.workspace-ui dialog.parent-task-dialog[data-portal-motion][open],
+  html[data-theme] body.workspace-ui dialog[data-portal-motion][open]::backdrop {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-theme] body.workspace-ui dialog[data-portal-motion][open]::backdrop {
+    backdrop-filter: none;
+  }
+
+  html[data-theme] body.workspace-ui dialog[data-portal-motion] .parent-dialog-heading {
+    background: var(--theme-panel);
+    backdrop-filter: none;
+  }
+}
