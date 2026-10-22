@@ -1,0 +1,1 @@
+<resources><string name="access_description">등록한 카카오톡 대화방에서 사진을 열고 저장하여 OneDrive에 전송합니다. 대화 내용이 함께 저장됩니다. 전용 법인폰에서만 사용하고, 수집 시작·중지는 앱에서 제어하세요.</string><string name="collector_status">%1$s · 전송 대기 %2$d건\n%3$s</string></resources>
