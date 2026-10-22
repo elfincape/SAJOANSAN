@@ -120,9 +120,30 @@ final class OneDrive {
         if (made.code != 201) throw new IOException("OneDrive 폴더 생성 실패 (HTTP " + made.code + ")"); return made.json.getString("id");
     }
     static String segment(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20"); }
+    static String rawText(JSONObject receipt) {
+        StringBuilder body = new StringBuilder();
+        if ("notification".equals(receipt.optString("kind"))) {
+            JSONArray messages = receipt.optJSONArray("messages");
+            if (messages != null) for (int i = 0; i < messages.length(); i++) {
+                JSONObject message = messages.optJSONObject(i);
+                if (message == null || message.optString("text").isBlank()) continue;
+                if (!message.isNull("sender") && !message.optString("sender").isBlank()) body.append(message.optString("sender")).append(": ");
+                body.append(message.optString("text")).append('\n');
+            }
+            if (body.length() == 0) body.append(receipt.optString("notificationText"));
+        } else body.append(receipt.optString("visibleContext"));
+        if (body.toString().isBlank()) return "";
+        return "대화방: " + receipt.optString("room") + "\n수집 시각: " + receipt.optString("observedAt") + "\n\n" + body;
+    }
     static void upload(Context c, File directory) throws Exception {
         JSONObject receipt = Store.read(new File(directory, "receipt.json")); String id = receipt.getString("receiptId");
         if (!id.matches("[0-9a-f-]{36}")) throw new IOException("접수번호 오류");
+        JSONArray photos = receipt.getJSONArray("photos");
+        String text = rawText(receipt);
+        if (photos.length() == 0 && "notification".equals(receipt.optString("kind")) && text.isEmpty()) {
+            Store.write(new File(directory, "uploaded"), new byte[]{1});
+            return;
+        }
         String token = access(c);
         String actualDrive = graph("/me/drive?$select=id", "GET", token, null, null).getString("id");
         if (!actualDrive.equals(receipt.getString("driveId"))) throw new IOException("접수 당시 OneDrive 계정과 다릅니다");
@@ -130,15 +151,11 @@ final class OneDrive {
         String room = Rules.roomFolder(receipt.getString("room"));
         String prefix = Rules.remotePrefix(receipt.getString("observedAt"), id);
         String home = child(root, "이안카카오", token), folder = child(home, room, token);
-        JSONObject remoteReceipt = new JSONObject(receipt.toString());
-        remoteReceipt.put("storage", new JSONObject().put("rootFolder", "이안카카오").put("roomFolder", room).put("timezone", "Asia/Seoul").put("timestampBasis", "observedAt"));
-        JSONArray photos = receipt.getJSONArray("photos");
         if ((photos.length() < 1 && !"notification".equals(receipt.optString("kind"))) || photos.length() > 30) throw new IOException("사진 개수 오류");
         for (int i = 0; i < photos.length(); i++) {
             if (!Store.enabled(c)) throw new IOException("수집 중지됨");
             JSONObject p = photos.getJSONObject(i); String name = p.getString("name"); if (!Rules.safeName(name)) throw new IOException("파일명 오류");
             String remoteName = Rules.remotePhotoName(prefix, i + 1, name);
-            remoteReceipt.getJSONArray("photos").getJSONObject(i).put("name", remoteName);
             File f = new File(directory, name); if (f.length() > 10 * 1024 * 1024) throw new IOException("사진당 10MB 초과");
             byte[] bytes = Files.readAllBytes(f.toPath());
             if (bytes.length != p.getLong("byteSize") || !Rules.sha256(bytes).equals(p.getString("sha256"))) throw new IOException("대기 사진 무결성 오류");
@@ -146,10 +163,11 @@ final class OneDrive {
             if (saved.getLong("size") != bytes.length) throw new IOException("업로드 크기 불일치");
         }
         if (!Store.enabled(c)) throw new IOException("수집 중지됨");
-        byte[] manifest = remoteReceipt.toString(2).getBytes(StandardCharsets.UTF_8);
-        String receiptName = prefix + ("notification".equals(receipt.optString("kind")) ? "_대화.json" : "_사진정보.json");
-        JSONObject saved = graph("/me/drive/items/" + segment(folder) + ":/" + segment(receiptName) + ":/content", "PUT", token, "application/json", manifest);
-        if (saved.getLong("size") != manifest.length) throw new IOException("접수정보 업로드 크기 불일치");
+        if (!text.isEmpty()) {
+            byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+            JSONObject saved = graph("/me/drive/items/" + segment(folder) + ":/" + segment(prefix + "_대화.txt") + ":/content", "PUT", token, "text/plain; charset=utf-8", bytes);
+            if (saved.getLong("size") != bytes.length) throw new IOException("텍스트 업로드 크기 불일치");
+        } else if (photos.length() == 0) throw new IOException("저장할 사진·텍스트가 없습니다");
         Store.write(new File(directory, "uploaded"), new byte[]{1});
         for (JSONObject p : photoList(photos)) { File f = new File(directory, p.getString("name")); if (!f.delete()) Store.status(c, "업로드 완료, 로컬 사진 정리 필요"); }
     }

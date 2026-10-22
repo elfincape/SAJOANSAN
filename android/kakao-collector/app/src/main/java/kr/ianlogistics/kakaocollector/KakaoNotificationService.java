@@ -22,13 +22,14 @@ public final class KakaoNotificationService extends NotificationListenerService 
             JSONArray messages=new JSONArray();
             android.os.Parcelable[] bundles=n.extras.getParcelableArray(Notification.EXTRA_MESSAGES);
             if(bundles!=null) for(Notification.MessagingStyle.Message message:Notification.MessagingStyle.Message.getMessagesFromBundleArray(bundles)) {
-                messages.put(new JSONObject().put("text",String.valueOf(message.getText())).put("timestamp",message.getTimestamp())
+                messages.put(new JSONObject().put("text",message.getText()==null?"":message.getText().toString()).put("timestamp",message.getTimestamp())
                     .put("sender",message.getSenderPerson()==null?JSONObject.NULL:String.valueOf(message.getSenderPerson().getName())));
             }
             info.put("messages",messages);
-            JSONObject event=new JSONObject(info.toString());
+            JSONObject event=new JSONObject(info.toString()).put("kind","notification");
             disk.execute(()->{try{
                 if(!Store.enabled(this))return;
+                if(OneDrive.rawText(event).isEmpty())return;
                 String id=java.util.UUID.nameUUIDFromBytes(event.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
                 java.io.File dir=new java.io.File(Store.queue(this),id);
                 if(new java.io.File(dir,"receipt.json").exists())return;

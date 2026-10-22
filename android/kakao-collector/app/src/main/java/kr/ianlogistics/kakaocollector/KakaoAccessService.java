@@ -33,16 +33,16 @@ public final class KakaoAccessService extends AccessibilityService {
         KakaoAccessService a=active; if(a==null) return;
         a.handler.post(() -> {
             if(!Store.enabled(a)) return;
-            if(a.jobs.size()>=50) { Store.status(a,"알림 대기 50건 초과 · 수집 누락 가능, 대화방 확인 필요"); return; }
-            a.jobs.add(new Job(info,open)); a.schedule();
+            if(a.jobs.size()>=50) { Store.photoStatus(a,"알림 대기 50건 초과 · 수집 누락 가능, 대화방 확인 필요"); return; }
+            a.jobs.add(new Job(info,open)); Store.photoStatus(a,"대화방 열기 대기"); a.schedule();
         });
     }
-    @Override protected void onServiceConnected() { active=this; Store.status(this,"접근성 연결됨"); }
+    @Override protected void onServiceConnected() { active=this; Store.photoStatus(this,"접근성 연결됨"); }
     @Override public void onDestroy() { active=null; handler.removeCallbacksAndMessages(null); disk.shutdownNow(); super.onDestroy(); }
     @Override public void onInterrupt() { reset("접근성 중단 · 수집 상태를 확인하세요"); }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) { if(Store.enabled(this)) schedule(); }
     private void schedule() { if(!scheduled) { scheduled=true; handler.postDelayed(() -> { scheduled=false; tick(); },1000); } }
-    private void reset(String status) { state=0; job=null; before=null; readyImages=null; if(status!=null) Store.status(this,status); if(!jobs.isEmpty()) schedule(); }
+    private void reset(String status) { state=0; job=null; before=null; readyImages=null; if(status!=null) Store.photoStatus(this,status); if(!jobs.isEmpty()) schedule(); }
     private List<AccessibilityNodeInfo> nodes(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> out=new ArrayList<>(); if(root==null) return out;
         ArrayDeque<AccessibilityNodeInfo> q=new ArrayDeque<>(); q.add(root);
@@ -60,8 +60,8 @@ public final class KakaoAccessService extends AccessibilityService {
     }
     private String currentRoom(List<AccessibilityNodeInfo> list) {
         for(AccessibilityNodeInfo n:list) {
-            String id=n.getViewIdResourceName(), value=text(n); Rect b=new Rect();n.getBoundsInScreen(b);
-            if(id!=null && (id.endsWith("/title")||id.endsWith("/chat_room_title")||id.endsWith("/toolbar_title")) && b.top>=0 && b.top<getResources().getDisplayMetrics().heightPixels/5 && Rules.allowedRoom(value,Store.prefs(this).getString("rooms",""))) return value;
+            String value=Rules.roomTitle(n.getViewIdResourceName(),text(n),desc(n)); Rect b=new Rect();n.getBoundsInScreen(b);
+            if(n.isVisibleToUser() && b.top>=0 && b.top<getResources().getDisplayMetrics().heightPixels/5 && Rules.allowedRoom(value,Store.prefs(this).getString("rooms",""))) return value;
         }
         return "";
     }
@@ -87,7 +87,7 @@ public final class KakaoAccessService extends AccessibilityService {
                 Store.prefs(this).edit().putBoolean("done_"+capturedKey,true).apply();
                 handler.post(() -> {
                     if(Store.enabled(this) && state==4) { state=0;before=null;readyImages=null;schedule(); }
-                    Store.status(this,count+"장 로컬 확보 · OneDrive 전송 대기");
+                    Store.photoStatus(this,count+"장 로컬 확보 · OneDrive 전송 대기");
                 });
             } catch(Exception e) { handler.post(() -> reset("사진 보관 실패 · 저장공간·사진 권한을 확인하세요")); }
         });
@@ -108,18 +108,26 @@ public final class KakaoAccessService extends AccessibilityService {
                 }
             }
             if(state==4) return;
-            if(System.currentTimeMillis()>deadline) { reset("사진 저장 시간 초과 · 자동 재수집하지 않았습니다. 해당 방을 확인하세요"); return; }
+            if(System.currentTimeMillis()>deadline) { String step=switch(state){case 0->"대화방 제목 확인";case 1->"사진 열기";case 2->"저장 메뉴";case 3->"저장 파일 확인";case 5->"원래 방 복귀 확인";default->"사진 저장";}; reset(step+" 시간 초과 · "+Store.prefs(this).getString("photoStatus","")); return; }
             AccessibilityNodeInfo root=getRootInActiveWindow();
             if(root==null || !"com.kakao.talk".contentEquals(root.getPackageName())) { if(state>0) reset("저장 도중 다른 화면으로 이동 · 사진 접수를 중단했습니다"); else schedule(); return; }
             List<AccessibilityNodeInfo> list=nodes(root);
             if(state==0) {
                 String room=currentRoom(list);
-                if(room.isEmpty() || !room.equals(job.info.optString("room"))) { schedule(); return; }
+                if(room.isEmpty() || !room.equals(job.info.optString("room"))) {
+                    StringBuilder titles=new StringBuilder();
+                    for(AccessibilityNodeInfo n:list) {
+                        String rid=n.getViewIdResourceName(); Rect b=new Rect();n.getBoundsInScreen(b);
+                        if(rid!=null && rid.contains("title") && b.top>=0 && b.top<getResources().getDisplayMetrics().heightPixels/5 && titles.length()<180)
+                            titles.append(rid.substring(rid.lastIndexOf('/')+1)).append('=').append(text(n)).append(' ');
+                    }
+                    Store.photoStatus(this,"방 제목 확인 대기 · "+(titles.length()==0?"제목 요소 미검출":titles));schedule(); return;
+                }
                 StringBuilder context=new StringBuilder();
                 for(AccessibilityNodeInfo n:list) { String t=text(n); if(!t.isBlank() && context.length()<20000) context.append(t).append('\n'); }
-                int ordinal=0;
+                int ordinal=0, candidates=0;
                 for(AccessibilityNodeInfo n:list) {
-                    int count=Rules.photoCount(desc(n)); if(count==0 || !n.isVisibleToUser()) continue;
+                    int count=Rules.photoCount(desc(n)); if(count==0 || !n.isVisibleToUser()) continue; candidates++;
                     String candidate=Rules.localKey(room,context.toString(),desc(n),ordinal++);
                     if(Store.prefs(this).getBoolean("done_"+candidate,false)) continue;
                     before=MediaFiles.snapshot(this); key=candidate; expected=count; sourceWindow=root.getWindowId();
@@ -127,15 +135,15 @@ public final class KakaoAccessService extends AccessibilityService {
                         .put("visibleContext",context.toString()).put("attribution","visible_context_only; notification sender is not verified as photo sender")
                         .put("expectedPhotos",expected);
                     if(!tap(n)) { reset("사진 열기 실패"); return; }
-                    state=1; schedule(); return;
+                    state=1; Store.photoStatus(this,expected+"장 사진 열기 · 저장 버튼 확인 중"); schedule(); return;
                 }
-                reset("현재 화면의 사진 확인 완료 · 화면 밖 과거 사진은 자동 탐색하지 않습니다"); return;
+                reset(candidates==0?"사진 요소 미검출 · 현재 화면의 사진을 확인하세요":"현재 화면의 사진은 이미 수집한 항목입니다"); return;
             }
             if(state==1) {
                 for(AccessibilityNodeInfo n:list) if("com.kakao.talk:id/btn_save".equals(n.getViewIdResourceName()) || "저장".equals(desc(n))) {
                     viewerWindow=root.getWindowId(); viewerFingerprint=fingerprint(root);
                     if(!tap(n)) { reset("사진 저장 버튼 실행 실패"); return; }
-                    state=2; schedule(); return;
+                    state=2; Store.photoStatus(this,"저장 메뉴 확인 중"); schedule(); return;
                 }
                 schedule(); return;
             }
@@ -144,7 +152,7 @@ public final class KakaoAccessService extends AccessibilityService {
                 String target=expected>1?"묶음사진 전체 저장":"이 사진만 저장";
                 for(AccessibilityNodeInfo n:list) if(target.equals(desc(n))||target.equals(text(n))) {
                     if(!tap(n)) { reset("사진 저장 메뉴 실행 실패"); return; }
-                    state=3; stable="";stableTicks=0;schedule();return;
+                    state=3; stable="";stableTicks=0;Store.photoStatus(this,"사진 파일 저장 확인 중 · 예상 "+expected+"장");schedule();return;
                 }
                 // Single photos can save immediately without opening a choice menu.
                 if(expected==1 && !MediaFiles.added(this,before).isEmpty()) state=3;

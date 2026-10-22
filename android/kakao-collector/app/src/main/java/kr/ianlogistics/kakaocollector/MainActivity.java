@@ -19,7 +19,7 @@ public final class MainActivity extends Activity {
     private static final ExecutorService auth=Executors.newSingleThreadExecutor();
     private static volatile boolean authBusy;
     private volatile boolean destroyed;
-    private final Runnable refresh=new Runnable(){public void run(){ if(destroyed)return;status.setText(getString(R.string.collector_status,Store.enabled(MainActivity.this)?"수집 켜짐":"수집 꺼짐",Store.pending(MainActivity.this).length,Store.prefs(MainActivity.this).getString("status","설정 후 테스트 방에서 확인하세요")));handler.postDelayed(this,2000);}};
+    private final Runnable refresh=new Runnable(){public void run(){ if(destroyed)return;status.setText(getString(R.string.collector_status,Store.enabled(MainActivity.this)?"수집 켜짐":"수집 꺼짐",Store.pending(MainActivity.this).length,Store.details(MainActivity.this)));handler.postDelayed(this,2000);}};
     private void label(LinearLayout layout,String text){TextView v=new TextView(this);v.setText(text);v.setTextSize(16);v.setPadding(0,16,0,8);layout.addView(v);}
     private void button(LinearLayout layout,String text,Runnable click){Button b=new Button(this);b.setText(text);b.setOnClickListener(v->click.run());layout.addView(b,new LinearLayout.LayoutParams(-1,-2));}
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -63,6 +63,7 @@ public final class MainActivity extends Activity {
         String permission=Manifest.permission.READ_MEDIA_IMAGES;
         if(Build.VERSION.SDK_INT>=34 && checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)==PackageManager.PERMISSION_GRANTED)throw new Exception("일부 사진 접근으로는 새 사진 수집이 안 됩니다. 앱 권한에서 모든 사진을 허용하세요");
         if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)throw new Exception("사진 전체 접근 권한이 필요합니다");
+        Store.photoStatus(this,"새 알림 대기");Store.uploadStatus(this,"대기 자료 확인 중");
         Store.prefs(this).edit().putBoolean("enabled",true).apply();startForegroundService(new Intent(this,CollectorService.class));Store.status(this,"대기 중 · 등록한 방의 새 알림 또는 현재 방 수집 사용");
     }catch(Exception e){Store.prefs(this).edit().putBoolean("enabled",false).apply();alert(e.getMessage());}}
     private void alert(String s){if(!isFinishing())new AlertDialog.Builder(this).setMessage(s).setPositiveButton("확인",null).show();}

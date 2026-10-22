@@ -15,6 +15,18 @@ final class Store {
     static android.content.SharedPreferences prefs(Context c) { return c.getSharedPreferences("collector", 0); }
     static boolean enabled(Context c) { return prefs(c).getBoolean("enabled", false); }
     static void status(Context c, String message) { prefs(c).edit().putString("status", message).apply(); }
+    static void photoStatus(Context c, String message) {
+        if (!message.equals(prefs(c).getString("photoStatus", ""))) prefs(c).edit().putString("photoStatus", message).apply();
+    }
+    static void uploadStatus(Context c, String message) { prefs(c).edit().putString("uploadStatus", message).apply(); }
+    static String details(Context c) {
+        String detail = prefs(c).getString("status", "설정 후 테스트 방에서 확인하세요");
+        String photo = prefs(c).getString("photoStatus", "");
+        String upload = prefs(c).getString("uploadStatus", "");
+        if (!photo.isEmpty()) detail += "\n사진 수집: " + photo;
+        if (!upload.isEmpty()) detail += "\n전송: " + upload;
+        return detail;
+    }
     static File queue(Context c) { File d = new File(c.getFilesDir(), "queue"); d.mkdirs(); return d; }
     static File[] pending(Context c) { File[] a = queue(c).listFiles(f -> f.isDirectory() && new File(f, "receipt.json").isFile() && !new File(f, "uploaded").exists()); return a == null ? new File[0] : a; }
     static void write(File file, byte[] bytes) throws IOException {

@@ -22,8 +22,14 @@ public final class CollectorService extends Service {
         if (!Store.enabled(this)) return;
         for (File f : Store.pending(this)) {
             if (!Store.enabled(this)) break;
-            try { OneDrive.upload(this, f); Store.status(this, "OneDrive 저장 완료 · " + f.getName()); }
-            catch (Exception e) { Store.status(this, "전송 대기 · " + e.getMessage()); break; }
+            try {
+                org.json.JSONObject receipt=Store.read(new File(f,"receipt.json"));
+                org.json.JSONArray photos=receipt.optJSONArray("photos");
+                int count=photos==null?0:photos.length();
+                OneDrive.upload(this, f);
+                Store.uploadStatus(this,count>0?"사진 "+count+"장 OneDrive 저장 완료":OneDrive.rawText(receipt).isEmpty()?"본문 없는 알림 건너뜀":"텍스트 TXT OneDrive 저장 완료");
+            }
+            catch (Exception e) { Store.uploadStatus(this, "전송 대기 · " + e.getMessage()); break; }
         }
     }
     @Override public int onStartCommand(Intent i, int flags, int id) {

@@ -17,6 +17,14 @@ final class Rules {
         if (room == null || room.isBlank()) return false;
         return configured.lines().map(String::trim).anyMatch(room::equals);
     }
+    static String roomTitle(String resourceId, String text, String description) {
+        if (resourceId == null) return "";
+        return switch (resourceId) {
+            case "com.kakao.talk:id/title", "com.kakao.talk:id/chat_room_title", "com.kakao.talk:id/toolbar_title",
+                 "com.kakao.talk:id/toolbar_default_title_text" -> (text == null || text.isBlank() ? description == null ? "" : description : text).trim();
+            default -> "";
+        };
+    }
     static boolean sameSource(int sourceWindow, int currentWindow, String room, String currentRoom) {
         return sourceWindow == currentWindow && room != null && !room.isBlank() && room.equals(currentRoom);
     }
