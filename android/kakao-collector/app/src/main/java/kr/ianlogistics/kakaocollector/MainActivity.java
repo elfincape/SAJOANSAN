@@ -16,8 +16,9 @@ public final class MainActivity extends Activity {
     private EditText client,rooms;
     private TextView status;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private final ExecutorService auth=Executors.newSingleThreadExecutor();
-    private volatile boolean destroyed,authBusy;
+    private static final ExecutorService auth=Executors.newSingleThreadExecutor();
+    private static volatile boolean authBusy;
+    private volatile boolean destroyed;
     private final Runnable refresh=new Runnable(){public void run(){ if(destroyed)return;status.setText(getString(R.string.collector_status,Store.enabled(MainActivity.this)?"수집 켜짐":"수집 꺼짐",Store.pending(MainActivity.this).length,Store.prefs(MainActivity.this).getString("status","설정 후 테스트 방에서 확인하세요")));handler.postDelayed(this,2000);}};
     private void label(LinearLayout layout,String text){TextView v=new TextView(this);v.setText(text);v.setTextSize(16);v.setPadding(0,16,0,8);layout.addView(v);}
     private void button(LinearLayout layout,String text,Runnable click){Button b=new Button(this);b.setText(text);b.setOnClickListener(v->click.run());layout.addView(b,new LinearLayout.LayoutParams(-1,-2));}
@@ -71,22 +72,9 @@ public final class MainActivity extends Activity {
             JSONObject code=OneDrive.deviceCode(id);String userCode=code.getString("user_code"),url=code.getString("verification_uri");
             if(!url.startsWith("https://microsoft.com/") && !url.startsWith("https://www.microsoft.com/") && !url.startsWith("https://login.microsoftonline.com/"))throw new Exception("인증 주소 확인 실패");
             final String link=url;
-            handler.post(()->new AlertDialog.Builder(this).setTitle("Microsoft 로그인 코드").setMessage(userCode+"\n\n브라우저에서 이 코드를 입력하세요. 창을 닫아도 로그인 확인은 계속됩니다.").setPositiveButton("로그인 페이지 열기",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(link)))).setNegativeButton("닫기",null).show());
-            long end=System.currentTimeMillis()+code.getLong("expires_in")*1000;int interval=Math.max(5,code.optInt("interval",5));
-            while(!destroyed && System.currentTimeMillis()<end){Thread.sleep(interval*1000L);
-                OneDrive.Reply reply=OneDrive.oauth("token",Map.of("client_id",id,"grant_type","urn:ietf:params:oauth:grant-type:device_code","device_code",code.getString("device_code")));
-                if(reply.code==200){
-                    String token=reply.json.getString("access_token");JSONObject drive=OneDrive.graph("/me/drive?$select=id","GET",token,null,null);
-                    String driveId=drive.getString("id");
-                    String existing=Store.prefs(this).getString("driveId","");
-                    if(!existing.isEmpty()&&!existing.equals(driveId))throw new Exception("기존 수집 계정과 다른 OneDrive입니다. 기존 계정으로 로그인하세요");
-                    OneDrive.acceptTokens(this,reply.json,"");Store.prefs(this).edit().putString("driveId",driveId).apply();
-                    Store.status(this,"OneDrive 로그인 완료");return;
-                }
-                String error=reply.json.optString("error");if("slow_down".equals(error))interval+=5;else if(!"authorization_pending".equals(error))throw new Exception("Microsoft 로그인 실패 · "+error);
-            }
-            if(!destroyed)throw new Exception("로그인 코드가 만료되었습니다");
+            handler.post(()->{if(!destroyed)new AlertDialog.Builder(this).setTitle("Microsoft 로그인 코드").setMessage(userCode+"\n\n브라우저에서 이 코드를 입력하세요. 로그인 완료 후 수집 앱으로 돌아오세요.").setPositiveButton("로그인 페이지 열기",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(link)))).setNegativeButton("닫기",null).show();});
+            OneDrive.completeDeviceLogin(getApplicationContext(),id,code,()->!Thread.currentThread().isInterrupted(),System::currentTimeMillis,Thread::sleep);
         }catch(Exception e){Store.status(this,"로그인 미완료 · "+e.getMessage());}finally{authBusy=false;}});
     }
-    @Override protected void onDestroy(){destroyed=true;handler.removeCallbacksAndMessages(null);auth.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){destroyed=true;handler.removeCallbacksAndMessages(null);super.onDestroy();}
 }

@@ -24,10 +24,15 @@ final class OneDrive {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(20000); c.setReadTimeout(60000); c.setInstanceFollowRedirects(false); c.setRequestMethod(method);
         if (token != null) c.setRequestProperty("Authorization", "Bearer " + token);
-        if (body != null) { c.setRequestProperty("Content-Type", type); c.setDoOutput(true); c.setFixedLengthStreamingMode(body.length); try(OutputStream out = c.getOutputStream()) { out.write(body); } }
-        try { int status = c.getResponseCode(); InputStream in = status < 400 ? c.getInputStream() : c.getErrorStream();
+        try {
+            if (body != null) { c.setRequestProperty("Content-Type", type); c.setDoOutput(true); c.setFixedLengthStreamingMode(body.length); try(OutputStream out = c.getOutputStream()) { out.write(body); } }
+            int status = c.getResponseCode(); InputStream in = status < 400 ? c.getInputStream() : c.getErrorStream();
             byte[] bytes; try (InputStream source = in) { bytes = source == null ? new byte[0] : source.readNBytes(1024 * 1024); }
-            return new Reply(status, bytes.length == 0 ? new JSONObject() : new JSONObject(new String(bytes, StandardCharsets.UTF_8)));
+            try { return new Reply(status, bytes.length == 0 ? new JSONObject() : new JSONObject(new String(bytes, StandardCharsets.UTF_8))); }
+            catch (JSONException invalid) {
+                if (status < 200 || status >= 300) throw new HttpFailure(status);
+                throw new IOException("Microsoft 서버 응답 형식을 확인하지 못했습니다");
+            }
         } finally { c.disconnect(); }
     }
     static Reply oauth(String path, Map<String,String> data) throws Exception { return request(AUTH + path, "POST", null, "application/x-www-form-urlencoded", form(data).getBytes(StandardCharsets.UTF_8)); }
@@ -53,7 +58,53 @@ final class OneDrive {
     }
     static JSONObject graph(String path, String method, String token, String type, byte[] body) throws Exception {
         Reply r = request(GRAPH + path, method, token, type, body);
-        if (r.code < 200 || r.code >= 300) throw new IOException("OneDrive 요청 실패 (HTTP " + r.code + ")"); return r.json;
+        if (r.code < 200 || r.code >= 300) throw new HttpFailure(r.code); return r.json;
+    }
+    static final class HttpFailure extends IOException {
+        final int status;
+        HttpFailure(int status) { super("OneDrive 요청 실패 (HTTP " + status + ")"); this.status = status; }
+    }
+    interface Pauser { void pause(long milliseconds) throws InterruptedException; }
+    static boolean retryable(Exception error) {
+        return error instanceof UnknownHostException || error instanceof SocketTimeoutException || error instanceof ConnectException
+            || error instanceof NoRouteToHostException || error instanceof SocketException || error instanceof EOFException
+            || error instanceof HttpFailure && (((HttpFailure) error).status == 408 || ((HttpFailure) error).status == 429 || ((HttpFailure) error).status >= 500);
+    }
+    static void completeDeviceLogin(Context c, String client, JSONObject code, java.util.function.BooleanSupplier active,
+                                    java.util.function.LongSupplier now, Pauser wait) throws Exception {
+        long end = now.getAsLong() + code.getLong("expires_in") * 1000;
+        long interval = Math.max(5, code.optInt("interval", 5));
+        JSONObject issued = null;
+        Store.status(c, "브라우저 로그인 대기 · 완료 후 수집 앱으로 돌아오세요");
+        while (active.getAsBoolean() && now.getAsLong() < end) {
+            wait.pause(interval * 1000);
+            if (!active.getAsBoolean() || now.getAsLong() >= end) break;
+            try {
+                if (issued == null) {
+                    Reply reply = oauth("token", Map.of("client_id", client, "grant_type", "urn:ietf:params:oauth:grant-type:device_code", "device_code", code.getString("device_code")));
+                    if (reply.code == 200) { issued = reply.json; end = Math.max(end, now.getAsLong() + 120000); }
+                    else {
+                        String error = reply.json.optString("error");
+                        if ("slow_down".equals(error)) { interval += 5; continue; }
+                        if ("authorization_pending".equals(error)) continue;
+                        if (reply.code == 408 || reply.code == 429 || reply.code >= 500) throw new HttpFailure(reply.code);
+                        throw new IOException("Microsoft 로그인 실패 · " + error);
+                    }
+                }
+                String driveId = graph("/me/drive?$select=id", "GET", issued.getString("access_token"), null, null).getString("id");
+                String existing = Store.prefs(c).getString("driveId", "");
+                if (!existing.isEmpty() && !existing.equals(driveId)) throw new IOException("기존 수집 계정과 다른 OneDrive입니다. 기존 계정으로 로그인하세요");
+                acceptTokens(c, issued, "");
+                Store.prefs(c).edit().putString("driveId", driveId).apply();
+                Store.status(c, "OneDrive 로그인 완료");
+                return;
+            } catch (Exception error) {
+                if (!retryable(error)) throw error;
+                interval = Math.max(5, interval);
+                Store.status(c, "Microsoft 연결 재시도 중 · 브라우저에서 완료했다면 수집 앱으로 돌아와 기다려 주세요");
+            }
+        }
+        throw new IOException("로그인 확인 시간이 지났습니다. 인터넷 연결 후 다시 로그인해 주세요");
     }
     static String child(String parent, String name, String token) throws Exception {
         String path = "/me/drive/items/" + segment(parent) + ":/" + segment(name);
