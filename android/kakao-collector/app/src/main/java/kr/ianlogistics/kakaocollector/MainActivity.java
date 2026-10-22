@@ -24,7 +24,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         ScrollView scroll=new ScrollView(this);LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(28,32,28,32);scroll.addView(l);setContentView(scroll);
         label(l,"이안 카카오 수집 → OneDrive");
-        label(l,"등록한 대화방의 화면에 보이는 사진을 저장하고, 사진·주변 대화를 OneDrive 앱 전용 폴더에 전송합니다. 전용폰을 켜고 잠금을 해제해 두세요. 과거 대화 전체 수집·재부팅 후 자동 복구는 지원하지 않습니다.");
+        label(l,"등록한 대화방의 화면에 보이는 사진과 주변 대화를 OneDrive의 이안카카오/대화방 이름 폴더에 한국 시간의 수집 날짜·시간 파일명으로 저장합니다. 전용폰을 켜고 잠금을 해제해 두세요. 과거 대화 전체 수집·재부팅 후 자동 복구는 지원하지 않습니다.");
         label(l,"Microsoft 앱 클라이언트 ID (비밀 키 아님)");client=new EditText(this);client.setSingleLine();client.setText(Store.prefs(this).getString("client",""));l.addView(client);
         label(l,"수집할 대화방 이름 · 한 줄에 하나, 동일 이름 방은 사용 금지");rooms=new EditText(this);rooms.setMinLines(2);rooms.setText(Store.prefs(this).getString("rooms",""));l.addView(rooms);
         button(l,"설정 저장",()->{try{save();Store.status(this,"설정 저장됨");}catch(Exception e){alert(e.getMessage());}});
@@ -52,6 +52,7 @@ public final class MainActivity extends Activity {
         String id=client.getText().toString().trim(); if(!id.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))throw new Exception("Microsoft 앱의 클라이언트 ID를 입력하세요");
         if(!id.equals(Store.prefs(this).getString("client",id)) && Store.connected(this))throw new Exception("연결된 클라이언트 ID는 변경할 수 없습니다");
         if(Store.enabled(this))throw new Exception("설정 변경은 수집을 중지한 뒤 진행하세요");
+        Rules.validateRoomFolders(rooms.getText().toString());
         Store.prefs(this).edit().putString("client",id).putString("rooms",rooms.getText().toString().trim()).apply();
     }
     private void start(){if(Store.enabled(this)){alert("이미 수집 중입니다");return;}try{save();if(rooms.getText().toString().isBlank())throw new Exception("대화방 이름을 입력하세요");
@@ -75,8 +76,8 @@ public final class MainActivity extends Activity {
             while(!destroyed && System.currentTimeMillis()<end){Thread.sleep(interval*1000L);
                 OneDrive.Reply reply=OneDrive.oauth("token",Map.of("client_id",id,"grant_type","urn:ietf:params:oauth:grant-type:device_code","device_code",code.getString("device_code")));
                 if(reply.code==200){
-                    String token=reply.json.getString("access_token");JSONObject drive=OneDrive.graph("/me/drive/special/approot","GET",token,null,null);
-                    String driveId=drive.getJSONObject("parentReference").getString("driveId");
+                    String token=reply.json.getString("access_token");JSONObject drive=OneDrive.graph("/me/drive?$select=id","GET",token,null,null);
+                    String driveId=drive.getString("id");
                     String existing=Store.prefs(this).getString("driveId","");
                     if(!existing.isEmpty()&&!existing.equals(driveId))throw new Exception("기존 수집 계정과 다른 OneDrive입니다. 기존 계정으로 로그인하세요");
                     OneDrive.acceptTokens(this,reply.json,"");Store.prefs(this).edit().putString("driveId",driveId).apply();
