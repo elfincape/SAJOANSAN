@@ -7,8 +7,8 @@
 ## Rules
 - Seoul business date; Saturday initially selects Sunday. Explicit CJ photo date wins.
 - Gwangsin covers Gwangju/Jeonju every day. Hayang uses Dongjin weekdays and Happy weekends, based on business date.
-- Request tons/count are external inputs, never inferred from pallets. CJ uses requested tons, with carrier-provided per-vehicle loading text appended.
-- Gyeongsan aliases Hayang. Carrier reply order is preserved. Dock sequences: Gwangju 4,5; Jeonju 6; Hayang 2,3. No temperature-based dock rule.
+- Request tons/count are external inputs, never inferred from pallets. For a region with one chilled and one mixed-temperature request, the larger tonnage is mixed-temperature; messages list chilled first. CJ output uses explicit actual reply tonnage when available and otherwise the matched request tonnage, preserving loading details.
+- Gyeongsan aliases Hayang. Replies match region, temperature and explicit tonnage instead of source order; ambiguous replies remain unlinked for confirmation. Automatic dock sequences follow chilled-first request order: Gwangju 4,5; Jeonju 6; Hayang 2,3. Manual docks and registered fixed-driver docks remain authoritative.
 - Gwangsin request/instructions and expected volume are two messages. Hayang is one message.
 - No pallet deficit allocation, automatic extra truck orders, Kakao sending, or revised-CJ merge workflow.
 - Use existing Haiku server credential; do not store or use the JEV credential exposed in chat.
@@ -57,3 +57,9 @@
 - Compare imported pallets and requested ton/count against the existing haul calculator in a bounded module worker. Only differences or unavailable comparisons appear; no CJ request mutation, rate editing or standalone calculator UI. Existing private-price visibility applies.
 - Targeted lint, existing haul and menu tests, production build passed. Isolated browser checks passed preview-before-API, duplicate photo, automatic reply, failure/undo, pending reply save/load, retry dedup recovery and replacement-save/undo/resave. Desktop and 390px mobile checked in both themes with no overflow or broken images.
 - Existing parse function version 2 deployed with only paste/retry error wording changes; JWT and center authorization unchanged. No schema changes.
+
+## Reply Matching and Formatting Correction (2026-10-25)
+- Corrected sequential first-empty-slot assignment. Resolve specific replies before incomplete ones; repeated plates update existing rows. Reanalysis can repair prior mismatched request links without losing other incoming vehicle details. Insufficient evidence remains unlinked and blocks CJ copying.
+- Larger tonnage receives mixed-temperature designation when a region requests one chilled and one mixed-temperature row. Preserve each requested tonnage and count, list chilled first, and use confirmed actual tonnage in CJ/operation output.
+- Format mobile contacts with hyphens and arrival times as HH:MM, retaining before/after conditions and interpreting explicit 오전/오후. Include arrival in CJ contacts.
+- Verification: supplied five-vehicle shape in all 120 reply permutations; repeat and normalization idempotence; volume preservation; missing-info enrichment; prior-link repair; fixed-driver preservation; actual/request tonnage separation. Existing browser workflow and supplied-image UI with mocked extraction verify resulting CJ text without operational writes.

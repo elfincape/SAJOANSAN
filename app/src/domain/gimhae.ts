@@ -113,6 +113,89 @@ export function dockNumber(value: unknown) {
     .trim();
   return /^10[2-6]$/.test(raw) ? raw.slice(2) : raw;
 }
+export function formatPhone(value: unknown) {
+  const raw = text(value);
+  const digits = raw.replace(/[\s()-]/g, '');
+  return /^01\d{8,9}$/.test(digits)
+    ? digits.replace(/^(01\d)(\d{3,4})(\d{4})$/, '$1-$2-$3')
+    : raw;
+}
+export function formatArrival(value: unknown) {
+  const raw = text(value).replace(
+    /(오전|오후)\s*(1[0-2]|0?[1-9])(?=\s*(?:시|:))/g,
+    (_, period: string, hour: string) =>
+      String((Number(hour) % 12) + (period === '오후' ? 12 : 0)),
+  );
+  return raw
+    .replace(
+      /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|:([0-5]\d))(?!\d)/g,
+      (_, hour: string, minute: string, colonMinute: string) =>
+        `${hour.padStart(2, '0')}:${(minute || colonMinute || '0').padStart(2, '0')}`,
+    )
+    .replace(/(\d{2}:\d{2})(?=[가-힣])/g, '$1 ');
+}
+function temperatureOf(value: unknown) {
+  const raw = text(value);
+  const frozen = /냉동/.test(raw);
+  const chilled = /냉장/.test(raw);
+  return frozen && chilled
+    ? '냉동&냉장'
+    : frozen
+      ? '냉동'
+      : chilled
+        ? '냉장'
+        : '';
+}
+function requestOrder(a: RequestRow, b: RequestRow) {
+  const rank = (r: RequestRow) =>
+    temperatureOf(r.temperature) === '냉장' ? 0 : 1;
+  return (
+    REGIONS.indexOf(a.region) - REGIONS.indexOf(b.region) || rank(a) - rank(b)
+  );
+}
+function orderedTrucks(draft: DispatchDraft) {
+  return [...draft.trucks].sort((a, b) => {
+    const ra = draft.requests.find((r) => r.id === a.requestId);
+    const rb = draft.requests.find((r) => r.id === b.requestId);
+    return ra && rb ? requestOrder(ra, rb) : ra ? -1 : rb ? 1 : 0;
+  });
+}
+function replyTons(item: Partial<TruckRow>) {
+  return (
+    tonnageValue(item.actualTons) ??
+    tonnageValue(text(item.loadText).match(/(\d+(?:\.\d+)?)\s*톤/)?.[1])
+  );
+}
+function replyCandidates(
+  draft: DispatchDraft,
+  item: Partial<TruckRow>,
+  rows: TruckRow[],
+) {
+  const temperature = temperatureOf(item.loadText);
+  let candidates = rows.filter((t) => {
+    const r = draft.requests.find((r) => r.id === t.requestId);
+    return (
+      r &&
+      r.region === regionName(item.region) &&
+      (!temperature || temperatureOf(r.temperature) === temperature)
+    );
+  });
+  const tons = replyTons(item);
+  const exact = candidates.filter(
+    (t) => draft.requests.find((r) => r.id === t.requestId)?.tons === tons,
+  );
+  if (tons != null && exact.length) candidates = exact;
+  return candidates;
+}
+function chooseReplySlot(draft: DispatchDraft, candidates: TruckRow[]) {
+  const kinds = new Set(
+    candidates.map((t) => {
+      const r = draft.requests.find((r) => r.id === t.requestId)!;
+      return `${temperatureOf(r.temperature)}|${r.tons}|${r.carrier}`;
+    }),
+  );
+  return kinds.size === 1 ? candidates[0] : undefined;
+}
 export function newRequest(region = '광주'): RequestRow {
   return {
     id: uid(),
@@ -166,8 +249,8 @@ export function normalizeFixedDrivers(rows: Partial<FixedDriver>[] = []) {
       dock: dockNumber(row.dock).slice(0, 20),
       driver: text(row.driver).slice(0, 80),
       vehicle: text(row.vehicle).slice(0, 40),
-      phone: text(row.phone).slice(0, 40),
-      arrival: text(row.arrival).slice(0, 80),
+      phone: formatPhone(row.phone).slice(0, 40),
+      arrival: formatArrival(row.arrival).slice(0, 80),
     };
   });
 }
@@ -262,8 +345,8 @@ export function normalizeDraft(
       dockManual: row.dockManual === true,
       driver: text(row.driver).slice(0, 80),
       vehicle: text(row.vehicle).slice(0, 40),
-      phone: text(row.phone).slice(0, 40),
-      arrival: text(row.arrival).slice(0, 80),
+      phone: formatPhone(row.phone).slice(0, 40),
+      arrival: formatArrival(row.arrival).slice(0, 80),
       loadText: text(row.loadText).slice(0, 1000),
       actualTons: tonnageValue(row.actualTons),
       fixedDriverId: text(row.fixedDriverId),
@@ -339,8 +422,12 @@ export function reconcileDocks(draft: DispatchDraft) {
       ),
     ]),
   );
-  for (const truck of draft.trucks) {
+  for (const truck of orderedTrucks(draft)) {
     if (truck.dockManual || truck.fixedDriverId) continue;
+    if (!truck.requestId) {
+      truck.dock = '';
+      continue;
+    }
     truck.dock =
       DOCKS[truck.region]?.find((dock) => !used[truck.region].has(dock)) || '';
     if (truck.dock) used[truck.region].add(truck.dock);
@@ -496,6 +583,27 @@ export function importRequest(draft: DispatchDraft, result: AnalysisResult) {
   }));
   if (next.requests.reduce((n, r) => n + r.count, 0) > 100)
     throw Error('요청 대수는 최대 100대입니다.');
+  for (const region of REGIONS) {
+    const rows = next.requests.filter((r) => r.region === region);
+    const chilled = rows.find((r) => temperatureOf(r.temperature) === '냉장');
+    const mixed = rows.find(
+      (r) => temperatureOf(r.temperature) === '냉동&냉장',
+    );
+    if (
+      rows.length === 2 &&
+      chilled &&
+      mixed &&
+      chilled.tons != null &&
+      mixed.tons != null &&
+      chilled.tons > mixed.tons
+    ) {
+      [chilled.temperature, mixed.temperature] = [
+        mixed.temperature,
+        chilled.temperature,
+      ];
+    }
+  }
+  next.requests.sort(requestOrder);
   syncSlots(next);
   return next;
 }
@@ -508,20 +616,68 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
     throw Error(
       '회신에서 차량정보를 읽지 못했습니다. 직접 입력하거나 원문을 확인해 주세요.',
     );
-  const used = new Set();
-  for (const item of result.trucks) {
+  const used = new Set<string>();
+  const plate = (value: unknown) => text(value).replace(/\s/g, '');
+  const incoming = new Set(
+    result.trucks.map((t) => `${regionName(t.region)}|${plate(t.vehicle)}`),
+  );
+  // Resolve the most specific replies first so an incomplete reply cannot take their slot.
+  const replies = [...result.trucks].sort(
+    (a, b) =>
+      Number(Boolean(temperatureOf(b.loadText))) +
+      Number(replyTons(b) != null) -
+      Number(Boolean(temperatureOf(a.loadText))) -
+      Number(replyTons(a) != null),
+  );
+  for (const item of replies) {
     const region = regionName(item.region),
-      vehicle = text(item.vehicle);
+      vehicle = plate(item.vehicle);
     let target = vehicle
       ? draft.trucks.find(
-          (t) =>
-            t.vehicle.replace(/\s/g, '') === vehicle.replace(/\s/g, '') &&
-            t.region === region &&
-            !used.has(t.id),
+          (t) => plate(t.vehicle) === vehicle && t.region === region,
         )
-      : null;
-    target ||= draft.trucks.find(
-      (t) => t.region === region && !filledTruck(t) && !used.has(t.id),
+      : undefined;
+    if (
+      target &&
+      !replyCandidates(draft, item, draft.trucks).some(
+        (t) => t.id === target!.id,
+      )
+    ) {
+      const replacement = chooseReplySlot(
+        draft,
+        replyCandidates(
+          draft,
+          item,
+          draft.trucks.filter(
+            (t) =>
+              t !== target &&
+              !used.has(t.id) &&
+              !t.fixedDriverId &&
+              (!filledTruck(t) ||
+                incoming.has(`${t.region}|${plate(t.vehicle)}`)),
+          ),
+        ),
+      );
+      if (replacement && !target.fixedDriverId) {
+        [target.requestId, replacement.requestId] = [
+          replacement.requestId,
+          target.requestId,
+        ];
+        if (!replacement.requestId && !filledTruck(replacement))
+          draft.trucks = draft.trucks.filter((t) => t !== replacement);
+      } else if (!target.fixedDriverId) {
+        const previous = draft.requests.find((r) => r.id === target!.requestId);
+        target.requestId = '';
+        if (previous) draft.trucks.push(newTruck(previous));
+      }
+    }
+    target ||= chooseReplySlot(
+      draft,
+      replyCandidates(
+        draft,
+        item,
+        draft.trucks.filter((t) => !filledTruck(t) && !used.has(t.id)),
+      ),
     );
     if (!target) {
       target = newTruck(
@@ -548,12 +704,14 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
       'loadText',
     ] as const)
       if (text(item[field]))
-        target[field] = text(item[field]).slice(
-          0,
-          field === 'loadText' ? 1000 : 80,
-        );
-    if (tonnageValue(item.actualTons) != null)
-      target.actualTons = tonnageValue(item.actualTons);
+        target[field] = (
+          field === 'phone'
+            ? formatPhone(item[field])
+            : field === 'arrival'
+              ? formatArrival(item[field])
+              : text(item[field])
+        ).slice(0, field === 'loadText' ? 1000 : 80);
+    if (replyTons(item) != null) target.actualTons = replyTons(item);
     if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
   }
@@ -600,6 +758,15 @@ export function issues(draft: DispatchDraft, complete = false) {
     if (draft.replyPending)
       result.push('현재 운수사 회신 분석이 완료되지 않았습니다.');
     for (const [i, t] of draft.trucks.entries()) {
+      const request = draft.requests.find((r) => r.id === t.requestId);
+      if (
+        request &&
+        temperatureOf(t.loadText) &&
+        temperatureOf(t.loadText) !== temperatureOf(request.temperature)
+      )
+        result.push(
+          `차량 ${i + 1}: 회신 온도와 연결된 요청이 다릅니다. 연결할 요청을 확인해 주세요.`,
+        );
       if (!draft.requests.some((r) => r.id === t.requestId))
         result.push(`차량 ${i + 1}: 연결할 요청을 선택해 주세요.`);
       if (![t.driver, t.vehicle, t.phone, t.dock].every((value) => text(value)))
@@ -641,7 +808,7 @@ function requestLine(draft: DispatchDraft, request: RequestRow) {
       .filter((t) => t.fixedDriverId)
       .map(
         (t) =>
-          `   고정기사 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, t.phone].filter(Boolean).join(' ')}`,
+          `   고정기사 (${t.dock || '미정'}번 도크) ${[formatArrival(t.arrival), t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ')}`,
       ),
   ].join('\n');
 }
@@ -655,11 +822,13 @@ export function messages(draft: DispatchDraft) {
       ),
     ];
   for (const carrier of carriers) {
-    const rows = draft.requests.filter(
-      (r) =>
-        (r.carrier || carrierFor(r.region, draft.date)) === carrier &&
-        r.count > 0,
-    );
+    const rows = [...draft.requests]
+      .sort(requestOrder)
+      .filter(
+        (r) =>
+          (r.carrier || carrierFor(r.region, draft.date)) === carrier &&
+          r.count > 0,
+      );
     const regions = [...new Set(rows.map((r) => r.region))];
     let body =
       dateLabel(draft.date) +
@@ -695,7 +864,7 @@ export function messages(draft: DispatchDraft) {
   const cj = [dateLabel(draft.date)],
     summary = [dateLabel(draft.date), '차량 운영 현황'];
   for (const region of REGIONS) {
-    const trucks = draft.trucks.filter(
+    const trucks = orderedTrucks(draft).filter(
       (t) =>
         draft.requests.find((r) => r.id === t.requestId)?.region === region,
     );
@@ -704,11 +873,11 @@ export function messages(draft: DispatchDraft) {
     for (const t of trucks) {
       const r = draft.requests.find((r) => r.id === t.requestId)!;
       cj.push(
-        ` - ${r.temperature || '온도 미정'} ${r.tons! > 0 ? r.tons : '미정'}톤 1대 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, t.phone].filter(Boolean).join(' ') || '배차 확인 필요'}`,
+        ` - ${temperatureOf(t.loadText) || r.temperature || '온도 미정'} ${t.actualTons ?? (r.tons! > 0 ? r.tons : '미정')}톤 1대 (${t.dock || '미정'}번 도크) ${[formatArrival(t.arrival), t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ') || '배차 확인 필요'}`,
       );
       if (t.loadText) cj.push(t.loadText);
       summary.push(
-        `${region} ${r.temperature} ${r.tons ?? '미정'}톤 ${t.vehicle.match(/\d{4}$/)?.[0] || t.vehicle} ${t.arrival}`.trim(),
+        `${region} ${temperatureOf(t.loadText) || r.temperature} ${t.actualTons ?? r.tons ?? '미정'}톤 ${t.vehicle.match(/\d{4}$/)?.[0] || t.vehicle} ${formatArrival(t.arrival)}`.trim(),
       );
     }
     cj.push('');
