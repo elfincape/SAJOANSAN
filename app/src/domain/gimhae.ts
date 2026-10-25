@@ -925,7 +925,7 @@ function requestLine(draft: DispatchDraft, request: RequestRow) {
       .filter((t) => t.fixedDriverId)
       .map(
         (t) =>
-          `   고정기사 (${t.dock || '미정'}번 도크) ${[formatArrival(t.arrival), t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ')}`,
+          `   고정기사 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ')}`,
       ),
   ].join('\n');
 }
@@ -990,7 +990,7 @@ export function messages(draft: DispatchDraft) {
     for (const t of trucks) {
       const r = draft.requests.find((r) => r.id === t.requestId)!;
       cj.push(
-        ` - ${temperatureOf(t.loadText) || r.temperature || '온도 미정'} ${t.actualTons ?? (r.tons! > 0 ? r.tons : '미정')}톤 1대 (${t.dock || '미정'}번 도크) ${[formatArrival(t.arrival), t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ') || '배차 확인 필요'}`,
+        ` - ${temperatureOf(t.loadText) || r.temperature || '온도 미정'} ${t.actualTons ?? (r.tons! > 0 ? r.tons : '미정')}톤 1대 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ') || '배차 확인 필요'}`,
       );
       const note = loadNote(t, r);
       if (note) cj.push(note);

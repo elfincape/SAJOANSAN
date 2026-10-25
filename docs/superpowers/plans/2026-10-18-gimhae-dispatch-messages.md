@@ -61,7 +61,7 @@
 ## Reply Matching and Formatting Correction (2026-10-25)
 - Corrected sequential first-empty-slot assignment. Resolve specific replies before incomplete ones; repeated plates update existing rows. Reanalysis can repair prior mismatched request links without losing other incoming vehicle details. Insufficient evidence remains unlinked and blocks CJ copying.
 - Larger tonnage receives mixed-temperature designation when a region requests one chilled and one mixed-temperature row. Preserve each requested tonnage and count, list chilled first, and use confirmed actual tonnage in CJ/operation output.
-- Format mobile contacts with hyphens and arrival times as HH:MM, omitting before/after conditions and interpreting explicit 오전/오후; leave arrival blank when no time can be identified. Include arrival in CJ contacts.
+- Format mobile contacts with hyphens and arrival times as HH:MM, omitting before/after conditions and interpreting explicit 오전/오후; leave arrival blank when no time can be identified. Show arrival only in the vehicle operation summary; omit it from CJ dispatch contacts and carrier requests.
 - Verification: supplied five-vehicle shape in all 120 reply permutations; repeat and normalization idempotence; volume preservation; missing-info enrichment; prior-link repair; fixed-driver preservation; actual/request tonnage separation. Existing browser workflow and supplied-image UI with mocked extraction verify resulting CJ text without operational writes.
 
 ## Loading Notes and Empty-Slot Follow-Up (2026-10-25)
