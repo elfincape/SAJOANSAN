@@ -126,13 +126,12 @@ export function formatArrival(value: unknown) {
     (_, period: string, hour: string) =>
       String((Number(hour) % 12) + (period === '오후' ? 12 : 0)),
   );
-  return raw
-    .replace(
-      /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|:([0-5]\d))(?!\d)/g,
-      (_, hour: string, minute: string, colonMinute: string) =>
-        `${hour.padStart(2, '0')}:${(minute || colonMinute || '0').padStart(2, '0')}`,
-    )
-    .replace(/(\d{2}:\d{2})(?=[가-힣])/g, '$1 ');
+  const match = raw.match(
+    /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|:([0-5]\d))(?!\d)/,
+  );
+  return match
+    ? `${match[1].padStart(2, '0')}:${(match[2] || match[3] || '0').padStart(2, '0')}`
+    : '';
 }
 function temperatureOf(value: unknown) {
   const raw = text(value);
