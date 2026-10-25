@@ -631,6 +631,68 @@ export function importRequest(draft: DispatchDraft, result: AnalysisResult) {
   syncSlots(next);
   return next;
 }
+const VEHICLE_PATTERN = /(?:[가-힣]{2,3}\s*)?\d{2,3}\s*[가-힣]\s*\d{4}(?!\d)/g;
+function sourceReplyVehicles(raw: string) {
+  const lines = raw.split(/\r?\n/).map(text);
+  const positions = lines.flatMap((line, index) => {
+    const plates = [...line.matchAll(VEHICLE_PATTERN)];
+    return plates.length ? [{ index, plates }] : [];
+  });
+  const rows = new Map<string, Partial<TruckRow>>();
+  const route = /김해\s*[-ㅡ→~]+\s*(광주|전주|하양|경산)/;
+  const timeHeader = (line: string) =>
+    route.test(line) && Boolean(formatArrival(line));
+  for (const [i, entry] of positions.entries()) {
+    const vehicle = entry.plates[0][0].replace(/\s/g, '');
+    // Only recover explicit plate/name/phone blocks; leave other layouts to extraction.
+    if (
+      entry.plates.length !== 1 ||
+      lines[entry.index].replace(/\s/g, '') !== vehicle
+    )
+      continue;
+    const end = positions[i + 1]?.index ?? lines.length;
+    let body = lines.slice(entry.index + 1, end);
+    const nextHeader = body.findIndex(timeHeader);
+    if (nextHeader >= 0) body = body.slice(0, nextHeader);
+    const previous =
+      lines
+        .slice((positions[i - 1]?.index ?? -1) + 1, entry.index)
+        .filter(Boolean)
+        .at(-1) || '';
+    const header = timeHeader(previous) ? previous : '';
+    const phoneIndex = body.findIndex((line) =>
+      /^01\d[\s-]*\d{3,4}[\s-]*\d{4}$/.test(line),
+    );
+    const driver = body.slice(0, phoneIndex).filter(Boolean).at(-1) || '';
+    const region = regionName(
+      (body.join('\n').match(route) || header.match(route))?.[1],
+    );
+    const loading = body
+      .filter((line) => /^(?:냉동|냉장)/.test(line))
+      .join(' ');
+    if (
+      phoneIndex < 0 ||
+      !/^[가-힣]{2,6}$/.test(driver) ||
+      !region ||
+      !temperatureOf(loading)
+    )
+      continue;
+    const times = [
+      ...new Set([header, ...body].map(formatArrival).filter(Boolean)),
+    ];
+    if (times.length > 1) continue;
+    rows.set(vehicle, {
+      region,
+      vehicle,
+      driver,
+      phone: formatPhone(body[phoneIndex]),
+      arrival: times[0] || '',
+      loadText: loading,
+      actualTons: tonnageValue(loading.match(/(\d+(?:\.\d+)?)\s*톤/)?.[1]),
+    });
+  }
+  return rows;
+}
 export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
   if (
     !Array.isArray(result?.trucks) ||
@@ -641,14 +703,39 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
     throw Error(
       '회신에서 차량정보를 읽지 못했습니다. 직접 입력하거나 원문을 확인해 주세요.',
     );
+  const recovered = sourceReplyVehicles(draft.replyText);
+  const extracted = new Map<string, Partial<TruckRow>>();
+  const analyzed = result.trucks.filter(
+    (t) => !recovered.has(text(t.vehicle).replace(/\s/g, '')),
+  );
+  for (const row of analyzed) {
+    const key = text(row.vehicle).replace(/\s/g, '') || uid();
+    const supplied = Object.fromEntries(
+      Object.entries(row).filter(
+        ([, value]) => value != null && text(value) !== '',
+      ),
+    );
+    extracted.set(key, { ...extracted.get(key), ...supplied });
+  }
+  for (const [vehicle, row] of recovered) extracted.set(vehicle, row);
+  const sourcePlates = new Set(
+    [...draft.replyText.matchAll(VEHICLE_PATTERN)].map((m) =>
+      m[0].replace(/\s/g, ''),
+    ),
+  );
+  if ([...sourcePlates].some((vehicle) => !extracted.has(vehicle)))
+    throw Error(
+      '원문에 있는 차량이 분석 결과에서 누락됐습니다. 원문은 유지됩니다. 다시 분석하거나 차량정보를 확인해 주세요.',
+    );
+  const trucks = [...extracted.values()];
   removeSurplusEmptySlots(draft);
   const used = new Set<string>();
   const plate = (value: unknown) => text(value).replace(/\s/g, '');
   const incoming = new Set(
-    result.trucks.map((t) => `${regionName(t.region)}|${plate(t.vehicle)}`),
+    trucks.map((t) => `${regionName(t.region)}|${plate(t.vehicle)}`),
   );
   // Resolve the most specific replies first so an incomplete reply cannot take their slot.
-  const replies = result.trucks
+  const replies = trucks
     .filter(hasVehicleDetails)
     .sort(
       (a, b) =>
@@ -724,6 +811,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
       target.fixedDriverId = '';
       target.fixedConfirmed = false;
     }
+    if (recovered.has(vehicle)) target.arrival = '';
     for (const field of [
       'driver',
       'vehicle',

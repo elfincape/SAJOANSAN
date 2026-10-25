@@ -69,3 +69,9 @@
 - Match replies with clear temperature/tonnage first; a reply without tonnage can use the remaining compatible request. Missing tonnage does not require an additional truck.
 - Suppress loading notes that only repeat the displayed temperature/tonnage and “상차”. Preserve pallet quantities, loading limits, partial loads and additional instructions. Source loading text remains in the draft.
 - Verified both reply orders, description-only placeholders, surplus empty slots, repeat idempotence, no-ton final-slot matching, redundant note suppression and special-note preservation.
+
+## Source-Reconciliation Follow-Up (2026-10-25)
+- Reproduced the observed four-vehicle extraction with the user's raw source: the second Hayang truck is missing and its time is attached to the first.
+- Cross-check source vehicle plates against extracted records. For explicit standalone plate/name/phone blocks with a route and temperature, recover fields directly from that block; a route/time heading before the next vehicle belongs to the next block. Clear previously misassigned arrival when the source block has no time.
+- If a source plate remains unaccounted for, reject application before changing the draft. Preserve details across repeated partial records and avoid duplicate vehicles.
+- Verification uses the actual supplied text plus a fixture matching the observed faulty extraction, not a claim that live AI extraction was rerun. Repeated source, stale arrival correction, missing-plate failure without mutation, and the rendered five-vehicle output are checked.
