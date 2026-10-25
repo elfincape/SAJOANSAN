@@ -63,3 +63,9 @@
 - Larger tonnage receives mixed-temperature designation when a region requests one chilled and one mixed-temperature row. Preserve each requested tonnage and count, list chilled first, and use confirmed actual tonnage in CJ/operation output.
 - Format mobile contacts with hyphens and arrival times as HH:MM, omitting before/after conditions and interpreting explicit 오전/오후; leave arrival blank when no time can be identified. Include arrival in CJ contacts.
 - Verification: supplied five-vehicle shape in all 120 reply permutations; repeat and normalization idempotence; volume preservation; missing-info enrichment; prior-link repair; fixed-driver preservation; actual/request tonnage separation. Existing browser workflow and supplied-image UI with mocked extraction verify resulting CJ text without operational writes.
+
+## Loading Notes and Empty-Slot Follow-Up (2026-10-25)
+- A request slot containing only a loading description is available for a real vehicle reply. Ignore extracted description-only pseudo-vehicles and remove excess empty slots, while retaining all identified vehicles and fixed assignments.
+- Match replies with clear temperature/tonnage first; a reply without tonnage can use the remaining compatible request. Missing tonnage does not require an additional truck.
+- Suppress loading notes that only repeat the displayed temperature/tonnage and “상차”. Preserve pallet quantities, loading limits, partial loads and additional instructions. Source loading text remains in the draft.
+- Verified both reply orders, description-only placeholders, surplus empty slots, repeat idempotence, no-ton final-slot matching, redundant note suppression and special-note preservation.

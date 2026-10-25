@@ -384,6 +384,31 @@ export function normalizeDraft(
     instructions: INSTRUCTIONS,
   };
 }
+function hasVehicleDetails(row: Partial<TruckRow>) {
+  return [row.driver, row.vehicle, row.phone].some((value) => text(value));
+}
+function removeSurplusEmptySlots(draft: DispatchDraft) {
+  const remove = new Set<string>();
+  for (const request of draft.requests) {
+    const rows = draft.trucks.filter((t) => t.requestId === request.id);
+    const occupied = rows.filter(
+      (t) => hasVehicleDetails(t) || t.fixedDriverId,
+    );
+    const empty = rows.filter((t) => !hasVehicleDetails(t) && !t.fixedDriverId);
+    for (const t of empty.slice(Math.max(0, request.count - occupied.length)))
+      remove.add(t.id);
+  }
+  draft.trucks = draft.trucks.filter((t) => !remove.has(t.id));
+}
+function loadNote(truck: TruckRow, request: RequestRow) {
+  const note = text(truck.loadText);
+  const match = note.match(
+    /^(?:(냉동\s*[&·/+]?\s*냉장|냉장\s*[&·/+]?\s*냉동|냉동|냉장)\s*)?(?:(\d+(?:\.\d+)?)\s*톤\s*)?(?:상차)?$/,
+  );
+  if (!match) return note;
+  const tons = truck.actualTons ?? request.tons;
+  return match[2] && Number(match[2]) !== tons ? note : '';
+}
 export function filledTruck(row: TruckRow) {
   return [row.driver, row.vehicle, row.phone, row.loadText].some((value) =>
     text(value),
@@ -610,24 +635,28 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
   if (
     !Array.isArray(result?.trucks) ||
     !result.trucks.length ||
+    !result.trucks.some(hasVehicleDetails) ||
     result.trucks.length > 100
   )
     throw Error(
       '회신에서 차량정보를 읽지 못했습니다. 직접 입력하거나 원문을 확인해 주세요.',
     );
+  removeSurplusEmptySlots(draft);
   const used = new Set<string>();
   const plate = (value: unknown) => text(value).replace(/\s/g, '');
   const incoming = new Set(
     result.trucks.map((t) => `${regionName(t.region)}|${plate(t.vehicle)}`),
   );
   // Resolve the most specific replies first so an incomplete reply cannot take their slot.
-  const replies = [...result.trucks].sort(
-    (a, b) =>
-      Number(Boolean(temperatureOf(b.loadText))) +
-      Number(replyTons(b) != null) -
-      Number(Boolean(temperatureOf(a.loadText))) -
-      Number(replyTons(a) != null),
-  );
+  const replies = result.trucks
+    .filter(hasVehicleDetails)
+    .sort(
+      (a, b) =>
+        Number(Boolean(temperatureOf(b.loadText))) +
+        Number(replyTons(b) != null) -
+        Number(Boolean(temperatureOf(a.loadText))) -
+        Number(replyTons(a) != null),
+    );
   for (const item of replies) {
     const region = regionName(item.region),
       vehicle = plate(item.vehicle);
@@ -652,7 +681,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
               t !== target &&
               !used.has(t.id) &&
               !t.fixedDriverId &&
-              (!filledTruck(t) ||
+              (!hasVehicleDetails(t) ||
                 incoming.has(`${t.region}|${plate(t.vehicle)}`)),
           ),
         ),
@@ -662,7 +691,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
           replacement.requestId,
           target.requestId,
         ];
-        if (!replacement.requestId && !filledTruck(replacement))
+        if (!replacement.requestId && !hasVehicleDetails(replacement))
           draft.trucks = draft.trucks.filter((t) => t !== replacement);
       } else if (!target.fixedDriverId) {
         const previous = draft.requests.find((r) => r.id === target!.requestId);
@@ -675,7 +704,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
       replyCandidates(
         draft,
         item,
-        draft.trucks.filter((t) => !filledTruck(t) && !used.has(t.id)),
+        draft.trucks.filter((t) => !hasVehicleDetails(t) && !used.has(t.id)),
       ),
     );
     if (!target) {
@@ -714,6 +743,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
     if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
   }
+  removeSurplusEmptySlots(draft);
   if (draft.trucks.length > 100)
     throw Error('차량은 최대 100대까지 입력할 수 있습니다.');
   reconcileDocks(draft);
@@ -874,7 +904,8 @@ export function messages(draft: DispatchDraft) {
       cj.push(
         ` - ${temperatureOf(t.loadText) || r.temperature || '온도 미정'} ${t.actualTons ?? (r.tons! > 0 ? r.tons : '미정')}톤 1대 (${t.dock || '미정'}번 도크) ${[formatArrival(t.arrival), t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ') || '배차 확인 필요'}`,
       );
-      if (t.loadText) cj.push(t.loadText);
+      const note = loadNote(t, r);
+      if (note) cj.push(note);
       summary.push(
         `${region} ${temperatureOf(t.loadText) || r.temperature} ${t.actualTons ?? r.tons ?? '미정'}톤 ${t.vehicle.match(/\d{4}$/)?.[0] || t.vehicle} ${formatArrival(t.arrival)}`.trim(),
       );
