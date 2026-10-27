@@ -5,6 +5,7 @@ import type {
   AnalysisResult,
 } from '../domain/gimhae';
 import { supabase as client } from './supabase';
+export type AnalysisProvider = 'jev' | 'haiku';
 export interface FixedDefaults {
   id: string;
   center_code: string;
@@ -102,15 +103,17 @@ export async function analyze(
   center: string,
   draft: DispatchDraft,
   mode: 'request' | 'reply',
+  provider: AnalysisProvider = 'jev',
 ): Promise<AnalysisResult> {
   const body: {
     mode: string;
+    provider: AnalysisProvider;
     center: string;
     date: string;
     mediaType?: string;
     imageBase64?: string;
     text?: string;
-  } = { mode, center, date: draft.date };
+  } = { mode, provider, center, date: draft.date };
   if (mode === 'request') {
     const match = draft.image.match(
       /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/,
@@ -132,7 +135,7 @@ export async function analyze(
     {
       body,
       headers: { Authorization: 'Bearer ' + sessionData.session.access_token },
-      signal: AbortSignal.timeout(105000),
+      signal: AbortSignal.timeout(165000),
     },
   );
   if (error) {

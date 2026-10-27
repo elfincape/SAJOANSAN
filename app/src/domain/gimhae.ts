@@ -53,6 +53,7 @@ export interface DispatchDraft {
   instructions: string;
 }
 export interface AnalysisResult {
+  tonnageVerified?: boolean;
   date?: string;
   volumes?: Partial<VolumeRow>[];
   requests?: Partial<RequestRow>[];
@@ -160,10 +161,9 @@ function orderedTrucks(draft: DispatchDraft) {
   });
 }
 function replyTons(item: Partial<TruckRow>) {
-  return (
-    tonnageValue(item.actualTons) ??
-    tonnageValue(text(item.loadText).match(/(\d+(?:\.\d+)?)\s*톤/)?.[1])
-  );
+  return Object.hasOwn(item, 'actualTons')
+    ? tonnageValue(item.actualTons)
+    : tonnageValue(text(item.loadText).match(/(\d+(?:\.\d+)?)\s*톤/)?.[1]);
 }
 function replyCandidates(
   draft: DispatchDraft,
@@ -715,9 +715,19 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
         ([, value]) => value != null && text(value) !== '',
       ),
     );
+    if (result.tonnageVerified && Object.hasOwn(row, 'actualTons'))
+      supplied.actualTons = tonnageValue(row.actualTons);
     extracted.set(key, { ...extracted.get(key), ...supplied });
   }
-  for (const [vehicle, row] of recovered) extracted.set(vehicle, row);
+  for (const [vehicle, row] of recovered) {
+    if (result.tonnageVerified) {
+      const verified = result.trucks.find(
+        (t) => text(t.vehicle).replace(/\s/g, '') === vehicle,
+      );
+      if (verified) row.actualTons = tonnageValue(verified.actualTons);
+    }
+    extracted.set(vehicle, row);
+  }
   const sourcePlates = new Set(
     [...draft.replyText.matchAll(VEHICLE_PATTERN)].map((m) =>
       m[0].replace(/\s/g, ''),
@@ -827,7 +837,8 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
               ? formatArrival(item[field])
               : text(item[field])
         ).slice(0, field === 'loadText' ? 1000 : 80);
-    if (replyTons(item) != null) target.actualTons = replyTons(item);
+    if (result.tonnageVerified || replyTons(item) != null)
+      target.actualTons = replyTons(item);
     if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
   }

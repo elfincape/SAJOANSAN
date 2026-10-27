@@ -1,3 +1,4 @@
+import { reviewWithJev } from './jev-review.js';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
@@ -126,6 +127,9 @@ export function makeHandler(env, fetcher = fetch) {
         !['request', 'reply'].includes(body?.mode)
       )
         throw fail('센터와 분석 종류를 확인해 주세요.', 400);
+      const provider = body.provider ?? 'haiku';
+      if (!['jev', 'haiku'].includes(provider))
+        throw fail('분석 API를 확인해 주세요.', 400);
       for (const action of ['read', 'edit']) {
         const allowed = await fetcher(
           env.SUPABASE_URL + '/rest/v1/rpc/operations_resource_allowed',
@@ -143,6 +147,11 @@ export function makeHandler(env, fetcher = fetch) {
         if (!allowed.ok || (await allowed.json()) !== true)
           throw fail('현재 센터의 배차정보 수정 권한이 없습니다.', 403);
       }
+      if (provider === 'jev' && !env.TYPESAFE_API_KEY)
+        throw fail(
+          'JEV 서버 키가 설정되지 않았습니다. 관리자에게 설정을 요청하거나 Haiku를 선택해 주세요.',
+          503,
+        );
       const content = [];
       if (body.mode === 'request') {
         if (
@@ -188,7 +197,7 @@ export function makeHandler(env, fetcher = fetch) {
           system: promptFor(body.mode, year),
           messages: [{ role: 'user', content }],
         }),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(65000),
       });
       if (!response.ok)
         throw fail(
@@ -197,9 +206,15 @@ export function makeHandler(env, fetcher = fetch) {
             : `이미지·회신 분석 연결 오류입니다. (HTTP ${response.status})`,
           response.status === 429 ? 429 : 502,
         );
+      const extracted = parseAnswer(await response.json(), body.mode);
+      const result =
+        provider === 'jev'
+          ? await reviewWithJev(body, extracted, env.TYPESAFE_API_KEY, fetcher)
+          : extracted;
       return json({
-        result: parseAnswer(await response.json(), body.mode),
-        model: MODEL,
+        result,
+        provider,
+        model: provider === 'jev' ? 'jev-latest + ' + MODEL : MODEL,
       });
     } catch (error) {
       return json(
