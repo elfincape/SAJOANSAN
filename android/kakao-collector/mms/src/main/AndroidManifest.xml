@@ -6,7 +6,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
-    <queries><package android:name="com.samsung.android.messaging" /></queries>
+    <queries>
+        <package android:name="com.samsung.android.messaging" />
+        <package android:name="android" />
+        <package android:name="com.android.intentresolver" />
+        <package android:name="com.samsung.android.app.sharelive" />
+        <package android:name="com.samsung.android.app.simplesharing" />
+        <intent><action android:name="android.intent.action.SEND" /><data android:mimeType="image/*" /></intent>
+    </queries>
     <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="이안 문자 사진 저장" android:allowBackup="false" android:dataExtractionRules="@xml/no_backup" android:icon="@drawable/app_icon" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <activity android:name=".MmsActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>

@@ -22,9 +22,11 @@ public final class MmsScreenAccess extends AccessibilityService {
     private Request job;
     private int state,albumWindow,backSteps,scrolls,shareScrolls;
     private long deadline;
+    private long unexpectedShareSince;
     private String albumTitle="",selectedKey="";
     private LocalDateTime selectedDate;
     private final Set<String> seen=new HashSet<>();
+    private Set<String> shareLabels=Set.of();
     private final LinkedHashMap<String,LocalDateTime> plan=new LinkedHashMap<>();
     private boolean planning,shareTargetClicked,moreRequested,conversationMenuRequested,shareBackRequested;
     private boolean scheduled,busyDisk;
@@ -116,7 +118,7 @@ public final class MmsScreenAccess extends AccessibilityService {
     }
     private void chooseShareTarget(List<AccessibilityNodeInfo> list) throws IOException {
         if(shareTargetClicked){schedule();return;}
-        for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(MmsShareActivity.LABEL.equals(text(n))||MmsShareActivity.LABEL.equals(desc(n)))){if(!tap(n))throw new IOException("원본 전달 앱 선택 실패");shareTargetClicked=true;Store.status(this,"공유 원본 URI 수신 대기"+progress());schedule();return;}
+        for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(shareLabels.contains(MmsShareRules.normalizedLabel(text(n)))||shareLabels.contains(MmsShareRules.normalizedLabel(desc(n))))){if(!tap(n))throw new IOException("원본 전달 앱 선택 실패");shareTargetClicked=true;Store.status(this,"공유 원본 URI 수신 대기"+progress());schedule();return;}
         if(!moreRequested)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser())for(String label:new String[]{text(n),desc(n)})if(Set.of("더보기","앱더보기","모든앱").contains(label.replaceAll("\\s+",""))){if(tap(n)){moreRequested=true;schedule();return;}}
         if(!PACKAGE.equals(currentPackage)&&!getPackageName().equals(currentPackage)&&shareScrolls<8)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}
         Store.photoStatus(this,"공유 대상 찾는 중 · 현재 앱="+currentPackage+" · "+MmsShareActivity.LABEL+" 선택 대기");schedule();
@@ -132,7 +134,12 @@ public final class MmsScreenAccess extends AccessibilityService {
             currentPackage=root==null?"화면 읽기 결과 없음":String.valueOf(root.getPackageName());
             if(state==7){
                 if(root==null){schedule();return;}
-                if(!MmsShareRules.trustedPackage(this,currentPackage)&&!getPackageName().equals(currentPackage))throw new IOException("원본 공유 중 다른 앱으로 이동했습니다");
+                if(!MmsShareRules.trustedPackage(this,currentPackage)&&!getPackageName().equals(currentPackage)){
+                    long now=System.currentTimeMillis();if(unexpectedShareSince==0)unexpectedShareSince=now;
+                    if(now-unexpectedShareSince<5000){Store.photoStatus(this,"공유창 전환 대기 · 현재 앱="+currentPackage);schedule();return;}
+                    throw new IOException("공유 화면 확인 실패 · 앱="+currentPackage+" · "+MmsShareRules.rejection(this,currentPackage));
+                }
+                unexpectedShareSince=0;
                 chooseShareTarget(nodes(root));return;
             }
             if(state==8&&!PACKAGE.equals(currentPackage)){
@@ -195,7 +202,8 @@ public final class MmsScreenAccess extends AccessibilityService {
                 if(!MmsScreenRules.inRange(date,r.start,r.end)){seen.add(selectedKey);excluded++;back();return;}
                 if(!date.equals(selectedDate))throw new IOException("목록 날짜와 사진 날짜가 달라 중단했습니다");
                 AccessibilityNodeInfo share=find(list,"share");if(share==null)throw new IOException("사진 원본 공유 버튼을 읽지 못했습니다");
-                shareTargetClicked=false;moreRequested=false;shareScrolls=0;stage(7,"사진 원본 공유 요청 중");
+                shareLabels=MmsShareRules.targetLabels(this);
+                shareTargetClicked=false;moreRequested=false;shareScrolls=0;unexpectedShareSince=0;stage(7,"사진 원본 공유 요청 중");
                 if(!tap(share))throw new IOException("사진 공유 버튼 실행 실패");return;
             }
         }catch(Exception e){finish(r,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage(),true);}
