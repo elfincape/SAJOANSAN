@@ -26,6 +26,9 @@ public final class MmsScreenAccess extends AccessibilityService {
     private MmsScreenFiles.Snapshot before;
     private boolean scheduled,busyDisk;
     private int sent,existing;
+    private int controlReveals;
+    private long lastControlReveal;
+    private String currentPackage="미확인",lastSamsung="";
     private static final class Request {
         final String sender;final LocalDate start,end;final BooleanSupplier running;
         final CompletableFuture<Void> done=new CompletableFuture<>();volatile boolean cancelled;
@@ -41,6 +44,7 @@ public final class MmsScreenAccess extends AccessibilityService {
         service.handler.post(()->{
             if(service.job!=null){r.done.completeExceptionally(new IOException("이전 화면 작업 정리 대기"));return;}
             service.job=r;service.seen.clear();service.sent=0;service.existing=0;service.backSteps=0;service.scrolls=0;
+            service.currentPackage="미확인";service.lastSamsung="";
             service.stage(0,"60초 안에 해당 번호의 사진 한 장을 전체 화면으로 여세요");
         });
         try{r.done.get();}catch(InterruptedException e){r.cancelled=true;service.handler.post(service::tick);throw e;}
@@ -51,14 +55,29 @@ public final class MmsScreenAccess extends AccessibilityService {
     @Override public void onDestroy(){if(active==this)active=null;cancel("접근성 연결 종료 · 화면 수집 미완료");disk.shutdownNow();super.onDestroy();}
     @Override public void onAccessibilityEvent(AccessibilityEvent event){if(job!=null)schedule();}
     private void cancel(String reason){Request r=job;if(r==null)return;r.cancelled=true;if(!busyDisk)finish(r,reason,true);else schedule();}
-    private void finish(Request r,String message,boolean failed){if(job!=r)return;r.cancelled=true;job=null;Store.status(this,message);if(failed)r.done.completeExceptionally(new IOException(message));else r.done.complete(null);}
+    private void finish(Request r,String message,boolean failed){if(job!=r)return;r.cancelled=true;job=null;Store.photoStatus(this,"");Store.status(this,message);if(failed)r.done.completeExceptionally(new IOException(message));else r.done.complete(null);}
     private void schedule(){if(!scheduled){scheduled=true;handler.postDelayed(()->{scheduled=false;tick();},1000);}}
-    private void stage(int next,String message){state=next;deadline=System.currentTimeMillis()+60000;Store.status(this,message);schedule();}
+    private void stage(int next,String message){state=next;controlReveals=0;lastControlReveal=0;deadline=System.currentTimeMillis()+60000;Store.photoStatus(this,"");Store.status(this,message);schedule();}
     private List<AccessibilityNodeInfo> nodes(AccessibilityNodeInfo root){List<AccessibilityNodeInfo> out=new ArrayList<>();ArrayDeque<AccessibilityNodeInfo> q=new ArrayDeque<>();if(root!=null)q.add(root);while(!q.isEmpty()&&out.size()<3000){AccessibilityNodeInfo n=q.remove();out.add(n);for(int i=0;i<n.getChildCount();i++){AccessibilityNodeInfo ch=n.getChild(i);if(ch!=null)q.add(ch);}}return out;}
     private String text(AccessibilityNodeInfo n){return n.getText()==null?"":n.getText().toString();}
     private String desc(AccessibilityNodeInfo n){return n.getContentDescription()==null?"":n.getContentDescription().toString();}
     private AccessibilityNodeInfo find(List<AccessibilityNodeInfo> list,String id){for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(ID+id).equals(n.getViewIdResourceName()))return n;return null;}
-    private String value(List<AccessibilityNodeInfo> list,String id){AccessibilityNodeInfo n=find(list,id);return n==null?"":text(n);}
+    private String value(List<AccessibilityNodeInfo> list,String id){AccessibilityNodeInfo n=find(list,id);return n==null?"":text(n).isBlank()?desc(n):text(n);}
+    private String diagnostic(){return "현재 앱="+currentPackage+" · 최근 삼성 화면: "+(lastSamsung.isEmpty()?"읽은 기록 없음":lastSamsung);}
+    private void recordScreen(List<AccessibilityNodeInfo> list,Request r){
+        AccessibilityNodeInfo number=find(list,"viewer_title");String numberState=number==null?"요소 없음":MmsRules.samePhone(value(list,"viewer_title"),r.sender)?"일치":MmsRules.phone(value(list,"viewer_title")).isEmpty()?"번호 판독 불가":"다름";
+        lastSamsung="요소 "+list.size()+"개 · 사진="+(find(list,"viewer_image_view")!=null?"있음":"없음")+" · 번호="+numberState+" · 날짜="+(find(list,"viewer_sub_title")!=null?"있음":"없음")+" · 앨범="+(find(list,"album")!=null?"있음":"없음");
+    }
+    private boolean revealControls(List<AccessibilityNodeInfo> list){
+        AccessibilityNodeInfo image=find(list,"viewer_image_view");
+        if(image==null||find(list,"viewer_title")!=null&&find(list,"viewer_sub_title")!=null)return false;
+        long now=System.currentTimeMillis();
+        if(controlReveals<2&&now-lastControlReveal>=2000){
+            controlReveals++;lastControlReveal=now;
+            if(tap(image))Store.photoStatus(this,"사진의 숨겨진 버튼 표시 요청 · "+diagnostic());
+        }
+        schedule();return true;
+    }
     private String title(List<AccessibilityNodeInfo> list){for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&text(n).matches("공유된 첨부 파일 \\(\\d+\\)"))return text(n);return "";}
     private boolean tap(AccessibilityNodeInfo node){AccessibilityNodeInfo p=node;for(int i=0;i<4&&p!=null;i++,p=p.getParent())if(p.isClickable()&&p.performAction(AccessibilityNodeInfo.ACTION_CLICK))return true;Rect b=new Rect();node.getBoundsInScreen(b);if(b.isEmpty())return false;Path path=new Path();path.moveTo(b.centerX(),b.centerY());return dispatchGesture(new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,80)).build(),null,null);}
     private String position(AccessibilityNodeInfo n){for(int i=0;i<4&&n!=null;i++,n=n.getParent()){AccessibilityNodeInfo.CollectionItemInfo info=n.getCollectionItemInfo();if(info!=null&&info.getRowIndex()>=0&&info.getColumnIndex()>=0)return info.getRowIndex()+":"+info.getColumnIndex();}return "";}
@@ -80,11 +99,15 @@ public final class MmsScreenAccess extends AccessibilityService {
             if(!r.alive()){if(busyDisk){schedule();return;}finish(r,"화면 수집 중지 · 전송 대기는 유지됩니다",true);return;}
             if(getSystemService(KeyguardManager.class).isKeyguardLocked()){cancel("화면 잠김 · 잠금을 해제하고 다시 시작하세요");return;}
             if(busyDisk){schedule();return;}
-            if(System.currentTimeMillis()>deadline)throw new IOException("화면 단계 "+state+" 시간 초과 · 화면 수집 미완료");
+            if(System.currentTimeMillis()>deadline)throw new IOException((state==0?"사진 화면의 번호 확인":("화면 단계 "+state))+" 시간 초과 · 화면 수집 미완료\n"+diagnostic());
             AccessibilityNodeInfo root=getRootInActiveWindow();
-            if(root==null||!PACKAGE.contentEquals(root.getPackageName())){if(state==0){schedule();return;}throw new IOException("다른 앱으로 이동 · 화면 수집 중단");}
+            currentPackage=root==null?"화면 읽기 결과 없음":String.valueOf(root.getPackageName());
+            if(root==null||!PACKAGE.equals(currentPackage)){if(state==0){Store.photoStatus(this,"사진 뷰어 인식 대기 · "+diagnostic());schedule();return;}throw new IOException("다른 앱으로 이동 · 화면 수집 중단\n"+diagnostic());}
             List<AccessibilityNodeInfo> list=nodes(root);
+            recordScreen(list,r);
             if(state==0){
+                Store.photoStatus(this,"사진 뷰어 인식 대기 · "+diagnostic());
+                if(revealControls(list))return;
                 if(!viewerMatches(list,r)){schedule();return;}
                 AccessibilityNodeInfo album=find(list,"album");if(album==null||!tap(album))throw new IOException("공유 첨부 목록 열기 실패");
                 stage(1,"첨부 목록의 처음으로 이동 중");return;
@@ -117,6 +140,7 @@ public final class MmsScreenAccess extends AccessibilityService {
             }
             if(state==3){
                 if(find(list,"viewer_image_view")==null){schedule();return;}
+                if(revealControls(list))return;
                 if(!viewerMatches(list,r))throw new IOException("선택 번호와 사진 번호가 달라 중단했습니다");
                 LocalDateTime date=viewerDate(list);
                 if(!MmsScreenRules.inRange(date,r.start,r.end)){seen.add(selectedKey);back();return;}
@@ -125,6 +149,7 @@ public final class MmsScreenAccess extends AccessibilityService {
                 if(save==null||!tap(save))throw new IOException("사진 저장 버튼 실행 실패");stable="";stableTicks=0;stage(4,"Download 사진 파일 확인 중");return;
             }
             if(state==4){
+                if(revealControls(list))return;
                 if(!viewerMatches(list,r)||!viewerDate(list).equals(selectedDate))throw new IOException("저장 중 사진 화면 변경 · 연결 중단");
                 List<MmsScreenFiles.Image> files=MmsScreenFiles.added(this,before);
                 if(files.size()>1)throw new IOException("새 저장 사진이 여러 장이라 연결을 중단했습니다");
