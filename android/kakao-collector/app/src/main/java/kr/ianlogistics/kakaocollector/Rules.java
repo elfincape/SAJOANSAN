@@ -44,7 +44,7 @@ final class Rules {
         return uploaded && savedSignature!=null && !savedSignature.isBlank() && savedSignature.equals(currentSignature)
             && savedHash!=null && !savedHash.isBlank() && savedHash.equals(currentHash);
     }
-    static boolean safeName(String name) { return name != null && name.matches("[a-zA-Z0-9_-]+\\.(jpg|png|webp|json)"); }
+    static boolean safeName(String name) { return name != null && name.matches("[a-zA-Z0-9_-]+\\.(jpg|png|webp|gif|json)"); }
     static String roomFolder(String room) {
         if (room == null || room.isBlank()) throw new IllegalArgumentException("대화방 이름이 필요합니다");
         String clean = room.replaceAll("[\\x00-\\x1f\\x7f\"*:<>?\\\\/|#%]", "_")

@@ -151,6 +151,10 @@ final class OneDrive {
         }
     }
     static void upload(Context c, File directory) throws Exception {
+        upload(c,directory,()->Store.enabled(c));
+    }
+    static void upload(Context c, File directory, java.util.function.BooleanSupplier active) throws Exception {
+        if(!active.getAsBoolean())throw new IOException("수집 중지됨");
         JSONObject receipt = Store.read(new File(directory, "receipt.json")); String id = receipt.getString("receiptId");
         if (!id.matches("[0-9a-f-]{36}")) throw new IOException("접수번호 오류");
         JSONArray photos = receipt.getJSONArray("photos");
@@ -165,10 +169,12 @@ final class OneDrive {
         String root = graph("/me/drive/root?$select=id", "GET", token, null, null).getString("id");
         String room = Rules.roomFolder(receipt.getString("room"));
         String prefix = Rules.remotePrefix(receipt.getString("observedAt"), id);
-        String home = child(root, "이안카카오", token), folder = child(home, room, token);
+        String home = child(root, "이안카카오", token);
+        if ("mms".equals(receipt.optString("kind"))) home=child(home,"문자",token);
+        String folder = child(home, room, token);
         if ((photos.length() < 1 && !"notification".equals(receipt.optString("kind"))) || photos.length() > 30) throw new IOException("사진 개수 오류");
         for (int i = 0; i < photos.length(); i++) {
-            if (!Store.enabled(c)) throw new IOException("수집 중지됨");
+            if (!active.getAsBoolean()) throw new IOException("수집 중지됨");
             JSONObject p = photos.getJSONObject(i); String name = p.getString("name"); if (!Rules.safeName(name)) throw new IOException("파일명 오류");
             String remoteName = Rules.remotePhotoName(prefix, i + 1, name);
             File f = new File(directory, name); if (f.length() > 10 * 1024 * 1024) throw new IOException("사진당 10MB 초과");
@@ -177,7 +183,7 @@ final class OneDrive {
             JSONObject saved = graph("/me/drive/items/" + segment(folder) + ":/" + segment(remoteName) + ":/content", "PUT", token, p.getString("mimeType"), bytes);
             if (saved.getLong("size") != bytes.length) throw new IOException("업로드 크기 불일치");
         }
-        if (!Store.enabled(c)) throw new IOException("수집 중지됨");
+        if (!active.getAsBoolean()) throw new IOException("수집 중지됨");
         if (!text.isEmpty()) {
             byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
             JSONObject saved = graph("/me/drive/items/" + segment(folder) + ":/" + segment(prefix + "_대화.txt") + ":/content", "PUT", token, "text/plain; charset=utf-8", bytes);
