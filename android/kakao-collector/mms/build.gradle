@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
     namespace 'kr.ianlogistics.kakaocollector'
     compileSdk 35
-    defaultConfig { applicationId 'kr.ianlogistics.mmscollector'; minSdk 33; targetSdk 35; versionCode 8; versionName '0.3.3' }
+    defaultConfig { applicationId 'kr.ianlogistics.mmscollector'; minSdk 33; targetSdk 35; versionCode 9; versionName '0.4.0' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     sourceSets.main.java.srcDirs = ['src/main/java', layout.buildDirectory.dir('generated/shared')]
 }

@@ -4,14 +4,12 @@ import android.accessibilityservice.*;
 import android.app.KeyguardManager;
 import android.graphics.*;
 import android.os.*;
-import android.net.Uri;
 import android.view.accessibility.*;
 import java.io.*;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BooleanSupplier;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MmsScreenAccess extends AccessibilityService {
     static final String PACKAGE="com.samsung.android.messaging";
@@ -20,16 +18,14 @@ public final class MmsScreenAccess extends AccessibilityService {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService disk=Executors.newSingleThreadExecutor();
     private Request job;
-    private int state,albumWindow,backSteps,scrolls,shareScrolls;
+    private int state,albumWindow,backSteps,scrolls;
     private long deadline;
-    private long unexpectedShareSince;
     private String albumTitle="",selectedKey="";
     private LocalDateTime selectedDate;
     private final Set<String> seen=new HashSet<>();
-    private Set<String> shareLabels=Set.of();
-    private boolean expandedShareSeen;
+    private MmsSavedFiles.Snapshot savedBefore;
     private final LinkedHashMap<String,LocalDateTime> plan=new LinkedHashMap<>();
-    private boolean planning,shareTargetClicked,moreRequested,conversationMenuRequested,shareBackRequested;
+    private boolean planning,conversationMenuRequested;
     private boolean scheduled,busyDisk;
     private int sent,existing,cleaned,excluded;
     private int controlReveals;
@@ -117,24 +113,6 @@ public final class MmsScreenAccess extends AccessibilityService {
         }
         return false;
     }
-    private void chooseShareTarget(List<AccessibilityNodeInfo> list) throws IOException {
-        if(shareTargetClicked){schedule();return;}
-        AccessibilityNodeInfo expanded=null;
-        for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&"com.android.intentresolver:id/sem_more_apps_grid_view".equals(n.getViewIdResourceName())){expanded=n;break;}
-        if(expanded!=null){
-            if(!expandedShareSeen){expandedShareSeen=true;shareScrolls=0;}
-            list=nodes(expanded);
-        }else if(expandedShareSeen){Store.photoStatus(this,"펼쳐진 공유 앱 목록 복귀 대기");schedule();return;}
-        for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(shareLabels.contains(MmsShareRules.normalizedLabel(text(n)))||shareLabels.contains(MmsShareRules.normalizedLabel(desc(n))))){if(!tap(n))throw new IOException("원본 전달 앱 선택 실패");shareTargetClicked=true;Store.status(this,"공유 원본 URI 수신 대기"+progress());schedule();return;}
-        if(!moreRequested)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser())for(String label:new String[]{text(n),desc(n)})if(Set.of("더보기","앱더보기","모든앱").contains(label.replaceAll("\\s+",""))){if(tap(n)){moreRequested=true;schedule();return;}}
-        if(!PACKAGE.equals(currentPackage)&&!getPackageName().equals(currentPackage)&&shareScrolls<8){
-            for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&"com.android.intentresolver:id/sem_chooser_row_recycler_view".equals(n.getViewIdResourceName())){
-                if(n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}
-            }
-            for(int i=list.size()-1;i>=0;i--){AccessibilityNodeInfo n=list.get(i);if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}}
-        }
-        Store.photoStatus(this,"공유 대상 찾는 중 · 현재 앱="+currentPackage+" · "+MmsShareActivity.LABEL+" 선택 대기");schedule();
-    }
     private void tick(){
         Request r=job;if(r==null)return;
         try {
@@ -144,20 +122,6 @@ public final class MmsScreenAccess extends AccessibilityService {
             if(System.currentTimeMillis()>deadline)throw new IOException((state==0?"사진 화면의 번호 확인":("화면 단계 "+state))+" 시간 초과 · 화면 수집 미완료\n"+diagnostic());
             AccessibilityNodeInfo root=getRootInActiveWindow();
             currentPackage=root==null?"화면 읽기 결과 없음":String.valueOf(root.getPackageName());
-            if(state==7){
-                if(root==null){schedule();return;}
-                if(!MmsShareRules.trustedPackage(this,currentPackage)&&!getPackageName().equals(currentPackage)){
-                    long now=System.currentTimeMillis();if(unexpectedShareSince==0)unexpectedShareSince=now;
-                    if(now-unexpectedShareSince<5000){Store.photoStatus(this,"공유창 전환 대기 · 현재 앱="+currentPackage);schedule();return;}
-                    throw new IOException("공유 화면 확인 실패 · 앱="+currentPackage+" · "+MmsShareRules.rejection(this,currentPackage));
-                }
-                unexpectedShareSince=0;
-                chooseShareTarget(nodes(root));return;
-            }
-            if(state==8&&!PACKAGE.equals(currentPackage)){
-                if(MmsShareRules.trustedPackage(this,currentPackage)&&!shareBackRequested){shareBackRequested=true;performGlobalAction(GLOBAL_ACTION_BACK);}
-                schedule();return;
-            }
             if(root==null||!PACKAGE.equals(currentPackage)){if(state==0){Store.photoStatus(this,"사진 뷰어 인식 대기 · "+diagnostic());schedule();return;}throw new IOException("다른 앱으로 이동 · 화면 수집 중단\n"+diagnostic());}
             List<AccessibilityNodeInfo> list=nodes(root);
             recordScreen(list,r);
@@ -206,6 +170,25 @@ public final class MmsScreenAccess extends AccessibilityService {
                 if(seen.size()!=plan.size()||sent+existing+excluded!=plan.size()||cleaned!=sent+existing)throw new IOException("기간 전체 처리 미완료"+progress());
                 finish(r,"기간 전체 처리 완료 · 대상 "+(plan.size()-excluded)+"장 · 새 전송 "+sent+"장 · 기존 "+existing+"장 · 임시 정리 확인 "+cleaned+"장 · 연도/기간 제외 "+excluded+"장 · 원본문자 유지",false);return;
             }
+            if(state==4){
+                if(!viewerMatches(list,r)||!viewerDate(list).equals(selectedDate))throw new IOException("저장 직전 사진 번호·날짜가 바뀌었습니다");
+                AccessibilityNodeInfo save=find(list,"save");if(save==null||!tap(save))throw new IOException("사진 저장 버튼 실행 실패");stage(5,"새 휴대폰 저장본 확인 중");return;
+            }
+            if(state==5){
+                if(!viewerMatches(list,r)||!viewerDate(list).equals(selectedDate))throw new IOException("사진 저장 중 화면이 바뀌었습니다 · 저장본 유지");
+                busyDisk=true;final LocalDateTime date=selectedDate;final String key=selectedKey;
+                disk.execute(()->{
+                    try{
+                        MmsSource.active(r::alive);MmsSavedFiles.Image image=MmsSavedFiles.added(this,savedBefore);
+                        if(image==null){handler.post(()->{busyDisk=false;schedule();});return;}
+                        File dir=MmsShareFiles.capture(this,image.uri(),image.mime,r.sender,date,r::alive,r.occurrences);MmsSavedFiles.remember(this,dir,image);
+                        Store.status(this,"사진 OneDrive 전송 후 휴대폰 저장본 정리 중"+progress());
+                        Boolean already=MmsShareFiles.uploadAndClear(this,dir,r::alive);if(already==null)throw new IOException("전송할 임시 사진이 없습니다");
+                        MmsSavedFiles.cleanup(this,dir,r::alive);
+                        handler.post(()->{busyDisk=false;if(job!=r)return;if(!r.alive()){finish(r,"화면 수집 중지 · 전송된 사진은 유지됩니다",true);return;}seen.add(key);if(already)existing++;else sent++;cleaned++;stage(8,"전송·휴대폰 저장본 삭제 확인 · 다음 사진 준비");});
+                    }catch(Exception e){handler.post(()->{busyDisk=false;finish(r,"사진 저장·전송 미완료 · "+e.getMessage()+progress(),true);});}
+                });return;
+            }
             if(state==3){
                 if(revealControls(list))return;
                 if(!viewerStructure(list)){schedule();return;}
@@ -213,28 +196,12 @@ public final class MmsScreenAccess extends AccessibilityService {
                 LocalDateTime date=viewerDate(list);
                 if(!MmsScreenRules.inRange(date,r.start,r.end)){seen.add(selectedKey);excluded++;back();return;}
                 if(!date.equals(selectedDate))throw new IOException("목록 날짜와 사진 날짜가 달라 중단했습니다");
-                AccessibilityNodeInfo share=find(list,"share");if(share==null)throw new IOException("사진 원본 공유 버튼을 읽지 못했습니다");
-                shareLabels=MmsShareRules.targetLabels(this);
-                shareTargetClicked=false;moreRequested=false;expandedShareSeen=false;shareScrolls=0;unexpectedShareSince=0;stage(7,"사진 원본 공유 요청 중");
-                if(!tap(share))throw new IOException("사진 공유 버튼 실행 실패");return;
+                busyDisk=true;disk.execute(()->{
+                    try{MmsSavedFiles.Snapshot snapshot=MmsSavedFiles.snapshot(this);handler.post(()->{busyDisk=false;if(job!=r)return;if(!r.alive()){finish(r,"화면 수집 중지",true);return;}savedBefore=snapshot;stage(4,"사진 저장 준비 완료");});}
+                    catch(Exception e){handler.post(()->{busyDisk=false;finish(r,"저장 전 목록 확인 실패 · "+e.getMessage(),true);});}
+                });return;
             }
         }catch(Exception e){finish(r,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage(),true);}
     }
     private void back() throws IOException {if(!performGlobalAction(GLOBAL_ACTION_BACK))throw new IOException("첨부 목록 복귀 실패");stage(6,"첨부 목록 복귀 확인 중");}
-    static boolean receiveSharedImage(Uri uri,String mime,Runnable closeActivity){
-        MmsScreenAccess a=active;if(a==null||a.job==null||a.state!=7||a.busyDisk||!a.job.alive())return false;
-        Request r=a.job;a.busyDisk=true;final LocalDateTime date=a.selectedDate;final String key=a.selectedKey;AtomicBoolean closed=new AtomicBoolean();
-        Runnable close=()->{if(closed.compareAndSet(false,true))a.handler.post(closeActivity);};
-        Store.status(a,"공유 원본을 앱 임시 공간에 복사 중"+a.progress());
-        a.disk.execute(()->{
-            try {
-                MmsSource.active(r::alive);File dir=MmsShareFiles.capture(a,uri,mime,r.sender,date,r::alive,r.occurrences);close.run();
-                Store.status(a,"사진 OneDrive 전송·임시 정리 중"+a.progress());
-                Boolean result=MmsShareFiles.uploadAndClear(a,dir,r::alive);if(result==null)throw new IOException("공유 사진 임시 사본이 없어 재확인이 필요합니다");boolean already=result;
-                a.handler.post(()->{a.busyDisk=false;if(a.job!=r)return;if(!r.alive()){a.finish(r,"화면 수집 중지 · 이미 전송된 파일은 유지됩니다",true);return;}a.seen.add(key);if(already)a.existing++;else a.sent++;a.cleaned++;a.shareBackRequested=false;a.stage(8,"원본 전송·임시 정리 완료 · 다음 사진 준비");});
-            }catch(Exception e){close.run();a.handler.post(()->{a.busyDisk=false;a.finish(r,"사진 전송 미완료 · "+e.getMessage()+a.progress(),true);});}
-        });
-        return true;
-    }
-    static void rejectSharedImage(String reason){MmsScreenAccess a=active;if(a!=null&&a.job!=null&&a.state==7&&!a.busyDisk)a.finish(a.job,"사진 원본 전달 실패 · "+reason,true);}
 }

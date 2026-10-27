@@ -42,10 +42,11 @@ public final class MmsService extends Service {
                 if(screen){
                     Store.cleanupStatus(this,"");
                     MmsShareFiles.retry(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
+                    MmsSavedFiles.retry(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
                     MmsScreenAccess.collect(number,intent.getStringExtra("start"),intent.getStringExtra("end"),()->own.get()&&Store.enabled(this));
                 }else MmsSource.run(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
             }
-            catch(SecurityException e){Store.status(this,screen?"사진 원본 공유 권한을 확인하지 못했습니다. 수집을 다시 시작하세요.":"문자 읽기 권한 또는 삼성 MMS 저장소 접근이 허용되지 않았습니다. 권한 설정을 확인하세요.");}
+            catch(SecurityException e){Store.status(this,screen?"사진 전체 접근·저장본 삭제 권한을 확인하세요. 새 저장본은 유지됩니다.":"문자 읽기 권한 또는 삼성 MMS 저장소 접근이 허용되지 않았습니다. 권한 설정을 확인하세요.");}
             catch(Exception e){Store.status(this,"저장 미완료 · "+e.getMessage());}
             finally {if(lock.isHeld())lock.release();synchronized(MmsService.class){if(current==own){Store.prefs(this).edit().putBoolean("enabled",false).apply();stopSelf(latestStartId);current=null;}}}
         });
