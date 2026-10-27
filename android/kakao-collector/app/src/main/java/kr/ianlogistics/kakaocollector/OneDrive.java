@@ -139,7 +139,7 @@ final class OneDrive {
         String token=access(c);
         if(!receipt.getString("driveId").equals(graph("/me/drive?$select=id","GET",token,null,null).getString("id")))throw new IOException("사진 전송 계정이 달라 폰 사진 유지");
         String prefix=Rules.remotePrefix(receipt.getString("observedAt"),receipt.getString("receiptId"));
-        String base="/me/drive/root:/"+segment("이안카카오")+"/"+segment(Rules.roomFolder(receipt.getString("room")))+"/";
+        String base="/me/drive/root:/"+segment("이안카카오")+"/"+("mms".equals(receipt.optString("kind"))?segment("문자")+"/":"")+segment(Rules.roomFolder(receipt.getString("room")))+"/";
         JSONArray photos=receipt.getJSONArray("photos");
         for(int i=0;i<photos.length();i++) {
             JSONObject photo=photos.getJSONObject(i);

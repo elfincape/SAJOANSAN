@@ -34,8 +34,16 @@ public final class MmsService extends Service {
         catch(Exception e){Store.status(this,"저장 조건 오류");stopSelf();return START_NOT_STICKY;}
         synchronized(MmsService.class){if(current!=null)return START_NOT_STICKY;own=new AtomicBoolean(true);current=own;Store.prefs(this).edit().putBoolean("enabled",true).apply();}
         worker.execute(()->{
-            PowerManager.WakeLock lock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"ian:mms-export");
-            try {lock.acquire(20*60*1000L);MmsSource.run(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));}
+            boolean screen="screen".equals(intent.getStringExtra("mode"));
+            @SuppressWarnings("deprecation") int wakeLevel=screen?PowerManager.SCREEN_BRIGHT_WAKE_LOCK:PowerManager.PARTIAL_WAKE_LOCK;
+            PowerManager.WakeLock lock=getSystemService(PowerManager.class).newWakeLock(wakeLevel,"ian:mms-export");
+            try {
+                lock.acquire(20*60*1000L);
+                if(screen){
+                    MmsScreenFiles.retry(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
+                    MmsScreenAccess.collect(number,intent.getStringExtra("start"),intent.getStringExtra("end"),()->own.get()&&Store.enabled(this));
+                }else MmsSource.run(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
+            }
             catch(SecurityException e){Store.status(this,"문자 읽기 권한 또는 삼성 MMS 저장소 접근이 허용되지 않았습니다. 권한 설정을 확인하세요.");}
             catch(Exception e){Store.status(this,"저장 미완료 · "+e.getMessage());}
             finally {if(lock.isHeld())lock.release();synchronized(MmsService.class){if(current==own){Store.prefs(this).edit().putBoolean("enabled",false).apply();stopSelf(latestStartId);current=null;}}}
