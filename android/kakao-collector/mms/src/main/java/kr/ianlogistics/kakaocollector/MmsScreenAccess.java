@@ -120,7 +120,12 @@ public final class MmsScreenAccess extends AccessibilityService {
         if(shareTargetClicked){schedule();return;}
         for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(shareLabels.contains(MmsShareRules.normalizedLabel(text(n)))||shareLabels.contains(MmsShareRules.normalizedLabel(desc(n))))){if(!tap(n))throw new IOException("원본 전달 앱 선택 실패");shareTargetClicked=true;Store.status(this,"공유 원본 URI 수신 대기"+progress());schedule();return;}
         if(!moreRequested)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser())for(String label:new String[]{text(n),desc(n)})if(Set.of("더보기","앱더보기","모든앱").contains(label.replaceAll("\\s+",""))){if(tap(n)){moreRequested=true;schedule();return;}}
-        if(!PACKAGE.equals(currentPackage)&&!getPackageName().equals(currentPackage)&&shareScrolls<8)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}
+        if(!PACKAGE.equals(currentPackage)&&!getPackageName().equals(currentPackage)&&shareScrolls<8){
+            for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&"com.android.intentresolver:id/sem_chooser_row_recycler_view".equals(n.getViewIdResourceName())){
+                if(n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}
+            }
+            for(int i=list.size()-1;i>=0;i--){AccessibilityNodeInfo n=list.get(i);if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)){shareScrolls++;schedule();return;}}
+        }
         Store.photoStatus(this,"공유 대상 찾는 중 · 현재 앱="+currentPackage+" · "+MmsShareActivity.LABEL+" 선택 대기");schedule();
     }
     private void tick(){
