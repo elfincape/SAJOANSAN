@@ -20,7 +20,7 @@ public final class MmsService extends Service {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MmsActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,MmsService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
         startForeground(21,new Notification.Builder(this,"mms").setSmallIcon(android.R.drawable.stat_sys_upload).setContentTitle("문자 사진 저장 중")
-            .setContentText("선택한 번호·기간의 MMS 사진을 OneDrive에 저장합니다").setContentIntent(open)
+            .setContentText("선택한 번호·기간의 사진을 OneDrive에 저장합니다").setContentIntent(open)
             .addAction(new Notification.Action.Builder(null,"중지",stop).build()).setOngoing(true).build());
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
@@ -40,11 +40,12 @@ public final class MmsService extends Service {
             try {
                 lock.acquire(20*60*1000L);
                 if(screen){
-                    MmsScreenFiles.retry(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
+                    Store.cleanupStatus(this,"");
+                    MmsShareFiles.retry(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
                     MmsScreenAccess.collect(number,intent.getStringExtra("start"),intent.getStringExtra("end"),()->own.get()&&Store.enabled(this));
                 }else MmsSource.run(this,number,range[0],range[1],()->own.get()&&Store.enabled(this));
             }
-            catch(SecurityException e){Store.status(this,"문자 읽기 권한 또는 삼성 MMS 저장소 접근이 허용되지 않았습니다. 권한 설정을 확인하세요.");}
+            catch(SecurityException e){Store.status(this,screen?"사진 원본 공유 권한을 확인하지 못했습니다. 수집을 다시 시작하세요.":"문자 읽기 권한 또는 삼성 MMS 저장소 접근이 허용되지 않았습니다. 권한 설정을 확인하세요.");}
             catch(Exception e){Store.status(this,"저장 미완료 · "+e.getMessage());}
             finally {if(lock.isHeld())lock.release();synchronized(MmsService.class){if(current==own){Store.prefs(this).edit().putBoolean("enabled",false).apply();stopSelf(latestStartId);current=null;}}}
         });

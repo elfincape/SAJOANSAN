@@ -36,16 +36,14 @@ public final class MmsActivity extends Activity {
         button(l,"1. OneDrive 로그인",this::login);
         button(l,"2. 문자 읽기·알림 권한 허용",()->requestPermissions(new String[]{Manifest.permission.READ_SMS,Manifest.permission.POST_NOTIFICATIONS},30));
         button(l,"앱 권한 설정 열기",()->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
-        button(l,"화면 방식: 사진·알림 권한 허용",()->requestPermissions(Build.VERSION.SDK_INT>=34?new String[]{Manifest.permission.READ_MEDIA_IMAGES,Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,Manifest.permission.POST_NOTIFICATIONS}:new String[]{Manifest.permission.READ_MEDIA_IMAGES,Manifest.permission.POST_NOTIFICATIONS},31));
         button(l,"화면 방식: 접근성 설정",()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        button(l,"화면 방식: 전송 후 저장본 삭제 권한",()->{try{startActivity(new Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA,Uri.parse("package:"+getPackageName())));}catch(ActivityNotFoundException e){alert("사진 관리 설정을 열지 못했습니다. 새 Download 저장본은 남겨둡니다.");}});
         label(l,"사진을 보낸 번호");number=new EditText(this);number.setSingleLine();number.setInputType(InputType.TYPE_CLASS_PHONE);number.setContentDescription("사진을 보낸 번호");number.setText(Store.prefs(this).getString("mmsNumber","010-5057-7707"));l.addView(number);
         label(l,"시작일");startDate=button(l,Store.prefs(this).getString("mmsStart",LocalDate.now(MmsRules.KST).toString()),()->pick(startDate,"mmsStart"));
         label(l,"종료일");endDate=button(l,Store.prefs(this).getString("mmsEnd",LocalDate.now(MmsRules.KST).toString()),()->pick(endDate,"mmsEnd"));
-        label(l,"저장 위치: 이안카카오/문자/발신번호/\n파일명은 문자 수신 날짜·시간입니다. JPG·PNG·WEBP·GIF, 사진당 10MB·문자당 30장까지 지원합니다. 같은 사진문자를 다시 조회해도 이미 저장한 건은 건너뜁니다.");
+        label(l,"저장 위치: 이안카카오/문자/발신번호/\n파일명은 메시지에 표시된 날짜·시간입니다. JPG·PNG·WEBP·GIF, 한 장당 10MB까지 지원합니다. 전체 대상 수는 목록에서 집계하며 기존 전송도 원격 파일을 재확인합니다.");
         button(l,"일반 MMS 기간 조회",this::export);
-        label(l,"화면 방식은 올해 사진만 지원합니다. 상대방에게 받은 사진만 있는 대화에서 사용하고 화면 잠금을 직접 해제하세요. 진행 중 화면 켜짐을 최대 20분 유지하며 직접 잠그면 중단합니다.");
-        button(l,"삼성 메시지 화면으로 기간 저장",this::exportScreen);
+        label(l,"기간 전체 목록을 먼저 확인한 뒤 대상 사진을 공유 원본으로 한 장씩 전송합니다. OneDrive 확인 후 앱 임시 사본을 지우며 새 Download 파일은 만들지 않습니다. 올해·모두 받은 사진인 대화만 지원합니다. 화면 잠금 해제가 필요합니다.");
+        button(l,"기간 전체 사진 수집 시작",this::exportScreen);
         button(l,"저장 중지",()->MmsService.cancel(this));
         status=new TextView(this);status.setPadding(0,24,0,24);l.addView(status);handler.post(refresh);
     }
@@ -87,20 +85,20 @@ public final class MmsActivity extends Activity {
     }
     private void exportScreen() {
         try {
+            if(Build.VERSION.SDK_INT<35)throw new Exception("공유 원본의 호출 앱 확인을 위해 Android 15 이상이 필요합니다");
             saveClient();String sender=MmsRules.phone(number.getText().toString());if(sender.isEmpty())throw new Exception("번호를 확인하세요");
             String a=startDate.getText().toString(),b=endDate.getText().toString();MmsRules.range(a,b);int year=LocalDate.now(MmsRules.KST).getYear();
             if(LocalDate.parse(a).getYear()!=year||LocalDate.parse(b).getYear()!=year)throw new Exception("화면에 연도가 생략되므로 화면 방식은 올해 기간만 지원합니다");
             if(!Store.connected(this))throw new Exception("OneDrive 로그인이 필요합니다");
             if(!MmsScreenAccess.available())throw new Exception("접근성에서 이안 문자 사진 저장을 켜세요");
-            if(checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES)!=PackageManager.PERMISSION_GRANTED)throw new Exception("화면 방식 사진 권한에서 모든 사진을 허용하세요");
             new AlertDialog.Builder(this).setTitle("받은 사진만 있는 대화에서 시작")
-                .setMessage("이 번호의 공유 첨부 사진이 모두 상대방에게 받은 사진인 경우에만 진행하세요. 내가 보낸 사진이 섞인 목록은 아직 지원하지 않습니다.\n\n시작 후 60초 안에 삼성 메시지에서 이 번호의 사진 한 장을 전체 화면으로 여세요. 화면을 켜고 잠금을 해제한 채 다른 조작은 하지 마세요. 연도가 생략된 날짜는 올해 "+year+"년으로 처리합니다.")
+                .setMessage("이 번호의 첨부 사진이 모두 상대방에게 받은 사진인 경우에만 진행하세요.\n\n지정 번호 대화로 이동하고 기간 내 전체 목록을 확인한 뒤 한 장씩 원본을 공유받아 전송합니다. 자동으로 메뉴를 찾지 못하면 해당 대화만 열어두세요. 공유 화면에서 앱을 자동 선택하지 못하면 ‘이안 사진 원본 전달’을 선택하세요. 화면을 켜고 잠금을 해제한 채 기다려 주세요. 연도 생략 날짜는 올해 "+year+"년으로 처리합니다.")
                 .setNegativeButton("취소",null).setPositiveButton("모두 받은 사진 · 시작",(d,w)->{
                     if(MmsService.running())return;
                     Store.prefs(this).edit().putString("mmsNumber",sender).putString("mmsStart",a).putString("mmsEnd",b).apply();
                     startForegroundService(new Intent(this,MmsService.class).putExtra("number",sender).putExtra("start",a).putExtra("end",b).putExtra("mode","screen"));
-                    Intent launch=getPackageManager().getLaunchIntentForPackage(MmsScreenAccess.PACKAGE);
-                    if(launch!=null)startActivity(launch);else alert("삼성 메시지를 직접 열고 해당 번호의 사진 한 장을 전체 화면으로 여세요");
+                    try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("sms:"+sender)).setPackage(MmsScreenAccess.PACKAGE));}
+                    catch(ActivityNotFoundException e){Intent launch=getPackageManager().getLaunchIntentForPackage(MmsScreenAccess.PACKAGE);if(launch!=null)startActivity(launch);else alert("삼성 메시지의 해당 번호 대화를 직접 열어두세요");}
                 }).show();
         }catch(Exception e){alert(e.getMessage());}
     }

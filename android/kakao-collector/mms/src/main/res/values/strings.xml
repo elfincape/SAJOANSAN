@@ -1,4 +1,4 @@
 <resources>
     <string name="mms_status">%1$s · 전송 대기 %2$d건\n%3$s</string>
-    <string name="samsung_access_description">사용자가 시작한 동안 선택 번호의 삼성 메시지 사진 화면과 공유 첨부 목록을 확인하고 기간 내 사진을 저장합니다. 다른 앱은 조작하지 않습니다. 화면 잠금 해제가 필요합니다.</string>
+    <string name="samsung_access_description">사용자가 시작한 동안 선택 번호의 삼성 메시지 첨부 목록 전체를 조회하고 기간 내 사진의 시스템 공유 대상에서 이안 사진 원본 전달을 선택합니다. 허용된 삼성/시스템 공유 화면과 이 앱만 확인합니다. 화면 잠금 해제가 필요합니다.</string>
 </resources>
