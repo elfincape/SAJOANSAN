@@ -27,6 +27,7 @@ public final class MmsScreenAccess extends AccessibilityService {
     private LocalDateTime selectedDate;
     private final Set<String> seen=new HashSet<>();
     private Set<String> shareLabels=Set.of();
+    private boolean expandedShareSeen;
     private final LinkedHashMap<String,LocalDateTime> plan=new LinkedHashMap<>();
     private boolean planning,shareTargetClicked,moreRequested,conversationMenuRequested,shareBackRequested;
     private boolean scheduled,busyDisk;
@@ -118,6 +119,12 @@ public final class MmsScreenAccess extends AccessibilityService {
     }
     private void chooseShareTarget(List<AccessibilityNodeInfo> list) throws IOException {
         if(shareTargetClicked){schedule();return;}
+        AccessibilityNodeInfo expanded=null;
+        for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&"com.android.intentresolver:id/sem_more_apps_grid_view".equals(n.getViewIdResourceName())){expanded=n;break;}
+        if(expanded!=null){
+            if(!expandedShareSeen){expandedShareSeen=true;shareScrolls=0;}
+            list=nodes(expanded);
+        }else if(expandedShareSeen){Store.photoStatus(this,"펼쳐진 공유 앱 목록 복귀 대기");schedule();return;}
         for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser()&&(shareLabels.contains(MmsShareRules.normalizedLabel(text(n)))||shareLabels.contains(MmsShareRules.normalizedLabel(desc(n))))){if(!tap(n))throw new IOException("원본 전달 앱 선택 실패");shareTargetClicked=true;Store.status(this,"공유 원본 URI 수신 대기"+progress());schedule();return;}
         if(!moreRequested)for(AccessibilityNodeInfo n:list)if(n.isVisibleToUser())for(String label:new String[]{text(n),desc(n)})if(Set.of("더보기","앱더보기","모든앱").contains(label.replaceAll("\\s+",""))){if(tap(n)){moreRequested=true;schedule();return;}}
         if(!PACKAGE.equals(currentPackage)&&!getPackageName().equals(currentPackage)&&shareScrolls<8){
@@ -208,7 +215,7 @@ public final class MmsScreenAccess extends AccessibilityService {
                 if(!date.equals(selectedDate))throw new IOException("목록 날짜와 사진 날짜가 달라 중단했습니다");
                 AccessibilityNodeInfo share=find(list,"share");if(share==null)throw new IOException("사진 원본 공유 버튼을 읽지 못했습니다");
                 shareLabels=MmsShareRules.targetLabels(this);
-                shareTargetClicked=false;moreRequested=false;shareScrolls=0;unexpectedShareSince=0;stage(7,"사진 원본 공유 요청 중");
+                shareTargetClicked=false;moreRequested=false;expandedShareSeen=false;shareScrolls=0;unexpectedShareSince=0;stage(7,"사진 원본 공유 요청 중");
                 if(!tap(share))throw new IOException("사진 공유 버튼 실행 실패");return;
             }
         }catch(Exception e){finish(r,e.getMessage()==null?e.getClass().getSimpleName():e.getMessage(),true);}
