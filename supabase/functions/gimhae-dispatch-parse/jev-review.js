@@ -94,63 +94,123 @@ export async function reviewWithJev(body, result, key, fetcher = fetch) {
   if (body.mode === 'request' && body.mediaType === 'image/webp')
     throw error('JEV 사진 검증에는 JPG 또는 PNG 사진을 사용해 주세요.');
   const request = buildJevReview(body, result);
-  const response = await fetcher('https://api.typesafe.ai/v1/systemone', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      Authorization: `Bearer ${key}`,
-      ...(body.mode === 'request'
-        ? { 'TypeSafe-Danger-Zone-Images': 'true' }
-        : {}),
-    },
-    body: JSON.stringify(request),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!response.ok) {
-    console.error(
-      JSON.stringify({
-        event: 'gimhae_jev_rejected',
-        status: response.status,
-        mode: body.mode,
-      }),
+  const signal = AbortSignal.timeout(45000);
+  const ask = async (payload) => {
+    const response = await fetcher('https://api.typesafe.ai/v1/systemone', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        ...(body.mode === 'request'
+          ? { 'TypeSafe-Danger-Zone-Images': 'true' }
+          : {}),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    if (!response.ok) {
+      console.error(
+        JSON.stringify({
+          event: 'gimhae_jev_rejected',
+          status: response.status,
+          mode: body.mode,
+        }),
+      );
+      const messages = {
+        400: 'JEV가 요청 형식을 거절했습니다. 사진을 다시 등록해 주세요. (HTTP 400)',
+        401: 'JEV API 키 인증에 실패했습니다. 서버의 TYPESAFE_API_KEY를 확인해 주세요. (HTTP 401)',
+        403: 'JEV API 사용 권한이 거절됐습니다. 키의 이용 권한을 확인해 주세요. (HTTP 403)',
+        413: 'JEV 이미지 또는 요청 크기 제한을 초과했습니다. 요청표 부분만 등록해 주세요. (HTTP 413)',
+        429: 'JEV 사용량이 많습니다. 잠시 후 다시 시도하거나 Haiku를 선택해 주세요.',
+      };
+      throw error(
+        messages[response.status] ||
+          `JEV 검증 서버 오류입니다. 잠시 후 다시 시도해 주세요. (HTTP ${response.status})`,
+        response.status === 429 ? 429 : 502,
+      );
+    }
+    return response.json();
+  };
+  const image = body.mode === 'request';
+  const sourceRows = image ? result.requests : result.trucks;
+  const expected = {};
+  const labels = {};
+  for (const [i, row] of sourceRows.entries()) {
+    expected[`tons_${i}`] = String(
+      (image ? row.tons : row.actualTons) ?? 'none',
     );
-    const messages = {
-      400: 'JEV가 요청 형식을 거절했습니다. 사진을 다시 등록해 주세요. (HTTP 400)',
-      401: 'JEV API 키 인증에 실패했습니다. 서버의 TYPESAFE_API_KEY를 확인해 주세요. (HTTP 401)',
-      403: 'JEV API 사용 권한이 거절됐습니다. 키의 이용 권한을 확인해 주세요. (HTTP 403)',
-      413: 'JEV 이미지 또는 요청 크기 제한을 초과했습니다. 요청표 부분만 등록해 주세요. (HTTP 413)',
-      429: 'JEV 사용량이 많습니다. 잠시 후 다시 시도하거나 Haiku를 선택해 주세요.',
-    };
-    throw error(
-      messages[response.status] ||
-        `JEV 검증 서버 오류입니다. 잠시 후 다시 시도해 주세요. (HTTP ${response.status})`,
-      response.status === 429 ? 429 : 502,
+    expected[`temperature_${i}`] = Object.keys(temperatures).find(
+      (key) => temperatures[key] === row.temperature,
     );
+    expected[`count_${i}`] = String(row.count);
+    const position = sourceRows
+      .slice(0, i + 1)
+      .filter((r) => r.region === row.region).length;
+    for (const [field, label] of Object.entries({
+      tons: '톤수',
+      temperature: '온도',
+      count: '대수',
+    }))
+      labels[`${field}_${i}`] =
+        `${row.region || '지역 미기재'} ${position}번째 차량 ${label}`;
   }
-  const answer = await response.json();
-  const selected = (name) => {
+  for (const region of ['광주', '전주', '하양']) {
+    expected[`rows_${region}`] = String(
+      sourceRows.filter((r) => r.region === region).length,
+    );
+    labels[`rows_${region}`] = `${region} 요청 항목 수`;
+  }
+  const validate = (answer, name) => {
     const value = answer?.answers?.[name];
     if (
       value?.type !== 'choice' ||
       typeof value.choice !== 'string' ||
-      !Object.hasOwn(request.questions[name].criteria, value.choice)
+      !Object.hasOwn(request.questions[name].criteria, value.choice) ||
+      !Number.isFinite(value.confidence) ||
+      value.confidence < 0 ||
+      value.confidence > 1
     )
       throw error(
         'JEV 검증 응답을 확인하지 못했습니다. 다시 분석해 주세요.',
         502,
       );
-    if (
-      value.choice === 'unknown' ||
-      !Number.isFinite(value.confidence) ||
-      value.confidence < 0.6
-    )
-      throw error(
-        'JEV가 원문의 톤수·온도·대수를 명확히 판독하지 못했습니다. 선명한 사진이나 회신 원문을 확인해 주세요.',
-      );
-    return value.choice;
+    return value;
   };
+  const accepted = (value, name) =>
+    value.choice !== 'unknown' &&
+    (value.confidence >= 0.6 ||
+      (value.confidence >= 0.5 && value.choice === expected[name]));
+  const answer = await ask(request);
+  const selections = {};
+  const pending = {};
+  for (const [name, question] of Object.entries(request.questions)) {
+    const value = validate(answer, name);
+    if (accepted(value, name)) selections[name] = value.choice;
+    else pending[name] = question;
+  }
+  if (Object.keys(pending).length) {
+    const retry = await ask({ ...request, questions: pending });
+    const unresolved = [];
+    for (const name of Object.keys(pending)) {
+      const value = validate(retry, name);
+      if (accepted(value, name)) selections[name] = value.choice;
+      else unresolved.push(name);
+    }
+    if (unresolved.length) {
+      console.warn(
+        JSON.stringify({
+          event: 'gimhae_jev_uncertain',
+          mode: body.mode,
+          fields: unresolved,
+        }),
+      );
+      throw error(
+        `${unresolved.map((name) => labels[name]).join(', ')} 판독이 재검증 후에도 불확실합니다. 해당 원문을 확인하거나 Haiku 인식으로 다시 분석해 주세요.`,
+      );
+    }
+  }
+  const selected = (name) => selections[name];
   const next = structuredClone(result);
-  const image = body.mode === 'request';
   const rows = image ? next.requests : next.trucks;
   if (image)
     for (const region of ['광주', '전주', '하양']) {
