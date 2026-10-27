@@ -119,8 +119,19 @@ export async function analyze(
       /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/,
     );
     if (!match) throw Error('요청 사진을 먼저 등록해 주세요.');
-    body.mediaType = match[1];
-    body.imageBase64 = match[2];
+    if (provider === 'jev') {
+      const blob = await (await fetch(draft.image)).blob();
+      const prepared = await imageData(
+        new File([blob], 'request.jpg', { type: match[1] }),
+        1568,
+        280,
+      );
+      body.mediaType = 'image/jpeg';
+      body.imageBase64 = prepared.slice(prepared.indexOf(',') + 1);
+    } else {
+      body.mediaType = match[1];
+      body.imageBase64 = match[2];
+    }
   } else {
     if (!draft.replyText.trim())
       throw Error('운수사 회신 원문을 입력해 주세요.');
@@ -159,7 +170,7 @@ export async function analyze(
     );
   return data.result;
 }
-export async function imageData(file: File) {
+export async function imageData(file: File, maxSide = 2400, minSide = 1) {
   if (
     !file ||
     !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
@@ -170,14 +181,22 @@ export async function imageData(file: File) {
   try {
     if (bitmap.width * bitmap.height > 50000000)
       throw Error('이미지 해상도가 너무 큽니다. 요청표 부분만 캡처해 주세요.');
-    const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.width = Math.max(minSide, width);
+    canvas.height = Math.max(minSide, height);
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      bitmap,
+      (canvas.width - width) / 2,
+      (canvas.height - height) / 2,
+      width,
+      height,
+    );
     const result = canvas.toDataURL('image/jpeg', 0.9);
     if (result.length > 2800000)
       throw Error('요청표 부분만 캡처하거나 더 작은 사진을 등록해 주세요.');
