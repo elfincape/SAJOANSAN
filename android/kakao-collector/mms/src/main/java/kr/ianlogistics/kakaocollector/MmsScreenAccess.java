@@ -66,7 +66,7 @@ public final class MmsScreenAccess extends AccessibilityService {
     private String diagnostic(){return "현재 앱="+currentPackage+" · 최근 삼성 화면: "+(lastSamsung.isEmpty()?"읽은 기록 없음":lastSamsung);}
     private void recordScreen(List<AccessibilityNodeInfo> list,Request r){
         AccessibilityNodeInfo number=find(list,"viewer_title");String numberState=number==null?"요소 없음":MmsRules.samePhone(value(list,"viewer_title"),r.sender)?"일치":MmsRules.phone(value(list,"viewer_title")).isEmpty()?"번호 판독 불가":"다름";
-        lastSamsung="요소 "+list.size()+"개 · 사진="+(find(list,"viewer_image_view")!=null?"있음":"없음")+" · 번호="+numberState+" · 날짜="+(find(list,"viewer_sub_title")!=null?"있음":"없음")+" · 앨범="+(find(list,"album")!=null?"있음":"없음");
+        lastSamsung="요소 "+list.size()+"개 · 뷰어="+(viewerStructure(list)?"확인":"미확인")+" · 이미지 요소="+(find(list,"viewer_image_view")!=null?"있음":"없음")+" · 번호="+numberState+" · 날짜="+(find(list,"viewer_sub_title")!=null?"있음":"없음")+" · 저장="+(find(list,"save")!=null?"있음":"없음")+" · 앨범="+(find(list,"album")!=null?"있음":"없음");
     }
     private boolean revealControls(List<AccessibilityNodeInfo> list){
         AccessibilityNodeInfo image=find(list,"viewer_image_view");
@@ -92,7 +92,8 @@ public final class MmsScreenAccess extends AccessibilityService {
         return first?min==0:max==info.getRowCount()-1;
     }
     private LocalDateTime viewerDate(List<AccessibilityNodeInfo> list){return MmsScreenRules.viewerDate(value(list,"viewer_sub_title"),LocalDate.now(MmsRules.KST).getYear());}
-    private boolean viewerMatches(List<AccessibilityNodeInfo> list,Request r){return find(list,"viewer_image_view")!=null&&MmsRules.samePhone(value(list,"viewer_title"),r.sender);}
+    private boolean viewerStructure(List<AccessibilityNodeInfo> list){return find(list,"viewer_title")!=null&&find(list,"viewer_sub_title")!=null&&find(list,"save")!=null&&find(list,"album")!=null;}
+    private boolean viewerMatches(List<AccessibilityNodeInfo> list,Request r){return viewerStructure(list)&&MmsRules.samePhone(value(list,"viewer_title"),r.sender);}
     private void tick(){
         Request r=job;if(r==null)return;
         try {
@@ -109,6 +110,7 @@ public final class MmsScreenAccess extends AccessibilityService {
                 Store.photoStatus(this,"사진 뷰어 인식 대기 · "+diagnostic());
                 if(revealControls(list))return;
                 if(!viewerMatches(list,r)){schedule();return;}
+                viewerDate(list);
                 AccessibilityNodeInfo album=find(list,"album");if(album==null||!tap(album))throw new IOException("공유 첨부 목록 열기 실패");
                 stage(1,"첨부 목록의 처음으로 이동 중");return;
             }
@@ -139,8 +141,8 @@ public final class MmsScreenAccess extends AccessibilityService {
                 finish(r,"화면 목록 조회 종료 · 새 전송 "+sent+"장 · 기존 "+existing+"장 · 원본 문자 유지",false);return;
             }
             if(state==3){
-                if(find(list,"viewer_image_view")==null){schedule();return;}
                 if(revealControls(list))return;
+                if(!viewerStructure(list)){schedule();return;}
                 if(!viewerMatches(list,r))throw new IOException("선택 번호와 사진 번호가 달라 중단했습니다");
                 LocalDateTime date=viewerDate(list);
                 if(!MmsScreenRules.inRange(date,r.start,r.end)){seen.add(selectedKey);back();return;}
