@@ -83,6 +83,7 @@ export async function browserCourseCapture(page,stops) {
  await card.waitFor({state:'visible',timeout:45000});
  await card.click();
  await page.mouse.move(1100,1700);await page.waitForTimeout(700);
+ if(await card.evaluate(el=>el.closest('[role="button"]')?.getAttribute('aria-pressed'))!=='true')throw Error('거리우선 경로 선택 확인 필요');
  const result=distanceFromCard(await card.innerText());
  // Use the actual Naver result panel, including its filled stop list and all route alternatives.
  const panel=await card.evaluateHandle((el,stopsCount)=>{

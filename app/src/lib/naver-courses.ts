@@ -90,7 +90,12 @@ export async function captureExports(job: CaptureJob, type: 'zip' | 'pdf') {
       ctx.fillRect(0, 0, 1100, 100);
       ctx.fillStyle = '#111';
       ctx.font = '600 28px Pretendard, sans-serif';
-      ctx.fillText(`${c.sourceRow}행 · ${c.name}`, 0, 35, 1100);
+      ctx.fillText(
+        `${(c.sourceRows ?? [c.sourceRow]).join(', ')}행 · ${c.name}${c.rotations === 2 ? ' · 2회전' : ''}`,
+        0,
+        35,
+        1100,
+      );
       ctx.font = '20px Pretendard, sans-serif';
       ctx.fillText(
         `네이버 지도 · 거리우선 ${job.results[c.id].distanceText || ''} · ${new Date(job.results[c.id].measuredAt!).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
