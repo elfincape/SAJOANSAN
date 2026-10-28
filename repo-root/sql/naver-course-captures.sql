@@ -8,7 +8,7 @@ declare job uuid; c jsonb; s jsonb; saved jsonb := '{}'::jsonb; pending jsonb; b
  if jsonb_array_length(p_courses) not between 1 and 100 then raise exception '1~100코스를 입력해 주세요.';end if;
  for c in select value from jsonb_array_elements(p_courses) loop
   if jsonb_typeof(c) is distinct from 'object' or c->>'id' is null or c->>'id' !~ '^row-[0-9]{1,7}$' or jsonb_typeof(c->'name') is distinct from 'string' or length(trim(c->>'name')) not between 1 and 100 or jsonb_typeof(c->'stops') is distinct from 'array' then raise exception '코스 형식을 확인해 주세요.';end if;
-  if jsonb_typeof(c->'sourceRow') is distinct from 'number' or c->>'sourceRow' !~ '^[0-9]{1,7}$' or (c->>'sourceRow')::int<2 or c->>'id' <> 'row-'||(c->>'sourceRow') then raise exception '원본 행 번호를 확인해 주세요.';end if;
+  if jsonb_typeof(c->'sourceRow') is distinct from 'number' or c->>'sourceRow' !~ '^[0-9]{1,7}$' or (c->>'sourceRow')::int<1 or c->>'id' <> 'row-'||(c->>'sourceRow') then raise exception '원본 행 번호를 확인해 주세요.';end if;
   if jsonb_array_length(c->'stops') not between 4 and 7 then raise exception '센터 포함 경유지는 2~5곳입니다.';end if;
   for s in select value from jsonb_array_elements(c->'stops') loop
    if jsonb_typeof(s) is distinct from 'string' or length(trim(s#>>'{}')) not between 1 and 300 then raise exception '각 주소는 1~300자로 입력해 주세요.';end if;
