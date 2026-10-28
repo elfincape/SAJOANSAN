@@ -5,14 +5,15 @@ import {query,quote} from './naver-browser-db.mjs';
 import {browserDistance,browserCourseCapture} from './lib/naver-map-browser.mjs';
 import {saveCourseCapture} from './lib/naver-capture-storage.mjs';
 const ready="(status='queued' or (status='running' and updated_at<now()-interval '5 minutes'))";
-export async function runWorker({db=query,lookup=browserDistance,capture=browserCourseCapture,saveCapture=saveCourseCapture,browserFactory,keepAlive=false,durationMs=20*60*1000,pollMs=30000,jobId=null,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),log=console.log}={}){
+export async function runWorker({db=query,lookup=browserDistance,capture=browserCourseCapture,saveCapture=saveCourseCapture,browserFactory,keepAlive=false,durationMs=20*60*1000,pollMs=30000,jobId=null,reservationId=null,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),log=console.log}={}){
  const create=browserFactory??(async()=>{const {chromium}=await import('playwright');return chromium.launch({headless:true});});
  const browser=await create(),worker=randomUUID(),stopAt=now()+durationMs;
  try{
   const page=await browser.newPage({locale:'ko-KR',viewport:{width:1280,height:1000}});
   for(;now()<stopAt;){
    const filter=jobId?' and id='+quote(jobId)+'::uuid':'';
-   const claimed=await db("with next as(select id from public.naver_browser_jobs where "+ready+filter+" order by created_at for update skip locked limit 1) update public.naver_browser_jobs j set status='running',worker_id="+quote(worker)+"::uuid,updated_at=now() from next where j.id=next.id returning j.id,j.origin,j.addresses,j.cursor,j.results,j.kind,j.courses,j.owner_id");
+   const eligible=jobId&&reservationId?'('+ready+" or (status='running' and worker_id="+quote(reservationId)+'::uuid))':ready;
+   const claimed=await db("with next as(select id from public.naver_browser_jobs where "+eligible+filter+" order by created_at for update skip locked limit 1) update public.naver_browser_jobs j set status='running',worker_id="+quote(worker)+"::uuid,updated_at=now() from next where j.id=next.id returning j.id,j.origin,j.addresses,j.cursor,j.results,j.kind,j.courses,j.owner_id");
    const job=claimed[0];
    if(!job){if(!keepAlive)break;await sleep(Math.min(pollMs,Math.max(0,stopAt-now())));continue;}
    log('Server browser started queued work');let interrupted=false,failures=0;

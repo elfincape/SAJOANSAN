@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/lib/naver-map-browser.mjs'
       - 'scripts/lib/naver-capture-storage.mjs'
+      - 'scripts/lib/naver-capture-contract.mjs'
       - 'repo-root/sql/naver-course-captures.sql'
       - 'scripts/check-naver-map-browser.mjs'
       - '.github/workflows/naver-browser-server.yml'

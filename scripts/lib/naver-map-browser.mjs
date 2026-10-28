@@ -54,7 +54,7 @@ export async function browserDistance(page,origin,address,{diagnostic=false}={})
 }
 
 export async function browserCourseCapture(page,stops) {
- if(!Array.isArray(stops)||stops.length<4||stops.length>7||stops[0]!==stops.at(-1)||stops.some(s=>typeof s!=='string'||!s.trim()||s.length>300))throw Error('코스 주소 또는 경유지 한도 확인 필요');
+ if(!Array.isArray(stops)||stops.length<3||stops.length>7||stops.some(s=>typeof s!=='string'||!s.trim()||s.length>300))throw Error('코스 주소 또는 경유지 한도 확인 필요');
  page.setDefaultTimeout(30000);
  await page.setViewportSize({width:1280,height:1800});
  await page.goto('https://map.naver.com/',{waitUntil:'domcontentloaded',timeout:45000});

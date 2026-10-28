@@ -9,11 +9,20 @@ declare job uuid; c jsonb; s jsonb; saved jsonb := '{}'::jsonb; pending jsonb; b
  for c in select value from jsonb_array_elements(p_courses) loop
   if jsonb_typeof(c) is distinct from 'object' or c->>'id' is null or c->>'id' !~ '^row-[0-9]{1,7}$' or jsonb_typeof(c->'name') is distinct from 'string' or length(trim(c->>'name')) not between 1 and 100 or jsonb_typeof(c->'stops') is distinct from 'array' then raise exception '코스 형식을 확인해 주세요.';end if;
   if jsonb_typeof(c->'sourceRow') is distinct from 'number' or c->>'sourceRow' !~ '^[0-9]{1,7}$' or (c->>'sourceRow')::int<1 or c->>'id' <> 'row-'||(c->>'sourceRow') then raise exception '원본 행 번호를 확인해 주세요.';end if;
-  if jsonb_array_length(c->'stops') not between 4 and 7 then raise exception '센터 포함 경유지는 2~5곳입니다.';end if;
+  if jsonb_array_length(c->'stops') not between 3 and 7 then raise exception '실제 경유지는 최대 5곳입니다.';end if;
   for s in select value from jsonb_array_elements(c->'stops') loop
    if jsonb_typeof(s) is distinct from 'string' or length(trim(s#>>'{}')) not between 1 and 300 then raise exception '각 주소는 1~300자로 입력해 주세요.';end if;
   end loop;
-  if c->'stops'->>0 is distinct from c->'stops'->>(jsonb_array_length(c->'stops')-1) then raise exception '같은 차고지로 복귀해야 합니다.';end if;
+  if c ? 'rotation' then
+   if jsonb_typeof(c->'rotation') is distinct from 'number' or c->>'rotation' not in ('1','2') or jsonb_typeof(c->'garage') is distinct from 'string' or jsonb_typeof(c->'center') is distinct from 'string' or jsonb_typeof(c->'groupName') is distinct from 'string' or length(trim(c->>'garage')) not between 1 and 300 or length(trim(c->>'center')) not between 1 and 300 or length(trim(c->>'groupName')) not between 1 and 100 then raise exception '회차와 차고지·센터를 확인해 주세요.';end if;
+   if c->>'rotation'='1' then
+    if jsonb_array_length(c->'stops')<4 or c->'stops'->>0 is distinct from c->>'garage' or c->'stops'->>1 is distinct from c->>'center' or c->'stops'->>(jsonb_array_length(c->'stops')-1) is distinct from c->>'center' then raise exception '1회전은 차고지에서 출발해 센터로 복귀해야 합니다.';end if;
+   else
+    if c->'stops'->>0 is distinct from c->>'center' or c->'stops'->>(jsonb_array_length(c->'stops')-1) is distinct from c->>'garage' then raise exception '2회전은 센터에서 출발해 차고지로 복귀해야 합니다.';end if;
+   end if;
+  else
+   if jsonb_array_length(c->'stops')<4 or c->'stops'->>0 is distinct from c->'stops'->>(jsonb_array_length(c->'stops')-1) then raise exception '일반 코스는 같은 차고지로 복귀해야 합니다.';end if;
+  end if;
  end loop;
  if (select count(distinct value->>'id') from jsonb_array_elements(p_courses))<>jsonb_array_length(p_courses) then raise exception '코스 식별자가 중복됩니다.';end if;
  if p_previous_job is not null then

@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {query,quote} from './naver-browser-db.mjs';
 async function waitForResult(id,db=query,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
  for(let attempt=0;attempt<36;attempt++) {
@@ -39,16 +40,17 @@ if(process.argv.includes('--live')){
 if(process.argv.includes('--capture')) {
  const actors=await query("select id from public.user_profiles where active and role='admin' limit 1"),actor=actors[0]?.id;
  const stops=['경기도 평택시 산단로 263','경기도 오산시 성호대로 141','경기도 화성시 향남읍 향남로 470','경기도 평택시 산단로 263'];
- const courses=[{id:'row-2',sourceRow:2,name:'공개 주소 검증 1',stops},{id:'row-3',sourceRow:3,name:'공개 주소 검증 2',stops}];
- const result=await query("select set_config('request.jwt.claim.sub',"+quote(actor)+",true);select public.naver_capture_enqueue('002',"+quote(JSON.stringify(courses))+"::jsonb) as id");
+ const courses=[{id:'row-2',sourceRow:2,name:'공개 주소 검증 1회',rotation:1,groupName:'공개 주소 검증',garage:stops[0],center:stops[1],stops:[...stops.slice(0,-1),stops[1]]},{id:'row-3',sourceRow:3,name:'공개 주소 검증 2회',rotation:2,groupName:'공개 주소 검증',garage:stops[0],center:stops[1],stops:[...stops.slice(1,-1),stops[0]]}];
+ const reservationId=randomUUID();
+ const result=await query("do $probe$ declare job uuid;begin perform set_config('request.jwt.claim.sub',"+quote(actor)+",true);job:=public.naver_capture_enqueue('002',"+quote(JSON.stringify(courses))+"::jsonb);update public.naver_browser_jobs set status='running',worker_id="+quote(reservationId)+"::uuid,updated_at=now() where id=job;end $probe$;select id from public.naver_browser_jobs where worker_id="+quote(reservationId)+"::uuid");
  const id=result.at(-1)?.id;if(!id)throw Error('Capture queue fixture could not be created');
  let images=[];
  try {
-  const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id});
+  const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id,reservationId});
   const completed=await waitForResult(id);
   images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
   if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||Object.values(completed.results).some(r=>r.routeLabel!=='거리우선'||!r.distanceText||!r.sourceUrl?.startsWith('https://map.naver.com/')))throw Error('Live multi-course capture/storage verification failed');
-  console.log('Two independent actual Naver roundtrip screenshots uploaded to private Storage and saved to distinct course results');
+  console.log('Two separate actual Naver rotation screenshots (garage to center, then center to garage) uploaded to private Storage and saved to distinct course results');
  }finally {
   const {removeCourseCaptures}=await import('./lib/naver-capture-storage.mjs');
   // Keep the owned job if cleanup fails so its private files remain traceable.
