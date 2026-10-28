@@ -17,7 +17,22 @@ export const COURSE_ROLE_LABELS: Record<CourseColumnRole, string> = {
   ignore: '참고 정보 · 사용 안 함',
   unassigned: '열의 의미 확인 필요',
 };
-export const cellText = (v: unknown) => String(v ?? '').trim();
+export const cellText = (v: unknown) => {
+  const value = String(v ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+  return /^[\s.⋯…,;:!|/\-—–_=·ㆍ•※*~]+$/.test(value) ? '' : value;
+};
+export function meaningfulCourseRow(values: string[]): boolean {
+  const generic =
+    /^(코스명?|호차|차고지|출발지|센터|상차지|납품처\d*|착지\d*|주소|비고|합계|소계|총계|안내|참고|순번|번호)$/;
+  return values.some(
+    (value) =>
+      value &&
+      !/^[-+]?\d+(?:\.\d+|[.)]|번)?$/.test(value) &&
+      !generic.test(value),
+  );
+}
 const normalized = (v: unknown) =>
   cellText(v)
     .normalize('NFKC')
@@ -32,6 +47,7 @@ const legacyReturn = (value: string) =>
 const ordinal = (v: string) => Number(normalized(v).match(/\d+/)?.[0] ?? 0);
 function roleOf(value: string): CourseColumnRole {
   const h = normalized(value);
+  if (/^(비고|메모|참고|설명|특이사항|기타사항)/.test(h)) return 'ignore';
   if (
     /^(no|번호|순번|연번|비고|메모|기사명?|기사이름|운전자|차량번호|차량톤수|차량|전화번호|연락처|휴대폰|톤수|온도|물량|박스수|대수|거리|시간|출발시간|입차시간|운수사|회사|운송사|착지수|납품처수)$/.test(
       h,
@@ -139,8 +155,22 @@ export function courseTableAt(
         roles[c - 1] = 'ignore';
       }
     }
-    if (roles[c] === 'unassigned' && !samples.some((r) => cellText(r[c])))
-      roles[c] = 'ignore';
+    if (roles[c] === 'unassigned') {
+      const meaningful = samples
+        .map((row) => cellText(row[c]))
+        .filter((value) => meaningfulCourseRow([value]));
+      const candidateHeader =
+        /(납품|착지|배송|거래처|고객사|경유|주소|소재지|도착지)/.test(
+          normalized(headers[c]),
+        );
+      const candidateValue = meaningful.some(
+        (value) =>
+          addressLike(value) ||
+          /(마트|센터|공장|물류|매장|지점|시장|병원|창고|점)$/.test(value),
+      );
+      if (!meaningful.length || (!candidateHeader && !candidateValue))
+        roles[c] = 'ignore';
+    }
   }
   if (
     roles.some((r, c) => r === 'garage' && !legacyGarage(effectiveHeaders[c]))
@@ -252,7 +282,7 @@ export function courseTableProblems(table: CourseTable): string[] {
     problems.push('납품처 열을 선택해 주세요.');
   if (table.roles.includes('unassigned'))
     problems.push(
-      '의미를 확인하지 못한 열의 역할을 선택해 주세요. 참고 열이면 사용 안 함으로 지정합니다.',
+      '추가 납품처·주소로 보이는 열만 포함 여부를 확인해 주세요. 점·메모 등 참고 열은 자동 제외합니다.',
     );
   const numbers = table.roles.flatMap((role, c) =>
     role === 'delivery' && ordinal(table.effectiveHeaders[c])

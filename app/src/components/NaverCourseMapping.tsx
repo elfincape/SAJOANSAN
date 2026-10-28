@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   COURSE_ROLE_LABELS,
   cellText,
@@ -29,6 +30,9 @@ export function NaverCourseMapping({
   onHeader: (value: number) => void;
   onRole: (column: number, role: CourseColumnRole) => void;
 }) {
+  const [showIgnored, setShowIgnored] = useState(false),
+    [visibleLimit, setVisibleLimit] = useState(50),
+    [columnSearch, setColumnSearch] = useState('');
   const selected = choice === '' ? undefined : sources[Number(choice)],
     problems = table ? courseTableProblems(table) : [];
   const letter = (c: number) => {
@@ -41,6 +45,34 @@ export function NaverCourseMapping({
     }
     return value;
   };
+  const columns = table
+    ? table.headers.flatMap((_, c) =>
+        (showIgnored || columnSearch.trim() || table.roles[c] !== 'ignore') &&
+        (!columnSearch.trim() ||
+          table.headers[c]
+            .toLowerCase()
+            .includes(columnSearch.trim().toLowerCase()) ||
+          letter(c).toLowerCase() === columnSearch.trim().toLowerCase())
+          ? [c]
+          : [],
+      )
+    : [];
+  const ignored = table?.roles.filter((r) => r === 'ignore').length ?? 0;
+  function sample(column: number) {
+    if (!selected || !table) return '';
+    const values: string[] = [];
+    for (
+      let r = table.headerRow + table.headerSpan;
+      r <
+        Math.min(table.endRow ?? selected.rows.length, selected.rows.length) &&
+      values.length < 2;
+      r++
+    ) {
+      const v = cellText(selected.rows[r][column]);
+      if (v) values.push(v);
+    }
+    return values.join(' / ') || '빈 열';
+  }
   return (
     <div className="capture-mapping space-y-3">
       <label>
@@ -106,12 +138,42 @@ export function NaverCourseMapping({
                 }}
               />
             </label>
+            {(showIgnored || columns.length > 50 || columnSearch) && (
+              <label>
+                열 이름 또는 문자 검색
+                <input
+                  className="app-input"
+                  value={columnSearch}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    setColumnSearch(e.target.value);
+                    setVisibleLimit(50);
+                  }}
+                />
+              </label>
+            )}
             <div
               className="scroll"
               role="region"
               tabIndex={0}
               aria-label="엑셀 열 연결"
             >
+              {ignored > 0 && (
+                <p>
+                  {ignored}개 참고 열 자동 제외{' '}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={disabled}
+                    onClick={() => {
+                      setShowIgnored(!showIgnored);
+                      setVisibleLimit(50);
+                    }}
+                  >
+                    {showIgnored ? '필요한 열만 보기' : '다른 열 확인'}
+                  </button>
+                </p>
+              )}
               <table className="app-table">
                 <thead>
                   <tr>
@@ -121,19 +183,12 @@ export function NaverCourseMapping({
                   </tr>
                 </thead>
                 <tbody>
-                  {table.headers.map((header, c) => (
+                  {columns.slice(0, visibleLimit).map((c) => (
                     <tr key={c}>
                       <th scope="row">
-                        {letter(c)} · {header || '제목 없음'}
+                        {letter(c)} · {table.headers[c] || '제목 없음'}
                       </th>
-                      <td>
-                        {selected.rows
-                          .slice(table.headerRow + table.headerSpan)
-                          .map((row) => cellText(row[c]))
-                          .filter(Boolean)
-                          .slice(0, 2)
-                          .join(' / ') || '빈 열'}
-                      </td>
+                      <td>{sample(c)}</td>
                       <td>
                         <select
                           aria-label={`${letter(c)}열 항목`}
@@ -157,6 +212,16 @@ export function NaverCourseMapping({
                   ))}
                 </tbody>
               </table>
+              {columns.length > visibleLimit && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={disabled}
+                  onClick={() => setVisibleLimit((n) => n + 50)}
+                >
+                  다음 50개 열 보기 ({visibleLimit}/{columns.length})
+                </button>
+              )}
             </div>
           </details>
         </>

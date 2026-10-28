@@ -4,8 +4,14 @@ import {
   deliveryColumns,
   isRepeatedCourseHeader,
   cellText,
+  meaningfulCourseRow,
 } from './naver-course-import';
 import type { CourseTable } from './naver-course-import';
+export interface CourseIssue {
+  sourceRow: number;
+  message: string;
+  courseId?: string;
+}
 export interface NaverCourse {
   id: string;
   sourceRow: number;
@@ -14,10 +20,20 @@ export interface NaverCourse {
   sourceRows?: number[];
   rotations?: 2;
   sourceSheet?: string;
+  rotation?: 1 | 2;
+  groupName?: string;
+  garage?: string;
+  center?: string;
+  importIssues?: CourseIssue[];
 }
 export interface CourseImport {
   courses: NaverCourse[];
-  issues: { sourceRow: number; message: string }[];
+  issues: CourseIssue[];
+}
+export function courseTitle(course: NaverCourse): string {
+  return course.rotation
+    ? `${course.groupName || course.name} · ${course.rotation}회전`
+    : course.name + (course.rotations === 2 ? ' · 이전 통합 2회전' : '');
 }
 export const COURSE_HEADERS = [
   '코스명',
@@ -96,7 +112,7 @@ export function parseNaverCourses(
       garage = text(row[garageColumn]),
       center = text(row[centerColumn]),
       deliveries = destinations.map((c) => text(row[c])).filter(Boolean);
-    if (!name && !garage && !center && !deliveries.length) continue;
+    if (!meaningfulCourseRow([name, garage, center, ...deliveries])) continue;
     if (
       /^(합계|소계|총계)$/.test(name) &&
       !garage &&
@@ -104,11 +120,32 @@ export function parseNaverCourses(
       !deliveries.length
     )
       continue;
-    const stops = [garage, center, ...deliveries, garage];
+    const match = name.match(/^(.+?)([12])회$/),
+      paired = match && (!/\d$/.test(match[1]) || /\s$/.test(match[1]));
+    const rotation = paired ? (Number(match[2]) as 1 | 2) : undefined,
+      groupName = paired ? match[1].trim() : undefined;
+    const stops =
+      rotation === 1
+        ? [garage, center, ...deliveries, center]
+        : rotation === 2
+          ? [center, ...deliveries, garage]
+          : [garage, center, ...deliveries, garage];
+    const course: NaverCourse = {
+      id: 'row-' + (i + 1),
+      sourceRow: i + 1,
+      name,
+      stops,
+      ...(rotation ? { rotation, groupName, garage, center } : {}),
+    };
     let message = '';
-    if (!name || !garage || !center || !deliveries.length)
-      message =
-        '코스명·차고지·센터·납품처 중 비어 있는 값을 확인해 주세요. 빈 주소를 추정하지 않습니다.';
+    const missing = [
+      !name ? '호차·코스명' : '',
+      !garage ? '차고지' : '',
+      !center ? '센터' : '',
+      !deliveries.length ? '납품처' : '',
+    ].filter(Boolean);
+    if (missing.length)
+      message = `누락: ${missing.join(', ')}. 실제 코스 행의 값을 확인해 주세요.`;
     else if (
       stops.some(
         (s) =>
@@ -122,16 +159,19 @@ export function parseNaverCourses(
       message = '코스명은 100자, 주소는 300자 이내로 입력해 주세요.';
     else if (stops.length > 7)
       message = `센터 포함 경유지가 ${stops.length - 2}곳입니다. 네이버 한도 5곳을 초과합니다.`;
-    if (message) issues.push({ sourceRow: i + 1, message });
-    const match = name.match(/^(.+?)([12])회$/);
-    const paired = match && (!/\d$/.test(match[1]) || /\s$/.test(match[1]));
+    if (message)
+      issues.push({
+        sourceRow: i + 1,
+        courseId: course.id,
+        message: `${courseTitle(course)}: ${message}`,
+      });
     parsed.push({
-      course: { id: 'row-' + (i + 1), sourceRow: i + 1, name, stops },
+      course,
       garage,
       center,
-      deliveries: stops.slice(2, -1),
-      base: paired ? match[1].trim() : '',
-      rotation: paired ? match[2] : '',
+      deliveries,
+      base: groupName || '',
+      rotation: rotation ? String(rotation) : '',
       valid: !message,
     });
   }
@@ -148,7 +188,11 @@ export function parseNaverCourses(
       second = group.filter((r) => r.rotation === '2');
     const fail = (message: string) =>
       group.forEach((r) =>
-        issues.push({ sourceRow: r.course.sourceRow, message }),
+        issues.push({
+          sourceRow: r.course.sourceRow,
+          courseId: r.course.id,
+          message,
+        }),
       );
     if (first.length !== 1 || second.length !== 1) {
       fail(
@@ -158,50 +202,21 @@ export function parseNaverCourses(
     }
     const one = first[0],
       two = second[0];
-    if (!one.valid || !two.valid) {
-      fail(
-        `${entry.base}: 같은 호차의 다른 회차 입력 오류를 먼저 수정해 주세요.`,
-      );
-      continue;
-    }
-    if (one.garage !== two.garage || one.center !== two.center) {
+    if (
+      one.valid &&
+      two.valid &&
+      (one.garage !== two.garage || one.center !== two.center)
+    ) {
       fail(`${entry.base}: 두 행의 차고지·센터 주소를 동일하게 입력해 주세요.`);
       continue;
     }
-    const stops = [
-      one.garage,
-      one.center,
-      ...one.deliveries,
-      one.center,
-      ...two.deliveries,
-      one.garage,
-    ];
-    if (stops.length > 7) {
-      fail(
-        `${entry.base}: 2회전을 합친 경유지가 ${stops.length - 2}곳입니다. 네이버 한도 5곳을 초과합니다.`,
-      );
-      continue;
-    }
-    const sourceRows = [one.course.sourceRow, two.course.sourceRow],
-      sourceRow = Math.min(...sourceRows);
-    courses.push({
-      id: 'row-' + sourceRow,
-      sourceRow,
-      sourceRows,
-      name: entry.base,
-      rotations: 2,
-      stops,
-    });
+    for (const turn of [one, two]) if (turn.valid) courses.push(turn.course);
   }
   if (courses.length > 100 || parsed.length > 200)
     issues.push({
       sourceRow: 1,
-      message: '한 번에 최대 100코스(2회전 포함 200행)를 등록해 주세요.',
-    });
-  if (!courses.length && !issues.length)
-    issues.push({
-      sourceRow: Math.max(1, table.headerRow + table.headerSpan + 1),
-      message: '선택한 표에 등록할 코스가 없습니다.',
+      message:
+        '한 번에 최대 100건을 조회합니다. 각 회전은 별도 조회 1건입니다(원본 최대 200행).',
     });
   return { courses, issues };
 }

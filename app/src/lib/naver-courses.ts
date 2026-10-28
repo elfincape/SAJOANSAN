@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { courseTitle } from '../domain/naver-courses';
 import type { NaverCourse } from '../domain/naver-courses';
 export interface CourseCapture {
   imagePath?: string;
@@ -67,7 +68,7 @@ export async function captureExports(job: CaptureJob, type: 'zip' | 'pdf') {
       zip = new JSZip();
     for (const c of ready)
       zip.file(
-        `${c.sourceRow}_${c.name.replace(/[\\/:*?"<>|]/g, '_')}.png`,
+        `${c.sourceRow}_${courseTitle(c).replace(/[\\/:*?"<>|]/g, '_')}.png`,
         await captureImage(job.results[c.id].imagePath!),
       );
     saveFile(
@@ -91,7 +92,7 @@ export async function captureExports(job: CaptureJob, type: 'zip' | 'pdf') {
       ctx.fillStyle = '#111';
       ctx.font = '600 28px Pretendard, sans-serif';
       ctx.fillText(
-        `${(c.sourceRows ?? [c.sourceRow]).join(', ')}행 · ${c.name}${c.rotations === 2 ? ' · 2회전' : ''}`,
+        `${(c.sourceRows ?? [c.sourceRow]).join(', ')}행 · ${courseTitle(c)}`,
         0,
         35,
         1100,
