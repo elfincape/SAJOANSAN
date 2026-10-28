@@ -1,4 +1,13 @@
 import {query,quote} from './naver-browser-db.mjs';
+async function waitForResult(id,db=query,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
+ for(let attempt=0;attempt<36;attempt++) {
+  const rows=await db('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
+  if(!rows[0])throw Error('Server verification job disappeared');
+  if(!['queued','running'].includes(rows[0].status))return rows[0];
+  await sleep(5000);
+ }
+ throw Error('Server verification result wait timed out');
+}
 await query(`begin;
 do $test$ declare actor uuid;job uuid;n integer;begin
  select id into actor from public.user_profiles where active and role='admin' limit 1;
@@ -22,8 +31,8 @@ if(process.argv.includes('--live')){
  const id=result.at(-1)?.id;if(!id)throw Error('Live queue fixture could not be created');
  try{
   const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id});
-  const rows=await query('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
-  const r=rows[0]?.results?.['경기도 오산시 성호대로 141'];if(rows[0]?.status!=='completed'||r?.method!=='naver-map-display'||r?.routeLabel!=='거리우선'||!(r?.distanceKm>0))throw Error('Live queued browser result verification failed');
+  const completed=await waitForResult(id);
+  const r=completed.results?.['경기도 오산시 성호대로 141'];if(completed.status!=='completed'||r?.method!=='naver-map-display'||r?.routeLabel!=='거리우선'||!(r?.distanceKm>0))throw Error('Live queued browser result verification failed');
   console.log('End-to-end server queue/browser/result persistence verified: '+r.distanceText);
  }finally{await query('delete from public.naver_browser_jobs where id='+quote(id)+'::uuid and owner_id='+quote(actor)+'::uuid');}
 }
@@ -36,9 +45,9 @@ if(process.argv.includes('--capture')) {
  let images=[];
  try {
   const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id});
-  const rows=await query('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
-  images=Object.values(rows[0]?.results??{}).map(r=>r.imagePath).filter(Boolean);
-  if(rows[0]?.status!=='completed'||images.length!==2||new Set(images).size!==2||Object.values(rows[0].results).some(r=>r.routeLabel!=='거리우선'||!r.distanceText||!r.sourceUrl?.startsWith('https://map.naver.com/')))throw Error('Live multi-course capture/storage verification failed');
+  const completed=await waitForResult(id);
+  images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
+  if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||Object.values(completed.results).some(r=>r.routeLabel!=='거리우선'||!r.distanceText||!r.sourceUrl?.startsWith('https://map.naver.com/')))throw Error('Live multi-course capture/storage verification failed');
   console.log('Two independent actual Naver roundtrip screenshots uploaded to private Storage and saved to distinct course results');
  }finally {
   const {removeCourseCaptures}=await import('./lib/naver-capture-storage.mjs');
