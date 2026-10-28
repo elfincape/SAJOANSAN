@@ -1,0 +1,78 @@
+.naver-capture h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.naver-capture h3 {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.capture-help,
+.capture-card p {
+  color: var(--theme-muted);
+  font-size: 0.875rem;
+}
+.capture-status {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+.naver-capture progress {
+  width: 100%;
+  accent-color: var(--accent, #16845b);
+}
+.capture-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1rem;
+}
+.capture-card {
+  padding: 1rem;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.capture-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 1rem;
+  background: white;
+}
+.capture-card details {
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+.capture-card summary {
+  cursor: pointer;
+}
+.capture-card ol {
+  padding-left: 1.3rem;
+}
+.naver-capture .scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+.naver-capture .app-table td:last-child {
+  min-width: 320px;
+  white-space: normal;
+}
+.capture-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.capture-tabs [aria-pressed='true'] {
+  box-shadow: inset 0 -3px var(--accent, #16845b);
+}
+.naver-capture .btn-ghost,
+.naver-capture .app-input {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border);
+}
+.naver-capture .btn-ghost:hover:enabled {
+  background: var(--theme-surface-raised, var(--theme-surface));
+}
+.naver-capture button:disabled {
+  opacity: 0.55;
+}

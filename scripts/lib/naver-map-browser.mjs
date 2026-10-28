@@ -52,3 +52,52 @@ export async function browserDistance(page,origin,address,{diagnostic=false}={})
   throw Error('네이버 지도 조회 확인 필요: 접근 제한 또는 거리우선 결과 미표시');
  }
 }
+
+export async function browserCourseCapture(page,stops) {
+ if(!Array.isArray(stops)||stops.length<4||stops.length>7||stops[0]!==stops.at(-1)||stops.some(s=>typeof s!=='string'||!s.trim()||s.length>300))throw Error('코스 주소 또는 경유지 한도 확인 필요');
+ page.setDefaultTimeout(30000);
+ await page.setViewportSize({width:1280,height:1800});
+ await page.goto('https://map.naver.com/',{waitUntil:'domcontentloaded',timeout:45000});
+ await page.getByRole('button',{name:'길찾기',exact:true}).click();
+ await page.getByRole('tab',{name:'자동차',exact:true}).click();
+ for(let n=0;n<stops.length-2;n++){await page.getByRole('button',{name:'경유지',exact:true}).click();await page.waitForFunction(count=>document.querySelectorAll('[role=combobox]').length===count,n+3);}
+ if(await page.getByRole('combobox').count()!==stops.length)throw Error('네이버 경유지 입력 개수 확인 필요');
+ for(const [i,address] of stops.entries()) {
+  const search=addressSearch(address);let found=false;
+  for(const query of search.queries) {
+   await page.getByRole('combobox').nth(i).fill(query);
+   let candidates=page.locator('[id^="instant-search-item-poi-"]');
+   if(search.city)candidates=candidates.filter({hasText:search.city});
+   if(search.gu)candidates=candidates.filter({hasText:search.gu});
+   if(search.road)candidates=candidates.filter({hasText:new RegExp(search.road.street.split('').join('\\s*')+'\\s*'+search.road.number+'(?:\\D|$)')});
+   else candidates=candidates.filter({hasText:address});
+   try {await candidates.first().waitFor({state:'visible',timeout:5000});}catch{continue;}
+   if(await candidates.count()!==1)continue;
+   await candidates.click();await page.waitForTimeout(700);found=true;break;
+  }
+  if(!found)throw Object.assign(Error(`${i+1}번째 방문지 주소를 한 곳으로 특정하지 못했습니다.`),{code:'ADDRESS_NOT_FOUND'});
+ }
+ if((await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value))).some(v=>!v.trim()))throw Error('방문지 입력 누락 확인 필요');
+ await page.getByRole('button',{name:'길찾기',exact:true}).click();
+ const card=page.locator('.route_summary_box').filter({hasText:/거리\s*우선/});
+ await card.waitFor({state:'visible',timeout:45000});
+ await card.click();
+ await page.mouse.move(1100,1700);await page.waitForTimeout(700);
+ const result=distanceFromCard(await card.innerText());
+ // Use the actual Naver result panel, including its filled stop list and all route alternatives.
+ const panel=await card.evaluateHandle((el,stopsCount)=>{
+  let node=el;
+  while(node.parentElement) {
+   if(node.querySelectorAll('[role="combobox"]').length===stopsCount && node.getBoundingClientRect().width<700)return node;
+   node=node.parentElement;
+  }
+  return null;
+ },stops.length);
+ const element=panel.asElement();if(!element)throw Error('네이버 코스 결과 패널을 확인하지 못했습니다.');
+ await element.evaluate(el=>{for(const node of [el,...el.querySelectorAll('*')]){const style=getComputedStyle(node);if(['auto','scroll'].includes(style.overflowY)){node.style.maxHeight='none';node.style.height='auto';node.style.overflowY='visible';}}});
+ const box=await element.boundingBox();
+ const bottom=await page.locator('.direction_summary_list > li').last().evaluate(el=>el.getBoundingClientRect().bottom);
+ if(!box||box.width>700||bottom-box.y<400||bottom-box.y>8000)throw Error('네이버 캡처 영역 확인 필요');
+ const png=await page.screenshot({type:'png',clip:{x:box.x,y:Math.max(0,box.y),width:box.width,height:bottom-Math.max(0,box.y)+12},timeout:30000});
+ return {...result,png,sourceUrl:page.url(),measuredAt:new Date().toISOString()};
+}

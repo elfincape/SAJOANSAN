@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/lib/naver-map-browser.mjs'
+      - 'scripts/lib/naver-capture-storage.mjs'
+      - 'repo-root/sql/naver-course-captures.sql'
       - 'scripts/check-naver-map-browser.mjs'
       - '.github/workflows/naver-browser-server.yml'
       - 'scripts/naver-browser-*.mjs'
@@ -38,7 +40,7 @@ jobs:
       - run: node tests/naver-browser-lifecycle.test.mjs
       - run: node tests/naver-browser-ui.test.mjs
       - run: node scripts/apply-naver-browser-migration.mjs
-      - run: node scripts/check-naver-browser-queue.mjs --live
+      - run: node scripts/check-naver-browser-queue.mjs --live --capture
   replace:
     needs: [verify]
     if: github.event_name == 'push' && needs.verify.result == 'success'

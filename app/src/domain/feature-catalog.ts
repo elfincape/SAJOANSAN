@@ -119,6 +119,7 @@ export const FEATURE_CATALOG = Object.freeze(
       id: 'naverDistance',
       href: '/admin/naver-shortest-distance.html',
       title: '네이버 최단거리 계산',
+      desc: '납품처 거리·엑셀 코스별 실제 지도 캡처·일괄 출력',
       category: 'dispatch',
       resource: 'delivery_points',
     },
