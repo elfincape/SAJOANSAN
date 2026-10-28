@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useAdminPage } from './AdminPage';
+import { NaverCourseMapping } from './NaverCourseMapping';
+import type { CourseSheetTable } from './NaverCourseMapping';
+import { findCourseTables, courseTableAt } from '../domain/naver-course-import';
+import type {
+  CourseColumnRole,
+  CourseTable,
+} from '../domain/naver-course-import';
 import { FileArea } from './FileArea';
 import { COURSE_HEADERS, parseNaverCourses } from '../domain/naver-courses';
 import type { CourseImport } from '../domain/naver-courses';
@@ -65,6 +72,9 @@ export function NaverCourseCapture({
     [job, setJob] = useState<CaptureJob | null>(null),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState('');
+  const [sources, setSources] = useState<CourseSheetTable[]>([]),
+    [choice, setChoice] = useState(''),
+    [table, setTable] = useState<CourseTable | null>(null);
   const mounted = useRef(true),
     center = selectedCenter.code;
   const running = !!job && ['queued', 'running'].includes(job.status);
@@ -108,21 +118,86 @@ export function NaverCourseCapture({
       if (mounted.current) setBusy(false);
     }
   }
+  function mapSource(index: string, selectedTable?: CourseTable) {
+    setChoice(index);
+    const source = sources[Number(index)];
+    if (!source || index === '') {
+      setTable(null);
+      setInput({ courses: [], issues: [] });
+      return;
+    }
+    applyMapping(
+      source,
+      selectedTable
+        ? { ...selectedTable, endRow: source.table.endRow }
+        : source.table,
+    );
+  }
+  function applyMapping(source: CourseSheetTable, next: CourseTable) {
+    setTable(next);
+    const parsed = parseNaverCourses(source.rows, next);
+    setInput({
+      ...parsed,
+      courses: parsed.courses.map((c) => ({ ...c, sourceSheet: source.sheet })),
+    });
+  }
+  function roleChange(column: number, role: CourseColumnRole) {
+    if (!table || choice === '') return;
+    const roles = [...table.roles];
+    roles[column] = role;
+    applyMapping(sources[Number(choice)], { ...table, roles });
+  }
   async function upload(file: File) {
     setInput({ courses: [], issues: [] });
     setFilename(file.name);
     setJob(null);
+    setSources([]);
+    setChoice('');
+    setTable(null);
     if (file.size > 10 * 1024 * 1024)
       throw Error('10MB 이하의 엑셀을 등록해 주세요.');
     const book = XLSX.read(await file.arrayBuffer(), { type: 'array' }),
-      sheet = book.Sheets[book.SheetNames[0]];
-    if (!sheet) throw Error('첫 시트에 코스 목록을 입력해 주세요.');
-    const next = parseNaverCourses(
-      XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }),
-    );
-    setInput(next);
-    setFilename(file.name);
-    setJob(null);
+      found: CourseSheetTable[] = [],
+      manual: CourseSheetTable[] = [];
+    for (const sheet of book.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets[sheet], {
+        header: 1,
+        defval: '',
+        blankrows: true,
+        range: {
+          s: { r: 0, c: 0 },
+          e: XLSX.utils.decode_range(book.Sheets[sheet]['!ref'] || 'A1').e,
+        },
+      });
+      if (!rows.some((row) => row.some((v) => String(v ?? '').trim())))
+        continue;
+      const tables = findCourseTables(rows);
+      if (tables.length)
+        for (const table of tables) found.push({ sheet, rows, table });
+      else
+        manual.push({
+          sheet,
+          rows,
+          table: courseTableAt(
+            rows,
+            Math.max(
+              0,
+              rows.findIndex((row) => row.some((v) => String(v ?? '').trim())),
+            ),
+          ),
+        });
+    }
+    if (!found.length && !manual.length)
+      throw Error('데이터가 있는 시트가 없습니다.');
+    const choices = [...found, ...manual];
+    setSources(choices);
+    if (found.length === 1) {
+      setChoice('0');
+      applyMapping(found[0], found[0].table);
+    } else if (!found.length && manual.length === 1) {
+      setChoice('0');
+      applyMapping(manual[0], manual[0].table);
+    } else setStatus('여러 시트·표를 찾았습니다. 가져올 표만 선택해 주세요.');
   }
   function template() {
     const book = XLSX.utils.book_new(),
@@ -164,7 +239,9 @@ export function NaverCourseCapture({
       book,
       XLSX.utils.aoa_to_sheet([
         ['입력 방법'],
-        ['첫 코스 시트만 읽습니다. 예시 행은 지우고 입력하세요.'],
+        [
+          '시트·제목 행·열은 자동 탐색합니다. 이 양식은 선택 사항입니다. 예시 행은 지우고 입력하세요.',
+        ],
         ['일반 운행: 한 행 = 차고지→센터→납품처들→차고지'],
         [
           '2회전: 같은 호차명의 끝을 1회, 2회로 입력합니다. 두 행의 차고지·센터·복귀차고지 주소는 동일하게 입력합니다.',
@@ -228,7 +305,7 @@ export function NaverCourseCapture({
           disabled={busy || running}
           onClick={template}
         >
-          엑셀 양식 다운로드
+          예시 엑셀 다운로드
         </button>
         <button
           className="btn btn-ghost"
@@ -270,14 +347,31 @@ export function NaverCourseCapture({
         </label>
       </FileArea>
       <p className="capture-help">
-        첫 시트 · 최대 100코스 · 같은 호차의 1회·2회는 한 코스로 결합 · 센터
-        포함 경유지 최대 5곳. 정확한 주소를 입력하고 출발·복귀 차고지를 같게
-        입력해 주세요. 2회전은 두 행에 동일한 차고지·센터 주소를 입력합니다.
-        중간 센터 재방문은 자동으로 추가됩니다.
+        시트·제목 행·열을 자동 탐색합니다. 최대 100코스 · 같은 호차의 1회·2회는
+        한 코스로 결합 · 센터 포함 경유지 최대 5곳. 정확한 주소를 입력하고
+        출발·복귀 차고지를 같게 입력해 주세요. 2회전은 두 행에 동일한
+        차고지·센터 주소를 입력합니다. 중간 센터 재방문은 자동으로 추가됩니다.
       </p>
+      {!job && sources.length > 0 && (
+        <NaverCourseMapping
+          sources={sources}
+          choice={choice}
+          table={table}
+          disabled={busy || running}
+          onSource={mapSource}
+          onHeader={(row) => {
+            if (choice !== '')
+              mapSource(
+                choice,
+                courseTableAt(sources[Number(choice)].rows, row),
+              );
+          }}
+          onRole={roleChange}
+        />
+      )}
       {input.issues.length > 0 && (
         <div role="alert">
-          <strong>엑셀을 수정한 뒤 다시 등록해 주세요.</strong>
+          <strong>열 연결 또는 아래 원본 값을 확인해 주세요.</strong>
           <ul>
             {input.issues.map((e, i) => (
               <li key={i}>
@@ -305,7 +399,10 @@ export function NaverCourseCapture({
             <tbody>
               {input.courses.map((c) => (
                 <tr key={c.id}>
-                  <td>{(c.sourceRows ?? [c.sourceRow]).join(', ')}</td>
+                  <td>
+                    {c.sourceSheet ? c.sourceSheet + ' · ' : ''}
+                    {(c.sourceRows ?? [c.sourceRow]).join(', ')}
+                  </td>
                   <td>
                     {c.name}
                     {c.rotations === 2 ? ' · 2회전' : ''}
@@ -361,7 +458,7 @@ export function NaverCourseCapture({
               ? `${labels[job.status] || job.status} · ${done}/${job.courses.length}코스 캡처 완료`
               : filename
                 ? `${filename} · ${input.courses.length}코스`
-                : '양식을 내려받아 코스 목록을 등록해 주세요.')}
+                : '기존 엑셀을 등록하면 시트와 필요한 열을 찾아 연결합니다.')}
       </div>
       {job && (
         <>

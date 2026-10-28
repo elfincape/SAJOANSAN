@@ -1,3 +1,11 @@
+import {
+  findCourseTables,
+  courseTableProblems,
+  deliveryColumns,
+  isRepeatedCourseHeader,
+  cellText,
+} from './naver-course-import';
+import type { CourseTable } from './naver-course-import';
 export interface NaverCourse {
   id: string;
   sourceRow: number;
@@ -5,6 +13,7 @@ export interface NaverCourse {
   stops: string[];
   sourceRows?: number[];
   rotations?: 2;
+  sourceSheet?: string;
 }
 export interface CourseImport {
   courses: NaverCourse[];
@@ -20,27 +29,43 @@ export const COURSE_HEADERS = [
   '납품처4',
   '복귀차고지',
 ];
-export function parseNaverCourses(rows: unknown[][]): CourseImport {
+export function parseNaverCourses(
+  rows: unknown[][],
+  table?: CourseTable,
+): CourseImport {
   const courses: NaverCourse[] = [],
     issues: CourseImport['issues'] = [];
-  const text = (v: unknown) => String(v ?? '').trim();
-  const header = rows[0]?.map(text) ?? [];
-  if (COURSE_HEADERS.some((h) => !header.includes(h)))
+  const text = cellText;
+  if (!table) {
+    const tables = findCourseTables(rows);
+    if (tables.length !== 1)
+      return {
+        courses,
+        issues: [
+          {
+            sourceRow: 1,
+            message: tables.length
+              ? '여러 표를 찾았습니다. 가져올 표를 선택해 주세요.'
+              : '제목 행과 열을 자동으로 찾지 못했습니다. 시트·제목 행과 필요한 열을 선택해 주세요.',
+          },
+        ],
+      };
+    table = tables[0];
+  }
+  const problems = courseTableProblems(table);
+  if (problems.length)
     return {
       courses,
-      issues: [
-        {
-          sourceRow: 1,
-          message:
-            '양식의 열 제목을 유지해 주세요: ' + COURSE_HEADERS.join(', '),
-        },
-      ],
+      issues: problems.map((message) => ({
+        sourceRow: Math.max(1, table!.headerRow + 1),
+        message,
+      })),
     };
-  if (new Set(header.filter(Boolean)).size !== header.filter(Boolean).length)
-    return {
-      courses,
-      issues: [{ sourceRow: 1, message: '중복된 열 제목이 있습니다.' }],
-    };
+  const nameColumn = table.roles.indexOf('name'),
+    garageColumn = table.roles.indexOf('garage'),
+    centerColumn = table.roles.indexOf('center'),
+    endColumn = table.roles.indexOf('end'),
+    destinations = deliveryColumns(table);
   const parsed: {
     course: NaverCourse;
     garage: string;
@@ -50,32 +75,66 @@ export function parseNaverCourses(rows: unknown[][]): CourseImport {
     rotation: string;
     valid: boolean;
   }[] = [];
-  for (let i = 1; i < rows.length; i++) {
+  for (
+    let i = table.headerRow + table.headerSpan;
+    i < (table.endRow ?? rows.length);
+    i++
+  ) {
     const row = rows[i];
     if (!row.some((v) => text(v))) continue;
-    const get = (h: string) => text(row[header.indexOf(h)]);
-    const name = get('코스명'),
-      garage = get('차고지'),
-      center = get('센터'),
-      end = get('복귀차고지');
-    const extra =
-      row.slice(header.length).some((v) => text(v)) ||
-      header.some((h, c) => !COURSE_HEADERS.includes(h) && text(row[c]));
-    const stops = [
-      garage,
-      center,
-      ...['납품처1', '납품처2', '납품처3', '납품처4'].map(get).filter(Boolean),
-      end,
-    ];
+    if (isRepeatedCourseHeader(row, table)) continue;
+    if (
+      table.headerSpan === 2 &&
+      JSON.stringify(table.headers.map((_, c) => text(row[c]))) ===
+        JSON.stringify(
+          table.headers.map((_, c) => text(rows[table!.headerRow]?.[c])),
+        )
+    ) {
+      i++;
+      continue;
+    }
+    const name = text(row[nameColumn]),
+      garage = text(row[garageColumn]),
+      center = text(row[centerColumn]),
+      end = endColumn < 0 ? garage : text(row[endColumn]),
+      deliveries = destinations.map((c) => text(row[c])).filter(Boolean);
+    if (
+      !name &&
+      !garage &&
+      !center &&
+      !deliveries.length &&
+      !text(row[endColumn])
+    )
+      continue;
+    if (
+      /^(합계|소계|총계)$/.test(name) &&
+      !garage &&
+      !center &&
+      !deliveries.length &&
+      !text(row[endColumn])
+    )
+      continue;
+    const stops = [garage, center, ...deliveries, end];
     let message = '';
-    if (extra)
-      message = '양식 밖에 값이 있습니다. 센터 포함 경유지는 최대 5곳입니다.';
-    else if (!name || !garage || !center || !get('납품처1') || !end)
-      message = '코스명·차고지·센터·납품처1·복귀차고지는 필수입니다.';
+    if (!name || !garage || !center || !deliveries.length || !end)
+      message =
+        '코스명·차고지·센터·납품처·복귀 주소 중 비어 있는 값을 확인해 주세요. 빈 주소를 추정하지 않습니다.';
+    else if (
+      stops.some(
+        (s) =>
+          /^[-+]?\d+(?:\.\d+)?$/.test(s) ||
+          /^0\d{8,10}$/.test(s.replaceAll('-', '')),
+      )
+    )
+      message =
+        '주소·장소명 열에 번호 또는 숫자만 들어 있습니다. 열 인식을 확인해 주세요.';
     else if (garage !== end)
-      message = '출발 차고지와 복귀 차고지 주소를 동일하게 입력해 주세요.';
+      message =
+        '출발 차고지와 복귀 차고지 주소가 다릅니다. 열 인식 또는 원본 값을 확인해 주세요.';
     else if (name.length > 100 || stops.some((s) => s.length > 300))
       message = '코스명은 100자, 주소는 300자 이내로 입력해 주세요.';
+    else if (stops.length > 7)
+      message = `센터 포함 경유지가 ${stops.length - 2}곳입니다. 네이버 한도 5곳을 초과합니다.`;
     if (message) issues.push({ sourceRow: i + 1, message });
     const match = name.match(/^(.+?)([12])회$/);
     const paired = match && (!/\d$/.test(match[1]) || /\s$/.test(match[1]));
@@ -155,6 +214,9 @@ export function parseNaverCourses(rows: unknown[][]): CourseImport {
       message: '한 번에 최대 100코스(2회전 포함 200행)를 등록해 주세요.',
     });
   if (!courses.length && !issues.length)
-    issues.push({ sourceRow: 2, message: '등록할 코스가 없습니다.' });
+    issues.push({
+      sourceRow: Math.max(1, table.headerRow + table.headerSpan + 1),
+      message: '선택한 표에 등록할 코스가 없습니다.',
+    });
   return { courses, issues };
 }
