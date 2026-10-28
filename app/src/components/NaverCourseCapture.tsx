@@ -59,18 +59,14 @@ export function NaverCourseCapture({
 }: {
   onBusy: (busy: boolean) => void;
 }) {
-  const { setControlsDisabled } = useAdminPage();
+  const { setControlsDisabled, center: selectedCenter } = useAdminPage();
   const [input, setInput] = useState<CourseImport>({ courses: [], issues: [] }),
     [filename, setFilename] = useState(''),
     [job, setJob] = useState<CaptureJob | null>(null),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState('');
   const mounted = useRef(true),
-    center = ['ansan', '001'].includes(
-      new URLSearchParams(location.search).get('center') || '',
-    )
-      ? '001'
-      : '002';
+    center = selectedCenter.code;
   const running = !!job && ['queued', 'running'].includes(job.status);
   useEffect(() => {
     mounted.current = true;
