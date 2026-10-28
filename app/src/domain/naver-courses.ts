@@ -27,7 +27,7 @@ export const COURSE_HEADERS = [
   '납품처2',
   '납품처3',
   '납품처4',
-  '복귀차고지',
+  '납품처5',
 ];
 export function parseNaverCourses(
   rows: unknown[][],
@@ -64,7 +64,6 @@ export function parseNaverCourses(
   const nameColumn = table.roles.indexOf('name'),
     garageColumn = table.roles.indexOf('garage'),
     centerColumn = table.roles.indexOf('center'),
-    endColumn = table.roles.indexOf('end'),
     destinations = deliveryColumns(table);
   const parsed: {
     course: NaverCourse;
@@ -96,29 +95,20 @@ export function parseNaverCourses(
     const name = text(row[nameColumn]),
       garage = text(row[garageColumn]),
       center = text(row[centerColumn]),
-      end = endColumn < 0 ? garage : text(row[endColumn]),
       deliveries = destinations.map((c) => text(row[c])).filter(Boolean);
-    if (
-      !name &&
-      !garage &&
-      !center &&
-      !deliveries.length &&
-      !text(row[endColumn])
-    )
-      continue;
+    if (!name && !garage && !center && !deliveries.length) continue;
     if (
       /^(합계|소계|총계)$/.test(name) &&
       !garage &&
       !center &&
-      !deliveries.length &&
-      !text(row[endColumn])
+      !deliveries.length
     )
       continue;
-    const stops = [garage, center, ...deliveries, end];
+    const stops = [garage, center, ...deliveries, garage];
     let message = '';
-    if (!name || !garage || !center || !deliveries.length || !end)
+    if (!name || !garage || !center || !deliveries.length)
       message =
-        '코스명·차고지·센터·납품처·복귀 주소 중 비어 있는 값을 확인해 주세요. 빈 주소를 추정하지 않습니다.';
+        '코스명·차고지·센터·납품처 중 비어 있는 값을 확인해 주세요. 빈 주소를 추정하지 않습니다.';
     else if (
       stops.some(
         (s) =>
@@ -128,9 +118,6 @@ export function parseNaverCourses(
     )
       message =
         '주소·장소명 열에 번호 또는 숫자만 들어 있습니다. 열 인식을 확인해 주세요.';
-    else if (garage !== end)
-      message =
-        '출발 차고지와 복귀 차고지 주소가 다릅니다. 열 인식 또는 원본 값을 확인해 주세요.';
     else if (name.length > 100 || stops.some((s) => s.length > 300))
       message = '코스명은 100자, 주소는 300자 이내로 입력해 주세요.';
     else if (stops.length > 7)
@@ -178,9 +165,7 @@ export function parseNaverCourses(
       continue;
     }
     if (one.garage !== two.garage || one.center !== two.center) {
-      fail(
-        `${entry.base}: 두 행의 차고지·센터·복귀차고지 주소를 동일하게 입력해 주세요.`,
-      );
+      fail(`${entry.base}: 두 행의 차고지·센터 주소를 동일하게 입력해 주세요.`);
       continue;
     }
     const stops = [

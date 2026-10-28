@@ -1,5 +1,5 @@
 export type CourseColumnRole =
-  'name' | 'garage' | 'center' | 'delivery' | 'end' | 'ignore' | 'unassigned';
+  'name' | 'garage' | 'center' | 'delivery' | 'ignore' | 'unassigned';
 export interface CourseTable {
   headerRow: number;
   headerSpan: number;
@@ -11,10 +11,9 @@ export interface CourseTable {
 }
 export const COURSE_ROLE_LABELS: Record<CourseColumnRole, string> = {
   name: '호차·코스명',
-  garage: '출발 차고지',
+  garage: '차고지',
   center: '센터·상차지',
   delivery: '납품처',
-  end: '복귀 차고지',
   ignore: '참고 정보 · 사용 안 함',
   unassigned: '열의 의미 확인 필요',
 };
@@ -24,6 +23,12 @@ const normalized = (v: unknown) =>
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\s_\-·:()[\]（）/\\.]/g, '');
+const legacyGarage = (value: string) =>
+  /^(복귀|도착|종료)차고지(명|주소)*$/.test(normalized(value));
+const legacyReturn = (value: string) =>
+  /^(복귀(지|주소)?|차고지복귀|차고지도착|최종도착지(주소)?|종점)$/.test(
+    normalized(value),
+  );
 const ordinal = (v: string) => Number(normalized(v).match(/\d+/)?.[0] ?? 0);
 function roleOf(value: string): CourseColumnRole {
   const h = normalized(value);
@@ -42,12 +47,8 @@ function roleOf(value: string): CourseColumnRole {
     )
   )
     return 'name';
-  if (
-    /^(복귀(차고지|지|주소)?|복귀차고지주소|차고지복귀|차고지도착|종료차고지(주소)?|도착차고지(주소)?|최종도착지(주소)?|종점)$/.test(
-      h,
-    )
-  )
-    return 'end';
+  if (legacyGarage(h)) return 'garage';
+  if (legacyReturn(h)) return 'ignore';
   if (
     /^(출발)?차고지(명|주소|출발)*$/.test(h) ||
     /^(출발지|기점)(명|주소)*$/.test(h)
@@ -115,7 +116,7 @@ export function courseTableAt(
     (h, c) =>
       c > 0 &&
       /^(주소|도로명주소|소재지)\d*$/.test(normalized(h)) &&
-      ['garage', 'center', 'delivery', 'end'].includes(roles[c - 1]),
+      ['garage', 'center', 'delivery'].includes(roles[c - 1]),
   ).length;
   const addressLike = (value: unknown) =>
     /(?:대로|로|길)\s*\d|(?:시|군|구)\s+.*(?:동|읍|면|리)\s*\d/.test(
@@ -125,7 +126,7 @@ export function courseTableAt(
     if (
       /^(주소|도로명주소|소재지)\d*$/.test(normalized(headers[c])) &&
       c > 0 &&
-      ['garage', 'center', 'delivery', 'end'].includes(roles[c - 1])
+      ['garage', 'center', 'delivery'].includes(roles[c - 1])
     ) {
       const previous = normalized(headers[c - 1]);
       if (
@@ -141,7 +142,20 @@ export function courseTableAt(
     if (roles[c] === 'unassigned' && !samples.some((r) => cellText(r[c])))
       roles[c] = 'ignore';
   }
-  for (const role of ['garage', 'center', 'end'] as const) {
+  if (
+    roles.some((r, c) => r === 'garage' && !legacyGarage(effectiveHeaders[c]))
+  )
+    for (let c = 0; c < roles.length; c++)
+      if (roles[c] === 'garage' && legacyGarage(effectiveHeaders[c]))
+        roles[c] = 'ignore';
+  for (let c = 1; c < roles.length; c++)
+    if (
+      roles[c] === 'unassigned' &&
+      /^(주소|도로명주소|소재지)\d*$/.test(normalized(headers[c])) &&
+      legacyReturn(headers[c - 1])
+    )
+      roles[c] = 'ignore';
+  for (const role of ['garage', 'center'] as const) {
     const columns = roles.flatMap((r, c) => (r === role ? [c] : [])),
       addresses = columns.filter((c) =>
         normalized(effectiveHeaders[c]).includes('주소'),
@@ -170,7 +184,6 @@ export function courseTableAt(
   const garages = roles.flatMap((r, c) => (r === 'garage' ? [c] : []));
   if (
     garages.length === 2 &&
-    !roles.includes('end') &&
     samples.some((r) => cellText(r[garages[0]]) && cellText(r[garages[1]])) &&
     samples.every(
       (r) =>
@@ -179,7 +192,7 @@ export function courseTableAt(
         cellText(r[garages[0]]) === cellText(r[garages[1]]),
     )
   )
-    roles[garages[1]] = 'end';
+    roles[garages[1]] = 'ignore';
   const unique = new Set(
     roles.filter((r) => !['ignore', 'unassigned'].includes(r)),
   );
@@ -235,8 +248,6 @@ export function courseTableProblems(table: CourseTable): string[] {
         `${COURSE_ROLE_LABELS[role]} 열을 ${count ? '하나만' : '직접'} 선택해 주세요.`,
       );
   }
-  if (table.roles.filter((r) => r === 'end').length > 1)
-    problems.push('복귀 차고지 열을 하나만 선택해 주세요.');
   if (!table.roles.includes('delivery'))
     problems.push('납품처 열을 선택해 주세요.');
   if (table.roles.includes('unassigned'))
@@ -258,13 +269,7 @@ export function deliveryColumns(table: CourseTable): number[] {
   const columns = table.roles.flatMap((role, c) =>
     role === 'delivery' ? [c] : [],
   );
-  return columns.every((c) => ordinal(table.effectiveHeaders[c]) > 0)
-    ? columns.sort(
-        (a, b) =>
-          ordinal(table.effectiveHeaders[a]) -
-          ordinal(table.effectiveHeaders[b]),
-      )
-    : columns;
+  return columns;
 }
 export function isRepeatedCourseHeader(
   row: unknown[],

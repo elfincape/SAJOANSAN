@@ -75,9 +75,7 @@ export function NaverCourseMapping({
               ? '제목 없는 데이터'
               : `${table.headerRow + 1}${table.headerSpan === 2 ? '~' + (table.headerRow + 2) : ''}행 제목`}{' '}
             · {problems.length ? '열 연결 확인 필요' : '열 자동 연결 완료'}
-            {!table.roles.includes('end')
-              ? ' · 복귀 열 없음: 출발 차고지로 복귀'
-              : ''}
+            {' · 차고지에서 출발해 같은 차고지로 복귀'}
           </p>
           <details
             key={choice + '-' + table.headerRow}
