@@ -12,7 +12,7 @@ import {
   loadFixedDefaults,
   saveFixedDefaults,
 } from '../lib/gimhae';
-import type { FixedDefaults, AnalysisProvider } from '../lib/gimhae';
+import type { FixedDefaults } from '../lib/gimhae';
 import {
   DOCKS,
   REGIONS,
@@ -96,8 +96,6 @@ function Work() {
     photo = useRef<HTMLImageElement>(null),
     reply = useRef<HTMLTextAreaElement>(null);
   const [trucksOpen, setTrucksOpen] = useState(false);
-  const [provider, setProvider] = useState<AnalysisProvider>('jev');
-  const [photoProvider, setPhotoProvider] = useState<AnalysisProvider | ''>('');
   const fixedDialog = useRef<HTMLDialogElement>(null),
     previewDialog = useRef<HTMLDialogElement>(null),
     messageAreas = useRef(new Map<string, HTMLTextAreaElement>());
@@ -325,10 +323,8 @@ function Work() {
           center.code,
           current.current.draft,
           'request',
-          provider,
         ),
         next = importRequest(current.current.draft, result);
-      setPhotoProvider(provider);
       update((s) => {
         s.draft = next;
         s.replyChanged = false;
@@ -363,7 +359,6 @@ function Work() {
         s = current.current;
       if (
         data === s.draft.image &&
-        photoProvider === provider &&
         !s.draft.requestPending &&
         s.draft.requests.length &&
         !s.photoError &&
@@ -427,7 +422,7 @@ function Work() {
     const s = current.current;
     if (s.draft.requestPending || !s.draft.requests.length)
       throw Error('CJ 요청 사진을 먼저 선택하거나 붙여넣어 주세요.');
-    const signature = provider + '|' + s.draft.replyText + '|' + replyRegion;
+    const signature = s.draft.replyText + '|' + replyRegion;
     if (signature === s.lastReply && !s.replyChanged && !s.draft.replyPending) {
       status('이미 반영된 회신입니다.');
       return;
@@ -437,12 +432,7 @@ function Work() {
       s.replyState = '회신 분석 중…';
     });
     try {
-      const result = await analyze(
-        center.code,
-        current.current.draft,
-        'reply',
-        provider,
-      );
+      const result = await analyze(center.code, current.current.draft, 'reply');
       if (replyRegion && Array.isArray(result.trucks))
         for (const truck of result.trucks)
           if (!truck.region) truck.region = replyRegion;
@@ -718,24 +708,6 @@ function Work() {
               }}
             />
           </label>
-          <label>
-            분석 API
-            <select
-              id="gm-api-provider"
-              value={provider}
-              disabled={editDisabled}
-              onChange={(event) => {
-                setProvider(event.target.value as AnalysisProvider);
-                update((s) => {
-                  s.lastReply = '';
-                  s.replyChanged = Boolean(s.draft.replyText.trim());
-                });
-              }}
-            >
-              <option value="jev">JEV 검증 + Haiku 인식</option>
-              <option value="haiku">Haiku 인식</option>
-            </select>
-          </label>
           <button
             id="gm-new"
             className="btn btn-ghost"
@@ -940,9 +912,7 @@ function Work() {
                 <button
                   id="gm-retry-photo"
                   className="btn btn-ghost"
-                  hidden={
-                    !d.image || (!view.photoError && photoProvider === provider)
-                  }
+                  hidden={!d.image || !view.photoError}
                   disabled={editDisabled}
                   onClick={() =>
                     void run(async () => {

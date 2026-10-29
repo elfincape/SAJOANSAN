@@ -1,5 +1,13 @@
 # Gimhae Dispatch Messages Implementation Plan
 
+## Current provider decision (2026-10-29)
+- User reported repeated JEV + Haiku failures and authorized removing the hybrid feature if it could not be made dependable. Keep this tool scoped to carrier request text, reply extraction/normalization, CJ dispatch text and the first vehicle-operation summary.
+- Production logs on 2026-10-28 showed `gimhae_jev_uncertain` for two request temperature fields. A local regression reproduced successful Haiku extraction being rejected solely because the subsequent JEV call failed.
+- Retire the hybrid selector, JEV-only image submission conversion and JEV review module. Use the existing Haiku extractor directly. Accept the old `provider: jev` request from already-open tabs but truthfully return `provider: haiku`; no JEV request or key dependency remains in this function.
+- Preserve authentication, center read/edit checks, image/text limits, input retention, manual correction, report generation and the shared JEV tools used elsewhere. No credentials, permissions, tables or other features change.
+- Verification: the failing handler regression now passes for old/default/Haiku callers, source-field preservation, denied permissions, invalid provider and upstream rate limits. Mock browser checks passed photo → carrier text → reply failure/retry → CJ + first summary, phone/time normalization, mobile light/dark and zero runtime errors. This is not a fresh live Haiku OCR accuracy evaluation.
+- Supabase production function version 9 is ACTIVE with JWT verification enabled; read-back confirms only index.ts/handler.js, Haiku response metadata and no JEV dependency. TypeScript/Vite build, menu-permission checks, targeted handler lint/format and UI detector passed (existing bundle-size warning remains).
+
 **Goal:** Deliver the user-approved CJ photo -> carrier request -> raw reply -> CJ message workflow in the existing admin hub.
 **Architecture:** Vanilla modules in the existing shell. Deterministic message generation; authenticated Haiku extraction only. Owner/center-scoped versioned drafts, separate from actual charter trips and route planning.
 **Spec:** This conversation's workbook review and answers 1-13. User explicitly requested implementation after the interview; no further design approval round.

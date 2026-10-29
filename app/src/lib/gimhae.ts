@@ -5,7 +5,6 @@ import type {
   AnalysisResult,
 } from '../domain/gimhae';
 import { supabase as client } from './supabase';
-export type AnalysisProvider = 'jev' | 'haiku';
 export interface FixedDefaults {
   id: string;
   center_code: string;
@@ -103,35 +102,23 @@ export async function analyze(
   center: string,
   draft: DispatchDraft,
   mode: 'request' | 'reply',
-  provider: AnalysisProvider = 'jev',
 ): Promise<AnalysisResult> {
   const body: {
     mode: string;
-    provider: AnalysisProvider;
+    provider: 'haiku';
     center: string;
     date: string;
     mediaType?: string;
     imageBase64?: string;
     text?: string;
-  } = { mode, provider, center, date: draft.date };
+  } = { mode, provider: 'haiku', center, date: draft.date };
   if (mode === 'request') {
     const match = draft.image.match(
       /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/,
     );
     if (!match) throw Error('요청 사진을 먼저 등록해 주세요.');
-    if (provider === 'jev') {
-      const blob = await (await fetch(draft.image)).blob();
-      const prepared = await imageData(
-        new File([blob], 'request.jpg', { type: match[1] }),
-        1568,
-        280,
-      );
-      body.mediaType = 'image/jpeg';
-      body.imageBase64 = prepared.slice(prepared.indexOf(',') + 1);
-    } else {
-      body.mediaType = match[1];
-      body.imageBase64 = match[2];
-    }
+    body.mediaType = match[1];
+    body.imageBase64 = match[2];
   } else {
     if (!draft.replyText.trim())
       throw Error('운수사 회신 원문을 입력해 주세요.');
