@@ -921,23 +921,24 @@ function volumeLines(draft: DispatchDraft, regions: string[]) {
 }
 function requestLine(draft: DispatchDraft, request: RequestRow) {
   const trucks = draft.trucks.filter((t) => t.requestId === request.id);
-  const docks = [
-    ...new Set(
-      draft.trucks
-        .filter((t) => t.requestId === request.id)
-        .map((t) => t.dock)
-        .filter(Boolean),
-    ),
-  ];
-  const line = ` - ${request.temperature || '온도 미정'} ${request.tons! > 0 ? request.tons : '미정'}톤 ${request.count}대${docks.length ? ` (${docks.join('·')}번 도크)` : ''}`;
+  const line = (count: number, rows: TruckRow[]) => {
+    const docks = [...new Set(rows.map((t) => t.dock).filter(Boolean))];
+    return ` - ${request.temperature || '온도 미정'} ${request.tons! > 0 ? request.tons : '미정'}톤 ${count}대${docks.length ? ` (${docks.join('·')}번 도크)` : ''}`;
+  };
+  const registered = trucks.filter((t) => t.fixedDriverId);
+  if (!registered.length) return line(request.count, trucks);
   return [
-    line,
-    ...trucks
-      .filter((t) => t.fixedDriverId)
-      .map(
-        (t) =>
-          `   고정기사 (${t.dock || '미정'}번 도크) ${[t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ')}`,
-      ),
+    ...registered.map((t) =>
+      `${line(1, [t])} ${[t.vehicle, t.driver, formatPhone(t.phone)].filter(Boolean).join(' ')}`.trimEnd(),
+    ),
+    ...(request.count > registered.length
+      ? [
+          line(
+            request.count - registered.length,
+            trucks.filter((t) => !t.fixedDriverId),
+          ),
+        ]
+      : []),
   ].join('\n');
 }
 export function messages(draft: DispatchDraft) {

@@ -12,6 +12,12 @@
 **Architecture:** Vanilla modules in the existing shell. Deterministic message generation; authenticated Haiku extraction only. Owner/center-scoped versioned drafts, separate from actual charter trips and route planning.
 **Spec:** This conversation's workbook review and answers 1-13. User explicitly requested implementation after the interview; no further design approval round.
 
+## External message wording correction (2026-10-29)
+- User explicitly requires saved fixed-driver classification to remain internal. The supplied chat text contains actual CJ dispatch/first-operation-summary examples, not a separate carrier-request source. Do not invent other messaging requirements from that absence.
+- Reproduced the actual leak in carrier requestLine: an extra `고정기사 (도크) 차량 기사 연락처` line. Render those known contacts on an ordinary one-vehicle request line using the existing temperature/tonnage/dock format. Preserve the requested total and remaining unassigned request count; add no internal category label.
+- Change only the active React message generator. Preserve internal saved-driver metadata, daily inclusion, original attachment, CJ/first-summary formatting and unrelated tools. The historical vanilla migration source remains untouched.
+- Checks: focused assertion failed on the leaked label before the fix, then passed. Ninety region/count/registered-driver combinations preserve total count and one contact occurrence per included vehicle, leave the draft unchanged and keep nonregistered/CJ/summary output identical to baseline. Mock browser confirmed preview equals copied clipboard text, no category in carrier output, and include/exclude restoring the same message; no live AI call or operational write.
+
 ## Rules
 - Seoul business date; Saturday initially selects Sunday. Explicit CJ photo date wins.
 - Gwangsin covers Gwangju/Jeonju every day. Hayang uses Dongjin weekdays and Happy weekends, based on business date.
