@@ -1,4 +1,4 @@
-export const COMPARISON_POLICY='naver-all-driving-options-v1';
+export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
 
 export function coursePermutations(course) {
  const {stops,rotation}=course;
@@ -13,17 +13,21 @@ export function coursePermutations(course) {
  visit([],deliveries);return routes;
 }
 
-const validDistance=r=>typeof r?.routeLabel==='string'&&r.routeLabel.trim()&&r.method==='naver-map-display'&&Number.isFinite(r.distanceKm)&&r.distanceKm>=0&&typeof r.distanceText==='string';
+const validDistance=r=>typeof r?.routeLabel==='string'&&r.routeLabel.trim()&&r.method==='naver-map-display'&&Number.isFinite(r.distanceKm)&&r.distanceKm>=0&&typeof r.distanceText==='string'&&(r.distanceMeters===undefined||Number.isSafeInteger(r.distanceMeters)&&r.distanceMeters>=0&&r.distanceKm===r.distanceMeters/1000);
 const inputKeyFor=course=>JSON.stringify([COMPARISON_POLICY,course.rotation??0,course.stops]);
+const pointKey=url=>{try{const p=new URL(url).pathname.split('/');return p[6]==='car'?p.slice(3,6):null;}catch{return null;}};
+const evidenceKey=r=>JSON.stringify([r.distanceMeters??null,r.legEvidence?.source??null,r.legEvidence?.verified??null,r.legEvidence?.pathIdentity??null,r.legEvidence?.totalMeters??null,r.legEvidence?.distancesMeters??null,r.legEvidence?.providerOption?[r.legEvidence.providerOption.main,r.legEvidence.providerOption.sub]:null,r.requestSettings?Object.entries(r.requestSettings).sort(([a],[b])=>a.localeCompare(b)):null,pointKey(r.sourceUrl)]);
 export function captureResultVerified(course,result){
  try{
   const routes=coursePermutations(course),state=result?.optimization,keys=routes.map(stops=>JSON.stringify(stops)),selected=JSON.stringify(result?.orderedStops);
   if(!result?.imagePath||!result.sourceUrl?.startsWith('https://map.naver.com/')||!validDistance(result)||!state?.complete||state.policy!==COMPARISON_POLICY||state.inputKey!==inputKeyFor(course)||state.total!==routes.length||state.completed!==routes.length||state.failed?.length!==0||Object.keys(state.evaluations??{}).length!==routes.length||!keys.includes(selected)||JSON.stringify(result.requestedStops)!==selected)return false;
   const evaluations=keys.map(key=>state.evaluations[key]),winner=state.evaluations[selected];
-  return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel;
+  return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel&&evidenceKey(result)===evidenceKey(winner);
  }catch{return false;}
 }
-export async function optimizeCourseCapture(page,course,{measure,previous,onProgress=async()=>{},checkActive=async()=>{},cache=new Map()}={}) {
+export async function optimizeCourseCapture(page,course,{measure,previous,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={}}={}) {
+ const started=performance.now(),metrics={routeLookups:0,routeCacheHits:0,addressResolutionMs:0,searchRefreshMs:0,routeRequestMs:0,optionCompareMs:0,captureMs:0,addressQueries:0,addressCacheHits:0,routeRequests:0,networkAddressRequests:0};
+ const lookup=async(stops,options)=>{metrics.routeLookups++;const result=await measure(page,stops,{...options,addressCache,routeContext});for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
  const routes=coursePermutations(course),inputKey=inputKeyFor(course);
  const evaluations={},state={version:1,policy:COMPARISON_POLICY,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
@@ -35,7 +39,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
   if(evaluations[key])continue;
   try {
    let result=cache.get(cacheKey);
-   if(!validDistance(result))result=await measure(page,stops,{screenshot:false,checkActive,captureIf:candidate=>validDistance(candidate)&&Object.values(evaluations).every(other=>candidate.distanceKm<other.distanceKm)});
+   if(!validDistance(result))result=await lookup(stops,{screenshot:false,checkActive,captureIf:candidate=>validDistance(candidate)&&Object.values(evaluations).every(other=>candidate.distanceKm<other.distanceKm)});else metrics.routeCacheHits++;
    if(!validDistance(result))throw Error('거리우선 주행거리 확인 필요');
    const {png,...details}=result;
    // Keep only the current winning image, from the exact lookup used in the comparison.
@@ -47,7 +51,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
    state.failed.push({index:index+1,code:e.code??(e.name==='TimeoutError'?'BROWSER_TIMEOUT':'ROUTE_LOOKUP_FAILED'),message:String(e.message).split('\n')[0].slice(0,160)});
    consecutiveFailures++;
    await report();
-   if(e.code==='ADDRESS_NOT_FOUND'){e.optimization=structuredClone(state);throw e;}
+   if(['ADDRESS_NOT_FOUND','NAVER_SEARCH_UNAVAILABLE','NAVER_ROUTE_UNAVAILABLE'].includes(e.code)){e.optimization=structuredClone(state);throw e;}
    if(consecutiveFailures>=3)break;
    continue;
   }
@@ -59,12 +63,12 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
  for(const stops of routes)if(evaluations[JSON.stringify(stops)].distanceKm<evaluations[JSON.stringify(selected)].distanceKm)selected=stops;
  const expected=evaluations[JSON.stringify(selected)];state.bestStops=selected;
  await report();await checkActive();
- const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await measure(page,selected,{screenshot:true,checkActive});
+ const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await lookup(selected,{screenshot:true,checkActive});
  await checkActive();
- if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
+ if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||evidenceKey(captured)!==evidenceKey(expected)||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
   delete evaluations[JSON.stringify(selected)];cache.delete(JSON.stringify([COMPARISON_POLICY,selected]));await report();
   throw Object.assign(Error('최종 캡처의 순서·거리가 비교 결과와 달라 최단 검증을 완료하지 못했습니다. 재시도해 주세요.'),{code:'CAPTURE_DISTANCE_CHANGED',optimization:structuredClone(state)});
  }
  state.complete=true;state.failed=[];await report();
- return {...captured,orderedStops:selected,optimization:structuredClone(state)};
+ return {...captured,orderedStops:selected,optimization:structuredClone(state),metrics:{...metrics,elapsedMs:performance.now()-started}};
 }

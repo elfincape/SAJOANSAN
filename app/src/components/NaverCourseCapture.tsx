@@ -450,10 +450,10 @@ export function NaverCourseCapture({
         <p>
           총{' '}
           {input.courses.reduce((sum, c) => sum + courseComparisonCount(c), 0)}
-          개 순서를 차례로 조회한 뒤 각 회전의 최종 경로를 한 번 더
-          조회·캡처합니다. 회전당 최대 120개이며, 같은 경로의 성공 조회는 작업
-          안에서 재사용합니다. 비교 중 중지하거나 재시도해도 저장된 비교 결과와
-          완료된 다른 회전은 유지됩니다.
+          개 순서를 차례로 조회하고 각 회전의 최단 경로를 저장합니다. 회전당
+          최대 120개이며, 같은 경로의 성공 조회는 작업 안에서 재사용합니다. 비교
+          중 중지하거나 재시도해도 저장된 비교 결과와 완료된 다른 회전은
+          유지됩니다.
         </p>
       )}
       <div className="toolbar">
@@ -514,6 +514,9 @@ export function NaverCourseCapture({
           다시 등록해 주세요.
         </p>
       )}
+      {job?.status === 'attention' && Object.values(job.results).some(r => r.providerUnavailable) && (
+        <p role="alert">네이버 검색·길찾기 응답 문제로 작업을 멈췄습니다. 주소 부재로 판정하지 않았으며, 완료된 캡처와 비교 이력은 보존했습니다.</p>
+      )}
       {job && (
         <>
           <progress
@@ -526,6 +529,13 @@ export function NaverCourseCapture({
             max={job.courses.length}
           />
           <div className="toolbar">
+            <button
+              className="btn btn-ghost"
+              disabled={busy || legacyCombined}
+              onClick={() => void run(() => captureExports(job, 'xlsx'))}
+            >
+              구간거리 Excel 일괄 저장
+            </button>
             <button
               className="btn btn-ghost"
               disabled={busy || !done || legacyCombined}
@@ -543,7 +553,8 @@ export function NaverCourseCapture({
           </div>
           <p>
             PDF는 완료된 조회·회전당 한 페이지입니다. PNG를 누르면 해당 이미지를
-            저장합니다.
+            저장합니다. Excel은 회전별 시트에 선택된 방문 순서와 직전 구간거리를
+            세로로 정리합니다. 미확인 구간은 빈칸과 사유로 표시합니다.
           </p>
           <div className="capture-results">
             {job.courses.map((c) => {
@@ -566,6 +577,12 @@ export function NaverCourseCapture({
                   {captureVerificationLabel(r) && (
                     <p>{captureVerificationLabel(r)}</p>
                   )}
+                  {r?.imagePath && !r.legEvidence?.verified && (
+                    <p>
+                      동일 경로의 구간거리 미확인 · 이전 캡처는 새 조회가 필요할
+                      수 있습니다.
+                    </p>
+                  )}
                   <details>
                     <summary>
                       {r?.orderedStops
@@ -578,6 +595,16 @@ export function NaverCourseCapture({
                       ))}
                     </ol>
                   </details>
+                  <button
+                    className="btn btn-ghost"
+                    disabled={busy || legacyCombined}
+                    aria-label={courseTitle(c) + ' 구간거리 Excel 저장'}
+                    onClick={() =>
+                      void run(() => captureExports(job, 'xlsx', [c.id]))
+                    }
+                  >
+                    구간거리 Excel 저장
+                  </button>
                   {r?.imagePath && (
                     <Preview
                       path={r.imagePath}

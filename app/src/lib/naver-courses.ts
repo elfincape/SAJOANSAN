@@ -6,11 +6,30 @@ export interface CourseCapture {
   sourceUrl?: string;
   distanceText?: string;
   distanceKm?: number;
+  distanceMeters?: number;
   routeLabel?: string;
   measuredAt?: string;
   issue?: string;
   orderedStops?: string[];
+  requestedStops?: string[];
+  resolvedStops?: string[];
+  confirmedAddresses?: string[];
+  legEvidence?: {
+    source: string;
+    verified: boolean;
+    distancesMeters: (number | null)[];
+    totalMeters: number;
+    issue?: string;
+  };
+  metrics?: {
+    elapsedMs: number;
+    uploadMs?: number;
+    addressQueries: number;
+    routeRequests: number;
+  };
   addressReason?: string;
+  providerUnavailable?: boolean;
+  httpStatus?: number;
   optimization?: {
     version: number;
     policy: string;
@@ -25,7 +44,7 @@ export function captureVerificationLabel(result?: CourseCapture): string {
   const comparison = result?.optimization;
   if (result?.imagePath)
     return comparison?.complete && comparison.completed === comparison.total
-      ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 표시거리 최단`
+      ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 ${result.distanceMeters === undefined ? '표시거리' : '주행거리'} 최단`
       : '이전 입력 순서 캡처 · 납품 순서 최단 미검증';
   return comparison
     ? `납품 순서 ${comparison.completed}/${comparison.total}개 확인 · 실패 ${comparison.failed.length}개${comparison.complete ? ' · 최종 캡처 저장 미완료' : ''}`
@@ -82,7 +101,23 @@ export function saveFile(blob: Blob, name: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
-export async function captureExports(job: CaptureJob, type: 'zip' | 'pdf') {
+export async function captureExports(
+  job: CaptureJob,
+  type: 'zip' | 'pdf' | 'xlsx',
+  courseIds?: string[],
+) {
+  if (type === 'xlsx') {
+    const { courseDistanceWorkbook } = await import('./naver-course-distance');
+    const book = await courseDistanceWorkbook(job, courseIds);
+    const buffer = await book.xlsx.writeBuffer();
+    saveFile(
+      new Blob([new Uint8Array(buffer)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      '네이버_최단경로_구간거리.xlsx',
+    );
+    return;
+  }
   const ready = job.courses.filter((c) => job.results[c.id]?.imagePath);
   if (!ready.length) throw Error('출력할 캡처가 없습니다.');
   if (type === 'zip') {

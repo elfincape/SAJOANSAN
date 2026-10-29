@@ -79,3 +79,67 @@ const snapshotWinner=await optimizeCourseCapture({},course,{measure:async(_p,sto
  if(captureIf?.(result)){snapshotCaptures++;result.png=Buffer.from(stops.join('|'));}return result;
 }});
 assert.equal(snapshotQueries,6);assert.equal(snapshotCaptures,2,'Only a new strict best gets a snapshot; equal routes retain the earlier winner');assert.equal(snapshotWinner.png.toString(),snapshotWinner.orderedStops.join('|'));assert.equal(snapshotWinner.optimization.complete,true);assert(!Object.values(snapshotWinner.optimization.evaluations).some(e=>'png' in e),'Checkpoint JSON never contains screenshot buffers');
+
+const rawApi=await import('../scripts/lib/naver-route-evidence.mjs');
+const varint=n=>{const bytes=[];n=BigInt(n);do{bytes.push(Number(n&127n)|(n>127n?128:0));n>>=7n;}while(n);return Buffer.from(bytes);};
+const field=(n,bytes)=>Buffer.concat([varint(n*8+2),varint(bytes.length),bytes]);
+const packed=(n,values)=>field(n,Buffer.concat(values.map(varint)));
+const numeric=(n,v)=>Buffer.concat([varint(n*8),varint(v)]);
+const text=(n,v)=>field(n,Buffer.from(v));
+// Minimal wire-schema fixture: one same-route summary, repeated waypoint positions and a raw total.
+const keys=['distance','pointIndex','mainOption','subOption'].map(name=>field(1,text(1,name)));
+const dictionary=field(23,Buffer.concat([...keys,packed(11,[211800*2,43594*2,50828*2,42665*2,74713*2,3*2,1*2,0]) ]));
+const tags=(pairs)=>packed(1,pairs.flat());
+const summary=Buffer.concat([tags([[0,0]]),...[[1,13],[2,13],[3,13],[4,12]].map(([value,n])=>field(n,tags([[0,value],[1,7]])))]);
+const wirePath=field(2,packed(1,[0,0,2,2]));
+const response=Buffer.concat([numeric(1,0),dictionary,field(21,Buffer.concat([field(1,summary),wirePath])),field(22,Buffer.concat([tags([[2,5],[3,6]]),packed(2,[0])]))]);
+const evidence=rawApi.decodeNaverDirections(response);assert.equal(evidence.routes[0].distanceMeters,211800);assert.deepEqual(evidence.routes[0].legDistancesMeters,[43594,50828,42665,74713]);
+const matched=rawApi.matchNaverRouteOptions(evidence,[{routeLabel:'실시간 추천',distanceText:'212km'}],5);assert.equal(matched[0].legsVerified,true);assert.equal(matched[0].distanceMeters,211800);
+assert.throws(()=>rawApi.decodeNaverDirections(response.subarray(0,-1)),/네이버/,'Truncated provider response cannot invent a partial zero');
+assert.throws(()=>rawApi.matchNaverRouteOptions(evidence,[{routeLabel:'무료우선',distanceText:'212km'}],5),/네이버/,'A different option cannot borrow this route legs');
+assert.throws(()=>rawApi.matchNaverRouteOptions(evidence,[{routeLabel:'실시간 추천',distanceText:'220km'}],5),/네이버/,'Raw total must match the rendered distance precision');
+assert.equal(rawApi.matchNaverRouteOptions(evidence,[{routeLabel:'실시간 추천',distanceText:'212km'}],4)[0].legsVerified,false,'Wrong stop count is explicit unknown evidence');
+const broken=structuredClone(evidence);broken.routes[0].legDistancesMeters[2]=null;assert.equal(rawApi.matchNaverRouteOptions(broken,[{routeLabel:'실시간 추천',distanceText:'212km'}],5)[0].legsVerified,false,'A missing leg does not become zero');
+assert.equal(map.shortestRouteOption([{routeLabel:'추천',distanceText:'103km',distanceMeters:103400},{routeLabel:'무료우선',distanceText:'103km',distanceMeters:103100}]).index,1,'Raw meters resolve displayed-distance ties');
+assert.equal(typeof map.naverPointFromUrl,'function');
+const pointAddress='경기도 용인시 처인구 남사읍 당하로 121',pointLabel='경기 용인시 처인구 남사읍 당하로 121',pointToken='3zp3AJ,2AujZe,'+encodeURIComponent(pointLabel)+',,ADDRESS_POI';
+const point=map.naverPointFromUrl('https://map.naver.com/p/directions/'+pointToken+'/-/-/car',pointAddress,{text:pointLabel,label:pointLabel});
+assert.equal(point.token,pointToken);assert.throws(()=>map.naverPointFromUrl('https://example.com/p/directions/'+pointToken+'/-/-/car',pointAddress,{text:pointLabel,label:pointLabel}),/네이버/);
+assert.throws(()=>map.naverPointFromUrl('https://map.naver.com/p/directions/'+pointToken+'/-/-/car','경기도 용인시 처인구 남사읍 당하로 121-1',{text:pointLabel,label:pointLabel}),/네이버/);
+const pointCache=new Map([[pointAddress,point]]),cachedUrl=map.naverCourseUrl([pointAddress,pointAddress,pointAddress],pointCache);
+assert.deepEqual(new URL(cachedUrl).pathname.split('/').slice(3,6),[pointToken,pointToken,pointToken]);assert.equal(map.naverCourseUrl([pointAddress,'미해결 주소',pointAddress],pointCache),null);
+
+const reviewFailures=[];const reviewCheck=async(name,fn)=>{try{await fn();}catch(e){reviewFailures.push(name+': '+e.message.split('\n')[0]);}};
+await reviewCheck('same-total changed legs cannot resume a winning proof',async()=>{
+ const c={id:'raw',stops:['G','C','A','G']};const old={distanceKm:3,distanceMeters:3000,distanceText:'3km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:c.stops,resolvedStops:c.stops,sourceUrl:'https://map.naver.com/p/directions/start/goal/via/car',legEvidence:{source:'naver-same-route-response',verified:true,totalMeters:3000,distancesMeters:[1000,1000,1000],pathIdentity:'old',providerOption:{main:9,sub:1}}};
+ const first=await optimizeCourseCapture({},c,{measure:async(_p,_s,o)=>({...old,...(o.screenshot||o.captureIf?.(old)?{png:Buffer.from('old')}: {})})});
+ const changed={...old,legEvidence:{...old.legEvidence,distancesMeters:[500,1000,1500],pathIdentity:'changed'}};
+ await assert.rejects(()=>optimizeCourseCapture({},c,{previous:first.optimization,measure:async()=>({...changed,png:Buffer.from('new')})}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');
+ assert(!captureResultVerified(c,{...first,imagePath:'winner.png',...changed}));
+});
+await reviewCheck('waypoints cannot stand in for a missing goal',async()=>{
+ const noGoalSummary=Buffer.concat([tags([[0,0]]),...[1,2,3,4].map(value=>field(13,tags([[0,value],[1,7]])))]);
+ const noGoal=rawApi.decodeNaverDirections(Buffer.concat([numeric(1,0),dictionary,field(21,Buffer.concat([field(1,noGoalSummary),wirePath])),field(22,Buffer.concat([tags([[2,5],[3,6]]),packed(2,[0])]))]));
+ const options=rawApi.matchNaverRouteOptions(noGoal,[{routeLabel:'실시간 추천',distanceText:'212km'}],5);assert.equal(options[0].legsVerified,false);assert(options[0].legDistancesMeters.every(n=>n===null));
+});
+await reviewCheck('request coordinates and navigation freshness',async()=>{
+ assert.deepEqual(point.coordinates,[127.1542265,37.1440432]);assert.equal(typeof map.naverCourseRequestMatches,'function');
+ const frame={url:()=>cachedUrl},query=new URL('https://map.naver.com/p/api/directions/car');for(const k of ['start','goal','waypoints'])query.searchParams.set(k,'127.1542265,37.1440432,name='+Buffer.from(pointLabel).toString('base64url'));
+ query.searchParams.set('crs','EPSG:4326');query.searchParams.set('respversion','4');query.searchParams.set('output','pbf');
+ const request={url:()=>query.href,timing:()=>({startTime:1001}),frame:()=>frame};const context={startedAt:1000,frame,url:cachedUrl};
+ assert(map.naverCourseRequestMatches(request,[pointAddress,pointAddress,pointAddress],pointCache,context));query.searchParams.set('start','999999,888888,name='+Buffer.from(pointLabel).toString('base64url'));assert(!map.naverCourseRequestMatches(request,[pointAddress,pointAddress,pointAddress],pointCache,context));
+ query.searchParams.set('start','127.1542265,37.1440432,name='+Buffer.from(pointLabel).toString('base64url'));assert(!map.naverCourseRequestMatches({...request,timing:()=>({startTime:999})},[pointAddress,pointAddress,pointAddress],pointCache,context));assert(!map.naverCourseRequestMatches({...request,frame:()=>({url:()=>cachedUrl})},[pointAddress,pointAddress,pointAddress],pointCache,context));
+});
+await reviewCheck('provider HTTP400 aborts query variants without blaming an address',async()=>{
+ let queries=0;const input={fill:async q=>{if(q)queries++;}},options={first:()=>({waitFor:async()=>{throw Error('No candidates');}})};
+  await assert.rejects(()=>map.selectAddress({locator:()=>options,waitForFunction:async()=>{},waitForResponse:async()=>({ok:()=>false,status:()=>400,url:()=> 'https://map.naver.com/p/api/search/instant-search?query=test&searchCoord=NaN;NaN&token=secret',json:async()=>({code:'400',message:'Invalid coordinates secret',token:'secret'})})},input,pointAddress),e=>{assert.equal(e.code,'NAVER_SEARCH_UNAVAILABLE');assert.equal(e.httpStatus,400);const d=e.searchDiagnostics[0];assert.equal(d.coordinateState,'invalid');assert.equal(d.requestShape.queryEncodingValid,true);assert.equal(d.responseShape.errorCategory,'coordinates');assert(!JSON.stringify(d).includes('secret'));return true;});assert.equal(queries,1);
+});
+await reviewCheck('raw provider refresh during option selection cannot be captured',async()=>{
+ const stops=Array(5).fill(pointAddress),cache=new Map([[pointAddress,point]]),url=map.naverCourseUrl(stops,cache),frame={url:()=>url},query=new URL('https://map.naver.com/p/api/directions/car');
+ for(const [key,value] of [['start','127.1542265,37.1440432'],['goal','127.1542265,37.1440432'],['waypoints',Array(3).fill('127.1542265,37.1440432,name='+Buffer.from(pointLabel).toString('base64url')).join('|')],['crs','EPSG:4326'],['respversion','4'],['output','pbf']])query.searchParams.set(key,key==='start'||key==='goal'?value+',name='+Buffer.from(pointLabel).toString('base64url'):value);
+ const listeners=new Map(),request={url:()=>query.href,timing:()=>({startTime:Date.now()+1}),frame:()=>frame},r={request:()=>request,url:()=>query.href,ok:()=>true,body:async()=>response};
+ const cards={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>[{routeLabel:'실시간 추천',distanceText:'212km'}],nth:()=>({click:async()=>{const second={...r,request:()=>({...request})};listeners.get('response')?.(second);}})};
+ const page={on:(k,fn)=>listeners.set(k,fn),off:k=>listeners.delete(k),setDefaultTimeout(){},setViewportSize:async()=>{},mainFrame:()=>frame,waitForResponse:async predicate=>{assert(predicate(r));return r;},goto:async()=>listeners.get('response')?.(r),locator:()=>cards,getByRole:()=>({evaluateAll:async()=>stops.map(()=>pointLabel)}),mouse:{move:async()=>{}},waitForFunction:async()=>{},url:()=>url};
+ await assert.rejects(()=>map.browserCourseCapture(page,stops,{addressCache:cache,screenshot:false}),/경로 응답이 변경/);assert(!listeners.size,'Request/response listeners are removed on failure');
+});
+assert.deepEqual(reviewFailures,[],reviewFailures.join('\n'));

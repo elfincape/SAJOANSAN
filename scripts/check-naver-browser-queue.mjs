@@ -59,7 +59,8 @@ if(process.argv.includes('--live')){
 }
 if(process.argv.includes('--capture')) {
  const actors=await query("select id from public.user_profiles where active and role='admin' limit 1"),actor=actors[0]?.id;
- const stops=['경기도 평택시 산단로 263','경기도 오산시 성호대로 141','경기도 화성시 향남읍 향남로 470','경기도 평택시 산단로 263'];
+ // Public street addresses from the reported input; an isolated two-rotation smoke fixture.
+ const stops=['경기도 오산시 경기대로 78-7','경기도 안산시 단원구 성곡로 125','경기도 용인시 처인구 남사읍 당하로 121','경기도 오산시 경기대로 78-7'];
  const courses=[{id:'row-2',sourceRow:2,name:'공개 주소 검증 1회',rotation:1,groupName:'공개 주소 검증',garage:stops[0],center:stops[1],stops:[...stops.slice(0,-1),stops[1]]},{id:'row-3',sourceRow:3,name:'공개 주소 검증 2회',rotation:2,groupName:'공개 주소 검증',garage:stops[0],center:stops[1],stops:[...stops.slice(1,-1),stops[0]]}];
  const reservationId=randomUUID();
  const result=await query("do $probe$ declare job uuid;begin perform set_config('request.jwt.claim.sub',"+quote(actor)+",true);job:=public.naver_capture_enqueue('002',"+quote(JSON.stringify(courses))+"::jsonb);update public.naver_browser_jobs set status='running',worker_id="+quote(reservationId)+"::uuid,updated_at=now() where id=job;end $probe$;select id from public.naver_browser_jobs where worker_id="+quote(reservationId)+"::uuid");
