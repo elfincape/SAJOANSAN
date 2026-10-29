@@ -32,7 +32,16 @@ if(process.argv.includes('--live')){
  const result=await query("select set_config('request.jwt.claim.sub',"+quote(actor)+",true);select public.naver_browser_enqueue('002','경기도 평택시 산단로 263','[\"경기도 오산시 성호대로 141\"]'::jsonb) as id");
  const id=result.at(-1)?.id;if(!id)throw Error('Live queue fixture could not be created');
  try{
-  const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id});
+  const {runWorker}=await import('./naver-browser-worker.mjs');
+  const {browserDistance}=await import('./lib/naver-map-browser.mjs');
+  await runWorker({jobId:id,lookup:async(page,origin,address)=>{
+   try{return await browserDistance(page,origin,address,{diagnostic:true});}
+   catch(e){
+    // This probe uses only the public fixture addresses above, never user jobs or credentials.
+    console.error(JSON.stringify({event:'public_distance_probe_failed',code:e.code??e.name,message:String(e.message).split('\n').slice(0,12).join('\n'),url:page.url(),inputs:await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value)).catch(()=>[]),suggestions:await page.locator('[id^="instant-search-item-poi-"]').allTextContents().catch(()=>[])}));
+    throw e;
+   }
+  }});
   const completed=await waitForResult(id);
   const r=completed.results?.['경기도 오산시 성호대로 141'];if(completed.status!=='completed'||r?.method!=='naver-map-display'||r?.routeLabel!=='거리우선'||!(r?.distanceKm>0))throw Error('Live queued browser result verification failed');
   console.log('End-to-end server queue/browser/result persistence verified: '+r.distanceText);
