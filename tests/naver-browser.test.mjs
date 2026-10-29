@@ -139,6 +139,10 @@ await reviewCheck('search evidence distinguishes empty/read-failed/blocked respo
  const evidence=await map.searchResponseEvidence(response);assert.deepEqual(evidence.coords,[0,0]);assert.equal(evidence.bodyFormat,'html');assert(evidence.markers.access&&evidence.markers.captcha);assert.equal(evidence.finished,true);assert(!JSON.stringify(evidence).includes('secret'));assert(!JSON.stringify(evidence).includes('cookie'));
  assert.equal((await map.searchResponseEvidence({...response,text:async()=>''})).bodyBytes,0);assert.equal((await map.searchResponseEvidence({...response,text:async()=>{throw Error('secret');}})).bodyReadFailed,true);
 });
+await reviewCheck('initial Naver input waits for normal page load completion',async()=>{
+ let release,clicks=0,inputs=0;const page={goto:async(url,options)=>{assert.equal(options.waitUntil,'load');assert.equal(new URL(url).pathname,'/p/directions/-/-/-/car');await new Promise(r=>{release=r;});},getByRole:role=>role==='tab'?{click:async()=>{clicks++;}}:{first:()=>({waitFor:async()=>{inputs++;}})}};
+ const opening=map.openCarDirections(page);await Promise.resolve();assert.equal(clicks,0);release();await opening;assert.equal(clicks,1);assert.equal(inputs,1);
+});
 await reviewCheck('raw provider refresh during option selection cannot be captured',async()=>{
  const stops=Array(5).fill(pointAddress),cache=new Map([[pointAddress,point]]),url=map.naverCourseUrl(stops,cache),frame={url:()=>url},query=new URL('https://map.naver.com/p/api/directions/car');
  for(const [key,value] of [['start','127.1542265,37.1440432'],['goal','127.1542265,37.1440432'],['waypoints',Array(3).fill('127.1542265,37.1440432,name='+Buffer.from(pointLabel).toString('base64url')).join('|')],['crs','EPSG:4326'],['respversion','4'],['output','pbf']])query.searchParams.set(key,key==='start'||key==='goal'?value+',name='+Buffer.from(pointLabel).toString('base64url'):value);
