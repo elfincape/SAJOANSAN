@@ -1,6 +1,16 @@
 import {randomUUID} from 'node:crypto';
 import {query,quote} from './naver-browser-db.mjs';
 import {captureResultVerified} from './lib/naver-course-optimizer.mjs';
+async function inspectPublicSearch(page,run){
+ const pending=[];
+ const inspect=response=>{if(response.status()>=400&&new URL(response.url()).pathname==='/p/api/search/instant-search')pending.push((async()=>{
+  const url=new URL(response.url()),body=await response.text().catch(()=>''),contentType=response.headers()['content-type'];let error;
+  try{const json=JSON.parse(body),detail=typeof json.error==='object'&&json.error?json.error:json;error=Object.fromEntries(['code','message','error','status'].filter(key=>typeof detail[key]==='string'||typeof detail[key]==='number').map(key=>[key,String(detail[key]).slice(0,160)]));}catch{error={htmlTitle:body.match(/<title>([^<]{0,160})<\/title>/i)?.[1]};}
+  console.error(JSON.stringify({event:'public_search_http_error',status:response.status(),contentType,paramKeys:[...url.searchParams.keys()],coordinates:Object.fromEntries(['x','y','longitude','latitude','searchCoord','boundary'].filter(key=>url.searchParams.has(key)).map(key=>[key,url.searchParams.get(key)])),error}));
+ })());};
+ // Called only for the public fixtures below; never user jobs, headers or cookies.
+ page.on('response',inspect);try{return await run();}finally{page.off('response',inspect);await Promise.allSettled(pending);}
+}
 async function waitForResult(id,db=query,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
  for(let attempt=0;attempt<36;attempt++) {
   const rows=await db('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
@@ -35,7 +45,7 @@ if(process.argv.includes('--live')){
   const {runWorker}=await import('./naver-browser-worker.mjs');
   const {browserDistance}=await import('./lib/naver-map-browser.mjs');
   await runWorker({jobId:id,lookup:async(page,origin,address)=>{
-   try{return await browserDistance(page,origin,address,{diagnostic:true});}
+   try{return await inspectPublicSearch(page,()=>browserDistance(page,origin,address,{diagnostic:true}));}
    catch(e){
     // This probe uses only the public fixture addresses above, never user jobs or credentials.
     console.error(JSON.stringify({event:'public_distance_probe_failed',code:e.code??e.name,message:String(e.message).split('\n').slice(0,12).join('\n'),searchDiagnostics:e.searchDiagnostics,url:page.url(),inputs:await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value)).catch(()=>[]),suggestions:await page.locator('[id^="instant-search-item-poi-"]').allTextContents().catch(()=>[])}));
@@ -59,14 +69,7 @@ if(process.argv.includes('--capture')) {
   const {runWorker}=await import('./naver-browser-worker.mjs');
   const {browserCourseCapture}=await import('./lib/naver-map-browser.mjs');
   await runWorker({jobId:id,reservationId,capture:async(page,addresses,options)=>{
-   // Public fixture only: identify provider errors without logging headers, cookies or user addresses.
-   const pending=[];
-   const inspect=response=>{if(response.status()>=400&&new URL(response.url()).pathname==='/p/api/search/instant-search')pending.push((async()=>{
-    const url=new URL(response.url()),body=await response.text().catch(()=>''),contentType=response.headers()['content-type'];let error;
-    try{const json=JSON.parse(body);error=Object.fromEntries(['code','message','error','status'].filter(key=>typeof json[key]==='string'||typeof json[key]==='number').map(key=>[key,String(json[key]).slice(0,160)]));}catch{error={htmlTitle:body.match(/<title>([^<]{0,160})<\/title>/i)?.[1]};}
-    console.error(JSON.stringify({event:'public_capture_search_http_error',status:response.status(),contentType,paramKeys:[...url.searchParams.keys()],coordinates:Object.fromEntries(['x','y','longitude','latitude'].filter(key=>url.searchParams.has(key)).map(key=>[key,url.searchParams.get(key)])),error}));
-   })());};
-   page.on('response',inspect);try{return await browserCourseCapture(page,addresses,options);}finally{page.off('response',inspect);await Promise.allSettled(pending);}
+   return inspectPublicSearch(page,()=>browserCourseCapture(page,addresses,options));
   }});
   const completed=await waitForResult(id);
   images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
