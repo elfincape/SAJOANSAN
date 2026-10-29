@@ -18,8 +18,15 @@ export function upgradeCaptureContract(definition) {
   end if;`;
  if(definition.includes(oldCount)&&definition.includes(oldEnd)) {
   if(definition.split(oldCount).length!==2||definition.split(oldEnd).length!==2)throw Error('Unexpected capture rules; manual review required');
-  return definition.replace(oldCount,newCount).replace(oldEnd,newEnd);
+  definition=definition.replace(oldCount,newCount).replace(oldEnd,newEnd);
  }
  if(!definition.includes(newCount)||!definition.includes("if c ? 'rotation' then"))throw Error('Unexpected rotation validation; manual review required');
+ const oldSaved="where e.value->>'imagePath' is not null",newSaved=oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')";
+ const oldPending="where not(saved ? (value->>'id'))",newPending="where saved->(value->>'id')->>'imagePath' is null";
+ if(!definition.includes(newSaved)){
+  if(!definition.includes(oldSaved)||!definition.includes(oldPending))throw Error('Unexpected retry rules; manual review required');
+  definition=definition.replace(oldSaved,newSaved).replace(oldPending,newPending);
+ }
+ if(!definition.includes(newPending))throw Error('Unexpected retry progress; manual review required');
  return definition;
 }

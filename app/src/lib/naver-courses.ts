@@ -6,8 +6,30 @@ export interface CourseCapture {
   sourceUrl?: string;
   distanceText?: string;
   distanceKm?: number;
+  routeLabel?: string;
   measuredAt?: string;
   issue?: string;
+  orderedStops?: string[];
+  addressReason?: string;
+  optimization?: {
+    version: number;
+    policy: string;
+    complete: boolean;
+    total: number;
+    completed: number;
+    current?: number;
+    failed: { index: number; code: string }[];
+  };
+}
+export function captureVerificationLabel(result?: CourseCapture): string {
+  const comparison = result?.optimization;
+  if (result?.imagePath)
+    return comparison?.complete && comparison.completed === comparison.total
+      ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 표시거리 최단`
+      : '이전 입력 순서 캡처 · 납품 순서 최단 미검증';
+  return comparison
+    ? `납품 순서 ${comparison.completed}/${comparison.total}개 확인 · 실패 ${comparison.failed.length}개${comparison.complete ? ' · 최종 캡처 저장 미완료' : ''}`
+    : '';
 }
 export interface CaptureJob {
   id: string;
@@ -99,7 +121,7 @@ export async function captureExports(job: CaptureJob, type: 'zip' | 'pdf') {
       );
       ctx.font = '20px Pretendard, sans-serif';
       ctx.fillText(
-        `네이버 지도 · 거리우선 ${job.results[c.id].distanceText || ''} · ${new Date(job.results[c.id].measuredAt!).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
+        `${job.results[c.id].optimization?.complete ? '납품 순서 비교 완료' : '입력 순서 · 순열 최단 미검증'} · ${job.results[c.id].routeLabel || '거리우선'} ${job.results[c.id].distanceText || ''} · ${new Date(job.results[c.id].measuredAt!).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
         0,
         75,
         1100,

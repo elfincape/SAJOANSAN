@@ -52,7 +52,7 @@
   max-width: 100%;
   overflow: auto;
 }
-.naver-capture .app-table td:last-child {
+.naver-capture .app-table td:nth-child(3) {
   min-width: 320px;
   white-space: normal;
 }

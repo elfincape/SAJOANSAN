@@ -15,3 +15,51 @@ await watchBrowserJob(client,'job',()=>updates++,async()=>{});assert.equal(updat
 console.log('Genuine distance-priority-only parsing, display units, region grouping, candidate rejection and queued/terminal job handling passed');
 
 assert.equal(addressSearch('경기도 가상시 이전면 예제로 72-8').queries.at(-1),'예제로 72-8');assert.equal(addressSearch('서울특별시 관악구 예제로1 예시동').queries.at(-1),'예제로 1');assert.equal(addressSearch('서울특별시 구로구 예제로 152, 지하 1층').road.number,'152');assert.equal(addressSearch('서울특별시 강서구 양천로 67길 99').road.street,'양천로67길');assert.equal(addressSearch('서울특별시 강서구 양천로 67길 99').gu,'강서구');
+
+const map=await import('../scripts/lib/naver-map-browser.mjs');
+assert.equal(typeof map.shortestRouteOption,'function','Every offered driving option is compared by road distance');
+const routeChoice=map.shortestRouteOption([{routeLabel:'실시간 추천',distanceText:'184km'},{routeLabel:'무료우선',distanceText:'175km'},{routeLabel:'거리우선',distanceText:'184km'}]);
+assert.equal(routeChoice.routeLabel,'무료우선');assert.equal(routeChoice.distanceKm,175);assert.equal(routeChoice.index,1);
+assert.equal(map.shortestRouteOption([{routeLabel:'실시간 추천',distanceText:'850m'},{routeLabel:'거리우선',distanceText:'0.85km'}]).index,0);
+assert.throws(()=>map.shortestRouteOption([{routeLabel:'추천',distanceText:'unknown'},{routeLabel:'거리우선',distanceText:'12km'}]),/경로 옵션/,'An unreadable alternative cannot be silently omitted');
+assert.equal(typeof map.addressCandidateMatches,'function','Exact building-number comparison is required');
+const hanam=addressSearch('경기도 하남시 미사강변대로 270');
+assert(map.addressCandidateMatches(hanam,'경기 하남시 미사강변대로 270 미사강변 센트리버'));
+for(const suffix of ['-1','-2','-3','0'])assert(!map.addressCandidateMatches(hanam,'경기 하남시 미사강변대로 270'+suffix));
+assert.equal(map.chooseAddressCandidate(hanam,[{text:'경기 하남시 미사강변대로 270',addressOnly:false},{text:'경기 하남시 미사강변대로 270',addressOnly:true}]),1,'A unique exact road-address result is preferred for an address input');
+assert.equal(map.chooseAddressCandidate(hanam,[{text:'경기 하남시 미사강변대로 270',addressOnly:false},{text:'경기 하남시 미사강변대로 270',addressOnly:false}]),-1,'Unverified duplicate POIs stay ambiguous');
+assert.equal(addressSearch('경기도 경기도 김포시 양촌읍 듬박로 81-5').queries[0],'경기도 김포시 양촌읍 듬박로 81-5');
+const parcel=addressSearch('경기도 경기도 이천시 부발읍 신하리 120번지');
+assert(map.addressCandidateMatches(parcel,'경기 이천시 부발읍 신하리 120'),'Actual parcel address accepts province abbreviation and 번지 notation');
+assert(!map.addressCandidateMatches(parcel,'경기 이천시 부발읍 신하리 120-1'));
+assert(map.addressCandidateMatches(addressSearch('경기도 여주시 웅골로161'),'경기 여주시 웅골로 161'));
+assert(!map.addressCandidateMatches(addressSearch('강원특별자치도 고성군 중앙로 1'),'경남 고성군 중앙로 1'),'Equal city/road/building in another province is a different location');
+const formerSeo=addressSearch('인천광역시 인천광역시 서구 봉수대로 1274');assert(map.addressCandidateMatches(formerSeo,'인천 검단구 봉수대로 1274'),'Official Incheon 2026 district split preserves exact road addresses');assert(!map.addressCandidateMatches(formerSeo,'인천 부평구 봉수대로 1274'));assert(!map.addressCandidateMatches(formerSeo,'인천 검단구 봉수대로 1274-1'));
+assert(!map.addressCandidateMatches(addressSearch('부산광역시 서구 중앙로 1'),'부산 강서구 중앙로 1'),'District names match complete administrative tokens, not substrings');
+let fresh=false,selected=-1,searchTrace=[];
+const addressInput={fill:async value=>{searchTrace.push('fill:'+value);if(!value)fresh=false;}};
+const searchOptions={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>fresh?[{text:'경기 용인시 처인구 남사읍 당하로 121',addressOnly:false},{text:'경기 용인시 처인구 남사읍 당하로 121',addressOnly:true}]:[{text:'경기 하남시 미사강변대로 270',addressOnly:true}],nth:index=>({click:async()=>{selected=index;}})};
+await map.selectAddress({locator:()=>searchOptions,waitForFunction:async()=>searchTrace.push('cleared'),waitForTimeout:async()=>{},waitForResponse:async predicate=>{searchTrace.push('await-new-response');assert(predicate({url:()=> 'https://map.naver.com/p/api/search/instant-search?query='+encodeURIComponent('경기도 용인시 처인구 남사읍 당하로 121')}));return {ok:()=>true,finished:async()=>{fresh=true;searchTrace.push('fresh-response');}};}},addressInput,'경기도 용인시 처인구 남사읍 당하로 121');
+assert.equal(selected,1);assert(searchTrace.indexOf('await-new-response')<searchTrace.indexOf('fill:경기도 용인시 처인구 남사읍 당하로 121'));assert(searchTrace.includes('fresh-response'));
+
+const {coursePermutations,optimizeCourseCapture}=await import('../scripts/lib/naver-course-optimizer.mjs');
+const course={id:'row-8',stops:['G','C','A','B','D','G']};
+const permutations=coursePermutations(course);
+assert.equal(permutations.length,6);assert.equal(new Set(permutations.map(JSON.stringify)).size,6);
+for(const stops of permutations){assert.deepEqual(stops.slice(0,2),['G','C']);assert.equal(stops.at(-1),'G');assert.deepEqual(stops.slice(2,-1).sort(),['A','B','D']);}
+assert.deepEqual(coursePermutations({rotation:1,stops:['G','C','B','A','C']}).map(s=>[s[0],s[1],s.at(-1)]),[['G','C','C'],['G','C','C']]);
+assert.deepEqual(coursePermutations({rotation:2,stops:['C','B','A','G']}).map(s=>[s[0],s.at(-1)]),[['C','G'],['C','G']]);
+assert.equal(coursePermutations({stops:['G','C','A','A','B','G']}).length,3,'Repeated addresses preserve visits without equivalent queries');
+let measurements=[],captures=[],states=[];
+const roadMeasure=async(_page,stops,{screenshot})=>{(screenshot?captures:measurements).push(stops);const distanceKm=stops[2]==='D'&&stops[3]==='A'?4:12;return {distanceKm,distanceText:distanceKm+'km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,...(screenshot?{png:Buffer.from('winner')}:{} )};};
+let winner=await optimizeCourseCapture({},course,{measure:roadMeasure,onProgress:async s=>states.push(structuredClone(s))});
+assert.equal(measurements.length,6);assert.equal(captures.length,1);assert.deepEqual(winner.orderedStops,['G','C','D','A','B','G'],'Actual road distance wins even when the input/straight-line order would be shorter');assert.deepEqual(captures[0],winner.orderedStops);assert.equal(winner.distanceKm,4);assert.equal(winner.optimization.complete,true);
+const points={G:[0,0],C:[0,0],A:[1,0],B:[1,1],D:[0,1]};const straightDistance=stops=>stops.slice(1).reduce((sum,s,i)=>sum+Math.hypot(points[s][0]-points[stops[i]][0],points[s][1]-points[stops[i]][1]),0);assert(straightDistance(course.stops)<straightDistance(winner.orderedStops),'The geometric ranking deliberately disagrees with real-road lookup distances');
+const tied=await optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:5,distanceText:'5km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('tie')}: {})})});assert.deepEqual(tied.orderedStops,course.stops,'Distance ties retain the original permutation order');
+let checkpoint,attempts=0;
+await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s)=>{attempts++;if(s[2]==='B'&&s[3]==='A')throw Error('network');return {distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s};},onProgress:async s=>{checkpoint=structuredClone(s);}}),e=>e.code==='OPTIMIZATION_INCOMPLETE');
+assert.equal(checkpoint.completed,5);assert.equal(checkpoint.complete,false);
+let retryMeasures=0;winner=await optimizeCourseCapture({},course,{previous:checkpoint,measure:async(_p,s,{screenshot})=>{if(!screenshot)retryMeasures++;return {distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('retry')}: {})};}});assert.equal(retryMeasures,1);assert(winner.optimization.complete);
+let checks=0;await assert.rejects(()=>optimizeCourseCapture({},course,{checkActive:async()=>{if(++checks===3)throw Object.assign(Error('cancelled'),{code:'CAPTURE_PAUSED'});},measure:roadMeasure}),e=>e.code==='CAPTURE_PAUSED');
+await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:screenshot?8:7,distanceText:screenshot?'8km':'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('changed')}: {})})}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');
+console.log('Exact address selection, fixed-stop permutations, road-distance ranking, ties, checkpoints, retry, cancel and capture verification passed');

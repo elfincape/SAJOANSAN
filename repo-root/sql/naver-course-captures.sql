@@ -26,11 +26,11 @@ declare job uuid; c jsonb; s jsonb; saved jsonb := '{}'::jsonb; pending jsonb; b
  end loop;
  if (select count(distinct value->>'id') from jsonb_array_elements(p_courses))<>jsonb_array_length(p_courses) then raise exception '코스 식별자가 중복됩니다.';end if;
  if p_previous_job is not null then
-  select coalesce((select jsonb_object_agg(e.key,e.value) from jsonb_each(j.results) e where e.value->>'imagePath' is not null),'{}'::jsonb) into saved
+  select coalesce((select jsonb_object_agg(e.key,e.value) from jsonb_each(j.results) e where e.value->>'imagePath' is not null or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')),'{}'::jsonb) into saved
   from public.naver_browser_jobs j where j.id=p_previous_job and j.owner_id=auth.uid() and j.center_code=p_center and j.kind='capture' and j.courses=p_courses and j.status not in ('queued','running');
   if saved is null then raise exception '재시도할 작업을 확인해 주세요.';end if;
  end if;
- select jsonb_agg(value->>'id') into pending from jsonb_array_elements(p_courses) where not(saved ? (value->>'id'));
+ select jsonb_agg(value->>'id') into pending from jsonb_array_elements(p_courses) where saved->(value->>'id')->>'imagePath' is null;
  if pending is null then raise exception '모든 코스가 완료되었습니다.';end if;
  perform pg_advisory_xact_lock(hashtext(auth.uid()::text));
  if (select count(*) from public.naver_browser_jobs where owner_id=auth.uid() and status in ('queued','running'))>=2 then raise exception '진행 중인 서버 작업을 완료하거나 중지해 주세요.';end if;

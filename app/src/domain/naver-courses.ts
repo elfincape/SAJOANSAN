@@ -35,6 +35,21 @@ export function courseTitle(course: NaverCourse): string {
     ? `${course.groupName || course.name} · ${course.rotation}회전`
     : course.name + (course.rotations === 2 ? ' · 이전 통합 2회전' : '');
 }
+export function courseComparisonCount(course: NaverCourse): number {
+  const deliveries = course.stops.slice(course.rotation === 2 ? 1 : 2, -1);
+  const factorial = (n: number) => {
+    let count = 1;
+    for (let i = 2; i <= n; i++) count *= i;
+    return count;
+  };
+  const duplicates = new Map<string, number>();
+  for (const address of deliveries)
+    duplicates.set(address, (duplicates.get(address) ?? 0) + 1);
+  return (
+    factorial(deliveries.length) /
+    [...duplicates.values()].reduce((count, n) => count * factorial(n), 1)
+  );
+}
 export const COURSE_HEADERS = [
   '코스명',
   '차고지',

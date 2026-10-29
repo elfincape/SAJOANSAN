@@ -13,3 +13,15 @@ try{
  calls.length=0;await run('naver-browser-handoff.mjs');assert.equal(calls.length,1);assert(calls[0].url.endsWith('/actions/workflows/naver-browser-server.yml/dispatches'));assert.deepEqual(JSON.parse(calls[0].options.body),{ref:'main'});
 }finally{globalThis.fetch=originalFetch;for(const name of names)if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name];}
 console.log('Worker replacement excludes current/completed/other-branch runs; continuation only dispatches the same main workflow');
+
+const {upgradeCaptureContract}=await import('../scripts/lib/naver-capture-contract.mjs');
+const captureSql=await readFile(new URL('../repo-root/sql/naver-course-captures.sql',import.meta.url),'utf8');
+const oldSaved="where e.value->>'imagePath' is not null";
+const expectedDefinition=captureSql.slice(captureSql.indexOf('create or replace function'),captureSql.indexOf('revoke all'));
+const oldDefinition=expectedDefinition.replace(oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')",oldSaved).replace("where saved->(value->>'id')->>'imagePath' is null","where not(saved ? (value->>'id'))");
+assert.notEqual(oldDefinition,expectedDefinition,'Exercise the deployed pre-checkpoint retry contract');
+const upgraded=upgradeCaptureContract(oldDefinition);
+assert.equal(upgraded,expectedDefinition);
+assert(upgraded.includes("e.value->'optimization'->>'policy'='naver-all-driving-options-v1'"),'Retries retain measured permutation checkpoints as well as completed images');
+assert.equal(upgradeCaptureContract(upgraded),upgraded,'Queue upgrade is idempotent');
+assert(upgraded.includes("where not(saved ? (value->>'id'))")===false,'A checkpoint must not count as a completed image');

@@ -13,10 +13,12 @@ import {
   COURSE_HEADERS,
   parseNaverCourses,
   courseTitle,
+  courseComparisonCount,
 } from '../domain/naver-courses';
 import type { CourseImport } from '../domain/naver-courses';
 import {
   captureExports,
+  captureVerificationLabel,
   captureImage,
   enqueueCapture,
   getCapture,
@@ -310,8 +312,8 @@ export function NaverCourseCapture({
       <div>
         <h2>코스별 지도 캡처</h2>
         <p>
-          일반 운행과 1회·2회전을 각각 조회하고 실제 네이버 지도 화면을
-          저장합니다.
+          차고지·센터·복귀지는 고정하고, 회전별 납품 순서를 모두 비교해 가장
+          짧은 네이버 도로 경로를 저장합니다.
         </p>
       </div>
       <div className="toolbar">
@@ -370,8 +372,12 @@ export function NaverCourseCapture({
         최대 5곳. 정확한 주소를 입력해 주세요. 일반 운행은 같은 차고지로
         복귀합니다. 1회전은 차고지→센터→납품처→센터, 2회전은
         센터→납품처→차고지로 각각 처리합니다. 2회전은 두 행에 동일한 차고지·센터
-        주소를 입력합니다. 납품처는 빈 칸을 건너뛰고 왼쪽부터 포함합니다. 중간
-        1회전의 센터 복귀와 2회전의 센터 출발을 각각 포함합니다.
+        주소를 입력합니다. 납품처는 빈 칸을 건너뛰어 포함하고, 납품처끼리의
+        순서만 모두 바꿔 비교합니다. 중간 1회전의 센터 복귀와 2회전의 센터
+        출발을 각각 포함합니다. 모든 조합은 네이버가 제공하는 자동차 경로 옵션
+        전체의 표시 주행거리로 비교하며 직선거리·최단시간을 사용하지 않습니다.
+        동률이면 원본 납품처 순서 기준으로 결정합니다. 일부 조합이 실패하면 최단
+        검증은 미완료로 남습니다.
       </p>
       {!job && sources.length > 0 && (
         <NaverCourseMapping
@@ -420,7 +426,8 @@ export function NaverCourseCapture({
               <tr>
                 <th>원본 행</th>
                 <th>코스명</th>
-                <th>방문 순서</th>
+                <th>입력 순서 · 차고지와 센터 고정</th>
+                <th>비교할 납품 순서</th>
               </tr>
             </thead>
             <tbody>
@@ -432,11 +439,22 @@ export function NaverCourseCapture({
                   </td>
                   <td>{courseTitle(c)}</td>
                   <td>{c.stops.join(' → ')}</td>
+                  <td>{courseComparisonCount(c)}개</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {!job && input.courses.length > 0 && (
+        <p>
+          총{' '}
+          {input.courses.reduce((sum, c) => sum + courseComparisonCount(c), 0)}
+          개 순서를 차례로 조회한 뒤 각 회전의 최종 경로를 한 번 더
+          조회·캡처합니다. 회전당 최대 120개이며, 같은 경로의 성공 조회는 작업
+          안에서 재사용합니다. 비교 중 중지하거나 재시도해도 저장된 비교 결과와
+          완료된 다른 회전은 유지됩니다.
+        </p>
       )}
       <div className="toolbar">
         <button
@@ -500,7 +518,11 @@ export function NaverCourseCapture({
         <>
           <progress
             aria-label="코스 캡처 진행"
-            value={Object.keys(job.results).length}
+            value={
+              job.courses.filter(
+                (c) => job.results[c.id]?.imagePath || job.results[c.id]?.issue,
+              ).length
+            }
             max={job.courses.length}
           />
           <div className="toolbar">
@@ -531,13 +553,27 @@ export function NaverCourseCapture({
                   <h3>{courseTitle(c)}</h3>
                   <p>
                     {r?.imagePath
-                      ? `${r.distanceText} · ${new Date(r.measuredAt!).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+                      ? `${r.routeLabel || '거리우선'} ${r.distanceText} · ${new Date(r.measuredAt!).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
                       : r?.issue || (running ? '캡처 대기 중' : '미완료')}
                   </p>
+                  {r?.optimization && !r.imagePath && (
+                    <progress
+                      aria-label={courseTitle(c) + ' 납품 순서 비교'}
+                      value={r.optimization.completed}
+                      max={r.optimization.total}
+                    />
+                  )}
+                  {captureVerificationLabel(r) && (
+                    <p>{captureVerificationLabel(r)}</p>
+                  )}
                   <details>
-                    <summary>방문 순서 확인</summary>
+                    <summary>
+                      {r?.orderedStops
+                        ? '선택된 방문 순서 확인'
+                        : '입력 방문 순서 확인'}
+                    </summary>
                     <ol>
-                      {c.stops.map((s, i) => (
+                      {(r?.orderedStops ?? c.stops).map((s, i) => (
                         <li key={i}>{s}</li>
                       ))}
                     </ol>
