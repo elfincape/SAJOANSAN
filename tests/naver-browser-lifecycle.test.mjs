@@ -18,10 +18,12 @@ const {upgradeCaptureContract}=await import('../scripts/lib/naver-capture-contra
 const captureSql=await readFile(new URL('../repo-root/sql/naver-course-captures.sql',import.meta.url),'utf8');
 const oldSaved="where e.value->>'imagePath' is not null";
 const expectedDefinition=captureSql.slice(captureSql.indexOf('create or replace function'),captureSql.indexOf('revoke all'));
-const oldDefinition=expectedDefinition.replace(oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')",oldSaved).replace("where saved->(value->>'id')->>'imagePath' is null","where not(saved ? (value->>'id'))");
+const checkpointRule=oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy' in ('naver-all-driving-options-v1','naver-all-driving-options-meters-v2'))";
+const oldDefinition=expectedDefinition.replace(checkpointRule,oldSaved).replace("where saved->(value->>'id')->>'imagePath' is null","where not(saved ? (value->>'id'))");
 assert.notEqual(oldDefinition,expectedDefinition,'Exercise the deployed pre-checkpoint retry contract');
 const upgraded=upgradeCaptureContract(oldDefinition);
 assert.equal(upgraded,expectedDefinition);
-assert(upgraded.includes("e.value->'optimization'->>'policy'='naver-all-driving-options-v1'"),'Retries retain measured permutation checkpoints as well as completed images');
+assert(upgraded.includes(checkpointRule),'Retries retain both display-distance and exact-meter checkpoints as well as completed images');
+assert.equal(upgradeCaptureContract(expectedDefinition.replace(" in ('naver-all-driving-options-v1','naver-all-driving-options-meters-v2')","='naver-all-driving-options-v1'")),expectedDefinition,'Upgrade the currently deployed v1 retry policy without dropping other validation');
 assert.equal(upgradeCaptureContract(upgraded),upgraded,'Queue upgrade is idempotent');
 assert(upgraded.includes("where not(saved ? (value->>'id'))")===false,'A checkpoint must not count as a completed image');

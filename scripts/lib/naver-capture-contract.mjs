@@ -21,9 +21,10 @@ export function upgradeCaptureContract(definition) {
   definition=definition.replace(oldCount,newCount).replace(oldEnd,newEnd);
  }
  if(!definition.includes(newCount)||!definition.includes("if c ? 'rotation' then"))throw Error('Unexpected rotation validation; manual review required');
- const oldSaved="where e.value->>'imagePath' is not null",newSaved=oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')";
+ const oldSaved="where e.value->>'imagePath' is not null",previousSaved=oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy'='naver-all-driving-options-v1')",newSaved=oldSaved+" or (e.value->'optimization'->>'version'='1' and e.value->'optimization'->>'policy' in ('naver-all-driving-options-v1','naver-all-driving-options-meters-v2'))";
  const oldPending="where not(saved ? (value->>'id'))",newPending="where saved->(value->>'id')->>'imagePath' is null";
- if(!definition.includes(newSaved)){
+ if(definition.includes(previousSaved))definition=definition.replace(previousSaved,newSaved);
+ else if(!definition.includes(newSaved)){
   if(!definition.includes(oldSaved)||!definition.includes(oldPending))throw Error('Unexpected retry rules; manual review required');
   definition=definition.replace(oldSaved,newSaved).replace(oldPending,newPending);
  }
