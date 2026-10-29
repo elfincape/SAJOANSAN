@@ -24,13 +24,14 @@ export function regionFromAddress(address){
  return local?{region:/^서울/.test(province)?'서울 '+local:local,regionKey:province.replace(/경기$/, '경기도')+'|'+local}:{region:'',regionKey:''};
 }
 const provinces={서울특별시:'서울',서울:'서울',부산광역시:'부산',부산:'부산',대구광역시:'대구',대구:'대구',인천광역시:'인천',인천:'인천',광주광역시:'광주',광주:'광주',대전광역시:'대전',대전:'대전',울산광역시:'울산',울산:'울산',세종특별자치시:'세종',세종시:'세종',세종:'세종',경기도:'경기',경기:'경기',강원특별자치도:'강원',강원도:'강원',강원:'강원',충청북도:'충북',충북:'충북',충청남도:'충남',충남:'충남',전북특별자치도:'전북',전라북도:'전북',전북:'전북',전라남도:'전남',전남:'전남',경상북도:'경북',경북:'경북',경상남도:'경남',경남:'경남',제주특별자치도:'제주',제주도:'제주',제주:'제주'};
+Object.assign(provinces,{서울시:'서울',부산시:'부산',대구시:'대구',인천시:'인천',대전시:'대전',울산시:'울산'});
 const provincePattern=new RegExp('(?:^|\\s)('+Object.keys(provinces).sort((a,b)=>b.length-a.length).join('|')+')(?:\\s|$)');
 const provinceOf=text=>provinces[text.match(provincePattern)?.[1]]||'';
 export function addressSearch(value){
  value=String(value).normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim();
  value=value.replace(/^(경기도|인천광역시|서울특별시)\s+\1\s+/,'$1 ');
- const road=String(value).match(/([가-힣\d]+(?:대로|로)(?:\s*\d+(?:번|가|나|다|라)?길)?|[가-힣\d]+길)\s*,?\s*(\d+(?:-\d+)?)/);
- const city=String(value).match(/([가-힣]+(?:시|군))/)?.[1]?.replace(/특별자치시|특별시|광역시/,'')||'';
+ const road=String(value).match(/([가-힣\d]+(?:대로|로)(?:\s*\d+\s*(?:(?:번|가|나|다|라)\s*)?길)?|[가-힣\d]+길)\s*,?\s*(\d+(?:-\d+)?)/);
+ const cityLabel=String(value).match(/([가-힣]+(?:시|군))/)?.[1]||'',city=provinces[cityLabel]||cityLabel.replace(/특별자치시|특별시|광역시/,'');
  const gu=String(value).match(/(?:^|\s)([가-힣]+구)(?:\s|$)/)?.[1]||'';
  const town=String(value).match(/(?:^|\s)([가-힣]+(?:읍|면))(?:\s|$)/)?.[1]||'';
  const province=provinceOf(value);
@@ -40,7 +41,8 @@ export function addressSearch(value){
   return {queries:[...new Set([query,query.replace(/(\d)번지(?=\s|$)/,'$1')])],province,city,gu,town,road:null,parcel:parcel?{land:parcel[1],mountain:!!parcel[2],number:parcel[3]}:null,original:value,addressOnly:!!parcel&&!String(value).slice(parcel.index+parcel[0].length).trim()};
  }
  const street=road[1].replace(/\s/g,''),number=road[2],short=street+' '+number;
- return {queries:[...new Set([String(value).slice(0,road.index+road[0].length).trim(),city+' '+short,short])],province,city,gu,town,road:{street,number},original:value,addressOnly:!String(value).slice(road.index+road[0].length).trim()};
+ const tail=String(value).slice(road.index+road[0].length).trim(),unitOnly=/^(?:[가-힣A-Za-z0-9]+동\s*)?(?:지하\s*)?\d+\s*층(?:\s*[\d-]+(?:호)?)?$/.test(tail);
+ return {queries:[...new Set([String(value).slice(0,road.index+road[0].length).trim(),city+' '+short,short])],province,city,gu,town,road:{street,number},original:value,addressOnly:!tail||unitOnly};
 }
 export function addressCandidateMatches(search,text){
  if(search.province&&provinceOf(text)!==search.province)return false;
