@@ -37,12 +37,16 @@ assert(!map.addressCandidateMatches(addressSearch('강원특별자치도 고성�
 const formerSeo=addressSearch('인천광역시 인천광역시 서구 봉수대로 1274');assert(map.addressCandidateMatches(formerSeo,'인천 검단구 봉수대로 1274'),'Official Incheon 2026 district split preserves exact road addresses');assert(!map.addressCandidateMatches(formerSeo,'인천 부평구 봉수대로 1274'));assert(!map.addressCandidateMatches(formerSeo,'인천 검단구 봉수대로 1274-1'));
 assert(!map.addressCandidateMatches(addressSearch('부산광역시 서구 중앙로 1'),'부산 강서구 중앙로 1'),'District names match complete administrative tokens, not substrings');
 let fresh=false,selected=-1,searchTrace=[];
-const addressInput={fill:async value=>{searchTrace.push('fill:'+value);if(!value)fresh=false;}};
+let currentQuery='';const addressInput={fill:async value=>{currentQuery=value;searchTrace.push('fill:'+value);if(!value)fresh=false;},evaluate:async()=>currentQuery};
 const searchOptions={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>fresh?[{text:'경기 용인시 처인구 남사읍 당하로 121',addressOnly:false},{text:'경기 용인시 처인구 남사읍 당하로 121',addressOnly:true}]:[{text:'경기 하남시 미사강변대로 270',addressOnly:true}],nth:index=>({click:async()=>{selected=index;}})};
 await map.selectAddress({locator:()=>searchOptions,waitForFunction:async()=>searchTrace.push('cleared'),waitForTimeout:async()=>{},waitForResponse:async predicate=>{searchTrace.push('await-new-response');assert(predicate({url:()=> 'https://map.naver.com/p/api/search/instant-search?query='+encodeURIComponent('경기도 용인시 처인구 남사읍 당하로 121')}));return {ok:()=>true,finished:async()=>{fresh=true;searchTrace.push('fresh-response');}};}},addressInput,'경기도 용인시 처인구 남사읍 당하로 121');
 assert.equal(selected,1);assert(searchTrace.indexOf('await-new-response')<searchTrace.indexOf('fill:경기도 용인시 처인구 남사읍 당하로 121'));assert(searchTrace.includes('fresh-response'));
+let cachedQuery='',cachedSelected=false;
+const cachedInput={fill:async q=>{cachedQuery=q;},evaluate:async()=>cachedQuery};
+const cachedOptions={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>[{text:'경기 용인시 처인구 남사읍 당하로 121',addressOnly:true}],nth:()=>({click:async()=>{cachedSelected=true;}})};
+await map.selectAddress({locator:()=>cachedOptions,waitForFunction:async()=>{},waitForTimeout:async()=>{},waitForResponse:async()=>{throw Error('No network event for memoized autocomplete');}},cachedInput,'경기도 용인시 처인구 남사읍 당하로 121');assert(cachedSelected,'Fresh exact-address DOM candidates remain usable when Naver serves an in-memory cached query');
 
-const {coursePermutations,optimizeCourseCapture}=await import('../scripts/lib/naver-course-optimizer.mjs');
+const {coursePermutations,optimizeCourseCapture,captureResultVerified}=await import('../scripts/lib/naver-course-optimizer.mjs');
 const course={id:'row-8',stops:['G','C','A','B','D','G']};
 const permutations=coursePermutations(course);
 assert.equal(permutations.length,6);assert.equal(new Set(permutations.map(JSON.stringify)).size,6);
@@ -55,6 +59,9 @@ const roadMeasure=async(_page,stops,{screenshot})=>{(screenshot?captures:measure
 let winner=await optimizeCourseCapture({},course,{measure:roadMeasure,onProgress:async s=>states.push(structuredClone(s))});
 assert.equal(measurements.length,6);assert.equal(captures.length,1);assert.deepEqual(winner.orderedStops,['G','C','D','A','B','G'],'Actual road distance wins even when the input/straight-line order would be shorter');assert.deepEqual(captures[0],winner.orderedStops);assert.equal(winner.distanceKm,4);assert.equal(winner.optimization.complete,true);
 const points={G:[0,0],C:[0,0],A:[1,0],B:[1,1],D:[0,1]};const straightDistance=stops=>stops.slice(1).reduce((sum,s,i)=>sum+Math.hypot(points[s][0]-points[stops[i]][0],points[s][1]-points[stops[i]][1]),0);assert(straightDistance(course.stops)<straightDistance(winner.orderedStops),'The geometric ranking deliberately disagrees with real-road lookup distances');
+const stored={...winner,imagePath:'owned/winner.png',sourceUrl:'https://map.naver.com/p/directions/example'};
+assert.equal(typeof captureResultVerified,'function','Deployment probe must validate the full comparison proof, not a fixed route label');
+assert(captureResultVerified(course,stored));assert(!captureResultVerified(course,{...stored,optimization:{...stored.optimization,complete:false}}));assert(!captureResultVerified(course,{...stored,orderedStops:['G','D','C','A','B','G']}));assert(!captureResultVerified(course,{...stored,distanceKm:99}));
 const tied=await optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:5,distanceText:'5km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('tie')}: {})})});assert.deepEqual(tied.orderedStops,course.stops,'Distance ties retain the original permutation order');
 let checkpoint,attempts=0;
 await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s)=>{attempts++;if(s[2]==='B'&&s[3]==='A')throw Error('network');return {distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s};},onProgress:async s=>{checkpoint=structuredClone(s);}}),e=>e.code==='OPTIMIZATION_INCOMPLETE');

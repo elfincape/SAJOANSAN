@@ -67,12 +67,16 @@ export async function selectAddress(page,input,address,{checkActive=async()=>{}}
   await checkActive();
   await input.fill('');
   try{await page.waitForFunction(()=>document.querySelectorAll('[id^="instant-search-item-poi-"]').length===0,null,{timeout:5000});}catch{reasons.add('SEARCH_REFRESH_FAILED');continue;}
-  const refreshed=page.waitForResponse(response=>{try{const url=new URL(response.url());return url.pathname==='/p/api/search/instant-search'&&url.searchParams.get('query')===query;}catch{return false;}},{timeout:8000}).catch(()=>null);
+  let received;
+  const refreshed=page.waitForResponse(response=>{try{const url=new URL(response.url());return url.pathname==='/p/api/search/instant-search'&&url.searchParams.get('query')===query;}catch{return false;}},{timeout:5000}).then(response=>{received=response;return response;}).catch(()=>null);
   await input.fill(query);
-  const response=await refreshed;
-  if(!response?.ok()){reasons.add('SEARCH_REFRESH_FAILED');continue;}
-  try{if(await response.finished()){reasons.add('SEARCH_REFRESH_FAILED');continue;}}catch{reasons.add('SEARCH_REFRESH_FAILED');continue;}await checkActive();
-  try{await options.first().waitFor({state:'visible',timeout:5000});}catch{reasons.add('SEARCH_NO_CANDIDATES');continue;}
+  try{await options.first().waitFor({state:'visible',timeout:5000});}catch{const response=await refreshed;reasons.add(response&&!response.ok()?'SEARCH_REFRESH_FAILED':'SEARCH_NO_CANDIDATES');continue;}
+  if(received){
+   if(!received.ok()){reasons.add('SEARCH_REFRESH_FAILED');continue;}
+   try{if(await received.finished()){reasons.add('SEARCH_REFRESH_FAILED');continue;}}catch{reasons.add('SEARCH_REFRESH_FAILED');continue;}
+  }
+  await checkActive();
+  if(await input.evaluate(e=>e.value)!==query){reasons.add('SEARCH_REFRESH_FAILED');continue;}
   const candidates=await options.evaluateAll(es=>es.map(e=>({text:e.innerText,addressOnly:!e.querySelector('.place_category,.place_text.sub')})));
   const index=chooseAddressCandidate(search,candidates);
   if(index<0){reasons.add(candidates.filter(c=>addressCandidateMatches(search,c.text)).length>1?'SAME_ADDRESS_DUPLICATES':'MULTIPLE_LOCATIONS');continue;}

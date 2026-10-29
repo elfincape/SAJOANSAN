@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {query,quote} from './naver-browser-db.mjs';
+import {captureResultVerified} from './lib/naver-course-optimizer.mjs';
 async function waitForResult(id,db=query,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
  for(let attempt=0;attempt<36;attempt++) {
   const rows=await db('select status,results from public.naver_browser_jobs where id='+quote(id)+'::uuid');
@@ -49,7 +50,7 @@ if(process.argv.includes('--capture')) {
   const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id,reservationId});
   const completed=await waitForResult(id);
   images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
-  if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||Object.values(completed.results).some(r=>r.routeLabel!=='거리우선'||!r.distanceText||!r.sourceUrl?.startsWith('https://map.naver.com/')))throw Error('Live multi-course capture/storage verification failed');
+  if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||courses.some(course=>!captureResultVerified(course,completed.results[course.id])))throw Error('Live multi-course capture/storage verification failed');
   console.log('Two separate actual Naver rotation screenshots (garage to center, then center to garage) uploaded to private Storage and saved to distinct course results');
  }finally {
   const {removeCourseCaptures}=await import('./lib/naver-capture-storage.mjs');

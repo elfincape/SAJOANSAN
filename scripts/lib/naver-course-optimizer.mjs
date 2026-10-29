@@ -14,8 +14,17 @@ export function coursePermutations(course) {
 }
 
 const validDistance=r=>typeof r?.routeLabel==='string'&&r.routeLabel.trim()&&r.method==='naver-map-display'&&Number.isFinite(r.distanceKm)&&r.distanceKm>=0&&typeof r.distanceText==='string';
+const inputKeyFor=course=>JSON.stringify([COMPARISON_POLICY,course.rotation??0,course.stops]);
+export function captureResultVerified(course,result){
+ try{
+  const routes=coursePermutations(course),state=result?.optimization,keys=routes.map(stops=>JSON.stringify(stops)),selected=JSON.stringify(result?.orderedStops);
+  if(!result?.imagePath||!result.sourceUrl?.startsWith('https://map.naver.com/')||!validDistance(result)||!state?.complete||state.policy!==COMPARISON_POLICY||state.inputKey!==inputKeyFor(course)||state.total!==routes.length||state.completed!==routes.length||state.failed?.length!==0||Object.keys(state.evaluations??{}).length!==routes.length||!keys.includes(selected)||JSON.stringify(result.requestedStops)!==selected)return false;
+  const evaluations=keys.map(key=>state.evaluations[key]),winner=state.evaluations[selected];
+  return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel;
+ }catch{return false;}
+}
 export async function optimizeCourseCapture(page,course,{measure,previous,onProgress=async()=>{},checkActive=async()=>{},cache=new Map()}={}) {
- const routes=coursePermutations(course),inputKey=JSON.stringify([COMPARISON_POLICY,course.rotation??0,course.stops]);
+ const routes=coursePermutations(course),inputKey=inputKeyFor(course);
  const evaluations={},state={version:1,policy:COMPARISON_POLICY,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};
