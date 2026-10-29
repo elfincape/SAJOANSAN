@@ -2,14 +2,18 @@ import {randomUUID} from 'node:crypto';
 import {query,quote} from './naver-browser-db.mjs';
 import {captureResultVerified} from './lib/naver-course-optimizer.mjs';
 async function inspectPublicSearch(page,run){
- const pending=[];
+ const pending=[],failures=[],responses=[];
+ const failed=request=>{try{const u=new URL(request.url());if(/(?:^|\.)naver\.(?:com|net)$/.test(u.hostname)||u.hostname.endsWith('.pstatic.net'))failures.push({host:u.hostname,path:u.pathname,type:request.resourceType(),error:request.failure()?.errorText});}catch{}};
+ const status=response=>{try{const u=new URL(response.url());if(response.status()>=400)responses.push({host:u.hostname,path:u.pathname,status:response.status()});}catch{}};
  const inspect=response=>{if(response.status()>=400&&new URL(response.url()).pathname==='/p/api/search/instant-search')pending.push((async()=>{
   const url=new URL(response.url()),body=await response.text().catch(()=>''),contentType=response.headers()['content-type'];let error;
   try{const json=JSON.parse(body),detail=typeof json.error==='object'&&json.error?json.error:json;error=Object.fromEntries(['code','message','error','status'].filter(key=>typeof detail[key]==='string'||typeof detail[key]==='number').map(key=>[key,String(detail[key]).slice(0,160)]));}catch{error={htmlTitle:body.match(/<title>([^<]{0,160})<\/title>/i)?.[1]};}
   console.error(JSON.stringify({event:'public_search_http_error',status:response.status(),contentType,paramKeys:[...url.searchParams.keys()],coordinates:Object.fromEntries(['x','y','longitude','latitude','searchCoord','boundary'].filter(key=>url.searchParams.has(key)).map(key=>[key,url.searchParams.get(key)])),error}));
  })());};
  // Called only for the public fixtures below; never user jobs, headers or cookies.
- page.on('response',inspect);try{return await run();}finally{page.off('response',inspect);await Promise.allSettled(pending);}
+ page.on('response',inspect);page.on('response',status);page.on('requestfailed',failed);
+ try{return await run();}catch(error){console.error(JSON.stringify({event:'public_probe_page_state',title:await page.title().catch(()=>''),url:page.url(),controls:await page.locator('button,[role="tab"],[role="combobox"]').evaluateAll(es=>es.slice(0,35).map(e=>({role:e.getAttribute('role')||e.tagName,label:(e.getAttribute('aria-label')||e.textContent||'').trim().slice(0,100)}))).catch(()=>[]),bodyState:await page.locator('body').evaluate(el=>{const text=el.innerText;return {length:text.length,loading:/로딩|불러오|loading/i.test(text),accessRestricted:/접근.*제한|비정상.*접근|captcha|자동입력|Access Denied/i.test(text),error:/오류|문제|error|실패/i.test(text)};}).catch(()=>null),failures:failures.slice(-20),responses:responses.slice(-20)}));throw error;}
+ finally{page.off('response',inspect);page.off('response',status);page.off('requestfailed',failed);await Promise.allSettled(pending);}
 }
 async function waitForResult(id,db=query,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
  for(let attempt=0;attempt<36;attempt++) {
