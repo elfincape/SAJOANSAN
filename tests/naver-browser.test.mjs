@@ -70,3 +70,12 @@ let retryMeasures=0;winner=await optimizeCourseCapture({},course,{previous:check
 let checks=0;await assert.rejects(()=>optimizeCourseCapture({},course,{checkActive:async()=>{if(++checks===3)throw Object.assign(Error('cancelled'),{code:'CAPTURE_PAUSED'});},measure:roadMeasure}),e=>e.code==='CAPTURE_PAUSED');
 await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:screenshot?8:7,distanceText:screenshot?'8km':'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('changed')}: {})})}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');
 console.log('Exact address selection, fixed-stop permutations, road-distance ranking, ties, checkpoints, retry, cancel and capture verification passed');
+
+let snapshotQueries=0,snapshotCaptures=0;
+const snapshotWinner=await optimizeCourseCapture({},course,{measure:async(_p,stops,{screenshot,captureIf})=>{
+ snapshotQueries++;assert.equal(screenshot,false,'An available winning snapshot must avoid a new Naver route request');
+ const distanceKm=stops[2]==='D'&&stops[3]==='A'?4:12;
+ const result={distanceKm,distanceText:distanceKm+'km',routeLabel:'무료우선',method:'naver-map-display',requestedStops:stops,resolvedStops:stops};
+ if(captureIf?.(result)){snapshotCaptures++;result.png=Buffer.from(stops.join('|'));}return result;
+}});
+assert.equal(snapshotQueries,6);assert.equal(snapshotCaptures,2,'Only a new strict best gets a snapshot; equal routes retain the earlier winner');assert.equal(snapshotWinner.png.toString(),snapshotWinner.orderedStops.join('|'));assert.equal(snapshotWinner.optimization.complete,true);assert(!Object.values(snapshotWinner.optimization.evaluations).some(e=>'png' in e),'Checkpoint JSON never contains screenshot buffers');

@@ -28,16 +28,19 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
  const evaluations={},state={version:1,policy:COMPARISON_POLICY,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};
- await checkActive();await report();let consecutiveFailures=0;
+ await checkActive();await report();let consecutiveFailures=0,bestCapture;
  for(const [index,stops] of routes.entries()) {
   await checkActive();const key=JSON.stringify(stops),cacheKey=JSON.stringify([COMPARISON_POLICY,stops]);
   state.current=index+1;
   if(evaluations[key])continue;
   try {
    let result=cache.get(cacheKey);
-   if(!validDistance(result))result=await measure(page,stops,{screenshot:false,checkActive});
+   if(!validDistance(result))result=await measure(page,stops,{screenshot:false,checkActive,captureIf:candidate=>validDistance(candidate)&&Object.values(evaluations).every(other=>candidate.distanceKm<other.distanceKm)});
    if(!validDistance(result))throw Error('거리우선 주행거리 확인 필요');
    const {png,...details}=result;
+   // Keep only the current winning image, from the exact lookup used in the comparison.
+   // Buffers never enter checkpoints/cache; a resumed winner without an image is revalidated below.
+   if(png?.length&&Object.values(evaluations).every(other=>result.distanceKm<other.distanceKm))bestCapture={key,result};
    evaluations[key]=details;cache.set(cacheKey,details);consecutiveFailures=0;
   }catch(e){
    if(e.code==='CAPTURE_PAUSED')throw e;
@@ -56,7 +59,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
  for(const stops of routes)if(evaluations[JSON.stringify(stops)].distanceKm<evaluations[JSON.stringify(selected)].distanceKm)selected=stops;
  const expected=evaluations[JSON.stringify(selected)];state.bestStops=selected;
  await report();await checkActive();
- const captured=await measure(page,selected,{screenshot:true,checkActive});
+ const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await measure(page,selected,{screenshot:true,checkActive});
  await checkActive();
  if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
   delete evaluations[JSON.stringify(selected)];cache.delete(JSON.stringify([COMPARISON_POLICY,selected]));await report();

@@ -114,7 +114,7 @@ export async function browserDistance(page,origin,address,{diagnostic=false}={})
  }
 }
 
-export async function browserCourseCapture(page,stops,{screenshot=true,checkActive=async()=>{}}={}) {
+export async function browserCourseCapture(page,stops,{screenshot=true,captureIf,checkActive=async()=>{}}={}) {
  if(!Array.isArray(stops)||stops.length<3||stops.length>7||stops.some(s=>typeof s!=='string'||!s.trim()||s.length>300))throw Error('코스 주소 또는 경유지 한도 확인 필요');
  page.setDefaultTimeout(30000);
  await page.setViewportSize({width:1280,height:1800});
@@ -145,7 +145,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,checkActi
  if(current.index!==selected.index||current.distanceKm!==selected.distanceKm||current.routeLabel!==selected.routeLabel)throw Error('네이버 경로 옵션이 갱신되어 다시 조회해야 합니다.');
  const {index,...distance}=selected;
  const result={...distance,routeOptions,method:'naver-map-display',requestedStops:[...stops],resolvedStops:await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value)),sourceUrl:page.url(),measuredAt:new Date().toISOString()};
- if(!screenshot)return result;
+ if(!screenshot&&!captureIf?.(result))return result;
  // Use the actual Naver result panel, including its filled stop list and all route alternatives.
  const panel=await card.evaluateHandle((el,stopsCount)=>{
   let node=el;
