@@ -62,29 +62,31 @@ export function chooseAddressCandidate(search,options){
  return addresses.length===1?addresses[0]:-1;
 }
 export async function selectAddress(page,input,address,{checkActive=async()=>{}}={}){
- const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set();
+ const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set(),searchDiagnostics=[];
  for(const query of search.queries){
+  const detail={queryIndex:searchDiagnostics.length+1};searchDiagnostics.push(detail);
   await checkActive();
   await input.fill('');
-  try{await page.waitForFunction(()=>document.querySelectorAll('[id^="instant-search-item-poi-"]').length===0,null,{timeout:5000});}catch{reasons.add('SEARCH_REFRESH_FAILED');continue;}
+  try{await page.waitForFunction(()=>document.querySelectorAll('[id^="instant-search-item-poi-"]').length===0,null,{timeout:5000});detail.cleared=true;}catch{detail.cleared=false;reasons.add('SEARCH_REFRESH_FAILED');continue;}
   let received;
-  const refreshed=page.waitForResponse(response=>{try{const url=new URL(response.url());return url.pathname==='/p/api/search/instant-search'&&url.searchParams.get('query')===query;}catch{return false;}},{timeout:5000}).then(response=>{received=response;return response;}).catch(()=>null);
+  const refreshed=page.waitForResponse(response=>{try{const url=new URL(response.url());return url.pathname==='/p/api/search/instant-search'&&url.searchParams.get('query')===query;}catch{return false;}},{timeout:5000}).then(response=>{received=response;detail.status=response.status?.();return response;}).catch(()=>null);
   await input.fill(query);
-  try{await options.first().waitFor({state:'visible',timeout:5000});}catch{const response=await refreshed;reasons.add(response&&!response.ok()?'SEARCH_REFRESH_FAILED':'SEARCH_NO_CANDIDATES');continue;}
+  try{await options.first().waitFor({state:'visible',timeout:5000});detail.visible=true;}catch{detail.visible=false;const response=await refreshed;reasons.add(response&&!response.ok()?'SEARCH_REFRESH_FAILED':'SEARCH_NO_CANDIDATES');continue;}
   if(received){
    if(!received.ok()){reasons.add('SEARCH_REFRESH_FAILED');continue;}
-   try{if(await received.finished()){reasons.add('SEARCH_REFRESH_FAILED');continue;}}catch{reasons.add('SEARCH_REFRESH_FAILED');continue;}
+   try{if(await received.finished()){detail.responseFinished=false;reasons.add('SEARCH_REFRESH_FAILED');continue;}detail.responseFinished=true;}catch{detail.responseFinished=false;reasons.add('SEARCH_REFRESH_FAILED');continue;}
   }
   await checkActive();
-  if(await input.evaluate(e=>e.value)!==query){reasons.add('SEARCH_REFRESH_FAILED');continue;}
+  detail.inputMatches=await input.evaluate(e=>e.value)===query;if(!detail.inputMatches){reasons.add('SEARCH_REFRESH_FAILED');continue;}
   const candidates=await options.evaluateAll(es=>es.map(e=>({text:e.innerText,addressOnly:!e.querySelector('.place_category,.place_text.sub')})));
+  detail.candidates=candidates.length;detail.matches=candidates.filter(c=>addressCandidateMatches(search,c.text)).length;
   const index=chooseAddressCandidate(search,candidates);
   if(index<0){reasons.add(candidates.filter(c=>addressCandidateMatches(search,c.text)).length>1?'SAME_ADDRESS_DUPLICATES':'MULTIPLE_LOCATIONS');continue;}
   await checkActive();await options.nth(index).click();await page.waitForTimeout(700);return;
  }
  const messages={SAME_ADDRESS_DUPLICATES:'같은 주소의 중복 후보를 안전하게 구분하지 못했습니다. 주소 후보를 확인해 주세요.',MULTIPLE_LOCATIONS:'입력 주소와 다른 위치의 후보가 표시됩니다. 원본 주소와 네이버 결과를 확인해 주세요.',SEARCH_REFRESH_FAILED:'네이버 검색 결과 갱신을 확인하지 못했습니다. 재시도해 주세요.',SEARCH_NO_CANDIDATES:'이번 네이버 자동완성에서 검색 후보를 받지 못했습니다. 직접 검색 결과와 주소를 확인해 주세요.'};
  const reason=Object.keys(messages).find(r=>reasons.has(r))||'SEARCH_NO_CANDIDATES';
- throw Object.assign(Error(messages[reason]),{code:'ADDRESS_NOT_FOUND',reason});
+ throw Object.assign(Error(messages[reason]),{code:'ADDRESS_NOT_FOUND',reason,searchDiagnostics});
 }
 export async function browserDistance(page,origin,address,{diagnostic=false}={}){
  page.setDefaultTimeout(30000);

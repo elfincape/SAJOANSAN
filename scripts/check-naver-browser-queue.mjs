@@ -38,7 +38,7 @@ if(process.argv.includes('--live')){
    try{return await browserDistance(page,origin,address,{diagnostic:true});}
    catch(e){
     // This probe uses only the public fixture addresses above, never user jobs or credentials.
-    console.error(JSON.stringify({event:'public_distance_probe_failed',code:e.code??e.name,message:String(e.message).split('\n').slice(0,12).join('\n'),url:page.url(),inputs:await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value)).catch(()=>[]),suggestions:await page.locator('[id^="instant-search-item-poi-"]').allTextContents().catch(()=>[])}));
+    console.error(JSON.stringify({event:'public_distance_probe_failed',code:e.code??e.name,message:String(e.message).split('\n').slice(0,12).join('\n'),searchDiagnostics:e.searchDiagnostics,url:page.url(),inputs:await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value)).catch(()=>[]),suggestions:await page.locator('[id^="instant-search-item-poi-"]').allTextContents().catch(()=>[])}));
     throw e;
    }
   }});
