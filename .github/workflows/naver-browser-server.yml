@@ -42,6 +42,7 @@ jobs:
       - run: node tests/naver-browser-worker.test.mjs
       - run: node tests/naver-browser-lifecycle.test.mjs
       - run: node tests/naver-browser-ui.test.mjs
+      - run: node scripts/check-naver-map-browser.mjs --first-search
       - run: node scripts/apply-naver-browser-migration.mjs
       - run: node scripts/check-naver-browser-queue.mjs --live --capture
   replace:

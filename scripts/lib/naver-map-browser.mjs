@@ -95,14 +95,33 @@ export function naverCourseRequestMatches(request,stops,cache,{startedAt,frame,u
  }catch{return false;}
 }
 const routeSettings=url=>{const q=new URL(url).searchParams;return Object.fromEntries(['cartype','fueltype','mileage','mainoption','restrictvolume','departuretime','respversion','crs','rptype','output'].map(k=>[k,q.get(k)]));};
+const responseEvidence=new WeakMap();
+export async function searchResponseEvidence(response){
+ if(!response)return {status:null,bodyReadFailed:true,bodyBytes:null};
+ if(responseEvidence.has(response))return responseEvidence.get(response);
+ const pending=(async()=>{
+  const evidence={status:response.status?.()??null,bodyBytes:null,bodyReadFailed:false};
+  try{const u=new URL(response.url()),q=u.searchParams,raw=q.get('coords');evidence.path=u.pathname;evidence.queryLength=q.get('query')?.length??0;evidence.queryEncodingValid=decodeURIComponent((u.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??'');if(raw){const parts=raw.split(',').map(Number);if(parts.length===2&&parts.every(Number.isFinite)){evidence.coords=parts;evidence.latitudeFirstInWorldBounds=Math.abs(parts[0])<=90&&Math.abs(parts[1])<=180;}else evidence.coordinateNonFinite=true;}}catch{}
+  try{const headers=await response.headers?.(),mime=headers?.['content-type']?.split(';')[0].trim().toLowerCase();if(['application/json','text/html','text/plain','application/octet-stream'].includes(mime))evidence.contentType=mime;const length=headers?.['content-length'];if(/^\d{1,12}$/.test(length??''))evidence.declaredBodyBytes=Number(length);const after=headers?.['retry-after'];if(/^\d{1,8}$/.test(after??''))evidence.retryAfterSeconds=Number(after);}catch{}
+  try{evidence.fromServiceWorker=!!response.fromServiceWorker?.();}catch{}
+  try{if(response.finished)evidence.finished=!(await response.finished());}catch{evidence.finished=false;}
+  let text='';try{text=response.text?await response.text():response.body?(await response.body()).toString('utf8'):JSON.stringify(await response.json());evidence.bodyBytes=Buffer.byteLength(text);evidence.bodyFormat=!text?'empty':/^\s*</.test(text)?'html':'text';}catch{evidence.bodyReadFailed=true;evidence.bodyFormat='unavailable';}
+  if(text){try{const json=JSON.parse(text),code=json?.error?.code??json?.code;evidence.bodyFormat='json';if(/^(?:\d{1,6}|INVALID_[A-Z_]{1,60}|BAD_REQUEST|TOO_MANY_REQUESTS|ACCESS_DENIED|FORBIDDEN)$/.test(String(code??'')))evidence.providerCode=String(code);}catch{}}
+  // Classify a bounded in-memory body; never retain raw messages, HTML, headers, cookies or tokens.
+  const sample=text.slice(0,16384);evidence.markers={access:/access\s+denied|request\s+blocked|접근.{0,12}제한|비정상.{0,12}접근/i.test(sample),captcha:/captcha|자동\s*입력\s*방지|로봇.{0,12}확인/i.test(sample),limit:/too\s+many\s+requests|rate.?limit|quota.{0,12}exceed/i.test(sample),coordinates:/coord|latitude|longitude|boundary|위도|경도|좌표/i.test(sample),parameters:/invalid.{0,20}(?:parameter|argument)|파라미터|인자/i.test(sample)};
+  evidence.restrictionConfirmed=[403,429].includes(evidence.status)||['ACCESS_DENIED','FORBIDDEN','TOO_MANY_REQUESTS'].includes(evidence.providerCode)||evidence.bodyFormat!=='json'&&(evidence.markers.access||evidence.markers.captcha);
+  return evidence;
+ })();responseEvidence.set(response,pending);return pending;
+}
 async function providerFailure(response,diagnostics,stage='search'){
  const status=response?.status?.(),detail=diagnostics?.at(-1);let providerCode,coordinateState='not-provided';
  try{const q=new URL(response.url()).searchParams,coordinates=[...q].filter(([k])=>/coord|boundary|^(?:x|y|longitude|latitude)$/i.test(k)).map(([,v])=>v);if(coordinates.length)coordinateState=coordinates.every(v=>v.trim()&&v.split(/[;,\s]+/).every(s=>s&&Number.isFinite(Number(s))))?'valid':'invalid';}catch{}
  let requestShape,responseShape;
  try{const url=new URL(response.url()),q=url.searchParams;requestShape={path:url.pathname,queryLength:q.get('query')?.length??0,queryEncodingValid:decodeURIComponent((url.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??''),paramKeys:[...q.keys()].filter(k=>/^(query|coords|types|searchCoord|boundary|x|y|longitude|latitude)$/.test(k)).sort(),types:q.get('types')?.split(',').filter(v=>/^(place|address|bus)$/.test(v))};}catch{}
  try{const data=await response?.json?.(),error=data?.error,code=error?.code??data?.code,message=String(error?.message??data?.message??'');if(/^(?:\d{1,6}|INVALID_[A-Z_]{1,60}|BAD_REQUEST|TOO_MANY_REQUESTS|ACCESS_DENIED|FORBIDDEN)$/.test(String(code??'')))providerCode=String(code);responseShape={format:'json',hasError:!!error,errorCategory:/coord|latitude|longitude|boundary|위도|경도|좌표/i.test(message)?'coordinates':/parameter|argument|파라미터|인자/i.test(message)?'parameters':/limit|too many|quota|제한/i.test(message)?'limit':/denied|forbidden|access|접근/i.test(message)?'access':'other'};}catch{responseShape={format:'non-json-or-unavailable'};}
- if(detail){detail.coordinateState=coordinateState;if(providerCode)detail.providerCode=providerCode;if(requestShape)detail.requestShape=requestShape;detail.responseShape=responseShape;}
- return Object.assign(Error(`네이버 ${stage==='search'?'주소 검색':'길찾기'} ${status?'요청이 HTTP '+status+' 응답으로 거절되었습니다.':'응답을 받지 못했습니다.'} 주소 부재로 판정하지 않았습니다.`),{code:stage==='search'?'NAVER_SEARCH_UNAVAILABLE':'NAVER_ROUTE_UNAVAILABLE',reason:status?'PROVIDER_HTTP_ERROR':'PROVIDER_RESPONSE_TIMEOUT',httpStatus:status,searchDiagnostics:diagnostics?structuredClone(diagnostics):undefined});
+ const evidence=await searchResponseEvidence(response);
+ if(detail){detail.coordinateState=coordinateState;if(providerCode)detail.providerCode=providerCode;if(requestShape)detail.requestShape=requestShape;detail.responseShape=responseShape;detail.responseEvidence=evidence;}
+ return Object.assign(Error(`네이버 ${stage==='search'?'주소 검색':'길찾기'} ${evidence.restrictionConfirmed?'접근 제한 응답을 확인해 중단했습니다.':status?'요청이 HTTP '+status+' 응답으로 거절되었습니다.':'응답을 받지 못했습니다.'} 주소 부재로 판정하지 않았습니다.`),{code:stage==='search'?'NAVER_SEARCH_UNAVAILABLE':'NAVER_ROUTE_UNAVAILABLE',reason:evidence.restrictionConfirmed?'PROVIDER_ACCESS_RESTRICTED':status?'PROVIDER_HTTP_ERROR':'PROVIDER_RESPONSE_TIMEOUT',httpStatus:status,searchDiagnostics:diagnostics?structuredClone(diagnostics):undefined});
 }
 export async function selectAddress(page,input,address,{checkActive=async()=>{},timings}={}){
  const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set(),searchDiagnostics=[];
@@ -116,10 +135,10 @@ export async function selectAddress(page,input,address,{checkActive=async()=>{},
   const refreshed=page.waitForResponse(response=>{try{const url=new URL(response.url());return url.pathname==='/p/api/search/instant-search'&&url.searchParams.get('query')===query;}catch{return false;}},{timeout:5000}).then(response=>{received=response;detail.status=response.status?.();return response;}).catch(()=>null);
   await input.fill(query);
   const visible=options.first().waitFor({state:'visible',timeout:5000});
-  try{await Promise.race([visible,refreshed.then(async response=>{if(response&&!response.ok())throw await providerFailure(response,searchDiagnostics);return visible;})]);detail.visible=true;}catch(e){detail.visible=false;if(e.code==='NAVER_SEARCH_UNAVAILABLE')throw e;const response=await refreshed;if(timings)timings.searchRefreshMs+=performance.now()-refreshStarted;if(!response||!response.ok())throw await providerFailure(response,searchDiagnostics);reasons.add('SEARCH_NO_CANDIDATES');continue;}
+  try{await Promise.race([visible,refreshed.then(async response=>{if(response&&(!response.ok()||(await searchResponseEvidence(response)).restrictionConfirmed))throw await providerFailure(response,searchDiagnostics);return visible;})]);detail.visible=true;}catch(e){detail.visible=false;if(e.code==='NAVER_SEARCH_UNAVAILABLE')throw e;const response=await refreshed;if(timings)timings.searchRefreshMs+=performance.now()-refreshStarted;if(!response||!response.ok())throw await providerFailure(response,searchDiagnostics);reasons.add('SEARCH_NO_CANDIDATES');continue;}
   if(timings)timings.searchRefreshMs+=performance.now()-refreshStarted;
   if(received){
-   if(!received.ok())throw await providerFailure(received,searchDiagnostics);
+   if(!received.ok()||(await searchResponseEvidence(received)).restrictionConfirmed)throw await providerFailure(received,searchDiagnostics);
    try{if(await received.finished()){detail.responseFinished=false;throw Error('Response failed');}detail.responseFinished=true;}catch{detail.responseFinished=false;throw await providerFailure(received,searchDiagnostics);}
   }
   await checkActive();
