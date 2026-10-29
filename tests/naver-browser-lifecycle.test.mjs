@@ -27,3 +27,5 @@ assert(upgraded.includes(checkpointRule),'Retries retain both display-distance a
 assert.equal(upgradeCaptureContract(expectedDefinition.replace(" in ('naver-all-driving-options-v1','naver-all-driving-options-meters-v2')","='naver-all-driving-options-v1'")),expectedDefinition,'Upgrade the currently deployed v1 retry policy without dropping other validation');
 assert.equal(upgradeCaptureContract(upgraded),upgraded,'Queue upgrade is idempotent');
 assert(upgraded.includes("where not(saved ? (value->>'id'))")===false,'A checkpoint must not count as a completed image');
+const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')),workflow=await readFile(new URL('../.github/workflows/naver-browser-server.yml',import.meta.url),'utf8');
+assert([...workflow.matchAll(/playwright@([\d.]+)/g)].every(m=>m[1]===manifest.devDependencies.playwright),'Server verify and worker must use the browser version pinned by the project');

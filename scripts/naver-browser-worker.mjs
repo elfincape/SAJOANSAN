@@ -9,6 +9,7 @@ const ready="(status='queued' or (status='running' and updated_at<now()-interval
 export async function runWorker({db=query,lookup=browserDistance,capture=browserCourseCapture,saveCapture=saveCourseCapture,browserFactory,keepAlive=false,durationMs=20*60*1000,pollMs=30000,jobId=null,reservationId=null,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),log=console.log}={}){
  const create=browserFactory??(async()=>{const {chromium}=await import('playwright');return chromium.launch({headless:true});});
  const browser=await create(),worker=randomUUID(),stopAt=now()+durationMs;
+ log(JSON.stringify({event:'naver_browser_runtime',browserVersion:browser.version?.()??'unknown',...( /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA??'')?{commit:process.env.GITHUB_SHA}:{})}));
  try{
   const page=await browser.newPage({locale:'ko-KR',viewport:{width:1280,height:1000}});
   for(;now()<stopAt;){
