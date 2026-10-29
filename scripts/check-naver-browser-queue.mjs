@@ -45,11 +45,11 @@ await query(`begin;
 do $checkpoint$ declare actor uuid; previous uuid; resumed uuid; fixture jsonb; begin
  select id into actor from public.user_profiles where active and role='admin' limit 1;
  perform set_config('request.jwt.claim.sub',actor::text,true);
- fixture:=jsonb_build_array(jsonb_build_object('id','checkpoint','sourceRow',2,'name','Public checkpoint verification','stops',jsonb_build_array('경기도 오산시 경기대로 78-7','경기도 안산시 단원구 성곡로 125','경기도 용인시 처인구 남사읍 당하로 121','경기도 오산시 경기대로 78-7')));
+ fixture:=jsonb_build_array(jsonb_build_object('id','row-2','sourceRow',2,'name','Public checkpoint verification','stops',jsonb_build_array('경기도 오산시 경기대로 78-7','경기도 안산시 단원구 성곡로 125','경기도 용인시 처인구 남사읍 당하로 121','경기도 오산시 경기대로 78-7')));
  previous:=public.naver_capture_enqueue('002',fixture);
- update public.naver_browser_jobs set status='attention',results='{"checkpoint":{"optimization":{"version":1,"policy":"naver-all-driving-options-meters-v2","completed":1}}}'::jsonb where id=previous;
+ update public.naver_browser_jobs set status='attention',results='{"row-2":{"optimization":{"version":1,"policy":"naver-all-driving-options-meters-v2","completed":1}}}'::jsonb where id=previous;
  resumed:=public.naver_capture_enqueue('002',fixture,previous);
- if not exists(select 1 from public.naver_browser_jobs where id=resumed and results->'checkpoint'->'optimization'->>'completed'='1' and addresses @> '["checkpoint"]'::jsonb) then raise exception 'Exact-meter retry checkpoint was dropped or treated as a completed image';end if;
+ if not exists(select 1 from public.naver_browser_jobs where id=resumed and results->'row-2'->'optimization'->>'completed'='1' and addresses @> '["row-2"]'::jsonb) then raise exception 'Exact-meter retry checkpoint was dropped or treated as a completed image';end if;
 end $checkpoint$;
 rollback;`);
 console.log('Exact-meter retry checkpoint survives queue resubmission; transactional fixture rolled back');
