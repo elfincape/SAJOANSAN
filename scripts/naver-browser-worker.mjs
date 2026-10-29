@@ -41,10 +41,10 @@ export async function runWorker({db=query,lookup=browserDistance,capture=browser
      if(job.kind==='capture') {
       const known=['코스 주소 또는 경유지 한도 확인 필요','네이버 경유지 입력 개수 확인 필요','방문지 입력 누락 확인 필요','거리우선 경로 선택 확인 필요','네이버 코스 결과 패널을 확인하지 못했습니다.','네이버 캡처 영역 확인 필요','캡처 저장 서버 설정 확인 필요','캡처 이미지 크기 확인 필요','캡처 저장 인증 확인 필요','캡처 저장 서버 키 확인 필요','캡처 파일 저장 실패'];
       const stage=e.code==='ADDRESS_NOT_FOUND'?'ADDRESS_NOT_FOUND':known.includes(e.message)?e.message:e.name==='TimeoutError'?'BROWSER_TIMEOUT':'UNCLASSIFIED';
-      console.error(JSON.stringify({event:'naver_capture_failed',stage,...(e.reason?{reason:e.reason}:{})}));
+      console.error(JSON.stringify({event:'naver_capture_failed',stage,...(e.reason?{reason:e.reason}:{}),...(e.searchDiagnostics?{searchDiagnostics:e.searchDiagnostics}:{})}));
      }
      const comparisonIssue=['OPTIMIZATION_INCOMPLETE','CAPTURE_DISTANCE_CHANGED'].includes(e.code);
-     failures=e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?0:failures+1;result={issue:e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?e.message:job.kind==='capture'?'코스 캡처 확인 필요 — 주소 검색·지도 응답·저장 상태를 확인해 주세요.':'네이버 지도 거리우선 결과 확인 필요',...(e.reason?{addressReason:e.reason}:{}),...(optimization?{optimization:e.optimization??optimization}:{}),measuredAt:new Date().toISOString()};}
+     failures=e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?0:failures+1;result={issue:e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?e.message:job.kind==='capture'?'코스 캡처 확인 필요 — 주소 검색·지도 응답·저장 상태를 확인해 주세요.':'네이버 지도 거리우선 결과 확인 필요',...(e.reason?{addressReason:e.reason}:{}),...(e.searchDiagnostics?{addressDiagnostics:e.searchDiagnostics}:{}),...(optimization?{optimization:e.optimization??optimization}:{}),measuredAt:new Date().toISOString()};}
     await db("update public.naver_browser_jobs set results=results||jsonb_build_object("+quote(address)+','+quote(JSON.stringify(result))+"::jsonb),cursor="+(i+1)+",updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");
     log(result.distanceText?'Server route result saved':'Server route needs attention');
     if(failures>=3){await db("update public.naver_browser_jobs set status='attention',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");interrupted=true;break;}
