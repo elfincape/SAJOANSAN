@@ -56,7 +56,18 @@ if(process.argv.includes('--capture')) {
  const id=result.at(-1)?.id;if(!id)throw Error('Capture queue fixture could not be created');
  let images=[];
  try {
-  const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id,reservationId});
+  const {runWorker}=await import('./naver-browser-worker.mjs');
+  const {browserCourseCapture}=await import('./lib/naver-map-browser.mjs');
+  await runWorker({jobId:id,reservationId,capture:async(page,addresses,options)=>{
+   // Public fixture only: identify provider errors without logging headers, cookies or user addresses.
+   const pending=[];
+   const inspect=response=>{if(response.status()>=400&&new URL(response.url()).pathname==='/p/api/search/instant-search')pending.push((async()=>{
+    const url=new URL(response.url()),body=await response.text().catch(()=>''),contentType=response.headers()['content-type'];let error;
+    try{const json=JSON.parse(body);error=Object.fromEntries(['code','message','error','status'].filter(key=>typeof json[key]==='string'||typeof json[key]==='number').map(key=>[key,String(json[key]).slice(0,160)]));}catch{error={htmlTitle:body.match(/<title>([^<]{0,160})<\/title>/i)?.[1]};}
+    console.error(JSON.stringify({event:'public_capture_search_http_error',status:response.status(),contentType,paramKeys:[...url.searchParams.keys()],coordinates:Object.fromEntries(['x','y','longitude','latitude'].filter(key=>url.searchParams.has(key)).map(key=>[key,url.searchParams.get(key)])),error}));
+   })());};
+   page.on('response',inspect);try{return await browserCourseCapture(page,addresses,options);}finally{page.off('response',inspect);await Promise.allSettled(pending);}
+  }});
   const completed=await waitForResult(id);
   images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
   if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||courses.some(course=>!captureResultVerified(course,completed.results[course.id]))){
