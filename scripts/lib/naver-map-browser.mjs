@@ -138,7 +138,7 @@ async function providerFailure(response,diagnostics,stage='search'){
  try{const data=await response?.json?.(),error=data?.error,code=error?.code??data?.code,message=String(error?.message??data?.message??'');if(/^(?:\d{1,6}|INVALID_[A-Z_]{1,60}|BAD_REQUEST|TOO_MANY_REQUESTS|ACCESS_DENIED|FORBIDDEN)$/.test(String(code??'')))providerCode=String(code);responseShape={format:'json',hasError:!!error,errorCategory:/coord|latitude|longitude|boundary|위도|경도|좌표/i.test(message)?'coordinates':/parameter|argument|파라미터|인자/i.test(message)?'parameters':/limit|too many|quota|제한/i.test(message)?'limit':/denied|forbidden|access|접근/i.test(message)?'access':'other'};}catch{responseShape={format:'non-json-or-unavailable'};}
  const evidence=await searchResponseEvidence(response);
  if(detail){detail.coordinateState=coordinateState;if(providerCode)detail.providerCode=providerCode;if(requestShape)detail.requestShape=requestShape;detail.responseShape=responseShape;detail.responseEvidence=evidence;}
- return Object.assign(Error(`네이버 ${stage==='search'?'주소 검색':'길찾기'} ${evidence.restrictionConfirmed?'접근 제한 응답을 확인해 중단했습니다.':status?'요청이 HTTP '+status+' 응답으로 거절되었습니다.':'응답을 받지 못했습니다.'} 주소 부재로 판정하지 않았습니다.`),{code:stage==='search'?'NAVER_SEARCH_UNAVAILABLE':'NAVER_ROUTE_UNAVAILABLE',reason:evidence.restrictionConfirmed?'PROVIDER_ACCESS_RESTRICTED':status?'PROVIDER_HTTP_ERROR':'PROVIDER_RESPONSE_TIMEOUT',httpStatus:status,searchDiagnostics:diagnostics?structuredClone(diagnostics):undefined});
+ return Object.assign(Error(`네이버 ${stage==='search'?'주소 검색':'길찾기'} ${evidence.restrictionConfirmed?'접근 제한 응답을 확인해 중단했습니다.':status?'요청이 HTTP '+status+' 응답으로 거절되었습니다.':'응답을 받지 못했습니다.'} 주소 부재로 판정하지 않았습니다.`),{code:stage==='search'?'NAVER_SEARCH_UNAVAILABLE':'NAVER_ROUTE_UNAVAILABLE',reason:evidence.restrictionConfirmed?'PROVIDER_ACCESS_RESTRICTED':status?'PROVIDER_HTTP_ERROR':'PROVIDER_RESPONSE_TIMEOUT',httpStatus:status,searchDiagnostics:diagnostics?structuredClone(diagnostics):undefined,...(stage==='route'?{routeDiagnostics:{responseEvidence:evidence,...(requestShape?{requestShape}:{})}}:{})});
 }
 export async function selectAddress(page,input,address,{checkActive=async()=>{},timings}={}){
  const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set(),searchDiagnostics=[];
@@ -240,8 +240,14 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
  }).catch(error=>({error}));
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000});
  const cards=page.locator('.direction_summary_list .route_summary_box');
- await cards.first().waitFor({state:'visible',timeout:45000});
+ // A provider rejection must not be hidden by the panel's later timeout.
  const raw=await routeResponse;if(raw.error)throw raw.error;
+ try{await cards.first().waitFor({state:'visible',timeout:45000});}catch(error){
+  error.routeDiagnostics={stage:'route-panel',responseStatus:200,rawRouteCount:raw.routes.length,rawOptionCount:raw.options.length};
+  try{error.routeDiagnostics.visibleCards=await cards.count();const text=await page.locator('body').innerText();error.routeDiagnostics.uiIndicators={sameAdjacent:/동일한\s*장소가\s*연속/.test(text),access:/접근.{0,8}제한|Access Denied|요청이.{0,8}차단/i.test(text),captcha:/자동입력\s*방지|captcha/i.test(text),noRoute:/경로.{0,20}(?:없|찾을 수 없)/.test(text)};}catch{}
+  if(error.routeDiagnostics.uiIndicators?.access||error.routeDiagnostics.uiIndicators?.captcha)Object.assign(error,{code:'NAVER_ROUTE_UNAVAILABLE',reason:'PROVIDER_ACCESS_RESTRICTED',httpStatus:200});
+  throw error;
+ }
  if(revision!==1)throw Error('네이버 경로 응답이 변경되어 동일 결과 검증을 중단했습니다.');const measuredRevision=revision;
  timings.routeRequestMs=performance.now()-routeStarted;
  const mapResolvedStops=await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value));

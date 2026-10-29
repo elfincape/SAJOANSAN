@@ -185,4 +185,9 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  assert.deepEqual(result.legEvidence.logicalPointMapping.logicalToMap,[0,1,2,2,3,4]);
  assert.deepEqual(result.legEvidence.logicalPointMapping.mapDistancesMeters,[43594,50828,42665,74713]);
  assert.equal(result.legEvidence.pathIdentity,evidence.routes[0].pathIdentity);assert(!listeners.size);
+ const denied={...r,ok:()=>false,status:()=>429,text:async()=>'',headers:()=>({})};
+ const absentCards={...cards,first:()=>({waitFor:async()=>{throw Object.assign(Error('route panel timeout'),{name:'TimeoutError'});}})};
+ const deniedPage={...page,waitForResponse:async predicate=>{assert(predicate(denied));return denied;},goto:async()=>listeners.get('response')?.(denied),locator:()=>absentCards};
+ await assert.rejects(()=>map.browserCourseCapture(deniedPage,stops,{addressCache:cache,screenshot:false}),e=>e.code==='NAVER_ROUTE_UNAVAILABLE'&&e.reason==='PROVIDER_ACCESS_RESTRICTED'&&e.routeDiagnostics.responseEvidence.status===429);
+ await assert.rejects(()=>map.browserCourseCapture({...deniedPage,waitForResponse:async()=>r,goto:async()=>listeners.get('response')?.(r)},stops,{addressCache:cache,screenshot:false}),e=>e.name==='TimeoutError'&&e.routeDiagnostics.stage==='route-panel'&&e.routeDiagnostics.rawRouteCount===1);
 }
