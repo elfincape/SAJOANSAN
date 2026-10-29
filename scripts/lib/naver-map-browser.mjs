@@ -137,8 +137,7 @@ export async function selectAddress(page,input,address,{checkActive=async()=>{},
 export async function browserDistance(page,origin,address,{diagnostic=false}={}){
  page.setDefaultTimeout(30000);
  try{
-  await page.goto('https://map.naver.com/',{waitUntil:'domcontentloaded',timeout:45000});
-  await page.getByRole('button',{name:'길찾기',exact:true}).click();
+  await page.goto('https://map.naver.com/p/directions/-/-/-/car',{waitUntil:'domcontentloaded',timeout:45000});
   await page.getByRole('tab',{name:'자동차',exact:true}).click();
   for(const [label,value] of [['출발지 입력',origin],['도착지 입력',address]]){
    const input=page.getByRole('combobox',{name:label,exact:true});
@@ -173,8 +172,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
   await checkActive();
   if(cachedPoint(address,addressCache)){timings.addressCacheHits++;continue;}
   if(!resolving){
-   await page.goto('https://map.naver.com/',{waitUntil:'domcontentloaded',timeout:45000});
-   await page.getByRole('button',{name:'길찾기',exact:true}).click();
+   await page.goto('https://map.naver.com/p/directions/-/-/-/car',{waitUntil:'domcontentloaded',timeout:45000});
    await page.getByRole('tab',{name:'자동차',exact:true}).click();resolving=true;
   }
   try{
