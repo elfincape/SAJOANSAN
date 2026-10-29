@@ -41,7 +41,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,onProg
    evaluations[key]=details;cache.set(cacheKey,details);consecutiveFailures=0;
   }catch(e){
    if(e.code==='CAPTURE_PAUSED')throw e;
-   state.failed.push({index:index+1,code:e.code==='ADDRESS_NOT_FOUND'?'ADDRESS_NOT_FOUND':'ROUTE_LOOKUP_FAILED'});
+   state.failed.push({index:index+1,code:e.code??(e.name==='TimeoutError'?'BROWSER_TIMEOUT':'ROUTE_LOOKUP_FAILED'),message:String(e.message).split('\n')[0].slice(0,160)});
    consecutiveFailures++;
    await report();
    if(e.code==='ADDRESS_NOT_FOUND'){e.optimization=structuredClone(state);throw e;}

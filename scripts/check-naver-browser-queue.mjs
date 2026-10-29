@@ -59,7 +59,10 @@ if(process.argv.includes('--capture')) {
   const {runWorker}=await import('./naver-browser-worker.mjs');await runWorker({jobId:id,reservationId});
   const completed=await waitForResult(id);
   images=Object.values(completed.results??{}).map(r=>r.imagePath).filter(Boolean);
-  if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||courses.some(course=>!captureResultVerified(course,completed.results[course.id])))throw Error('Live multi-course capture/storage verification failed');
+  if(completed.status!=='completed'||images.length!==2||new Set(images).size!==2||courses.some(course=>!captureResultVerified(course,completed.results[course.id]))){
+   console.error(JSON.stringify({event:'public_capture_probe_failed',status:completed.status,results:courses.map(course=>{const r=completed.results?.[course.id];return {rotation:course.rotation,issue:r?.issue,image:!!r?.imagePath,addressReason:r?.addressReason,addressDiagnostics:r?.addressDiagnostics,comparison:r?.optimization?{completed:r.optimization.completed,total:r.optimization.total,failed:r.optimization.failed}:null};})}));
+   throw Error('Live multi-course capture/storage verification failed');
+  }
   console.log('Two separate actual Naver rotation screenshots (garage to center, then center to garage) uploaded to private Storage and saved to distinct course results');
  }finally {
   const {removeCourseCaptures}=await import('./lib/naver-capture-storage.mjs');

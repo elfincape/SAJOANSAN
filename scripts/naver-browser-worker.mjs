@@ -39,9 +39,10 @@ export async function runWorker({db=query,lookup=browserDistance,capture=browser
     }catch(e){
      if(e.code==='CAPTURE_PAUSED'){interrupted=true;break;}
      if(job.kind==='capture') {
-      const known=['코스 주소 또는 경유지 한도 확인 필요','네이버 경유지 입력 개수 확인 필요','방문지 입력 누락 확인 필요','거리우선 경로 선택 확인 필요','네이버 코스 결과 패널을 확인하지 못했습니다.','네이버 캡처 영역 확인 필요','캡처 저장 서버 설정 확인 필요','캡처 이미지 크기 확인 필요','캡처 저장 인증 확인 필요','캡처 저장 서버 키 확인 필요','캡처 파일 저장 실패'];
-      const stage=e.code==='ADDRESS_NOT_FOUND'?'ADDRESS_NOT_FOUND':known.includes(e.message)?e.message:e.name==='TimeoutError'?'BROWSER_TIMEOUT':'UNCLASSIFIED';
-      console.error(JSON.stringify({event:'naver_capture_failed',stage,...(e.reason?{reason:e.reason}:{}),...(e.searchDiagnostics?{searchDiagnostics:e.searchDiagnostics}:{})}));
+      const known=['코스 주소 또는 경유지 한도 확인 필요','네이버 경유지 입력 개수 확인 필요','방문지 입력 누락 확인 필요','거리우선 경로 선택 확인 필요','네이버 코스 결과 패널을 확인하지 못했습니다.','네이버 캡처 영역 확인 필요','캡처 저장 서버 설정 확인 필요','캡처 이미지 크기 확인 필요','캡처 저장 인증 확인 필요','캡처 저장 서버 키 확인 필요','캡처 파일 저장 실패','네이버 경로 옵션 확인 필요','네이버 경로 옵션 거리 확인 필요','네이버 최단 표시거리 경로 선택 확인 필요','네이버 경로 옵션이 갱신되어 다시 조회해야 합니다.'];
+      const stage=['ADDRESS_NOT_FOUND','OPTIMIZATION_INCOMPLETE','CAPTURE_DISTANCE_CHANGED'].includes(e.code)?e.code:known.includes(e.message)?e.message:e.name==='TimeoutError'?'BROWSER_TIMEOUT':'UNCLASSIFIED';
+      const operation=String(e.message).match(/^(?:page|locator|browserContext|browser)\.[A-Za-z]+/)?.[0];
+      console.error(JSON.stringify({event:'naver_capture_failed',stage,...(operation?{operation}:{}),...(e.reason?{reason:e.reason}:{}),...(e.searchDiagnostics?{searchDiagnostics:e.searchDiagnostics}:{}),...(e.optimization?{comparison:{completed:e.optimization.completed,total:e.optimization.total,failed:e.optimization.failed?.map(f=>({index:f.index,code:f.code}))}}:{})}));
      }
      const comparisonIssue=['OPTIMIZATION_INCOMPLETE','CAPTURE_DISTANCE_CHANGED'].includes(e.code);
      failures=e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?0:failures+1;result={issue:e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?e.message:job.kind==='capture'?'코스 캡처 확인 필요 — 주소 검색·지도 응답·저장 상태를 확인해 주세요.':'네이버 지도 거리우선 결과 확인 필요',...(e.reason?{addressReason:e.reason}:{}),...(e.searchDiagnostics?{addressDiagnostics:e.searchDiagnostics}:{}),...(optimization?{optimization:e.optimization??optimization}:{}),measuredAt:new Date().toISOString()};}
