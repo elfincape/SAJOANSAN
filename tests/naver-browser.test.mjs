@@ -147,11 +147,42 @@ await reviewCheck('initial Naver input waits for normal page load completion',as
  const opening=map.openCarDirections(page);await Promise.resolve();assert.equal(clicks,0);release();await opening;assert.equal(clicks,1);assert.equal(inputs,1);
 });
 await reviewCheck('raw provider refresh during option selection cannot be captured',async()=>{
- const stops=Array(5).fill(pointAddress),cache=new Map([[pointAddress,point]]),url=map.naverCourseUrl(stops,cache),frame={url:()=>url},query=new URL('https://map.naver.com/p/api/directions/car');
- for(const [key,value] of [['start','127.1542265,37.1440432'],['goal','127.1542265,37.1440432'],['waypoints',Array(3).fill('127.1542265,37.1440432,name='+Buffer.from(pointLabel).toString('base64url')).join('|')],['crs','EPSG:4326'],['respversion','4'],['output','pbf']])query.searchParams.set(key,key==='start'||key==='goal'?value+',name='+Buffer.from(pointLabel).toString('base64url'):value);
+ const otherAddress=pointAddress.replace('121','122'),otherLabel=pointLabel.replace('121','122'),other={...point,token:'3zp3AK,2AujZe,'+encodeURIComponent(otherLabel)+',,ADDRESS_POI',label:otherLabel,text:otherLabel,coordinates:[127.1542266,37.1440432]};
+ const stops=[pointAddress,otherAddress,pointAddress,otherAddress,pointAddress],cache=new Map([[pointAddress,point],[otherAddress,other]]),url=map.naverCourseUrl(stops,cache),frame={url:()=>url},query=new URL('https://map.naver.com/p/api/directions/car');
+ const parameters=stops.map(s=>cache.get(s).coordinates.join(',')+',name='+Buffer.from(cache.get(s).label).toString('base64url'));
+ for(const [key,value] of [['start',parameters[0]],['goal',parameters[4]],['waypoints',parameters.slice(1,-1).join('|')],['crs','EPSG:4326'],['respversion','4'],['output','pbf']])query.searchParams.set(key,value);
  const listeners=new Map(),request={url:()=>query.href,timing:()=>({startTime:Date.now()+1}),frame:()=>frame},r={request:()=>request,url:()=>query.href,ok:()=>true,body:async()=>response};
  const cards={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>[{routeLabel:'실시간 추천',distanceText:'212km'}],nth:()=>({click:async()=>{const second={...r,request:()=>({...request})};listeners.get('response')?.(second);}})};
- const page={on:(k,fn)=>listeners.set(k,fn),off:k=>listeners.delete(k),setDefaultTimeout(){},setViewportSize:async()=>{},mainFrame:()=>frame,waitForResponse:async predicate=>{assert(predicate(r));return r;},goto:async()=>listeners.get('response')?.(r),locator:()=>cards,getByRole:()=>({evaluateAll:async()=>stops.map(()=>pointLabel)}),mouse:{move:async()=>{}},waitForFunction:async()=>{},url:()=>url};
+ const page={on:(k,fn)=>listeners.set(k,fn),off:k=>listeners.delete(k),setDefaultTimeout(){},setViewportSize:async()=>{},mainFrame:()=>frame,waitForResponse:async predicate=>{assert(predicate(r));return r;},goto:async()=>listeners.get('response')?.(r),locator:()=>cards,getByRole:()=>({evaluateAll:async()=>stops.map(s=>cache.get(s).label)}),mouse:{move:async()=>{}},waitForFunction:async()=>{},url:()=>url};
  await assert.rejects(()=>map.browserCourseCapture(page,stops,{addressCache:cache,screenshot:false}),/경로 응답이 변경/);assert(!listeners.size,'Request/response listeners are removed on failure');
 });
 assert.deepEqual(reviewFailures,[],reviewFailures.join('\n'));
+
+// Consecutive identical coordinates must preserve every logical visit and only
+// insert a proven zero leg, without removing a later return to the same point.
+assert.equal(typeof map.consecutivePointPlan,'function');
+const logical=['garage','center','delivery-a','delivery-a-alias','center','garage'];
+const plan=map.consecutivePointPlan(logical,[{coordinates:[127,37]},{coordinates:[128,37]},{coordinates:[129,37]},{coordinates:[129,37]},{coordinates:[128,37]},{coordinates:[127,37]}]);
+assert.deepEqual(plan.mapStops,['garage','center','delivery-a','center','garage']);
+assert.deepEqual(plan.logicalToMap,[0,1,2,2,3,4]);
+assert.deepEqual(map.expandLogicalLegs([10,20,30,40],plan.logicalToMap),[10,20,0,30,40]);
+assert.deepEqual(map.expandLogicalLegs([10,null,30,40],plan.logicalToMap),[10,null,0,30,40]);
+assert.throws(()=>map.expandLogicalLegs([10,20],plan.logicalToMap));
+assert.deepEqual(map.consecutivePointPlan(['a','b'],[{coordinates:[127,37]},{coordinates:[127.00000001,37]}]).logicalToMap,[0,1]);
+assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{coordinates:[NaN,37]}]));
+{
+ const otherAddress=pointAddress.replace('121','122'),otherLabel=pointLabel.replace('121','122');
+ const other=map.naverPointFromUrl('https://map.naver.com/p/directions/3zp3AK,2AujZe,'+encodeURIComponent(otherLabel)+',,ADDRESS_POI/-/-/car',otherAddress,{text:otherLabel,label:otherLabel});
+ const stops=[pointAddress,otherAddress,pointAddress,pointAddress,otherAddress,pointAddress],mapStops=[pointAddress,otherAddress,pointAddress,otherAddress,pointAddress],cache=new Map([[pointAddress,point],[otherAddress,other]]),url=map.naverCourseUrl(mapStops,cache),frame={url:()=>url},query=new URL('https://map.naver.com/p/api/directions/car');
+ const parameters=mapStops.map(s=>cache.get(s).coordinates.join(',')+',name='+Buffer.from(cache.get(s).label).toString('base64url'));
+ for(const [key,value] of [['start',parameters[0]],['goal',parameters[4]],['waypoints',parameters.slice(1,-1).join('|')],['crs','EPSG:4326'],['respversion','4'],['output','pbf']])query.searchParams.set(key,value);
+ const listeners=new Map(),request={url:()=>query.href,timing:()=>({startTime:Date.now()+1}),frame:()=>frame},r={request:()=>request,url:()=>query.href,ok:()=>true,body:async()=>response};
+ const cards={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>[{routeLabel:'실시간 추천',distanceText:'212km'}],nth:()=>({click:async()=>{}})};
+ const page={on:(k,fn)=>listeners.set(k,fn),off:k=>listeners.delete(k),setDefaultTimeout(){},setViewportSize:async()=>{},mainFrame:()=>frame,waitForResponse:async predicate=>{assert(predicate(r));return r;},goto:async requested=>{assert.equal(requested,url);listeners.get('response')?.(r);},locator:()=>cards,getByRole:()=>({evaluateAll:async()=>mapStops.map(s=>cache.get(s).label)}),mouse:{move:async()=>{}},waitForFunction:async()=>{},url:()=>url};
+ const result=await map.browserCourseCapture(page,stops,{addressCache:cache,screenshot:false});
+ assert.deepEqual(result.requestedStops,stops);assert.equal(result.resolvedStops.length,6);assert.equal(result.distanceMeters,211800);
+ assert.deepEqual(result.legEvidence.distancesMeters,[43594,50828,0,42665,74713]);assert(result.legEvidence.verified);
+ assert.deepEqual(result.legEvidence.logicalPointMapping.logicalToMap,[0,1,2,2,3,4]);
+ assert.deepEqual(result.legEvidence.logicalPointMapping.mapDistancesMeters,[43594,50828,42665,74713]);
+ assert.equal(result.legEvidence.pathIdentity,evidence.routes[0].pathIdentity);assert(!listeners.size);
+}

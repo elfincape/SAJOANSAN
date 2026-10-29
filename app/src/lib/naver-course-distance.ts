@@ -73,7 +73,11 @@ export function courseLegRows(course: NaverCourse, result?: CourseCapture) {
       status: !i
         ? '출발 · 이전 구간 없음'
         : verified
-          ? '확인'
+          ? evidence?.logicalPointMapping?.logicalToMap[i] ===
+            evidence?.logicalPointMapping?.logicalToMap[i - 1] &&
+            !!evidence?.logicalPointMapping
+            ? '확인: 직전 방문과 동일 좌표 · 0m'
+            : '확인'
           : meters(distance)
             ? '원시값 · 합계 미확인'
             : '미확인: ' + issue,
@@ -151,7 +155,9 @@ export async function courseDistanceWorkbook(
     sheet.getCell('C6').value = data.displayedDistance || '미확인';
     sheet.getCell('E6').value = '원시 합계 검증';
     sheet.getCell('A7').value =
-      '원문과 네이버 확인 주소를 구분합니다. km 소수 셋째 자리(1m). 첫 지점에는 이전 구간이 없으며 미확인 구간은 빈칸입니다.';
+      result?.legEvidence?.logicalPointMapping
+        ? '원본 방문은 모두 유지합니다. 연속 동일 좌표는 지도에서 한 점으로 계산하며 해당 구간만 0m입니다. 나머지는 같은 선택 경로의 구간입니다.'
+        : '원문과 네이버 확인 주소를 구분합니다. km 소수 셋째 자리(1m). 첫 지점에는 이전 구간이 없으며 미확인 구간은 빈칸입니다.';
     sheet.getCell('A7').font = { name: '맑은 고딕', size: 9, italic: true };
     sheet.getRow(7).height = 20;
     sheet.getRow(8).values = [

@@ -20,6 +20,12 @@ export interface CourseCapture {
     distancesMeters: (number | null)[];
     totalMeters: number;
     issue?: string;
+    logicalPointMapping?: {
+      mapStops: string[];
+      logicalToMap: number[];
+      coordinates: number[][];
+      mapDistancesMeters: (number | null)[];
+    };
   };
   metrics?: {
     elapsedMs: number;
@@ -44,7 +50,7 @@ export function captureVerificationLabel(result?: CourseCapture): string {
   const comparison = result?.optimization;
   if (result?.imagePath)
     return comparison?.complete && comparison.completed === comparison.total
-      ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 ${result.distanceMeters === undefined ? '표시거리' : '주행거리'} 최단`
+      ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 ${result.distanceMeters === undefined ? '표시거리' : '주행거리'} 최단${result.legEvidence?.logicalPointMapping ? ' · 연속 동일 좌표는 지도 한 점, 원본 방문·0m 구간은 Excel에 유지' : ''}`
       : '이전 입력 순서 캡처 · 납품 순서 최단 미검증';
   return comparison
     ? `납품 순서 ${comparison.completed}/${comparison.total}개 확인 · 실패 ${comparison.failed.length}개${comparison.complete ? ' · 최종 캡처 저장 미완료' : ''}`

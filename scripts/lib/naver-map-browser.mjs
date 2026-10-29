@@ -78,10 +78,24 @@ export function naverPointFromUrl(url,address,selection){
  return {token,label,text:selection.text,coordinates:pointCoordinates(fields)};
 }
 const cachedPoint=(address,cache)=>cache.get(address)??cache.get(addressSearch(address).original);
+export function consecutivePointPlan(stops,points){
+ if(stops.length!==points.length||points.some(p=>!Array.isArray(p?.coordinates)||p.coordinates.length!==2||p.coordinates.some(n=>!Number.isFinite(n))))throw Error('확인된 방문지 좌표가 필요합니다.');
+ const mapStops=[],logicalToMap=[];let before;
+ for(const [i,stop] of stops.entries()){
+  const coordinates=points[i].coordinates;
+  if(!before||coordinates.some((n,j)=>n!==before[j]))mapStops.push(stop);
+  logicalToMap.push(mapStops.length-1);before=coordinates;
+ }
+ return {mapStops,logicalToMap};
+}
+export function expandLogicalLegs(legs,logicalToMap){
+ if(!Array.isArray(legs)||logicalToMap[0]!==0||logicalToMap.at(-1)!==legs.length||logicalToMap.some((n,i)=>!Number.isInteger(n)||i&&(n<logicalToMap[i-1]||n>logicalToMap[i-1]+1)))throw Error('지도 구간과 원본 방문 순서가 일치하지 않습니다.');
+ return logicalToMap.slice(1).map((n,i)=>n===logicalToMap[i]?0:legs[n-1]);
+}
 export function naverCourseUrl(stops,cache){
  const points=stops.map(s=>cachedPoint(s,cache));if(points.some(p=>!p))return null;
  const tokens=points.map((p,i)=>naverPointFromUrl('https://map.naver.com/p/directions/'+p.token+'/-/-/car',stops[i],p).token);
- return 'https://map.naver.com/p/directions/'+tokens[0]+'/'+tokens.at(-1)+'/'+tokens.slice(1,-1).join(':')+'/car?c=9.00,0,0,0,dh';
+ return 'https://map.naver.com/p/directions/'+tokens[0]+'/'+tokens.at(-1)+'/'+(tokens.slice(1,-1).join(':')||'-')+'/car?c=9.00,0,0,0,dh';
 }
 const routePointKey=url=>{try{const p=new URL(url).pathname.split('/');return p[6]==='car'?JSON.stringify(p.slice(3,6)):null;}catch{return null;}};
 export function naverCourseRequestMatches(request,stops,cache,{startedAt,frame,url}){
@@ -210,9 +224,13 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
   catch(e){if(e.code==='ADDRESS_NOT_FOUND')e.message=`${i+1}번째 방문지: ${e.message}`;throw e;}
  }
  timings.addressResolutionMs=performance.now()-addressStarted;
- const url=naverCourseUrl(stops,addressCache);if(!url)throw Error('방문지 입력 누락 확인 필요');
+ // Keep logical visits and later center returns; only fold adjacent exact coordinates.
+ if(!naverCourseUrl(stops,addressCache))throw Error('방문지 입력 누락 확인 필요');
+ const plan=consecutivePointPlan(stops,stops.map(s=>cachedPoint(s,addressCache))),mapStops=plan.mapStops,folded=mapStops.length!==stops.length;
+ if(mapStops.length<2)throw Error('모든 방문지가 동일한 좌표여서 네이버 주행 경로를 표시할 수 없습니다.');
+ const url=naverCourseUrl(mapStops,addressCache);
  const routeStarted=performance.now(),navigation={startedAt:Date.now(),frame:page.mainFrame(),url};let revision=0;const responses=new Set();
- const matches=response=>{try{return naverCourseRequestMatches(response.request(),stops,addressCache,navigation);}catch{return false;}};
+ const matches=response=>{try{return naverCourseRequestMatches(response.request(),mapStops,addressCache,navigation);}catch{return false;}};
  watchRoute=response=>{if(matches(response)&&!responses.has(response.request())){responses.add(response.request());revision++;}};
  page.on('response',watchRoute);
  const routeResponse=page.waitForResponse(matches,{timeout:45000}).then(async response=>{
@@ -226,11 +244,13 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
  const raw=await routeResponse;if(raw.error)throw raw.error;
  if(revision!==1)throw Error('네이버 경로 응답이 변경되어 동일 결과 검증을 중단했습니다.');const measuredRevision=revision;
  timings.routeRequestMs=performance.now()-routeStarted;
- const resolvedStops=await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value));
- if(resolvedStops.length!==stops.length||resolvedStops.some((label,i)=>label.trim()!==cachedPoint(stops[i],addressCache).label))throw Error('네이버 경유지 입력 순서 확인 필요');
+ const mapResolvedStops=await page.getByRole('combobox').evaluateAll(es=>es.map(e=>e.value));
+ if(mapResolvedStops.length!==mapStops.length||mapResolvedStops.some((label,i)=>label.trim()!==cachedPoint(mapStops[i],addressCache).label))throw Error('네이버 경유지 입력 순서 확인 필요');
+ const resolvedStops=stops.map(address=>cachedPoint(address,addressCache).label);
  const optionStarted=performance.now();
  const rendered=await cards.evaluateAll(es=>es.map(e=>({routeLabel:e.querySelector('.summary_label_text')?.textContent?.trim()||'',distanceText:e.querySelector('.item_distance')?.textContent?.trim()||''})));
- const routeOptions=matchNaverRouteOptions(raw,rendered,stops.length);
+ const expand=options=>options.map(option=>folded?{...option,legDistancesMeters:expandLogicalLegs(option.legDistancesMeters,plan.logicalToMap)}:option);
+ const routeOptions=expand(matchNaverRouteOptions(raw,rendered,mapStops.length));
  const selected=shortestRouteOption(routeOptions),card=cards.nth(selected.index);
  await card.click();
  await page.mouse.move(1100,1700);
@@ -239,11 +259,12 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
   const item=el?.closest('[role="button"]');return item?.getAttribute('aria-pressed')==='true';
  },selected.index,{timeout:10000});}catch{throw Error('네이버 최단 표시거리 경로 선택 확인 필요');}
  await checkActive();
- const current=shortestRouteOption(matchNaverRouteOptions(raw,await cards.evaluateAll(es=>es.map(e=>({routeLabel:e.querySelector('.summary_label_text')?.textContent?.trim()||'',distanceText:e.querySelector('.item_distance')?.textContent?.trim()||''}))),stops.length));
+ const current=shortestRouteOption(expand(matchNaverRouteOptions(raw,await cards.evaluateAll(es=>es.map(e=>({routeLabel:e.querySelector('.summary_label_text')?.textContent?.trim()||'',distanceText:e.querySelector('.item_distance')?.textContent?.trim()||''}))),mapStops.length)));
  if(current.index!==selected.index||current.distanceKm!==selected.distanceKm||current.routeLabel!==selected.routeLabel)throw Error('네이버 경로 옵션이 갱신되어 다시 조회해야 합니다.');
  const {index,...distance}=selected;
  timings.optionCompareMs=performance.now()-optionStarted;
  const chosen=routeOptions[index],legEvidence={source:'naver-same-route-response',verified:chosen.legsVerified,distancesMeters:chosen.legDistancesMeters,totalMeters:chosen.distanceMeters,rawRouteIndex:chosen.rawRouteIndex,pathIdentity:chosen.pathIdentity,providerOption:chosen.providerOption,...(chosen.legIssue?{issue:chosen.legIssue}:{})};
+ if(folded)legEvidence.logicalPointMapping={mapStops,logicalToMap:plan.logicalToMap,coordinates:stops.map(s=>cachedPoint(s,addressCache).coordinates),mapDistancesMeters:raw.routes[chosen.rawRouteIndex].legDistancesMeters};
  const result={...distance,distanceMeters:chosen.distanceMeters,legEvidence,routeOptions,method:'naver-map-display',requestedStops:[...stops],resolvedStops,confirmedAddresses:stops.map(address=>cachedPoint(address,addressCache).text.split('\n').map(line=>line.trim()).find(line=>addressCandidateMatches(addressSearch(address),line))||cachedPoint(address,addressCache).text),sourceUrl:page.url(),measuredAt:new Date().toISOString(),timings,requestSettings:routeContext.settings};
  if(revision!==measuredRevision)throw Error('네이버 경로 응답이 변경되어 동일 결과 검증을 중단했습니다.');
  timings.totalMs=performance.now()-started;
@@ -257,7 +278,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
    node=node.parentElement;
   }
   return null;
- },stops.length);
+ },mapStops.length);
  const element=panel.asElement();if(!element)throw Error('네이버 코스 결과 패널을 확인하지 못했습니다.');
  await element.evaluate(el=>{for(const node of [el,...el.querySelectorAll('*')]){const style=getComputedStyle(node);if(['auto','scroll'].includes(style.overflowY)){node.style.maxHeight='none';node.style.height='auto';node.style.overflowY='visible';}}});
  const box=await element.boundingBox();
