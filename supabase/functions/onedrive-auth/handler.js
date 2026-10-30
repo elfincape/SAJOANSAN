@@ -3,6 +3,7 @@ import { handleOperations } from './operations.js';
 import { handleBackups } from './backups.js';
 import { handlePrivateMail } from './private-mail.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
+import { authorizeMailWork } from './private-mail-worker-auth.js';
 import {
   startNotesAuth,
   completeNotesAuth,
@@ -684,12 +685,13 @@ export function makeHandler(
         const token = req.headers
           .get('authorization')
           ?.match(/^Bearer (.+)$/i)?.[1];
-        if (
-          !env.MAIL_COLLECTOR_KEY ||
-          env.MAIL_COLLECTOR_KEY.length < 32 ||
-          token !== env.MAIL_COLLECTOR_KEY
-        )
-          throw fail('WORKER_AUTH_REQUIRED', 403);
+        await authorizeMailWork(action, req, {
+          token,
+          legacyKey: env.MAIL_COLLECTOR_KEY,
+          db,
+          hash,
+          fail,
+        });
         const owner = APPROVED_MAIL_TARGET.owner_id;
         const profile = (
           await db('user_profiles?select=id,active&id=eq.' + owner)

@@ -33,14 +33,12 @@ export async function handleMailAutomation(action, body, user, ctx) {
   const current = await box();
   const ready = Object.hasOwn(current, 'automation_config');
   async function workerProbe() {
-    if (!ctx.workerKey || ctx.workerKey.length < 32) return false;
     try {
       const response = await fetcher(
         'https://sajoansan.vercel.app/api/private-mail-worker',
         {
           method: 'POST',
           headers: {
-            Authorization: 'Bearer ' + ctx.workerKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ kind: 'probe', mailboxId: TARGET.mailbox_id }),
@@ -192,31 +190,28 @@ export async function handleMailAutomation(action, body, user, ctx) {
     throw fail('REPORT_LIMIT', 409);
   }
   if (action === 'private-mail-automation-config') {
-    if (
-      ['enabled', 'readStateVerified', 'analysisConsent'].some(
-        (key) => typeof body[key] !== 'boolean',
-      )
-    )
+    if (typeof body.enabled !== 'boolean')
       throw fail('AUTOMATION_CONFIG_INVALID');
+    const previous = current.automation_config ?? {};
     if (
       body.enabled &&
-      (!body.readStateVerified ||
-        !(await workerProbe()) ||
+      (previous.approvalSource !== 'owner-request' ||
+        previous.analysisConsent !== true ||
+        !previous.analysisConsentAt)
+    )
+      throw fail('AUTOMATION_NOT_CONFIGURED', 409);
+    if (
+      body.enabled &&
+      (!(await workerProbe()) ||
         !(await rpc('private_mail_scheduler_ready', {})))
     )
       throw fail('AUTOMATION_CONNECTION_REQUIRED', 409);
-    if (body.analysisConsent && !ctx.aiKey)
-      throw fail('AI_NOT_CONFIGURED', 503);
-    const previous = current.automation_config ?? {};
+    if (body.enabled && !ctx.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
+    if (body.enabled && (await connectedNotes()).notesGranted !== true)
+      throw fail('NOTES_PERMISSION_REQUIRED', 409);
     const config = {
+      ...previous,
       enabled: body.enabled,
-      readStateVerified: body.readStateVerified,
-      analysisConsent: body.analysisConsent,
-      analysisConsentAt: body.analysisConsent
-        ? previous.analysisConsent && previous.analysisConsentAt
-          ? previous.analysisConsentAt
-          : new Date().toISOString()
-        : null,
     };
     await db(
       'private_mailboxes?id=eq.' + current.id + '&owner_id=eq.' + user.id,
@@ -230,7 +225,10 @@ export async function handleMailAutomation(action, body, user, ctx) {
         },
       },
     );
-    if (body.enabled) await rpc('private_mail_dispatch', { p_box: current.id });
+    if (body.enabled) {
+      await rpc('private_mail_job_start', { p_box: current.id, p_force: true });
+      await rpc('private_mail_dispatch', { p_box: current.id });
+    }
     return json({ saved: true, config });
   }
   if (action === 'private-mail-run-now') {

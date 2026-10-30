@@ -4,6 +4,7 @@ begin;
 alter table public.private_mailboxes
  add column if not exists automation_config jsonb not null default '{"enabled":false,"readStateVerified":false,"analysisConsent":false,"analysisConsentAt":null}',
  add column if not exists automation_job jsonb,
+ add column if not exists automation_dispatch jsonb not null default '{}' check(jsonb_typeof(automation_dispatch)='object'),
  add column if not exists automation_next_at timestamptz,
  add column if not exists briefing_pages jsonb not null default '{}';
 alter table public.private_mail_messages
@@ -26,7 +27,7 @@ returns boolean language sql stable security invoker set search_path='' as $$
  select exists(select 1 from public.private_mailboxes b join public.user_profiles p on p.id=b.owner_id and p.active
  where b.id=p_box and b.id='39045005-313e-42e1-b50c-2394b3b6ff26'::uuid
  and b.owner_id='2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid and b.enabled
- and b.automation_config->>'enabled'='true' and b.automation_config->>'readStateVerified'='true');
+ and b.automation_config->>'enabled'='true');
 $$;
 -- Optional scheduler file replaces only this dispatcher. Core has no network dependency.
 create or replace function public.private_mail_dispatch(p_box uuid)
@@ -35,6 +36,13 @@ returns boolean language sql security invoker set search_path='' as $$ select fa
 -- Safe before the optional scheduler is installed; metadata-only implementation replaces it.
 create or replace function public.private_mail_scheduler_ready()
 returns boolean language sql stable security invoker set search_path='' as $$ select false; $$;
+
+-- Called only after the corresponding work lease has been verified by its completion RPC.
+create or replace function public.private_mail_dispatch_clear(p_box uuid,p_kind text,p_target text)
+returns void language sql security invoker set search_path='' as $$
+ update public.private_mailboxes b set automation_dispatch=(select coalesce(jsonb_object_agg(key,value),'{}'::jsonb)
+ from jsonb_each(b.automation_dispatch) where not (value->>'kind'=p_kind and value->>'target'=p_target)) where b.id=p_box;
+$$;
 
 create or replace function public.private_mail_job_start(p_box uuid,p_force boolean default false)
 returns jsonb language plpgsql security invoker set search_path='' as $$
@@ -108,6 +116,7 @@ begin
  -- Successful chunks reset the crash/error budget, independent of total chunk count.
  if p_error is null then j=jsonb_set(j,'{attempts}','0'::jsonb); end if;
  update public.private_mailboxes set automation_job=j where id=p_box;
+ perform public.private_mail_dispatch_clear(p_box,'collect',p_job::text);
  if state='queued' then perform public.private_mail_dispatch(p_box); end if;
  return j;
 end; $$;
@@ -177,6 +186,53 @@ returns boolean language sql stable security invoker set search_path='' as $$
  and m.report_day=p_day and m.analysis_manual_selected_at is not null and m.analysis_status='ready' and m.analysis is not null)));
 $$;
 
+-- Capabilities are short-lived sessions; each HTTP call rechecks the current target.
+create or replace function public.private_mail_dispatch_target_allowed(p_box uuid,p_kind text,p_target text)
+returns boolean language plpgsql stable security invoker set search_path='' as $$
+declare b public.private_mailboxes; d date;
+begin
+ select * into b from public.private_mailboxes where id=p_box;
+ if b.id is distinct from '39045005-313e-42e1-b50c-2394b3b6ff26'::uuid
+ or b.owner_id is distinct from '2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid or not b.enabled
+ or not exists(select 1 from public.user_profiles p where p.id=b.owner_id and p.active) then return false; end if;
+ if p_kind='collect' then
+  if b.automation_job->>'id' is distinct from p_target then return false; end if;
+  -- Pausing stops new claims while the active chunk can finish and release POP state.
+  if b.automation_job->>'status'='running' and (b.automation_job->>'leaseUntil')::timestamptz>clock_timestamp() then return true; end if;
+  return public.private_mail_automation_allowed(p_box) and coalesce(b.automation_job->>'status' in ('queued','running')
+   and not coalesce((b.automation_job->>'stopRequested')::boolean,false),false);
+ end if;
+ if not public.private_mail_automation_allowed(p_box) or b.automation_config->>'analysisConsent' is distinct from 'true' then return false; end if;
+ if p_kind='analyze' then
+  if coalesce(p_target,'') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return false; end if;
+  return exists(select 1 from public.private_mail_messages m where m.id=p_target::uuid and m.mailbox_id=p_box
+   and public.private_mail_analysis_allowed(m.id) and m.analysis_status in ('pending','failed','processing'));
+ elsif p_kind='report' then
+  if coalesce(p_target,'') !~ '^\d{4}-\d{2}-\d{2}$' then return false; end if;
+  d=p_target::date;
+  return public.private_mail_report_allowed(p_box,d) and coalesce((b.briefing_pages->p_target->>'dirty'='true'
+   or (b.briefing_pages->p_target->>'leaseUntil')::timestamptz>clock_timestamp()),false);
+ end if;
+ return false;
+ exception when others then return false;
+end; $$;
+
+create or replace function public.private_mail_dispatch_auth(p_hash text)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; cap jsonb;
+begin
+ if p_hash is null or p_hash !~ '^[A-Za-z0-9_-]{43}$' then return null; end if;
+ select * into b from public.private_mailboxes where id='39045005-313e-42e1-b50c-2394b3b6ff26'::uuid for update;
+ cap=b.automation_dispatch->p_hash;
+ if cap is null or (cap->>'expiresAt')::timestamptz is null or (cap->>'expiresAt')::timestamptz<=clock_timestamp()
+ or public.private_mail_dispatch_target_allowed(b.id,cap->>'kind',cap->>'target') is distinct from true then return null; end if;
+ cap=cap||jsonb_build_object('claimed',true,'claimedAt',coalesce((cap->>'claimedAt')::timestamptz,clock_timestamp()));
+ update public.private_mailboxes set automation_dispatch=jsonb_set(automation_dispatch,array[p_hash],cap) where id=b.id;
+ return jsonb_build_object('kind',cap->>'kind','target',cap->>'target','mailboxId',b.id)||
+ case when cap->>'kind'='collect' then jsonb_build_object('jobRunning',b.automation_job->>'status'='running'
+ and coalesce((b.automation_job->>'leaseUntil')::timestamptz>clock_timestamp(),false)) else '{}'::jsonb end;
+end; $$;
+
 create or replace function public.private_mail_analysis_claim(p_message uuid,p_lease uuid)
 returns setof public.private_mail_messages language sql security invoker set search_path='' as $$
  update public.private_mail_messages m set analysis_lease=p_lease,analysis_lease_until=clock_timestamp()+interval '5 minutes',
@@ -204,6 +260,7 @@ begin
  d=m.report_day::text;page=coalesce(b.briefing_pages->d,'{}'::jsonb);
  page=page||jsonb_build_object('revision',coalesce((page->>'revision')::integer,0)+1,'dirty',true);
  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[d],page) where id=b.id;
+ perform public.private_mail_dispatch_clear(b.id,'analyze',p_message::text);
  perform public.private_mail_dispatch(b.id);return true;
 end; $$;
 
@@ -212,11 +269,16 @@ returns boolean language plpgsql security invoker set search_path='' as $$
 declare m public.private_mail_messages;
 begin
  if p_code is null or p_code !~ '^[A-Z_]{1,64}$' then raise exception 'ANALYSIS_ERROR'; end if;
+ perform 1 from public.private_mailboxes b join public.private_mail_messages m0 on m0.mailbox_id=b.id where m0.id=p_message for update of b;
  update public.private_mail_messages set analysis_status='failed',analysis_error=p_code,analysis_lease=null,analysis_lease_until=null,
  analysis_next_at=clock_timestamp()+make_interval(secs=>least(900,30*power(2,greatest(0,analysis_attempts-1))::integer))
  where id=p_message and public.private_mail_analysis_allowed(id)
  and analysis_status='processing' and analysis_lease=p_lease and analysis_lease_until>clock_timestamp()
  returning * into m;
+ if m.id is not null then
+  perform public.private_mail_dispatch_clear(m.mailbox_id,'analyze',p_message::text);
+  perform public.private_mail_dispatch(m.mailbox_id);
+ end if;
  return m.id is not null;
 end; $$;
 
@@ -268,7 +330,8 @@ begin
  or page->>'lease' is distinct from p_lease::text then return false; end if;
  page=page||'{"lease":null,"leaseUntil":null}'::jsonb;
  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[d],page) where id=p_box;
- if (page->>'dirty')::boolean then perform public.private_mail_dispatch(p_box); end if;return true;
+ perform public.private_mail_dispatch_clear(p_box,'report',d);
+ perform public.private_mail_dispatch(p_box);return true;
 end; $$;
 
 create or replace function public.private_mail_analysis_enqueue()
@@ -283,8 +346,14 @@ begin
   perform public.private_mail_dispatch(b.id);
  end if;return new;
 end; $$;
-drop trigger if exists private_mail_analysis_enqueue on public.private_mail_messages;
-create trigger private_mail_analysis_enqueue after insert on public.private_mail_messages for each row execute function public.private_mail_analysis_enqueue();
+do $$ begin
+ if not exists(select 1 from pg_trigger where tgrelid='public.private_mail_messages'::regclass and tgname='private_mail_analysis_enqueue') then
+  create trigger private_mail_analysis_enqueue after insert on public.private_mail_messages for each row execute function public.private_mail_analysis_enqueue();
+ elsif not exists(select 1 from pg_trigger where tgrelid='public.private_mail_messages'::regclass and tgname='private_mail_analysis_enqueue'
+  and tgfoid='public.private_mail_analysis_enqueue()'::regprocedure and tgtype=5 and tgenabled='O') then
+  raise exception 'ANALYSIS_TRIGGER_CONFLICT';
+ end if;
+end $$;
 
 create or replace function public.private_mail_automation_tick()
 returns integer language plpgsql security invoker set search_path='' as $$
@@ -304,7 +373,7 @@ end; $$;
 do $$ declare f record; begin
  for f in select p.oid::regprocedure as signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname='public' and p.proname in ('private_mail_automation_allowed','private_mail_dispatch','private_mail_scheduler_ready','private_mail_job_start','private_mail_job_claim',
- 'private_mail_job_finish','private_mail_job_stop','private_mail_analysis_select','private_mail_analysis_allowed','private_mail_report_allowed','private_mail_analysis_claim','private_mail_analysis_finish','private_mail_analysis_fail',
+ 'private_mail_job_finish','private_mail_job_stop','private_mail_dispatch_clear','private_mail_dispatch_target_allowed','private_mail_dispatch_auth','private_mail_analysis_select','private_mail_analysis_allowed','private_mail_report_allowed','private_mail_analysis_claim','private_mail_analysis_finish','private_mail_analysis_fail',
  'private_mail_briefing_claim','private_mail_briefing_save','private_mail_briefing_complete','private_mail_briefing_release','private_mail_analysis_enqueue','private_mail_automation_tick') loop
  execute format('revoke all on function %s from public,anon,authenticated',f.signature);
  execute format('grant execute on function %s to service_role',f.signature);

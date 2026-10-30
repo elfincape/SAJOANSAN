@@ -6,7 +6,10 @@ if (!process.env.PGLITE_MODULE)
     'Set PGLITE_MODULE to a local @electric-sql/pglite dist/index.js',
   );
 const { PGlite } = await import(process.env.PGLITE_MODULE);
-const db = new PGlite();
+const { pgcrypto } = await import(
+  new URL('./contrib/pgcrypto.js', process.env.PGLITE_MODULE).href
+);
+const db = new PGlite({ extensions: { pgcrypto } });
 const owner = '00000000-0000-4000-8000-000000000001',
   other = '00000000-0000-4000-8000-000000000002',
   box = '00000000-0000-4000-8000-000000000003',
@@ -601,6 +604,553 @@ try {
   );
   console.log(
     'PASS durable queue PostgreSQL: disabled default, scoped jobs, manual lease, fencing, receipt checks, immediate continuation, bounded retries, consent cutoff and revision-safe briefing',
+  );
+  await db.exec(`reset role;create schema extensions;create extension pgcrypto with schema extensions;
+    create schema net;create schema cron;
+    create table net.http_request_queue(id bigint,headers jsonb,url text);
+    grant all on net.http_request_queue to public;
+    create view cron.job as select 'private-mail-recovery'::text jobname,true active,'select public.private_mail_automation_tick()'::text command;
+    create function cron.schedule(text,text,text) returns bigint language sql as $$ select 1::bigint $$;
+    create function net.http_post(url text,body jsonb default '{}',params jsonb default '{}',headers jsonb default '{}',timeout_milliseconds integer default 5000)
+    returns bigint language plpgsql as $$ declare requests jsonb;begin
+      requests=coalesce(nullif(current_setting('private_mail.fixture_requests',true),''),'[]')::jsonb;
+      requests=requests||jsonb_build_object('url',url,'body',body,'headers',headers,'timeout',timeout_milliseconds);
+      perform set_config('private_mail.fixture_requests',requests::text,false);return jsonb_array_length(requests);end;$$;`);
+  await db.exec(
+    await readFile(
+      new URL('../supabase/sql/private-mail-scheduler.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  const queueAcl = (
+    await db.query(
+      "select has_column_privilege('anon','net.http_request_queue','headers','SELECT') as anon_headers,has_column_privilege('authenticated','net.http_request_queue','headers','SELECT') as user_headers,has_column_privilege('authenticated','net.http_request_queue','id','SELECT') as user_id,has_table_privilege('authenticated','net.http_request_queue','INSERT') as user_insert,has_table_privilege('authenticated','net.http_request_queue','UPDATE') as user_update,has_table_privilege('service_role','net.http_request_queue','SELECT') as server_read",
+    )
+  ).rows[0];
+  assert.deepEqual(
+    queueAcl,
+    {
+      anon_headers: false,
+      user_headers: false,
+      user_id: false,
+      user_insert: false,
+      user_update: false,
+      server_read: true,
+    },
+    'only server actors may read transport credentials or enqueue requests',
+  );
+  await db.query('update public.user_profiles set active=true where id=$1', [
+    autoOwner,
+  ]);
+  await db.query(
+    `update public.private_mailboxes set automation_config='{"enabled":true,"readStateVerified":false,"analysisConsent":true,"analysisConsentAt":"2026-01-01T00:00:00Z"}',
+    automation_job=null,automation_dispatch='{}',automation_next_at=null,last_counts='{}',lease=null,lease_until=null,briefing_pages='{}' where id=$1`,
+    [autoBox],
+  );
+  await db.query(
+    "update public.private_mail_messages set analysis_status='ready',analysis_lease=null,analysis_lease_until=null where mailbox_id=$1",
+    [autoBox],
+  );
+  await db.exec('set role service_role;');
+  assert.equal(
+    await rpc('private_mail_scheduler_ready'),
+    true,
+    'installed cron/net/auth/crypto readiness',
+  );
+  await db.query(
+    "select set_config('private_mail.fixture_requests','[]',false)",
+  );
+  const capJob = await rpc('private_mail_job_start', [autoBox, false]);
+  assert.equal(
+    capJob.status,
+    'queued',
+    'read-state flag remains false without blocking approved automation',
+  );
+  const requests = async () =>
+    (
+      await db.query(
+        "select current_setting('private_mail.fixture_requests')::jsonb value",
+      )
+    ).rows[0].value;
+  assert.equal((await requests()).length, 1);
+  const wire = (await requests())[0];
+  assert.equal(
+    wire.url,
+    'https://sajoansan.vercel.app/api/private-mail-worker',
+  );
+  assert.equal(wire.timeout, 250000);
+  const raw = wire.headers.Authorization.slice('Bearer '.length);
+  assert.match(raw, /^pmjob_[0-9a-f]{64}$/);
+  const digest = async (token) =>
+    (
+      await db.query(
+        "select rtrim(translate(encode(extensions.digest(convert_to($1,'UTF8'),'sha256'),'base64'),'+/','-_'),'=') value",
+        [token],
+      )
+    ).rows[0].value;
+  const firstHash = await digest(raw);
+  assert.match(firstHash, /^[A-Za-z0-9_-]{43}$/);
+  let dispatchState = (
+    await db.query(
+      'select automation_dispatch from public.private_mailboxes where id=$1',
+      [autoBox],
+    )
+  ).rows[0].automation_dispatch;
+  assert.equal(Object.hasOwn(dispatchState, firstHash), true);
+  assert.equal(
+    JSON.stringify(dispatchState).includes(raw),
+    false,
+    'raw capability is absent from persisted state',
+  );
+  assert.equal(await rpc('private_mail_dispatch_auth', ['invalid']), null);
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    false,
+    'unclaimed dispatch suppressed for sixty seconds',
+  );
+  assert.equal((await requests()).length, 1);
+  let auth = await rpc('private_mail_dispatch_auth', [firstHash]);
+  assert.equal(auth.kind, 'collect');
+  assert.equal(auth.target, capJob.id);
+  assert.equal(auth.jobRunning, false);
+  assert.deepEqual(
+    await rpc('private_mail_dispatch_auth', [firstHash]),
+    auth,
+    'same session may authenticate subsequent HTTP calls',
+  );
+  const initialClaimedAt = (
+    await db.query(
+      "select automation_dispatch->$2->>'claimedAt' value from public.private_mailboxes where id=$1",
+      [autoBox, firstHash],
+    )
+  ).rows[0].value;
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    false,
+    'auth-to-claim interleave preserves session during sixty-second grace',
+  );
+  assert.deepEqual(await rpc('private_mail_dispatch_auth', [firstHash]), auth);
+  assert.equal(
+    (
+      await db.query(
+        "select automation_dispatch->$2->>'claimedAt' value from public.private_mailboxes where id=$1",
+        [autoBox, firstHash],
+      )
+    ).rows[0].value,
+    initialClaimedAt,
+    'repeat authentication never extends claimedAt',
+  );
+
+  await rpc('private_mail_job_claim', [autoBox, capJob.id, lease]);
+  assert.equal(
+    (await rpc('private_mail_dispatch_auth', [firstHash])).jobRunning,
+    true,
+  );
+  assert.equal(
+    await rpc('private_mail_job_claim', [autoBox, capJob.id, lease2]),
+    null,
+    'replayed HTTP does not duplicate active work',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    false,
+    'active job lease skips dispatch',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','false') where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    (await rpc('private_mail_dispatch_auth', [firstHash])).jobRunning,
+    true,
+    'paused active chunk remains authorized to finish',
+  );
+  assert.equal(
+    await rpc('private_mail_job_claim', [autoBox, capJob.id, lease2]),
+    null,
+    'pause blocks all new claims',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    false,
+    'pause prevents new dispatch',
+  );
+  assert.equal(
+    (
+      await rpc('private_mail_job_finish', [
+        autoBox,
+        capJob.id,
+        lease,
+        null,
+        'POP_FAILED',
+      ])
+    ).status,
+    'stopped',
+    'paused chunk finishes with stopped job',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [firstHash]),
+    null,
+    'finished paused session is revoked',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','true') where id=$1",
+    [autoBox],
+  );
+
+  await db.query(
+    "update public.private_mailboxes set automation_job=automation_job || jsonb_build_object('status','queued','lease',null,'leaseUntil',null,'notBefore',clock_timestamp()-interval '1 second') where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    true,
+    'verified paused finish cleared the old session',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [firstHash]),
+    null,
+    'finished session stays rejected',
+  );
+  let latest = (await requests()).at(-1);
+  let latestHash = await digest(latest.headers.Authorization.slice(7));
+  await rpc('private_mail_dispatch_auth', [latestHash]);
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    false,
+    'claimed session without lease retains the authentication grace',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch=jsonb_set(automation_dispatch,array[$2,'claimedAt'],to_jsonb((clock_timestamp()-interval '61 seconds')::text)) where id=$1",
+    [autoBox, latestHash],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    true,
+    'claimed crash before work claim recovers after sixty seconds',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [latestHash]),
+    null,
+    'recovered old session is rejected',
+  );
+  latest = (await requests()).at(-1);
+  latestHash = await digest(latest.headers.Authorization.slice(7));
+  await rpc('private_mail_dispatch_auth', [latestHash]);
+  assert.ok(await rpc('private_mail_job_claim', [autoBox, capJob.id, lease2]));
+  const nextChunk = {
+    id: other,
+    requestId: capJob.id,
+    startedAt: new Date().toISOString(),
+    pending: ['c'.repeat(64)],
+    total: 1,
+    processed: 0,
+    saved: 0,
+    skipped: 0,
+    undated: 0,
+    oversized: 0,
+    missing: 0,
+    phase: 'collecting',
+  };
+  await db.query(
+    'update public.private_mailboxes set last_counts=$2 where id=$1',
+    [autoBox, { cycle: nextChunk }],
+  );
+  const beforeChunk = (await requests()).length;
+  assert.equal(
+    (
+      await rpc('private_mail_job_finish', [
+        autoBox,
+        capJob.id,
+        lease2,
+        nextChunk,
+        null,
+      ])
+    ).status,
+    'queued',
+  );
+  assert.equal(
+    (await requests()).length,
+    beforeChunk + 1,
+    'verified chunk completion dispatches immediately despite claimed grace',
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [latestHash]),
+    null,
+    'chunk completion clears old session',
+  );
+  latest = (await requests()).at(-1);
+  latestHash = await digest(latest.headers.Authorization.slice(7));
+  assert.equal(await rpc('private_mail_dispatch', [autoBox]), false);
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch=jsonb_set(automation_dispatch,array[$2,'issuedAt'],to_jsonb((clock_timestamp()-interval '61 seconds')::text)) where id=$1",
+    [autoBox, latestHash],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch', [autoBox]),
+    true,
+    'unclaimed lost delivery recovers after sixty seconds',
+  );
+  latest = (await requests()).at(-1);
+  latestHash = await digest(latest.headers.Authorization.slice(7));
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch=jsonb_set(automation_dispatch,array[$2,'expiresAt'],to_jsonb((clock_timestamp()-interval '1 second')::text)) where id=$1",
+    [autoBox, latestHash],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [latestHash]),
+    null,
+    'expired session rejected',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','false') where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [latestHash]),
+    null,
+    'disabled mailbox rejects session',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','true'),automation_dispatch='{}',automation_job=null where id=$1",
+    [autoBox],
+  );
+  await db.query(
+    "select set_config('private_mail.fixture_requests','[]',false)",
+  );
+  for (let i = 0; i < 20; i++)
+    await db.query(
+      `insert into public.private_mail_messages(mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files,analysis_next_at)
+    values($1,$2,$3,$3,'cap fixture','sender',now(),'[]',now())`,
+      [autoBox, autoOwner, (100 + i).toString(16).padStart(64, '0')],
+    );
+  let burst = await requests();
+  assert.equal(
+    burst.length,
+    5,
+    'five analysis targets per dispatch with duplicate suppression',
+  );
+  let capMessage = burst[0].body.messageId,
+    analysisHash = await digest(burst[0].headers.Authorization.slice(7));
+  assert.equal(
+    (await rpc('private_mail_dispatch_auth', [analysisHash])).target,
+    capMessage,
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{analysisConsent}','false') where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [analysisHash]),
+    null,
+    'revoked analysis consent rejects existing session',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{analysisConsent}','true') where id=$1",
+    [autoBox],
+  );
+  await db.query(
+    'update public.private_mail_messages set analysis_excluded=true where id=$1',
+    [capMessage],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [analysisHash]),
+    null,
+    'new exclusion rejects existing session',
+  );
+  await db.query(
+    'update public.private_mail_messages set analysis_excluded=false where id=$1',
+    [capMessage],
+  );
+  assert.ok(
+    (
+      await db.query(
+        'select * from public.private_mail_analysis_claim($1,$2)',
+        [capMessage, lease],
+      )
+    ).rows.length,
+  );
+  assert.equal(
+    await rpc('private_mail_analysis_fail', [capMessage, lease, 'AI_FAILED']),
+    true,
+  );
+  assert.equal(
+    (
+      await db.query(
+        'select automation_dispatch ? $2 present from public.private_mailboxes where id=$1',
+        [autoBox, analysisHash],
+      )
+    ).rows[0].present,
+    false,
+    'verified analysis failure clears its session',
+  );
+  const nextAnalysis = (await requests()).find(
+    (request) =>
+      request.body.kind === 'analyze' && request.body.messageId !== capMessage,
+  );
+  const finishId = nextAnalysis.body.messageId,
+    finishHash = await digest(nextAnalysis.headers.Authorization.slice(7));
+  await rpc('private_mail_dispatch_auth', [finishHash]);
+  assert.ok(
+    (
+      await db.query(
+        'select * from public.private_mail_analysis_claim($1,$2)',
+        [finishId, lease2],
+      )
+    ).rows.length,
+  );
+  assert.equal(
+    await rpc('private_mail_analysis_finish', [
+      finishId,
+      lease2,
+      { summary: 'fixture' },
+    ]),
+    true,
+  );
+  assert.equal(
+    (
+      await db.query(
+        'select automation_dispatch ? $2 present from public.private_mailboxes where id=$1',
+        [autoBox, finishHash],
+      )
+    ).rows[0].present,
+    false,
+    'verified analysis completion clears its session',
+  );
+
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch='{}' where id=$1",
+    [autoBox],
+  );
+  const pending = (
+    await db.query(
+      "select id from public.private_mail_messages where mailbox_id=$1 and analysis_status='pending' and not analysis_excluded order by created_at,id",
+      [autoBox],
+    )
+  ).rows;
+  const artificial = {};
+  for (const [i, row] of pending.slice(0, 16).entries())
+    artificial['A'.repeat(41) + String(i).padStart(2, '0')] = {
+      kind: 'analyze',
+      target: row.id,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 600000).toISOString(),
+      claimed: false,
+    };
+  await db.query(
+    'update public.private_mailboxes set automation_dispatch=$2 where id=$1',
+    [autoBox, artificial],
+  );
+  await rpc('private_mail_dispatch', [autoBox]);
+  dispatchState = (
+    await db.query(
+      'select automation_dispatch from public.private_mailboxes where id=$1',
+      [autoBox],
+    )
+  ).rows[0].automation_dispatch;
+  assert.ok(
+    Object.keys(dispatchState).length <= 16,
+    'hard capability storage limit',
+  );
+  await db.query(
+    'update public.private_mailboxes set enabled=false where id=$1',
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [analysisHash]),
+    null,
+    'mailbox disable revokes capabilities immediately',
+  );
+  await db.query(
+    'update public.private_mailboxes set enabled=true where id=$1',
+    [autoBox],
+  );
+  await db.exec('reset role;');
+  await db.query('update public.user_profiles set active=false where id=$1', [
+    autoOwner,
+  ]);
+  await db.exec('set role service_role;');
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [analysisHash]),
+    null,
+    'inactive owner revokes capabilities',
+  );
+  await db.exec('reset role;');
+  await db.query('update public.user_profiles set active=true where id=$1', [
+    autoOwner,
+  ]);
+  await db.exec('set role service_role;');
+  await db.query(
+    "update public.private_mail_messages set analysis_status='ready' where mailbox_id=$1",
+    [autoBox],
+  );
+  const reportDays = {
+    '2026-02-01': { dirty: true, revision: 1, pageId: 'app-page-1' },
+    '2026-02-02': { dirty: true, revision: 1, pageId: 'app-page-2' },
+    '2026-02-03': { dirty: true, revision: 1, pageId: 'app-page-3' },
+    '2026-02-04': { dirty: true, revision: 1, pageId: 'app-page-4' },
+  };
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch='{}',automation_job=null,briefing_pages=$2 where id=$1",
+    [autoBox, reportDays],
+  );
+  await db.query(
+    "select set_config('private_mail.fixture_requests','[]',false)",
+  );
+  assert.equal(await rpc('private_mail_dispatch', [autoBox]), true);
+  const reports = await requests();
+  assert.equal(reports.length, 3, 'at most three report targets per dispatch');
+  const reportHash = await digest(reports[0].headers.Authorization.slice(7)),
+    reportDay = reports[0].body.day;
+  assert.equal(
+    (await rpc('private_mail_dispatch_auth', [reportHash])).kind,
+    'report',
+  );
+  const reportCap = (
+    await db.query(
+      'select automation_dispatch->$2 cap from public.private_mailboxes where id=$1',
+      [autoBox, reportHash],
+    )
+  ).rows[0].cap;
+  assert.ok(
+    Math.abs(
+      Date.parse(reportCap.expiresAt) - Date.parse(reportCap.issuedAt) - 600000,
+    ) < 1,
+    'ten-minute lifetime',
+  );
+  await rpc('private_mail_briefing_claim', [autoBox, reportDay, lease]);
+  await rpc('private_mail_briefing_complete', [autoBox, reportDay, lease]);
+  assert.equal(
+    (await rpc('private_mail_dispatch_auth', [reportHash])).kind,
+    'report',
+    'completed report retains auth until lease release',
+  );
+  await rpc('private_mail_briefing_release', [autoBox, reportDay, lease]);
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [reportHash]),
+    null,
+    'released clean report session is no longer eligible',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch=jsonb_set(automation_dispatch,array[$2,'target'],to_jsonb('not-a-day'::text)) where id=$1",
+    [autoBox, reportHash],
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_auth', [reportHash]),
+    null,
+    'malformed or changed target fails closed',
+  );
+  await db.exec('reset role;set role authenticated;');
+  await assert.rejects(
+    () => rpc('private_mail_dispatch_auth', [analysisHash]),
+    /permission denied/,
+  );
+  await assert.rejects(
+    () => rpc('private_mail_dispatch', [autoBox]),
+    /permission denied/,
+  );
+  console.log(
+    'PASS dispatch capabilities PostgreSQL: fixed TLS worker, hash-only state, ten-minute sessions, target/consent/exclusion revocation, lease fencing, sixty-second recovery, bounded dispatch and service-only authentication',
   );
 } finally {
   await db.close();

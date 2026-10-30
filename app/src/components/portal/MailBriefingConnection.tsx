@@ -5,25 +5,16 @@ import { connectOneDrive } from '../../lib/onedrive';
 type AutomationStatus = Awaited<
   ReturnType<typeof privateMail.automationStatus>
 >;
-type AutomationConfig = Pick<
-  AutomationStatus['config'],
-  'enabled' | 'readStateVerified' | 'analysisConsent'
->;
-const initialConfig: AutomationConfig = {
-  enabled: false,
-  readStateVerified: false,
-  analysisConsent: false,
-};
 const reasons: Record<string, string> = {
   AUTH_REQUIRED: '본인 계정으로 다시 로그인해 주세요.',
   OWNER_ONLY: '본인 계정에서만 사용할 수 있습니다.',
   OWNER_REQUIRED: '본인 계정에서만 사용할 수 있습니다.',
-  AUTOMATION_SCHEMA_REQUIRED: '자동화 저장 설정이 준비되지 않았습니다.',
+  AUTOMATION_SCHEMA_REQUIRED: '서버 자동화를 준비하고 있습니다.',
   AUTOMATION_CONNECTION_REQUIRED:
-    '서버 실행·예약과 읽지 않음 확인이 필요합니다.',
+    '서버 자동화 실행 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.',
   AI_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
   MAILBOX_BUSY_OR_AUTOMATION_DISABLED:
-    '현재 수집 중이거나 자동 수집이 꺼져 있습니다. 저장된 설정과 작업 상태를 확인해 주세요.',
+    '현재 작업이 진행 중이거나 자동화가 일시정지되어 있습니다.',
   NO_ACTIVE_JOB: '현재 중지할 작업이 없습니다. 상태를 다시 확인해 주세요.',
   OWNER_CONNECTION_REQUIRED: '본인의 Microsoft 계정을 먼저 연결해 주세요.',
   MICROSOFT_CONNECTION_REQUIRED: 'Microsoft 계정을 먼저 연결해 주세요.',
@@ -32,11 +23,9 @@ const reasons: Record<string, string> = {
     '할 일 목록 노트북의 일일정리 섹션에 접근할 수 없습니다.',
   NOTEBOOK_SHARED: '대상 노트북의 공유 설정을 확인해 주세요.',
   NOTES_RATE_LIMITED: 'OneNote 요청이 많습니다. 잠시 후 다시 시도해 주세요.',
-  READ_STATE_VERIFICATION_REQUIRED:
-    '원본 메일함의 읽지 않음 상태를 확인한 뒤 체크해 주세요.',
   ANALYSIS_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
-  AUTOMATION_NOT_CONFIGURED: '서버 자동화 설정이 준비되지 않았습니다.',
-  AUTOMATION_SCHEMA_NOT_READY: '자동화 저장 설정이 준비되지 않았습니다.',
+  AUTOMATION_NOT_CONFIGURED: '서버 자동화를 준비하고 있습니다.',
+  AUTOMATION_SCHEMA_NOT_READY: '서버 자동화를 준비하고 있습니다.',
   AUTOMATION_WORKER_NOT_READY: '서버 작업 실행 준비가 필요합니다.',
   MAILBOX_BUSY: '현재 메일 수집이 진행 중입니다. 완료 후 다시 실행해 주세요.',
 };
@@ -76,7 +65,6 @@ const analysisLabels: Record<string, string> = {
 
 export function MailBriefingConnection() {
   const [data, setData] = useState<AutomationStatus | null>(null);
-  const [draft, setDraft] = useState<AutomationConfig>(initialConfig);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [loadError, setLoadError] = useState(false);
@@ -84,8 +72,7 @@ export function MailBriefingConnection() {
   const request = useRef(0);
   const statusPending = useRef<number | null>(null);
   const locked = useRef(false);
-  const configLoaded = useRef(false);
-  const refresh = useCallback(async (syncConfig = false) => {
+  const refresh = useCallback(async () => {
     const id = ++request.current;
     statusPending.current = id;
     try {
@@ -93,14 +80,6 @@ export function MailBriefingConnection() {
       if (!mounted.current || id !== request.current) return;
       setData(result);
       setLoadError(false);
-      if (!configLoaded.current || syncConfig) {
-        setDraft({
-          enabled: result.config.enabled,
-          readStateVerified: result.config.readStateVerified,
-          analysisConsent: result.config.analysisConsent,
-        });
-        configLoaded.current = true;
-      }
     } catch (error) {
       if (mounted.current && id === request.current) {
         setLoadError(true);
@@ -136,7 +115,6 @@ export function MailBriefingConnection() {
     action: () => Promise<unknown>,
     success: string,
     failure: string,
-    syncConfig = false,
   ) {
     if (locked.current) return;
     locked.current = true;
@@ -147,7 +125,7 @@ export function MailBriefingConnection() {
       await action();
       if (!mounted.current) return;
       setFeedback(success);
-      await refresh(syncConfig);
+      await refresh();
     } catch (error) {
       if (mounted.current) setFeedback(readableError(error, failure));
     } finally {
@@ -161,43 +139,28 @@ export function MailBriefingConnection() {
     data.schedulerReady &&
     data.notesConnected,
   );
-  const changed =
-    data &&
-    (draft.enabled !== data.config.enabled ||
-      draft.readStateVerified !== data.config.readStateVerified ||
-      draft.analysisConsent !== data.config.analysisConsent);
-  const canSave = Boolean(
-    changed &&
-    data?.schemaReady &&
-    (!draft.enabled || (ready && draft.readStateVerified)) &&
-    (!draft.analysisConsent || data?.analysisReady),
-  );
   const canRun = Boolean(
-    ready &&
-    data?.config.enabled &&
-    data.config.readStateVerified &&
-    !loadError &&
-    !running,
+    ready && data?.config.enabled && !loadError && !running,
   );
   const setup = !data
     ? loadError
       ? '상태 확인 필요'
       : '상태 확인 중…'
     : !data.schemaReady
-      ? '자동 정리 준비 필요'
+      ? '자동화 준비 중'
       : !data.workerReady
-        ? '서버 작업 실행 준비 필요'
+        ? '서버 실행 준비 중'
         : !data.schedulerReady
-          ? '3시간 예약 실행 준비 필요'
+          ? '예약 실행 준비 중'
           : !data.notesConnected
             ? 'OneNote 연결 필요'
             : data.config.enabled
-              ? '3시간 자동 수집 켜짐'
-              : '자동 수집 꺼짐';
+              ? '3시간마다 자동화 실행'
+              : '자동화 일시정지';
   return (
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
       <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
-        <strong>자동 수집·일일정리 설정</strong> ·{' '}
+        <strong>메일 자동화</strong> ·{' '}
         {data?.notesConnected ? (
           <>
             <span>OneNote 연결됨</span> ·{' '}
@@ -207,179 +170,29 @@ export function MailBriefingConnection() {
       </summary>
       <div style={{ display: 'grid', gap: 14, padding: '12px 0', minWidth: 0 }}>
         <div>
-          <strong>OneNote 연결</strong>{' '}
-          <span role="status">
-            {!data
-              ? '연결 확인 중…'
-              : data.notesConnected
-                ? '권한 연결됨'
-                : '권한 연결 필요'}
-          </span>
           <p>
-            대상: 할 일 목록 → 일일정리. Microsoft 계정의 OneNote 읽기·쓰기와
-            연결 유지 권한을 사용합니다.
+            OneNote{' '}
+            {!data ? '확인 중…' : data.notesConnected ? '연결됨' : '연결 필요'}{' '}
+            · 할 일 목록 → 일일정리
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                void act(
-                  async () => {
-                    const result = await privateMail.briefingStatus();
-                    if (!result.readable) throw { code: result.reason };
-                    if (!result.hasWriteScope)
-                      throw { code: 'NOTES_PERMISSION_REQUIRED' };
-                  },
-                  '일일정리 섹션 접근과 쓰기 권한 연결을 확인했습니다.',
-                  'OneNote 연결을 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.',
-                )
-              }
-            >
-              OneNote 연결 확인
-            </button>
+          {data && !data.notesConnected ? (
             <button
               type="button"
               disabled={busy}
               onClick={() =>
                 void act(
                   () => connectOneDrive('mail-briefing'),
-                  'Microsoft 권한 연결을 진행합니다.',
-                  '권한 연결을 시작하지 못했습니다. 다시 시도해 주세요.',
+                  'Microsoft 연결을 진행합니다.',
+                  'OneNote 연결을 시작하지 못했습니다. 다시 시도해 주세요.',
                 )
               }
             >
-              OneNote 권한 연결
+              OneNote 연결
             </button>
-          </div>
+          ) : null}
         </div>
-        <fieldset
-          disabled={busy || !data || !data.schemaReady}
-          style={{ display: 'grid', gap: 10, margin: 0, padding: 0, border: 0 }}
-        >
-          <legend style={{ marginBottom: 8, fontWeight: 600 }}>
-            자동화 동의
-          </legend>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              flexDirection: 'row',
-              gap: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={draft.readStateVerified}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  readStateVerified: event.target.checked,
-                }))
-              }
-            />
-            <span>
-              원본 메일함에서 읽지 않음 상태가 유지되는지 직접 확인했습니다.
-            </span>
-          </label>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              flexDirection: 'row',
-              gap: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={draft.analysisConsent}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  analysisConsent: event.target.checked,
-                }))
-              }
-            />
-            <span>
-              메일 본문과 업무 사진을 AI로 분석하고 OneNote 일일정리에 기록하는
-              데 동의합니다.
-            </span>
-          </label>
-          <p style={{ margin: 0 }}>
-            동의 저장 시각 이후에 발송되고 수신 저장된 새 메일만 분석합니다.
-            기존에 쌓인 메일은 일괄 분석하지 않습니다. 첨부는 이미지만 분석하며
-            원본 사진은 변경하지 않습니다.
-          </p>
-          {data?.config.analysisConsentAt ? (
-            <p style={{ margin: 0 }}>
-              현재 분석 동의 시각: {stamp(data.config.analysisConsentAt)}
-            </p>
-          ) : null}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              flexDirection: 'row',
-              gap: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  enabled: event.target.checked,
-                }))
-              }
-            />
-            <span>3시간마다 자동 수집</span>
-          </label>
-          <p style={{ margin: 0 }}>
-            자동 수집을 켜서 저장하면 서버 예약이 시작되고, 화면을 닫아도
-            유지됩니다. 예약을 끄는 설정과 현재 작업 중지는 별도로 적용됩니다.
-          </p>
-          {data && !data.analysisReady ? (
-            <p style={{ margin: 0 }}>
-              AI 분석 연결 준비가 필요합니다. 준비 전에는 분석 동의를 켜서
-              저장할 수 없습니다.
-            </p>
-          ) : null}
-          {draft.enabled && !draft.readStateVerified ? (
-            <p style={{ margin: 0 }}>
-              자동 수집을 켜려면 원본 메일함의 읽지 않음 상태를 직접 확인한 뒤
-              체크해 주세요.
-            </p>
-          ) : null}
-          {draft.enabled && !ready ? (
-            <p style={{ margin: 0 }}>
-              OneNote와 서버 실행·예약 준비가 완료되면 자동 수집을 켤 수
-              있습니다.
-            </p>
-          ) : null}
-          <div>
-            <button
-              type="button"
-              disabled={busy || !canSave || loadError}
-              onClick={() =>
-                void act(
-                  () => privateMail.automationConfig(draft),
-                  '자동화 설정을 저장했습니다.',
-                  '설정을 저장하지 못했습니다. 상태를 다시 확인한 뒤 시도해 주세요.',
-                  true,
-                )
-              }
-            >
-              자동화 설정 저장
-            </button>
-          </div>
-        </fieldset>
         <div>
           <strong>실행 상태</strong>
-          <p>
-            지금 실행은 저장된 자동 수집 설정을 사용합니다. 설정을 켜서 저장한
-            뒤 실행할 수 있습니다.
-          </p>
           <p style={{ fontVariantNumeric: 'tabular-nums' }}>
             예약:{' '}
             {data?.config.enabled
@@ -421,6 +234,28 @@ export function MailBriefingConnection() {
             </p>
           ) : null}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              disabled={
+                busy ||
+                !data?.schemaReady ||
+                loadError ||
+                (!data.config.enabled && !ready)
+              }
+              onClick={() => {
+                if (!data) return;
+                const enabled = !data.config.enabled;
+                void act(
+                  () => privateMail.automationConfig({ enabled }),
+                  enabled
+                    ? '자동화를 재개했습니다.'
+                    : '자동화를 일시정지했습니다.',
+                  '자동화 상태를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                );
+              }}
+            >
+              {data?.config.enabled ? '자동화 일시정지' : '자동화 재개'}
+            </button>
             <button
               type="button"
               disabled={busy || !canRun}

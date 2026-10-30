@@ -1448,3 +1448,234 @@ console.log(
     'PASS Notes connection status is independent from automation schema readiness',
   );
 }
+{
+  const { authorizeMailWork } =
+    await import('../supabase/functions/onedrive-auth/private-mail-worker-auth.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const token = 'pmjob_' + 'a'.repeat(64),
+    job = '11111111-1111-4111-8111-111111111111';
+  let session = {
+    kind: 'collect',
+    target: job,
+    mailboxId: target.mailbox_id,
+    jobRunning: true,
+  };
+  const context = {
+    token,
+    hash: async (value) => {
+      assert.equal(value, token);
+      return 'h'.repeat(43);
+    },
+    fail: (code, status) => Object.assign(Error(code), { status }),
+    db: async (path, options) => {
+      assert.equal(path, 'rpc/private_mail_dispatch_auth');
+      assert.equal(options.body.p_hash, 'h'.repeat(43));
+      return session;
+    },
+  };
+  const req = (body) =>
+    new Request('https://local.invalid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  await authorizeMailWork(
+    'private-mail-background-work',
+    req({ operation: 'job-claim', mailbox: target.mailbox_id, id: job, lease }),
+    context,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-work',
+        req({
+          operation: 'job-claim',
+          mailbox: target.mailbox_id,
+          id: other,
+          lease,
+        }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  await authorizeMailWork(
+    'private-mail-background-sync',
+    req({ operation: 'attach-cycle', requestId: job }),
+    context,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-sync',
+        req({ operation: 'start-cycle', requestId: other }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  session = { ...session, jobRunning: false };
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-sync',
+        req({ operation: 'begin' }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  session = { kind: 'analyze', target: job, mailboxId: target.mailbox_id };
+  await authorizeMailWork(
+    'private-mail-background-work',
+    req({ operation: 'analyze', mailbox: target.mailbox_id, id: job }),
+    context,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-sync',
+        req({ operation: 'begin' }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  session = {
+    kind: 'report',
+    target: '2026-10-30',
+    mailboxId: target.mailbox_id,
+  };
+  await authorizeMailWork(
+    'private-mail-background-work',
+    req({ operation: 'report', mailbox: target.mailbox_id, day: '2026-10-30' }),
+    context,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-work',
+        req({
+          operation: 'report',
+          mailbox: target.mailbox_id,
+          day: '2026-10-29',
+        }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  session = null;
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-work',
+        req({ operation: 'report' }),
+        context,
+      ),
+    (e) => e.status === 403,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-work',
+        req({ operation: 'report' }),
+        {
+          ...context,
+          token: 'invalid',
+          db: async () =>
+            assert.fail('Malformed authentication must not query DB'),
+        },
+      ),
+    (e) => e.status === 403,
+  );
+  console.log(
+    'PASS scoped short-lived worker authorization before POP and paid analysis',
+  );
+}
+{
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const approvedAt = '2026-10-30T12:00:00Z';
+  let saved;
+  let resumed = 0;
+  const mailbox = {
+    id: target.mailbox_id,
+    owner_id: target.owner_id,
+    automation_config: {
+      enabled: true,
+      readStateVerified: false,
+      analysisConsent: true,
+      analysisConsentAt: approvedAt,
+      approvalSource: 'owner-request',
+    },
+  };
+  const ctx = {
+    json: (value) => Response.json(value),
+    fail: (code, status) => Object.assign(Error(code), { status }),
+    aiKey: 'fixture-key',
+    connectedNotes: async () => ({ notesGranted: true }),
+    fetcher: async (_url, options) => {
+      assert.equal(
+        options.headers.Authorization,
+        undefined,
+        'readiness probe uses no static secret',
+      );
+      return Response.json({ configured: true });
+    },
+    db: async (path, options) => {
+      if (path.startsWith('private_mailboxes?')) {
+        if (options?.method === 'PATCH') {
+          saved = options.body.automation_config;
+          return null;
+        }
+        return [mailbox];
+      }
+      if (
+        path === 'rpc/private_mail_scheduler_ready' ||
+        path === 'rpc/private_mail_dispatch'
+      )
+        return true;
+      if (path === 'rpc/private_mail_job_start') {
+        assert.equal(options.body.p_force, true);
+        resumed++;
+        return { status: 'queued' };
+      }
+      throw Error('Unexpected automation query: ' + path);
+    },
+  };
+  await handleMailAutomation(
+    'private-mail-automation-config',
+    { enabled: false },
+    { id: target.owner_id },
+    ctx,
+  );
+  assert.equal(saved.enabled, false);
+  assert.equal(saved.analysisConsent, true);
+  assert.equal(saved.readStateVerified, false);
+  assert.equal(saved.analysisConsentAt, approvedAt);
+  await handleMailAutomation(
+    'private-mail-automation-config',
+    { enabled: true },
+    { id: target.owner_id },
+    ctx,
+  );
+  assert.equal(saved.enabled, true);
+  assert.equal(saved.analysisConsentAt, approvedAt);
+  assert.equal(
+    resumed,
+    1,
+    'resuming approved automation immediately resumes its unfinished receipt',
+  );
+  await assert.rejects(
+    () =>
+      handleMailAutomation(
+        'private-mail-automation-config',
+        { enabled: true },
+        { id: target.owner_id },
+        { ...ctx, connectedNotes: async () => ({ notesGranted: false }) },
+      ),
+    /NOTES_PERMISSION_REQUIRED/,
+  );
+  console.log(
+    'PASS approved automation pause/resume needs no extra consent checkbox or fabricated read verification',
+  );
+}

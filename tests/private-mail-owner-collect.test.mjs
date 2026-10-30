@@ -801,6 +801,7 @@ const workerOptions = {
   collect: async (request, options) => {
     workerCollectCalls++;
     assert.equal(options.background, true);
+    assert.equal(request.headers.get('authorization'), 'Bearer ' + workerKey);
     const payload = await request.json();
     assert.equal(payload.continuous, true);
     assert.equal(payload.requestId, '00000000-0000-4000-8000-000000000096');
@@ -842,4 +843,318 @@ assert.deepEqual(workerOps, ['report']);
 assert.equal(workerCollectCalls, 1);
 console.log(
   'PASS durable worker boundary: fixed scoped credential/mailbox, no unauthorized POP, same persisted job identity, independent AI/report requests',
+);
+
+const jobCapability = 'pmjob_' + 'a'.repeat(64),
+  capabilityAuthorization = 'Bearer ' + jobCapability,
+  workerMailbox = '39045005-313e-42e1-b50c-2394b3b6ff26',
+  workerJob = '00000000-0000-4000-8000-000000000096',
+  capabilityCycle = '00000000-0000-4000-8000-000000000101';
+let capabilityPopCalls = 0;
+const capabilityOps = [],
+  capabilityLogs = [];
+const capabilityOptions = {
+  env,
+  logger: (entry) => capabilityLogs.push(entry),
+  fetcher: async (url, options) => {
+    assert.equal(options.headers.Authorization, capabilityAuthorization);
+    assert.equal(options.redirect, 'error');
+    const body = JSON.parse(options.body);
+    capabilityOps.push(body.operation);
+    if (url.endsWith('/private-mail-background-work')) {
+      assert.equal(body.mailbox, workerMailbox);
+      if (body.operation === 'job-claim') {
+        assert.equal(
+          capabilityPopCalls,
+          0,
+          'Edge must authorize before POP connects',
+        );
+        return Response.json({ job: { id: body.id, cycleId: null } });
+      }
+      if (body.operation === 'job-finish') {
+        assert.equal(body.id, workerJob);
+        assert.equal(body.progress.phase, 'complete');
+        return Response.json({ job: { status: 'done' } });
+      }
+      if (body.operation === 'analyze') {
+        assert.equal(body.id, '00000000-0000-4000-8000-000000000097');
+        return Response.json({ status: 'done' });
+      }
+      if (body.operation === 'report') {
+        assert.equal(body.day, '2026-10-30');
+        return Response.json({ status: 'updated' });
+      }
+    }
+    assert.ok(url.endsWith('/private-mail-background-sync'));
+    if (body.operation === 'begin')
+      return Response.json({
+        mailbox: workerMailbox,
+        lease: '00000000-0000-4000-8000-000000000102',
+        cutoff: '2026-08-18T00:00:00Z',
+        cursor: null,
+      });
+    if (body.operation === 'start-cycle')
+      return Response.json({
+        cycle: startCollection(
+          body.uidls,
+          capabilityCycle,
+          new Date().toISOString(),
+          body.requestId,
+        ),
+      });
+    if (body.operation === 'seen-many')
+      return Response.json({ seen: [], publishedSince: [] });
+    if (body.operation === 'end') return Response.json({ ok: true });
+    assert.fail('Unexpected capability operation');
+  },
+  collect: (request, options) => {
+    assert.equal(request.headers.get('authorization'), capabilityAuthorization);
+    assert.equal(options.background, true);
+    return handleOwnerCollect(request, {
+      ...options,
+      connect: async () => {
+        capabilityPopCalls++;
+        return {
+          greeting: async () => {},
+          login: async () => {},
+          uidl: async () => [],
+          list: async () => new Map(),
+          close() {},
+        };
+      },
+    });
+  },
+};
+assert.equal(env.MAIL_COLLECTOR_KEY, undefined);
+const capabilityResult = await handlePrivateMailWorker(
+  workerRequest('collect', jobCapability),
+  capabilityOptions,
+);
+assert.equal(capabilityResult.status, 200);
+assert.deepEqual(await capabilityResult.json(), { status: 'done' });
+assert.equal(capabilityPopCalls, 1);
+assert.deepEqual(capabilityOps, [
+  'job-claim',
+  'begin',
+  'start-cycle',
+  'seen-many',
+  'end',
+  'job-finish',
+]);
+for (const kind of ['analyze', 'report']) {
+  capabilityOps.length = 0;
+  assert.equal(
+    (
+      await handlePrivateMailWorker(
+        workerRequest(kind, jobCapability),
+        capabilityOptions,
+      )
+    ).status,
+    200,
+  );
+  assert.deepEqual(
+    capabilityOps,
+    [kind],
+    'Analysis/report are forwarded once for Edge validation',
+  );
+  assert.equal(capabilityPopCalls, 1);
+}
+for (const token of [
+  'invalid',
+  'pmjob_' + 'a'.repeat(63),
+  'pmjob_' + 'g'.repeat(64),
+  'pmjob_' + 'a'.repeat(65),
+]) {
+  const before = capabilityOps.length;
+  assert.equal(
+    (
+      await handlePrivateMailWorker(
+        workerRequest('collect', token),
+        capabilityOptions,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(capabilityOps.length, before);
+  assert.equal(capabilityPopCalls, 1);
+}
+for (const [label, kind, requestJob] of [
+  ['expired', 'collect', workerJob],
+  ['random-unissued', 'collect', workerJob],
+  ['target-mismatch', 'collect', '00000000-0000-4000-8000-000000000103'],
+  ['expired-analysis', 'analyze', workerJob],
+  ['expired-report', 'report', workerJob],
+]) {
+  let deniedCalls = 0;
+  const body = {
+    kind,
+    mailboxId: workerMailbox,
+    jobId: requestJob,
+    messageId: '00000000-0000-4000-8000-000000000097',
+    day: '2026-10-30',
+  };
+  const response = await handlePrivateMailWorker(
+    new Request('https://sajoansan.vercel.app/api/private-mail-worker', {
+      method: 'POST',
+      headers: { Authorization: capabilityAuthorization },
+      body: JSON.stringify(body),
+    }),
+    {
+      ...capabilityOptions,
+      fetcher: async (_url, options) => {
+        deniedCalls++;
+        const forwarded = JSON.parse(options.body);
+        assert.equal(
+          forwarded.operation,
+          kind === 'collect' ? 'job-claim' : kind,
+        );
+        if (kind === 'collect') assert.equal(forwarded.id, requestJob);
+        assert.equal(options.headers.Authorization, capabilityAuthorization);
+        return Response.json(
+          { error: 'fixture-private-token-or-provider-body' },
+          { status: 403 },
+        );
+      },
+      collect: async () =>
+        assert.fail('An unverified capability cannot reach collection'),
+    },
+  );
+  assert.equal(response.status, 403, label);
+  assert.deepEqual(await response.json(), { error: 'WORKER_AUTH_REQUIRED' });
+  assert.equal(deniedCalls, 1);
+  assert.equal(capabilityPopCalls, 1);
+}
+for (const claimJob of [
+  { id: '00000000-0000-4000-8000-000000000104', cycleId: null },
+  { id: workerJob, cycleId: 'invalid-cycle' },
+]) {
+  const response = await handlePrivateMailWorker(
+    workerRequest('collect', jobCapability),
+    {
+      ...capabilityOptions,
+      fetcher: async () => Response.json({ job: claimJob }),
+      collect: async () =>
+        assert.fail('A mismatched claim cannot reach collection'),
+    },
+  );
+  assert.equal(response.status, 503);
+  assert.equal(capabilityPopCalls, 1);
+}
+const expiredAfterClaim = [];
+assert.equal(
+  (
+    await handlePrivateMailWorker(workerRequest('collect', jobCapability), {
+      ...capabilityOptions,
+      fetcher: async (_url, options) => {
+        assert.equal(options.headers.Authorization, capabilityAuthorization);
+        const body = JSON.parse(options.body);
+        expiredAfterClaim.push(body.operation);
+        if (body.operation === 'job-claim')
+          return Response.json({ job: { id: workerJob, cycleId: null } });
+        assert.ok(['begin', 'job-finish'].includes(body.operation));
+        return Response.json(
+          { error: 'fixture-expired-capability' },
+          { status: 403 },
+        );
+      },
+    })
+  ).status,
+  403,
+);
+assert.deepEqual(expiredAfterClaim, ['job-claim', 'begin', 'job-finish']);
+assert.equal(
+  capabilityPopCalls,
+  1,
+  'An expired Edge begin cannot open POP after an earlier claim',
+);
+let probeSideEffects = 0;
+const probeOptions = {
+  env,
+  fetcher: async () => {
+    probeSideEffects++;
+    assert.fail('Probe must not call Edge');
+  },
+  collect: async () => {
+    probeSideEffects++;
+    assert.fail('Probe must not collect');
+  },
+  logger: () => probeSideEffects++,
+};
+const probeRequest = (
+  body = { kind: 'probe', mailboxId: workerMailbox },
+  auth,
+) =>
+  new Request('https://sajoansan.vercel.app/api/private-mail-worker', {
+    method: 'POST',
+    headers: auth ? { Authorization: auth } : {},
+    body: JSON.stringify(body),
+  });
+assert.deepEqual(
+  await (await handlePrivateMailWorker(probeRequest(), probeOptions)).json(),
+  { configured: true },
+);
+for (const changes of [
+  { MAIL_COLLECTION_ENABLED: 'no' },
+  { VERCEL_REGION: 'iad1' },
+  { MAIL_POP_PASSWORD: '' },
+])
+  assert.deepEqual(
+    await (
+      await handlePrivateMailWorker(probeRequest(), {
+        ...probeOptions,
+        env: { ...env, ...changes },
+      })
+    ).json(),
+    { configured: false },
+  );
+assert.equal(
+  (
+    await handlePrivateMailWorker(
+      probeRequest({
+        kind: 'probe',
+        mailboxId: workerMailbox,
+        operation: 'collect',
+      }),
+      probeOptions,
+    )
+  ).status,
+  403,
+);
+assert.equal(
+  (
+    await handlePrivateMailWorker(
+      probeRequest(
+        { kind: 'probe', mailboxId: workerMailbox, operation: 'collect' },
+        capabilityAuthorization,
+      ),
+      probeOptions,
+    )
+  ).status,
+  400,
+);
+assert.equal(
+  (
+    await handlePrivateMailWorker(
+      probeRequest(
+        {
+          kind: 'collect',
+          mailboxId: '00000000-0000-4000-8000-000000000105',
+          jobId: workerJob,
+        },
+        capabilityAuthorization,
+      ),
+      probeOptions,
+    )
+  ).status,
+  400,
+);
+assert.equal(probeSideEffects, 0);
+assert.ok(
+  capabilityLogs.every(
+    (entry) =>
+      !entry.includes(jobCapability) && !entry.includes('fixture-private'),
+  ),
+);
+console.log(
+  'PASS TTL job capability forwarding: Edge validates before POP, expired/random/mismatched claims denied, one-shot analysis/report, exact unauthenticated probe has no side effects',
 );

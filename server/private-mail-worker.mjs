@@ -31,55 +31,78 @@ export async function handlePrivateMailWorker(
     Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'POST') return json({ error: 'POST_REQUIRED' }, 405);
   const key = env.MAIL_COLLECTOR_KEY,
-    token = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
-  if (
-    typeof key !== 'string' ||
-    key.length < 32 ||
-    key.length > 256 ||
-    typeof token !== 'string' ||
-    Buffer.byteLength(token) !== Buffer.byteLength(key) ||
-    !timingSafeEqual(Buffer.from(token), Buffer.from(key))
-  )
-    return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
+    authorization = request.headers.get('authorization'),
+    token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
+  const staticKey =
+    typeof key === 'string' &&
+    key.length >= 32 &&
+    key.length <= 256 &&
+    typeof token === 'string' &&
+    Buffer.byteLength(token) === Buffer.byteLength(key) &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(key));
+  // Capability syntax only permits forwarding; Edge validates its hash, TTL and target.
+  const authorizedCandidate =
+    staticKey || /^pmjob_[a-f0-9]{64}$/.test(token ?? '');
   let body;
   try {
     const raw = await request.text();
     if (raw.length > 4096) throw Error();
     body = JSON.parse(raw);
   } catch {
-    return json({ error: 'REQUEST_INVALID' }, 400);
+    return authorizedCandidate
+      ? json({ error: 'REQUEST_INVALID' }, 400)
+      : json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
   }
   if (
-    body.mailboxId !== BOX ||
-    !['collect', 'analyze', 'report', 'probe'].includes(body.kind)
+    body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    Object.keys(body).length === 2 &&
+    body.kind === 'probe' &&
+    body.mailboxId === BOX
   )
-    return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
-  if (body.kind === 'probe')
     return json({
       configured:
         env.MAIL_COLLECTION_ENABLED === 'yes' &&
         env.VERCEL_REGION === 'icn1' &&
         typeof env.MAIL_POP_PASSWORD === 'string' &&
-        env.MAIL_POP_PASSWORD.length > 0,
+        env.MAIL_POP_PASSWORD.length > 0 &&
+        env.MAIL_POP_PASSWORD.length <= 1024 &&
+        !/[\r\n\0]/.test(env.MAIL_POP_PASSWORD),
     });
+  if (!authorizedCandidate) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
   if (
-    (body.kind === 'collect' && !UUID.test(body.jobId ?? '')) ||
-    (body.kind === 'analyze' && !UUID.test(body.messageId ?? '')) ||
-    (body.kind === 'report' && !/^\d{4}-\d{2}-\d{2}$/.test(body.day ?? ''))
+    !body ||
+    typeof body !== 'object' ||
+    Array.isArray(body) ||
+    body.mailboxId !== BOX ||
+    !['collect', 'analyze', 'report'].includes(body.kind)
+  )
+    return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
+  if (
+    (body.kind === 'collect' &&
+      (typeof body.jobId !== 'string' || !UUID.test(body.jobId))) ||
+    (body.kind === 'analyze' &&
+      (typeof body.messageId !== 'string' || !UUID.test(body.messageId))) ||
+    (body.kind === 'report' &&
+      (typeof body.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)))
   )
     return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
   async function edge(payload, timeout = 20000) {
     const response = await fetcher(BRIDGE, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + key,
+        Authorization: authorization,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ ...payload, mailbox: BOX }),
       signal: AbortSignal.timeout(timeout),
       redirect: 'error',
     });
-    if (!response.ok) throw Error('WORKER_BRIDGE_FAILED');
+    if (!response.ok)
+      throw Object.assign(Error('WORKER_BRIDGE_FAILED'), {
+        status: [401, 403].includes(response.status) ? 403 : 503,
+      });
     return response.json();
   }
   try {
@@ -112,7 +135,14 @@ export async function handlePrivateMailWorker(
     }
     const lease = crypto.randomUUID(),
       claim = await edge({ operation: 'job-claim', id: body.jobId, lease });
-    if (!claim.job) return json({ status: 'busy' });
+    if (!claim?.job) return json({ status: 'busy' });
+    if (
+      claim.job.id !== body.jobId ||
+      (claim.job.cycleId != null &&
+        (typeof claim.job.cycleId !== 'string' ||
+          !UUID.test(claim.job.cycleId)))
+    )
+      throw Error('WORKER_TARGET_REJECTED');
     let progress = null,
       error = null;
     try {
@@ -120,7 +150,7 @@ export async function handlePrivateMailWorker(
         new Request('https://sajoansan.vercel.app/api/private-mail-collect', {
           method: 'POST',
           headers: {
-            Authorization: 'Bearer ' + key,
+            Authorization: authorization,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -145,14 +175,18 @@ export async function handlePrivateMailWorker(
       error,
     });
     return json({ status: result.job?.status ?? 'processed' });
-  } catch {
+  } catch (failure) {
+    const denied = failure?.status === 403;
     logger(
       JSON.stringify({
         event: 'private_mail_worker',
         kind: body.kind,
-        code: 'WORKER_FAILED',
+        code: denied ? 'WORKER_AUTH_REQUIRED' : 'WORKER_FAILED',
       }),
     );
-    return json({ error: 'WORKER_FAILED' }, 503);
+    return json(
+      { error: denied ? 'WORKER_AUTH_REQUIRED' : 'WORKER_FAILED' },
+      denied ? 403 : 503,
+    );
   }
 }

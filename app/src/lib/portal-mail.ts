@@ -180,11 +180,7 @@ export const privateMail = {
     ),
   automationStatus: () =>
     oneDriveCall<MailAutomationStatus>('private-mail-automation-status'),
-  automationConfig: (config: {
-    enabled: boolean;
-    readStateVerified: boolean;
-    analysisConsent: boolean;
-  }) =>
+  automationConfig: (config: { enabled: boolean }) =>
     oneDriveCall<{ saved: boolean; config: MailAutomationStatus['config'] }>(
       'private-mail-automation-config',
       config,
