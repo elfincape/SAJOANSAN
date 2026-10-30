@@ -29,6 +29,9 @@ import {
 } from '../lib/naver-courses';
 import type { CaptureJob } from '../lib/naver-courses';
 import { cancelBrowserJob } from '../lib/naver-browser';
+import {cancelRelationJob} from '../lib/naver-relations';
+import {latestShortlist,shortlistCall} from '../lib/naver-shortlist';
+import type {ShortlistJob} from '../lib/naver-shortlist';
 import '../styles/naver-capture.css';
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function Preview({ path, name }: { path: string; name: string }) {
@@ -75,7 +78,7 @@ export function NaverCourseCapture({
 }: {
   onBusy: (busy: boolean) => void;
 }) {
-  const { setControlsDisabled, center: selectedCenter } = useAdminPage();
+  const { setControlsDisabled, center: selectedCenter, profile, editable } = useAdminPage();
   const [input, setInput] = useState<CourseImport>({ courses: [], issues: [] }),
     [filename, setFilename] = useState(''),
     [job, setJob] = useState<CaptureJob | null>(null),
@@ -83,6 +86,8 @@ export function NaverCourseCapture({
     [status, setStatus] = useState('');
   const [validation, setValidation] = useState<AddressValidationJob | null>(null),
     [validationRunning, setValidationRunning] = useState(false), [inputVersion,setInputVersion] = useState(0);
+  const [strategy,setStrategy]=useState<'api3'|'full'>(editable?'api3':'full'),[shortlist,setShortlist]=useState<ShortlistJob|null>(null);
+  const stopApi=useRef(false);
   const [sources, setSources] = useState<CourseSheetTable[]>([]),
     [choice, setChoice] = useState(''),
     [table, setTable] = useState<CourseTable | null>(null);
@@ -96,6 +101,8 @@ export function NaverCourseCapture({
     confirmedIds = validation?.center_code === center && validation.status === 'completed'
       ? validatedCourseIds(input.courses, validation.results) : [],
     inputMatchesJob = !!job && input.courses.length === job.courses.length && input.courses.every(c => job.courses.some(old => sameRoutingCourse(c, old)));
+  const apiInputMatches=!!validation&&validation.courses.length===input.courses.length&&input.courses.every(c=>validation.courses.some(old=>sameRoutingCourse(c,old)));
+  useEffect(()=>{let active=true;setShortlist(null);if(validation?.id&&editable)void latestShortlist(center,profile.id,validation.id).then(next=>{if(active)setShortlist(current=>current?.validationJob===validation.id?current:next);}).catch(e=>{if(active)setStatus(errorText(e));});return()=>{active=false;};},[center,profile.id,validation?.id,editable]);
   useEffect(() => { setJob(null);setValidation(null);setInput({courses:[],issues:[]});setSources([]);setFilename(''); }, [center]);
   useEffect(() => {
     mounted.current = true;
@@ -286,6 +293,22 @@ export function NaverCourseCapture({
   async function start() {
     if (!validation || validation.center_code !== center || validation.status !== 'completed') throw Error('주소 사전 검증을 먼저 완료해 주세요.');
     if (!confirmedIds.length) throw Error('주소가 모두 확인된 코스가 없습니다. 주소 검증 표를 확인해 주세요.');
+    let shortlistId: string | undefined;
+    if(strategy==='api3'){
+      if(!apiInputMatches)throw Error('입력 코스가 변경되었습니다. 전체 주소 검증을 눌러 현재 코스와 연결해 주세요. 확인된 주소는 재사용합니다.');
+      if(!editable)throw Error('API 후보 조회에는 해당 센터 납품처 편집 권한이 필요합니다. 전순열 웹 모드를 이용해 주세요.');
+      stopApi.current=false;
+      let next=shortlist?.validationJob===validation.id ? await shortlistCall(center,'shortlist-status',{jobId:shortlist.id}) : await shortlistCall(center,'shortlist-create',{validationJobId:validation.id});
+      setShortlist(next);
+      while(['queued','running'].includes(next.status)){
+        if(stopApi.current||!mounted.current)throw Error('API 후보 선정을 중지했습니다. 저장된 진행은 보존됩니다.');
+        next=await shortlistCall(center,'shortlist-batch',{jobId:next.id});setShortlist(next);
+        if(next.busy)await new Promise(resolve=>setTimeout(resolve,1000));
+      }
+      if(stopApi.current||next.status==='paused')throw Error('API 후보 선정을 중지했습니다.');
+      if(!next.completedCourses)throw Error('완성된 API 후보가 없습니다. 표시된 오류를 확인하거나 전순열 웹 모드를 선택해 주세요.');
+      shortlistId=next.id;
+    }
     const id = await enqueueCapture(
         center,
         input.courses.map((c, i) =>
@@ -295,6 +318,7 @@ export function NaverCourseCapture({
             ),
         job?.center_code === center ? job.id : undefined,
         validation.id,
+        shortlistId,
       ),
       next = await getCapture(id, center);
     if (!next)
@@ -324,10 +348,25 @@ export function NaverCourseCapture({
       <div>
         <h2>코스별 지도 캡처</h2>
         <p>
-          차고지·센터·복귀지는 고정하고, 회전별 납품 순서를 모두 비교해 가장
-          짧은 네이버 도로 경로를 저장합니다.
+          차고지·센터·복귀지를 고정하고, 회전별로 선택한 비교 방식의 네이버
+          도로 경로를 저장합니다.
         </p>
       </div>
+      <div className="toolbar">
+        <label>비교 방식 <select className="app-input" aria-label="경로 비교 방식" value={strategy} disabled={locked} onChange={e=>setStrategy(e.target.value as 'api3'|'full')}>
+          <option value="api3" disabled={!editable}>API 후보 3개 → 웹 전체거리 비교</option>
+          <option value="full">모든 납품 순서 웹 비교</option>
+        </select></label>
+      </div>
+      <p>{strategy==='api3'?'API는 센터→마지막 납품처 부분거리로 후보 3개를 고릅니다. 웹은 차고지 출발·복귀를 포함한 전체 동선으로 비교하며, 후보 밖 순열의 전역 최단을 보장하지 않습니다.':'차고지·센터·복귀지는 고정하고 가능한 납품 순서를 웹에서 전부 비교합니다.'}</p>
+      {strategy==='api3'&&!!input.courses.length&&!apiInputMatches&&<p>현재 입력 코스의 전체 주소 검증을 먼저 완료해 주세요. 이미 확인된 주소는 재사용합니다.</p>}
+      {shortlist&&strategy==='api3'&&<div role="status" aria-live="polite">
+        API 후보 선정 {shortlist.processed}/{shortlist.totalEdges}구간 · 재사용 {shortlist.cached} · 요청 {shortlist.directionsAttempts}/{shortlist.directionsBudget} · 확인 {shortlist.completedCourses}/{shortlist.totalCourses}코스
+        {shortlist.error&&<p>{shortlist.error}</p>}
+        {!!shortlist.issues?.length&&<p>미완료 항목 {shortlist.issues.length}건. 주소·경유지 한도 또는 API 응답을 확인해 주세요. 확인된 코스는 보존됩니다.</p>}
+        {['queued','running'].includes(shortlist.status)&&<button className="btn btn-ghost" onClick={()=>{stopApi.current=true;void cancelRelationJob(shortlist.id).then(({error})=>{if(error)setStatus(error.message);});}}>API 후보 선정 중지</button>}
+        {!locked&&(['attention','paused'].includes(shortlist.status)||(shortlist.status==='completed'&&!shortlist.completedCourses))&&<button className="btn btn-ghost" onClick={()=>setShortlist(null)}>API 후보 새로 선정 준비</button>}
+      </div>}
       <div className="toolbar">
         <button
           className="btn btn-ghost"
@@ -387,9 +426,9 @@ export function NaverCourseCapture({
         복귀합니다. 1회전은 차고지→센터→납품처→센터, 2회전은
         센터→납품처→차고지로 각각 처리합니다. 2회전은 두 행에 동일한 차고지·센터
         주소를 입력합니다. 납품처는 빈 칸을 건너뛰어 포함하고, 납품처끼리의
-        순서만 모두 바꿔 비교합니다. 중간 1회전의 센터 복귀와 2회전의 센터
-        출발을 각각 포함합니다. 모든 조합은 네이버가 제공하는 자동차 경로 옵션
-        전체의 표시 주행거리로 비교하며 직선거리·최단시간을 사용하지 않습니다.
+        순서만 바꾸며 선택한 비교 방식을 적용합니다. 중간 1회전의 센터 복귀와 2회전의 센터
+        출발을 각각 포함합니다. 웹 검증 대상은 네이버가 제공하는 자동차 경로 옵션
+        전체의 실제 주행거리로 비교하며 직선거리·최단시간을 사용하지 않습니다.
         동률이면 원본 납품처 순서 기준으로 결정합니다. 일부 조합이 실패하면 최단
         검증은 미완료로 남습니다.
       </p>
@@ -481,6 +520,7 @@ export function NaverCourseCapture({
             running ||
             validationRunning ||
             !confirmedIds.length ||
+            (strategy==='api3'&&!apiInputMatches) ||
             !input.courses.length ||
             input.issues.some((issue) => !issue.courseId) ||
             input.courses.some((c) => c.rotations === 2 && !c.rotation)

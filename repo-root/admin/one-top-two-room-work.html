@@ -689,7 +689,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
       const workbook=new ExcelJS.Workbook(); await workbook.xlsx.load(state.templateBuffer.slice(0));
       const ws=workbook.worksheets[0]; const vehicleRows=collectVehicleRows(ws);
       markRowsWithExistingTemperatures(ws,vehicleRows);
-      // 사진 사용 여부는 삽입 이미지 목록이 아니라 Q열의 공백 표시만 기준으로 판단한다.
+      // Protect actual Q-cell images, nonblank Q content, and existing temperatures.
       const groups=groupVehicleRows(vehicleRows); const occupied=findPhotoMarkerRows(ws,vehicleRows);
       const insertedReceiptImages=new Set();
       const insertedVehicleKeys=new Set();
@@ -702,7 +702,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
         if(insertedVehicleKeys.has(key)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 같은 차량 사진이 이미 반영되어 추가 사진을 제외했습니다.`);continue;}
         const imageKey=receiptImageKey(item.dataUrl);
         if(insertedReceiptImages.has(imageKey)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 동일한 사진이 이미 반영되어 제외했습니다.`);continue;}
-        // Q열 공백 또는 기존 J/K 온도값이 있는 행에는 어떤 경우에도 사진을 넣지 않는다.
+        // Whitespace alone does not establish that a receipt image exists.
         const target=group.find(x=>!occupied.has(x.row)&&!isPhotoRowOccupied(ws,x.row));
         if (!target) { addIssue(item.name,`차량 ${item.result.vehicle_number}: Q열이 빈 행이 없어 사진을 제외했습니다.`); continue; }
         if(isPhotoRowOccupied(ws,target.row)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 선택 행의 Q열이 사용 중이라 사진을 제외했습니다.`);continue;}
@@ -711,7 +711,7 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
         addImageToCell(workbook,ws,receiptImage,COL.tempPhoto,target.row); markPhotoCell(ws,target.row); occupied.add(target.row);
         insertedReceiptImages.add(imageKey);
         insertedVehicleKeys.add(key);
-        // Q열 병합 범위가 있다면 같은 공백 표시를 공유하는 모든 차량 행도 사용 중으로 동기화한다.
+        // Synchronize occupied rows after inserting the image.
         for(const row of vehicleRows)if(isPhotoRowOccupied(ws,row.row))occupied.add(row.row);
         if(item.supplementalDataUrl)addImageToCell(workbook,ws,await prepareSupplementExcelImage(item.supplementalDataUrl),COL.supplementalPhoto,target.row);
         writeTemperatureAndDate(ws,target.row,item.result.date,temps,false);
@@ -759,7 +759,29 @@ Excel에 사용할 대표 기록은 records의 첫 번째 항목, 즉 영수증�
   function hasPhotoMarker(cell) { return typeof cell?.value==='string' && /^\s+$/.test(cell.value); }
   function isPhotoRowOccupied(ws,row) {
     const photoCell=ws.getCell(row,COL.tempPhoto);
-    return hasPhotoMarker(photoCell)||Boolean(cellText(photoCell))||Boolean(cellText(ws.getCell(row,COL.freezer)))||Boolean(cellText(ws.getCell(row,COL.refrigerated)));
+    return hasImageInPhotoCell(ws,row)||Boolean(cellText(photoCell))||Boolean(cellText(ws.getCell(row,COL.freezer)))||Boolean(cellText(ws.getCell(row,COL.refrigerated)));
+  }
+  function hasImageInPhotoCell(ws,row) {
+    const col=COL.tempPhoto-1,top=row-1;
+    return ws.getImages().some(image=>{
+      const {tl,br,ext}=image.range;
+      if(br)return tl.col<col+1&&br.col>col&&tl.row<top+1&&br.row>top;
+      if(!ext)return Math.floor(tl.col)===col&&Math.floor(tl.row)===top;
+      // One-cell image widths depend on workbook font metrics. Protect conservatively
+      // when an image starts to the left of Q; row heights and EMU offsets are explicit.
+      if(tl.nativeCol>col)return false;
+      const rowPixels=(index)=>{
+        const item=ws.getRow(index+1);
+        return item.hidden?0:(item.height??ws.properties.defaultRowHeight??15)*96/72;
+      };
+      let imageTop=tl.nativeRowOff/9525,targetTop=0;
+      for(let index=0;index<Math.max(tl.nativeRow,top);index++){
+        const height=rowPixels(index);
+        if(index<tl.nativeRow)imageTop+=height;
+        if(index<top)targetTop+=height;
+      }
+      return imageTop<targetTop+rowPixels(top)&&imageTop+ext.height>targetTop;
+    });
   }
   function receiptImageKey(dataUrl) {
     return String(dataUrl||'');

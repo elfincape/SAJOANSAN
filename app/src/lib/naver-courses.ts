@@ -44,10 +44,16 @@ export interface CourseCapture {
     completed: number;
     current?: number;
     failed: { index: number; code: string }[];
+    allPermutations?: number;
+    globalMinimumGuaranteed?: boolean;
+    selection?: {scoreScope: string; candidates: {stops: string[]; apiPartialMeters: number}[]};
   };
 }
 export function captureVerificationLabel(result?: CourseCapture): string {
   const comparison = result?.optimization;
+  if(comparison?.policy==='naver-api-top3-web-meters-v1')return comparison.complete&&result?.imagePath
+    ? `API 부분거리 상위 ${comparison.total}개 중 웹 전체거리 비교 완료 · 전체 ${comparison.allPermutations}순열의 전역 최단 미보장`
+    : `API 후보 웹 비교 ${comparison.completed}/${comparison.total}개 · 실패 ${comparison.failed.length}개 · 전체 순열 최단 미검증`;
   if (result?.imagePath)
     return comparison?.complete && comparison.completed === comparison.total
       ? `${comparison.total}개 납품 순서 비교 완료 · 네이버 제공 자동차 옵션 중 ${result.distanceMeters === undefined ? '표시거리' : '주행거리'} 최단${result.legEvidence?.logicalPointMapping ? ' · 연속 동일 좌표는 지도 한 점, 원본 방문·0m 구간은 Excel에 유지' : ''}`
@@ -70,12 +76,14 @@ export async function enqueueCapture(
   courses: NaverCourse[],
   previousJob?: string,
   validationJob?: string,
+  shortlistJob?: string,
 ) {
-  const { data, error } = await supabase.rpc(validationJob ? 'naver_capture_validated_enqueue' : 'naver_capture_enqueue', {
+  const { data, error } = await supabase.rpc(shortlistJob ? 'naver_capture_shortlist_enqueue' : validationJob ? 'naver_capture_validated_enqueue' : 'naver_capture_enqueue', {
     p_center: center,
     p_courses: courses,
     p_previous_job: previousJob ?? null,
     ...(validationJob ? { p_validation_job: validationJob } : {}),
+    ...(shortlistJob ? {p_shortlist_job:shortlistJob} : {}),
   });
   if (error) throw Error(error.message);
   return data as string;

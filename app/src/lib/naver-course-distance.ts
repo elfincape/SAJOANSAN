@@ -151,7 +151,9 @@ export async function courseDistanceWorkbook(
       data.totalMeters === null ? null : data.totalMeters / 1000;
     sheet.getCell('A4').value = '비교 결과';
     sheet.getCell('C4').value = result?.optimization?.complete
-      ? `${result.optimization.completed}개 납품 순서 비교 완료`
+      ? result.optimization.policy === 'naver-api-top3-web-meters-v1'
+        ? `API 후보 ${result.optimization.completed}개 중 웹 전체거리 최소 (전순열 미보장)`
+        : `${result.optimization.completed}개 납품 순서 비교 완료`
       : '최단 검증 미완료';
     sheet.getCell('E4').value = '구간합계(km)';
     sheet.getCell('A5').value = '조회시각(KST)';
@@ -182,6 +184,15 @@ export async function courseDistanceWorkbook(
     sheet.getRow(8).height = 26;
     const first = 9,
       last = first + data.rows.length - 1;
+    if(result?.optimization?.policy==='naver-api-top3-web-meters-v1'){
+      const selected=result.optimization.selection?.candidates.find(c=>JSON.stringify(c.stops)===JSON.stringify(result.orderedStops));
+      const noteRow=last+3;
+      sheet.mergeCells(`A${noteRow}:F${noteRow}`);
+      sheet.getCell(noteRow,1).value=`API 후보 점수 (센터→마지막 납품처): ${selected ? (selected.apiPartialMeters/1000).toFixed(3)+'km' : '미확인'}. 최종 전체거리와 위 구간값은 출발·복귀를 포함한 동일 웹 경로입니다. 전체 순열 전역 최단은 미검증입니다.`;
+      sheet.getCell(noteRow,1).alignment={wrapText:true,vertical:'middle'};
+      sheet.getRow(noteRow).height=36;
+      sheet.getRow(4).height=36;
+    }
     data.rows.forEach((row, i) => {
       const target = sheet.getRow(first + i);
       target.values = [
@@ -286,7 +297,7 @@ export async function courseDistanceWorkbook(
         },
       ],
     });
-    sheet.pageSetup.printArea = `A1:F${last + 2}`;
+    sheet.pageSetup.printArea = `A1:F${last + (result?.optimization?.policy==='naver-api-top3-web-meters-v1'?3:2)}`;
   }
   return book;
 }

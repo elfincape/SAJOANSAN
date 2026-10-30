@@ -61,9 +61,10 @@ export interface SavedRelationJob {
 export async function relationCall<T>(
   action: string,
   args: Record<string, unknown> = {},
+  center = '002',
 ): Promise<T> {
   const { data, error } = await supabase.functions.invoke('naver-relations', {
-    body: { ...args, center: '002', action },
+    body: { ...args, center, action },
   });
   if (error) {
     let text = error.message;
