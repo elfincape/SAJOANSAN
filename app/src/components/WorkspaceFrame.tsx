@@ -165,6 +165,12 @@ export function WorkspaceFrame({
         data-rail="true"
         data-expanded={showNavigation}
         aria-label="EAN 업무 탐색"
+        onPointerEnter={(event) => {
+          if (!mobile && event.pointerType !== 'touch') setExpanded(true);
+        }}
+        onPointerLeave={(event) => {
+          if (!mobile && event.pointerType !== 'touch') setExpanded(false);
+        }}
         onCancel={(event) => {
           event.preventDefault();
           closeDrawer();
