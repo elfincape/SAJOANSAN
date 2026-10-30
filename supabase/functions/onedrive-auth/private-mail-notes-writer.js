@@ -236,6 +236,7 @@ async function snapshot({ html, marker, hash }) {
     managedTargets = fragments;
     managed = {
       tag: 'div',
+      regions: matches,
       attrs: { ...matches[0].attrs },
       parent,
       children: fragments.flatMap((node) =>
@@ -252,14 +253,17 @@ async function snapshot({ html, marker, hash }) {
     if (!inBody || /position\s*:\s*absolute/i.test(managed.attrs.style ?? ''))
       throw Error('PAGE_MANAGED_TARGET');
     if (
-      managed.attrs.id &&
-      nodes.filter((node) => node.attrs.id === managed.attrs.id).length !== 1
+      managedTargets.some(
+        (target) =>
+          target.attrs.id &&
+          nodes.filter((node) => node.attrs.id === target.attrs.id).length !==
+            1,
+      )
     )
       throw Error('PAGE_MANAGED_TARGET');
     for (const node of nodes) {
       if (node.attrs['data-id'] !== 'sajo-mail-manual') continue;
-      for (let parent = node.parent; parent; parent = parent.parent)
-        if (parent === managed) throw Error('PAGE_MANAGED_TARGET');
+      if (isDescendant(node, managed)) throw Error('PAGE_MANAGED_TARGET');
     }
   }
   const managedHash = managed
@@ -527,8 +531,40 @@ function multipartCommands(commands, images) {
 }
 function isDescendant(node, ancestor) {
   for (let parent = node.parent; parent; parent = parent.parent)
-    if (parent === ancestor) return true;
+    if (parent === ancestor || ancestor.regions?.includes(parent)) return true;
   return false;
+}
+function fragmentChanges(html, targets) {
+  const root = scanHtml(html).nodes[0];
+  const serialize = (node) =>
+    typeof node === 'string'
+      ? escape(node)
+      : '<' +
+        node.tag +
+        Object.entries(node.attrs)
+          .map(([key, value]) => ' ' + key + '="' + escape(value) + '"')
+          .join('') +
+        '>' +
+        (node.children ?? []).map(serialize).join('') +
+        (voidTags.has(node.tag) ? '' : '</' + node.tag + '>');
+  const children = root.children.filter(
+    (node) => typeof node !== 'string' || node.trim(),
+  );
+  if (children.length < targets.length) throw Error('PAGE_MANAGED_TARGET');
+  return targets.map((target, index) => {
+    const start = Math.floor((index * children.length) / targets.length);
+    const end = Math.floor(((index + 1) * children.length) / targets.length);
+    return {
+      target: target.attrs.id,
+      action: 'replace',
+      content:
+        '<div data-id="' +
+        escape(root.attrs['data-id']) +
+        '">' +
+        children.slice(start, end).map(serialize).join('') +
+        '</div>',
+    };
+  });
 }
 
 export async function writeDailyBriefing({
@@ -821,16 +857,14 @@ export async function writeDailyBriefing({
         await graph(contentPath, access, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify([
-            change,
-            ...(current.managedTargets ?? [])
-              .slice(1)
-              .map((node) => ({
-                target: node.attrs.id,
-                action: 'replace',
-                content: '<div></div>',
-              })),
-          ]),
+          body: JSON.stringify(
+            (current.managedTargets?.length ?? 0) > 1
+              ? fragmentChanges(
+                  initial.report.managedHtml,
+                  current.managedTargets,
+                )
+              : [change],
+          ),
         });
       } catch (error) {
         await rejectPatch(error);

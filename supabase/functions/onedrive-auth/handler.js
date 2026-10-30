@@ -416,6 +416,29 @@ export function makeHandler(
       const reason = classifications.find(([pattern]) =>
         pattern.test(detail.error?.message ?? ''),
       )?.[1];
+      if (path.startsWith('/me/onenote/'))
+        console.warn('ONENOTE_GRAPH_FAILURE', {
+          status: res.status,
+          code:
+            typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code)
+              ? code
+              : 'other',
+          method: options.method ?? 'GET',
+          fields: [
+            'content',
+            'target',
+            'action',
+            'empty',
+            'json',
+            'multipart',
+            'element',
+            'id',
+          ].filter((word) =>
+            new RegExp('\\b' + word + '\\b', 'i').test(
+              detail.error?.message ?? '',
+            ),
+          ),
+        });
       if (path.endsWith(':/createUploadSession'))
         console.warn(
           JSON.stringify({
