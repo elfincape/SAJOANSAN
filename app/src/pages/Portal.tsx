@@ -723,7 +723,7 @@ function Work({ profile }: { profile: Profile }) {
                 <h1 id="portal-title" tabIndex={-1}>
                   {title}
                 </h1>
-                <p id="portal-description">
+                {state.view !== 'permissions' || denied ? <p id="portal-description">
                   {denied
                     ? '관리자에게 이 목록의 열람 권한을 요청하세요.'
                     : hq
@@ -738,8 +738,6 @@ function Work({ profile }: { profile: Profile }) {
                                 '센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.',
                               members:
                                 '역할·담당 센터를 설정하고 페이지별 적용 권한을 확인하세요.',
-                              permissions:
-                                '멤버의 역할·센터 속성으로 열람과 수정 조건을 설정하세요.',
                               connections:
                                 '업무자료 저장 폴더와 연결 상태를 관리합니다.',
                               backups:
@@ -752,7 +750,7 @@ function Work({ profile }: { profile: Profile }) {
                             } as Record<string, string>
                           )[state.view] ??
                           '진행 중 업무는 날짜가 지나도 계속 표시됩니다.')}
-                </p>
+                </p> : null}
               </div>
               <div className="heading-actions">
                 <button

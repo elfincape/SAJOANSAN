@@ -154,7 +154,7 @@ function HubContent() {
             style={{ borderRadius: 20 }}
             transition={{ type: 'spring', stiffness: 360, damping: 36 }}
           >
-            <div className="hub-results-heading">
+            <motion.div layout="position" className="hub-results-heading">
               <h3>
                 {term
                   ? '검색 결과'
@@ -165,7 +165,7 @@ function HubContent() {
               <span id="hub-result-count" role="status" aria-live="polite">
                 {visible.length}개
               </span>
-            </div>
+            </motion.div>
             {categories.map(([key]) => (
               <Tabs.Content key={key} value={key} className="hub-tool-list">
                 {links(

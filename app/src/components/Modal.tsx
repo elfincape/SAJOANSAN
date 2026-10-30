@@ -1,20 +1,20 @@
-import { createContext, useContext, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { motion, useAnimate, useReducedMotion } from 'motion/react';
 
-const CloseContext = createContext<(afterClose?: () => void) => void>(() => {});
+const CloseContext = createContext<(action?: () => void) => void>(() => {});
 
 export function ModalClose({
-  afterClose,
+  onAction,
   children,
   ...props
 }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & {
-  afterClose?: () => void;
+  onAction?: () => void;
 }) {
   const close = useContext(CloseContext);
   return (
-    <button {...props} type="button" onClick={() => close(afterClose)}>
+    <button {...props} type="button" onClick={() => close(onAction)}>
       {children}
     </button>
   );
@@ -33,13 +33,35 @@ export function Modal({
   width?: 'sm' | 'md' | 'lg' | 'xl' | '5xl';
   dismissable?: boolean;
 }) {
-  const previous = useRef<HTMLElement | null>(null);
+  const [opener] = useState(() => {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && active !== document.body
+      ? active
+      : null;
+  });
+  const previous = useRef(opener);
+  const fallbackFocus = useRef(
+    opener?.closest('#app-account-menu')
+      ? document.getElementById('app-account-toggle')
+      : null,
+  );
   const [scope, animate] = useAnimate();
   const surface = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
+  const mounted = useRef(true);
+  const openingAnimations = useRef<{ stop: () => void }[]>([]);
+  useEffect(() => {
+    mounted.current = true;
+    closingRef.current = false;
+    return () => {
+      mounted.current = false;
+      closingRef.current = true;
+      openingAnimations.current.forEach((animation) => animation.stop());
+    };
+  }, []);
   const origin = useRef({
     x: 0,
     y: 12,
@@ -50,9 +72,6 @@ export function Modal({
 
   function enter(event: Event) {
     event.preventDefault();
-    const active = document.activeElement;
-    previous.current =
-      active instanceof HTMLElement && active !== document.body ? active : null;
     const target = scope.current?.getBoundingClientRect();
     const source = previous.current?.getBoundingClientRect();
     if (source?.width && source.height && target?.width && target.height) {
@@ -66,31 +85,52 @@ export function Modal({
     }
     if (surface.current && content.current && !reduced) {
       const layer = surface.current;
-      void animate(
+      const opening = animate(
         layer,
         { ...origin.current, opacity: 0.7 },
         { duration: 0 },
-      ).then(() => {
+      );
+      openingAnimations.current.push(opening);
+      void opening.then(() => {
         if (!closingRef.current)
-          void animate(
-            layer,
-            { x: 0, y: 0, scaleX: 1, scaleY: 1, borderRadius: 20, opacity: 1 },
-            { type: 'spring', stiffness: 400, damping: 38 },
+          openingAnimations.current.push(
+            animate(
+              layer,
+              {
+                x: 0,
+                y: 0,
+                scaleX: 1,
+                scaleY: 1,
+                borderRadius: 20,
+                opacity: 1,
+              },
+              { type: 'spring', stiffness: 400, damping: 38 },
+            ),
           );
       });
-      void animate(
-        content.current,
-        { opacity: 1, filter: 'blur(0px)' },
-        { duration: 0.2, delay: 0.08, ease: [0.2, 0.8, 0.2, 1] },
+      openingAnimations.current.push(
+        animate(
+          content.current,
+          { opacity: 1, filter: 'blur(0px)' },
+          { duration: 0.16, ease: [0.2, 0.8, 0.2, 1] },
+        ),
       );
     }
     scope.current?.focus({ preventScroll: true });
   }
 
-  async function close(afterClose?: () => void) {
+  async function close(action?: () => void) {
     if (!dismissable || closingRef.current) return;
     closingRef.current = true;
+    openingAnimations.current.forEach((animation) => animation.stop());
+    openingAnimations.current = [];
+    if (action) {
+      action();
+      return;
+    }
     setClosing(true);
+    if (content.current) content.current.inert = true;
+    scope.current?.focus({ preventScroll: true });
     if (!reduced && surface.current && content.current) {
       await Promise.all([
         animate(
@@ -105,7 +145,7 @@ export function Modal({
         ),
       ]);
     }
-    (afterClose ?? onClose)();
+    if (mounted.current) onClose();
   }
 
   const widths = {
@@ -117,8 +157,8 @@ export function Modal({
   };
   return (
     <CloseContext.Provider
-      value={(afterClose) => {
-        void close(afterClose);
+      value={(action) => {
+        void close(action);
       }}
     >
       <Dialog.Root
@@ -144,7 +184,9 @@ export function Modal({
               onOpenAutoFocus={enter}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
-                if (previous.current?.isConnected)
+                if (fallbackFocus.current?.isConnected)
+                  fallbackFocus.current.focus({ preventScroll: true });
+                else if (previous.current?.isConnected)
                   previous.current.focus({ preventScroll: true });
               }}
               onEscapeKeyDown={(event) => {

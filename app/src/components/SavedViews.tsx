@@ -35,14 +35,15 @@ export function SavedViews<T extends object>({ scope, value, defaultValue, onApp
     catch { setMessage('보기를 저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.'); return false; }
   }
   const current = JSON.stringify(value);
+  const isDefault = current === JSON.stringify(defaultValue);
+  if (!views.length && isDefault && !editing && !message && !removed) return null;
   return <section className="saved-views" aria-label="저장한 업무 보기">
     <div className="saved-views-row">
-      <span className="saved-views-label">업무 보기</span>
       <div className="saved-views-tabs" role="group" aria-label="보기 선택">
-        <button type="button" aria-pressed={current === JSON.stringify(defaultValue)} disabled={disabled} onClick={() => { onApply(structuredClone(defaultValue)); setMessage('전체 보기로 전환했습니다.'); }}>전체</button>
+        {!isDefault || views.length ? <button type="button" aria-pressed={isDefault} disabled={disabled} onClick={() => { onApply(structuredClone(defaultValue)); setMessage(''); }}>기본 보기</button> : null}
         {views.map(view => <span className="saved-view" key={view.id}><button type="button" aria-pressed={current === JSON.stringify(view.value)} disabled={disabled} onClick={() => { onApply(structuredClone(view.value)); setMessage(`‘${view.name}’ 보기를 적용했습니다.`); }}>{view.name}</button><button type="button" className="saved-view-remove" aria-label={`${view.name} 보기 삭제`} disabled={disabled} onClick={() => { if (persist(views.filter(item => item.id !== view.id))) { setRemoved(view); setMessage(`‘${view.name}’ 보기를 삭제했습니다.`); } }}>×</button></span>)}
       </div>
-      <button type="button" className="saved-view-add" disabled={disabled || views.length >= 12} aria-expanded={editing} onClick={() => { setEditing(previous => !previous); setMessage(''); }}>현재 보기 저장</button>
+      {!isDefault || views.length ? <button type="button" className="saved-view-add" disabled={disabled || views.length >= 12} aria-expanded={editing} onClick={() => { setEditing(previous => !previous); setMessage(''); }}>현재 보기 저장</button> : null}
     </div>
     {editing ? <form className="saved-view-form" onSubmit={event => {
       event.preventDefault(); const title = name.trim();

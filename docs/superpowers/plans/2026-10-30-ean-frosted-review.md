@@ -21,6 +21,16 @@ The user rejected flat panels, ornamental step links/numbers and explanatory blo
 - Desktop light/dark screenshots inspected. Basic mobile compatibility checked before the user set desktop-only optimization priority; no further mobile redesign planned.
 - Impeccable detector: no findings on reviewed files. React/accessibility review found and fixed a keyboard-focus loss when collapsing the portal navigation.
 
+## Interaction and layout follow-up
+
+- Shared hover/focus indicators and interruptible rail/menu transitions; CSS press feedback, reduced-motion handling, and stable scrollbar space. Sidebar translucency uses separate theme tokens.
+- Corrected duplicate dashboard rail offset and portal maximum-width centering. Dashboard, hub and portal content align at x=127 at both 1440px and 2560px; dashboard outer radius is 20px with 24px insets. Light/dark screenshots checked for overflow and background discontinuities.
+- Existing SortableJS handles route/column reordering, keyboard alternatives, drop previews, Escape/outside cancellation, and failed-save rollback. No additional drag library.
+- Empty default saved-view controls are hidden. Browser checks cover modified filters, saving, restoring, persistence, deletion and undo.
+- Permission directory and aligned read/edit matrix replace nested duplicate forms. Explicit dirty/save state and discard guard added; API contract, normalization, fixed administrator access and viewer restrictions preserved. Mock save payload and permission preview verified; no production permission writes.
+- Menu Escape restores focus immediately; 20 menu and 20 menu/dialog reopen cycles passed. Confirmation callbacks run immediately, while ordinary dialog dismissal retains its return transition.
+- Full browser harness passes with 24 catalog links and zero page errors; all 11 existing domain tests pass. Temporary checks remain outside the repository.
+
 ## Boundaries
 
 This verifies the changed UI and existing local domain checks, not every production workflow. Production authentication, hub, sidebar and OneTop presentation must be checked again after deployment. UX Patterns, shadcn/sidebar and Motion Primitives were reviewed as design/implementation references; no duplicate component framework or MCP installation is claimed.
