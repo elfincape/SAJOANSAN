@@ -21,6 +21,14 @@ await runWorker({
 });
 assert.equal(lookups,3);assert(writes.some(sql=>sql.includes("status='attention'")));
 console.log('Idle worker accepts later jobs, persists progress, stops on access failures and isolates live fixtures');
+{
+ const calls=[],writes=[];const validateJob={...job,kind:'validation',addresses:['A','B','C'],results:{old:{query:'old',status:'valid'}}};
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return [validateJob];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];writes.push(sql);return [];},validate:async(_page,address)=>{calls.push(address);return {query:address,status:address==='B'?'not_found':'valid'};},lookup:async()=>{throw Error('Validation must not run a road-distance query');},log:()=>{}});
+ assert.deepEqual(calls,['A','B','C']);assert(writes.some(sql=>sql.includes("status='completed'")));assert(writes.some(sql=>sql.includes('not_found')));
+ const paused=[];calls.length=0;
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return [validateJob];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];paused.push(sql);return [];},validate:async(_page,address)=>{calls.push(address);return {query:address,status:'network_error',reason:'PROVIDER_ACCESS_RESTRICTED'};},lookup:async()=>{throw Error('No distance requests');},log:()=>{}});
+ assert.deepEqual(calls,['A']);assert(paused.some(sql=>sql.includes("status='attention'")));assert(!paused.some(sql=>/cursor=1/.test(sql)));
+}
 
 let addressAttempts=0,addressWrites=[];
 await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{addressWrites.push(sql);if(sql.startsWith('with next'))return [{...job,addresses:['A','B','C','D']}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];return [];},lookup:async()=>{addressAttempts++;throw Object.assign(Error('Missing address'),{code:'ADDRESS_NOT_FOUND'});},log:()=>{}});

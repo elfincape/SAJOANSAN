@@ -9,6 +9,8 @@ on:
       - 'scripts/lib/naver-capture-storage.mjs'
       - 'scripts/lib/naver-capture-contract.mjs'
       - 'repo-root/sql/naver-course-captures.sql'
+      - 'repo-root/sql/naver-address-validation.sql'
+      - 'scripts/lib/naver-address-validation-check.sql'
       - 'scripts/check-naver-map-browser.mjs'
       - '.github/workflows/naver-browser-server.yml'
       - 'scripts/naver-browser-*.mjs'

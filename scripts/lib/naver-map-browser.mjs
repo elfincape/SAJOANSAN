@@ -141,7 +141,7 @@ async function providerFailure(response,diagnostics,stage='search'){
  return Object.assign(Error(`네이버 ${stage==='search'?'주소 검색':'길찾기'} ${evidence.restrictionConfirmed?'접근 제한 응답을 확인해 중단했습니다.':status?'요청이 HTTP '+status+' 응답으로 거절되었습니다.':'응답을 받지 못했습니다.'} 주소 부재로 판정하지 않았습니다.`),{code:stage==='search'?'NAVER_SEARCH_UNAVAILABLE':'NAVER_ROUTE_UNAVAILABLE',reason:evidence.restrictionConfirmed?'PROVIDER_ACCESS_RESTRICTED':status?'PROVIDER_HTTP_ERROR':'PROVIDER_RESPONSE_TIMEOUT',httpStatus:status,searchDiagnostics:diagnostics?structuredClone(diagnostics):undefined,...(stage==='route'?{routeDiagnostics:{responseEvidence:evidence,...(requestShape?{requestShape}:{})}}:{})});
 }
 export async function selectAddress(page,input,address,{checkActive=async()=>{},timings}={}){
- const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set(),searchDiagnostics=[];
+ const search=addressSearch(address),options=page.locator('[id^="instant-search-item-poi-"]'),reasons=new Set(),searchDiagnostics=[],candidateSummaries=new Set();
  for(const query of search.queries){
   const refreshStarted=performance.now();if(timings)timings.addressQueries++;
   const detail={queryIndex:searchDiagnostics.length+1};searchDiagnostics.push(detail);
@@ -163,12 +163,35 @@ export async function selectAddress(page,input,address,{checkActive=async()=>{},
   const candidates=await options.evaluateAll(es=>es.map(e=>({text:e.innerText,addressOnly:!e.querySelector('.place_category,.place_text.sub')})));
   detail.candidates=candidates.length;detail.matches=candidates.filter(c=>addressCandidateMatches(search,c.text)).length;
   const index=chooseAddressCandidate(search,candidates);
-  if(index<0){reasons.add(candidates.filter(c=>addressCandidateMatches(search,c.text)).length>1?'SAME_ADDRESS_DUPLICATES':'MULTIPLE_LOCATIONS');continue;}
+  if(index<0){reasons.add(candidates.filter(c=>addressCandidateMatches(search,c.text)).length>1?'SAME_ADDRESS_DUPLICATES':'MULTIPLE_LOCATIONS');for(const c of candidates.slice(0,6))if(candidateSummaries.size<6)candidateSummaries.add(c.text.slice(0,500));continue;}
   await checkActive();await options.nth(index).click();await page.waitForTimeout(700);return candidates[index];
  }
  const messages={SAME_ADDRESS_DUPLICATES:'같은 주소의 중복 후보를 안전하게 구분하지 못했습니다. 주소 후보를 확인해 주세요.',MULTIPLE_LOCATIONS:'입력 주소와 다른 위치의 후보가 표시됩니다. 원본 주소와 네이버 결과를 확인해 주세요.',SEARCH_REFRESH_FAILED:'네이버 검색 결과 갱신을 확인하지 못했습니다. 재시도해 주세요.',SEARCH_NO_CANDIDATES:'이번 네이버 자동완성에서 검색 후보를 받지 못했습니다. 직접 검색 결과와 주소를 확인해 주세요.'};
  const reason=Object.keys(messages).find(r=>reasons.has(r))||'SEARCH_NO_CANDIDATES';
- throw Object.assign(Error(messages[reason]),{code:'ADDRESS_NOT_FOUND',reason,searchDiagnostics});
+ throw Object.assign(Error(messages[reason]),{code:'ADDRESS_NOT_FOUND',reason,searchDiagnostics,candidateSummaries:[...candidateSummaries]});
+}
+async function resolveAddressPoint(page,input,address,cache,{checkActive,timings}){
+ const before=new URL(page.url()).pathname.split('/')[3],selection=await selectAddress(page,input,address,{checkActive,timings}),label=(await input.evaluate(e=>e.value)).trim();
+ const allowSame=[...cache.values()].some(p=>p.token===before&&addressCandidateMatches(addressSearch(address),p.text));
+ await page.waitForFunction(({label,before,allowSame})=>{const token=location.pathname.split('/')[3];return token&&token!=='-'&&(allowSame||token!==before)&&decodeURIComponent(token.split(',')[2]||'')===label;},{label,before,allowSame});
+ const point=naverPointFromUrl(page.url(),address,{...selection,label});cache.set(address,point);cache.set(addressSearch(address).original,point);return point;
+}
+export function addressValidationFailure(query,error){
+ const ambiguous=['SAME_ADDRESS_DUPLICATES','MULTIPLE_LOCATIONS'].includes(error.reason);
+ return {query,status:error.code==='ADDRESS_NOT_FOUND'&&error.reason!=='SEARCH_REFRESH_FAILED'?(ambiguous?'ambiguous':'not_found'):'network_error',issue:String(error.message??'주소 검색 응답을 확인하지 못했습니다.').split('\n')[0].slice(0,300),reason:error.reason??error.code??error.name,candidates:error.candidateSummaries??[],...(error.httpStatus?{httpStatus:error.httpStatus}:{}),...(error.searchDiagnostics?{addressDiagnostics:error.searchDiagnostics}:{}),measuredAt:new Date().toISOString()};
+}
+export async function browserValidateAddress(page,address,{checkActive=async()=>{},addressCache=new Map(),routeContext={}}={}){
+ const query=address.trim();if(!query||query.length>300)throw Error('검증할 주소를 1~300자로 입력해 주세요.');
+ await checkActive();
+ try{
+  const cached=cachedPoint(query,addressCache);let point,source='naver';
+  if(cached){point=naverPointFromUrl('https://map.naver.com/p/directions/'+cached.token+'/-/-/car',query,cached);source='cache';}
+  else{
+   if(!routeContext.validationReady){await openCarDirections(page);routeContext.validationReady=true;}
+   point=await resolveAddressPoint(page,page.getByRole('combobox').first(),query,addressCache,{checkActive});
+  }
+  return {query,status:'valid',source,point,confirmedAddress:point.text.split('\n').map(s=>s.trim()).find(s=>addressCandidateMatches(addressSearch(query),s))||point.text,measuredAt:new Date().toISOString()};
+ }catch(error){if(error.code==='CAPTURE_PAUSED')throw error;return addressValidationFailure(query,error);}
 }
 export async function openCarDirections(page){
  await page.goto('https://map.naver.com/p/directions/-/-/-/car',{waitUntil:'load',timeout:45000});
@@ -215,11 +238,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
    await openCarDirections(page);resolving=true;
   }
   try{
-   const input=page.getByRole('combobox').first(),before=page.url().split('/')[5];
-   const selection=await selectAddress(page,input,address,{checkActive,timings}),label=(await input.evaluate(e=>e.value)).trim();
-   const allowSame=[...addressCache.values()].some(p=>p.token===before&&addressCandidateMatches(addressSearch(address),p.text));
-   await page.waitForFunction(({label,before,allowSame})=>{const token=location.pathname.split('/')[3];return token&&token!=='-'&&(allowSame||token!==before)&&decodeURIComponent(token.split(',')[2]||'')===label;},{label,before,allowSame});
-   const point=naverPointFromUrl(page.url(),address,{...selection,label});addressCache.set(address,point);addressCache.set(addressSearch(address).original,point);
+   await resolveAddressPoint(page,page.getByRole('combobox').first(),address,addressCache,{checkActive,timings});
   }
   catch(e){if(e.code==='ADDRESS_NOT_FOUND')e.message=`${i+1}번째 방문지: ${e.message}`;throw e;}
  }

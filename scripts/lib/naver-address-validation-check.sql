@@ -1,0 +1,38 @@
+begin;
+do $preflight$
+declare actor uuid; validation uuid; capture uuid; previous uuid; resumed uuid; fixture jsonb; changed jsonb; rejected boolean;
+begin
+ select id into actor from public.user_profiles where active and role='admin' limit 1;
+ if actor is null then raise exception 'No active admin for rollback validation verification';end if;
+ perform set_config('request.jwt.claim.sub',actor::text,true);
+ fixture:='[{"id":"row-999991","sourceRow":999991,"name":"Address preflight rollback fixture","stops":["G","C","A","G"]}]'::jsonb;
+ validation:=public.naver_address_validate_enqueue('002',fixture);
+ if (select addresses from public.naver_browser_jobs where id=validation)<>'["G","C","A"]'::jsonb then raise exception 'Addresses were not deduplicated in source order';end if;
+ update public.naver_browser_jobs set status='completed',results='{"G":{"query":"G","status":"valid","point":{}},"C":{"query":"C","status":"valid","point":{}},"A":{"query":"A","status":"not_found"}}'::jsonb where id=validation;
+ capture:=public.naver_capture_validated_enqueue('002',fixture,validation);
+ if not exists(select 1 from public.naver_browser_jobs where id=capture and status='completed' and addresses='[]' and results->'row-999991'->>'addressValidationBlocked'='true') then raise exception 'Unverified route was not blocked';end if;
+ resumed:=public.naver_address_validate_enqueue('002',fixture,validation,'[" A "]');
+ if (select addresses from public.naver_browser_jobs where id=resumed)<>'["A"]'::jsonb then raise exception 'Requested-address-only retry or trimming failed';end if;
+ update public.naver_browser_jobs set status='completed',results=results||'{"A":{"query":"A","status":"valid","point":{}}}'::jsonb where id=resumed;
+ previous:=public.naver_capture_validated_enqueue('002',fixture,resumed,capture);
+ if not exists(select 1 from public.naver_browser_jobs where id=previous and status='queued' and addresses='["row-999991"]' and validation_job_id=resumed) then raise exception 'Confirmed course was not queued';end if;
+ update public.naver_browser_jobs set status='completed',results='{"row-999991":{"imagePath":"rollback-fixture.png","distanceMeters":123}}'::jsonb where id=previous;
+ changed:=jsonb_set(fixture,'{0,stops,2}','"B"');
+ capture:=public.naver_capture_validated_enqueue('002',changed,resumed,previous);
+ if exists(select 1 from public.naver_browser_jobs where id=capture and results->'row-999991'->>'imagePath' is not null) then raise exception 'Changed course reused a stale image';end if;
+ capture:=public.naver_capture_validated_enqueue('002',fixture,resumed,capture);
+ if not exists(select 1 from public.naver_browser_jobs where id=capture and status='completed' and results->'row-999991'->>'imagePath'='rollback-fixture.png') then raise exception 'Historical matching success was lost';end if;
+ rejected:=false;
+ begin perform public.naver_capture_validated_enqueue('001',fixture,resumed);exception when others then rejected:=true;end;
+ if not rejected then raise exception 'Cross-center validation accepted';end if;
+ perform set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+ rejected:=false;
+ begin perform public.naver_capture_validated_enqueue('002',fixture,resumed);exception when others then rejected:=true;end;
+ if not rejected then raise exception 'Cross-owner validation accepted';end if;
+ perform set_config('request.jwt.claim.sub',actor::text,true);
+ execute 'set local role authenticated';
+ if (select count(*) from public.naver_browser_jobs where id=resumed)<>1 then raise exception 'Owner could not read validation';end if;
+ perform set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+ if exists(select 1 from public.naver_browser_jobs where id=resumed) then raise exception 'Validation result leaked across owners';end if;
+end $preflight$;
+rollback;

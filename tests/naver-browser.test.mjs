@@ -161,6 +161,11 @@ assert.deepEqual(reviewFailures,[],reviewFailures.join('\n'));
 // Consecutive identical coordinates must preserve every logical visit and only
 // insert a proven zero leg, without removing a later return to the same point.
 assert.equal(typeof map.consecutivePointPlan,'function');
+assert.equal(typeof map.addressValidationFailure,'function');
+assert.equal(map.addressValidationFailure('bad',{code:'ADDRESS_NOT_FOUND',reason:'SEARCH_NO_CANDIDATES',message:'no candidates'}).status,'not_found');
+assert.equal(map.addressValidationFailure('two',{code:'ADDRESS_NOT_FOUND',reason:'SAME_ADDRESS_DUPLICATES',candidateSummaries:['A','B'],message:'ambiguous'}).status,'ambiguous');
+assert.equal(map.addressValidationFailure('offline',{code:'NAVER_SEARCH_UNAVAILABLE',reason:'PROVIDER_HTTP_ERROR',message:'network'}).status,'network_error');
+const preflightCached=await map.browserValidateAddress({},pointAddress,{addressCache:pointCache});assert.equal(preflightCached.status,'valid');assert.equal(preflightCached.source,'cache');assert.equal(preflightCached.point.token,pointToken);
 const logical=['garage','center','delivery-a','delivery-a-alias','center','garage'];
 const plan=map.consecutivePointPlan(logical,[{coordinates:[127,37]},{coordinates:[128,37]},{coordinates:[129,37]},{coordinates:[129,37]},{coordinates:[128,37]},{coordinates:[127,37]}]);
 assert.deepEqual(plan.mapStops,['garage','center','delivery-a','center','garage']);
@@ -190,4 +195,15 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const deniedPage={...page,waitForResponse:async predicate=>{assert(predicate(denied));return denied;},goto:async()=>listeners.get('response')?.(denied),locator:()=>absentCards};
  await assert.rejects(()=>map.browserCourseCapture(deniedPage,stops,{addressCache:cache,screenshot:false}),e=>e.code==='NAVER_ROUTE_UNAVAILABLE'&&e.reason==='PROVIDER_ACCESS_RESTRICTED'&&e.routeDiagnostics.responseEvidence.status===429);
  await assert.rejects(()=>map.browserCourseCapture({...deniedPage,waitForResponse:async()=>r,goto:async()=>listeners.get('response')?.(r)},stops,{addressCache:cache,screenshot:false}),e=>e.name==='TimeoutError'&&e.routeDiagnostics.stage==='route-panel'&&e.routeDiagnostics.rawRouteCount===1);
+}
+
+// A new selection with the same POI label must wait for its new URL token.
+{
+ const token='3zp3AK,2AujZe,Store,old,PLACE_POI',url='https://map.naver.com/p/directions/'+token+'/-/-/car';let value='';
+ const input={fill:async s=>{value=s;},evaluate:async fn=>fn({value})};
+ const response={url:()=> 'https://map.naver.com/p/api/search/instant-search?query=B',status:()=>200,ok:()=>true,finished:async()=>null,headers:()=>({}),text:async()=>'{}'};
+ const options={first:()=>({waitFor:async()=>{}}),evaluateAll:async()=>[{text:'Store B',addressOnly:false}],nth:()=>({click:async()=>{value='Store';}})};
+ const page={url:()=>url,locator:()=>options,getByRole:()=>({first:()=>input}),waitForResponse:async()=>response,waitForTimeout:async()=>{},waitForFunction:async(fn,args)=>{if(args?.label){const saved=globalThis.location;try{globalThis.location=new URL(url);if(!fn(args))throw Error('freshness rejected');}finally{if(saved===undefined)delete globalThis.location;else globalThis.location=saved;}}}};
+ const result=await map.browserValidateAddress(page,'B',{routeContext:{validationReady:true}});
+ assert.equal(result.status,'network_error');assert.equal(result.point,undefined,'Unchanged URL token cannot validate a different selected address');
 }
