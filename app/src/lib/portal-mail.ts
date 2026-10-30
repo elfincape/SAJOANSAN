@@ -29,11 +29,13 @@ export async function runMailCollection(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ mode }),
-    signal: AbortSignal.timeout(95000),
+    signal: AbortSignal.timeout(255000),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => ({}));
     const allowed = new Set([
+      'BATCH_TIMEOUT',
+      'FILE_UPLOAD_FAILED',
       'COLLECTION_NOT_CONFIGURED',
       'OWNER_SYNC_DISABLED',
       'AUTH_REQUIRED',

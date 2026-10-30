@@ -9,6 +9,8 @@ const BRIDGE =
   'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-owner-sync';
 const SITE = 'https://sajoansan.vercel.app';
 const SAFE_CODES = new Set([
+  'BATCH_TIMEOUT',
+  'FILE_UPLOAD_FAILED',
   'POP_USER_REJECTED',
   'POP_PASSWORD_REJECTED',
   'POP_AUTH_TIMEOUT',
@@ -106,7 +108,7 @@ export function ownerBridge(authorization, fetcher = fetch) {
       body,
       signal: AbortSignal.any([
         AbortSignal.timeout(
-          operation === 'begin' ? 15000 : operation === 'finish' ? 30000 : 8000,
+          operation === 'begin' ? 15000 : operation === 'finish' ? 60000 : 8000,
         ),
         ...(signal ? [signal] : []),
       ]),
@@ -163,7 +165,7 @@ export function ownerBridge(authorization, fetcher = fetch) {
             },
             body: file.bytes,
             signal: AbortSignal.any([
-              AbortSignal.timeout(30000),
+              AbortSignal.timeout(60000),
               ...(signal ? [signal] : []),
             ]),
             redirect: 'error',
@@ -278,7 +280,7 @@ export async function handleOwnerCollect(
         cursor: info.cursor,
         packageMessage: packager,
         batch: 1,
-        seconds: 40,
+        seconds: 180,
       });
     }
   } catch (failure) {

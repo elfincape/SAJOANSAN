@@ -375,9 +375,14 @@ export async function syncBatch({
     }
     counts.cursor = null;
     return counts;
-  } catch {
+  } catch (failure) {
     controller.abort();
     pop.close();
-    throw Object.assign(Error('SYNC_FAILED'), { counts: { ...counts } });
+    throw Object.assign(Error('SYNC_FAILED'), {
+      code: ['BATCH_TIMEOUT', 'FILE_UPLOAD_FAILED'].includes(failure?.message)
+        ? failure.message
+        : undefined,
+      counts: { ...counts },
+    });
   }
 }

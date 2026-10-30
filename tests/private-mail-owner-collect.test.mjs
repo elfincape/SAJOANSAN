@@ -370,3 +370,109 @@ assert.equal(receiptConnections, 1);
 console.log(
   'PASS busy finalization retries only end, never POP login or message ingestion',
 );
+
+// Scale only external waits and the clock; run the real collection/bridge path.
+const realNow = Date.now,
+  realTimer = globalThis.setTimeout,
+  realSignalTimeout = AbortSignal.timeout;
+const clockStart = realNow();
+Date.now = () => clockStart + (realNow() - clockStart) * 100;
+globalThis.setTimeout = (callback, ms, ...args) =>
+  realTimer(callback, Math.max(1, ms / 100), ...args);
+AbortSignal.timeout = (ms) =>
+  realSignalTimeout(Math.max(1, Math.ceil(ms / 100)));
+try {
+  for (const [label, fileCount, fileWait, finishWait, lostAcknowledgement] of [
+    ['35-second attachment storage', 7, 5000, 1000],
+    ['95-second receipt', 12, 7000, 11000],
+    ['slow file and final verification', 2, 35000, 35000],
+    ['retry after publication acknowledgement is lost', 2, 5000, 1000, true],
+  ]) {
+    let published = false,
+      fileCalls = 0,
+      publications = 0;
+    const delay = (ms, signal) =>
+      new Promise((resolve, reject) => {
+        const done = () => {
+          signal.removeEventListener('abort', abort);
+          resolve();
+        };
+        const timer = setTimeout(done, ms);
+        const abort = () => {
+          clearTimeout(timer);
+          reject(Error('MOCK_ABORTED'));
+        };
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      });
+    const slowFetcher = async (_url, opts) => {
+      if (opts.headers['Content-Type'] === 'application/octet-stream') {
+        await delay(fileWait, opts.signal);
+        fileCalls++;
+        return Response.json({ file: {} });
+      }
+      const operation = JSON.parse(opts.body).operation;
+      if (operation === 'begin')
+        return Response.json({
+          mailbox: '00000000-0000-4000-8000-000000000003',
+          lease: '00000000-0000-4000-8000-000000000004',
+          cutoff: '2026-08-18T00:00:00Z',
+          cursor: null,
+        });
+      if (operation === 'seen') return Response.json({ seen: published });
+      if (operation === 'finish') {
+        await delay(finishWait, opts.signal);
+        published = true;
+        publications++;
+        if (lostAcknowledgement) return new Response('{}', { status: 503 });
+        return Response.json({ id: 'published' });
+      }
+      assert.equal(operation, 'end');
+      return Response.json({ ok: true });
+    };
+    const receiptOptions = {
+      env,
+      fetcher: slowFetcher,
+      connect,
+      logger: () => {},
+      packager: async () => ({
+        ...packaged,
+        files: Array.from({ length: fileCount }, (_, i) => ({
+          ...packaged.files[Math.min(i, packaged.files.length - 1)],
+        })),
+      }),
+    };
+    const first = await handleOwnerCollect(request(), receiptOptions);
+    assert.equal(first.status, lostAcknowledgement ? 503 : 200, label);
+    const firstResult = await first.json();
+    if (!lostAcknowledgement) assert.equal(firstResult.counts.saved, 1, label);
+    const repeated = await handleOwnerCollect(request(), receiptOptions);
+    assert.equal(repeated.status, 200);
+    assert.equal((await repeated.json()).counts.saved, 0);
+    assert.equal(publications, 1);
+    assert.equal(fileCalls, fileCount);
+  }
+} finally {
+  Date.now = realNow;
+  globalThis.setTimeout = realTimer;
+  AbortSignal.timeout = realSignalTimeout;
+}
+console.log(
+  'PASS slow multi-file receipt publishes once and retry skips published UIDL',
+);
+
+const uploadFailure = await handleOwnerCollect(request(), {
+  env,
+  connect,
+  logger: () => {},
+  fetcher: async (url, opts) =>
+    opts.headers['Content-Type'] === 'application/octet-stream'
+      ? new Response('{}', { status: 503 })
+      : fetcher(url, opts),
+});
+assert.equal(uploadFailure.status, 503);
+const uploadError = await uploadFailure.json();
+assert.equal(uploadError.stage, 'collect');
+assert.equal(uploadError.code, 'FILE_UPLOAD_FAILED');
+assert.ok(!JSON.stringify(uploadError).includes('sender@'));
+console.log('PASS file upload failure retains its safe error category');

@@ -193,7 +193,7 @@ await assert.rejects(
       packageMessage: async () => ({}),
       seconds: 0.02,
     }),
-  /SYNC_FAILED/,
+  (error) => error.message === 'SYNC_FAILED' && error.code === 'BATCH_TIMEOUT',
 );
 assert.ok(Date.now() - started < 500);
 assert.equal(abortSignal.aborted, true);
