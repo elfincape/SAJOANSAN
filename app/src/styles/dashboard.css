@@ -32,6 +32,15 @@ body[data-app-area='dashboard'] {
   flex-shrink: 0;
 }
 
+@media (min-width: 1001px) {
+  html[data-theme]
+    body.workspace-ui.app-shell[data-app-area='dashboard']
+    #filter-bar
+    > .saved-views {
+    margin-inline: 24px;
+  }
+}
+
 #table-area {
   flex: 1;
   overflow: hidden;

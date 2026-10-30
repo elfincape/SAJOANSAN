@@ -3,11 +3,13 @@ import {
   cloneElement,
   isValidElement,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { BriefcaseBusiness, House, LayoutGrid, Menu, X } from 'lucide-react';
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { AccountMenu } from './AccountMenu';
 import { ThemeToggle } from './ThemeToggle';
 import { WorkspaceCommands } from './WorkspaceCommands';
@@ -72,11 +74,22 @@ export function WorkspaceFrame({
   );
   const [drawer, setDrawer] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [hoveredRail, setHoveredRail] = useState<string | null>(null);
+  const [focusedRail, setFocusedRail] = useState<string | null>(null);
+  const railId = useId();
+  const reducedMotion = useReducedMotion();
+  const activeRail = hoveredRail ?? focusedRail;
   const showNavigation = mobile || expanded;
   const sidebar = useRef<HTMLDialogElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const close = useRef<HTMLButtonElement>(null);
   const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (showNavigation) {
+      setHoveredRail(null);
+      setFocusedRail(null);
+    }
+  }, [showNavigation]);
   useEffect(() => {
     const query = matchMedia('(max-width: 1000px)');
     const sync = () => {
@@ -189,43 +202,93 @@ export function WorkspaceFrame({
             )}
           </button>
         </div>
-        {!showNavigation ? (
-          <nav className="app-rail-links" aria-label="주요 화면">
-            {primaryLinks(navigation)
-              .sort((a, b) => {
-                const rank = (href = '') =>
-                  href.split('?')[0] === '/'
-                    ? 0
-                    : href.startsWith('/admin')
-                      ? 1
-                      : 2;
-                return rank(a.props.href) - rank(b.props.href);
-              })
-              .map((link) =>
-                cloneElement(link, {
-                  className: 'app-rail-link',
-                  title: String(link.props.children),
-                  'aria-label': String(link.props.children),
-                  children: <RailIcon href={link.props.href} />,
-                }),
-              )}
-          </nav>
-        ) : null}
-        <div
-          id="workspace-navigation-panel"
-          hidden={!showNavigation}
-          className="workspace-navigation-content"
-          onClick={(event) => {
-            if (
-              event.target instanceof Element &&
-              event.target.closest('a,button') &&
-              !disabled
-            )
-              closeDrawer();
-          }}
-        >
-          {navigation}
-          {currentLocation}
+        <div className="app-navigation-body">
+          <LayoutGroup id={railId}>
+            <nav
+              className="app-rail-links"
+              data-interactive-rail
+              data-visible={!showNavigation}
+              aria-label="주요 화면"
+              aria-hidden={showNavigation}
+              inert={showNavigation}
+              onPointerMove={(event) => {
+                if (event.pointerType === 'touch') return;
+                const link =
+                  event.target instanceof Element
+                    ? event.target.closest('a')
+                    : null;
+                setHoveredRail(link?.getAttribute('href') ?? null);
+              }}
+              onPointerLeave={() => setHoveredRail(null)}
+              onFocusCapture={(event) => {
+                const link = event.target.closest('a');
+                setFocusedRail(link?.getAttribute('href') ?? null);
+              }}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget))
+                  setFocusedRail(null);
+              }}
+            >
+              {primaryLinks(navigation)
+                .sort((a, b) => {
+                  const rank = (href = '') =>
+                    href.split('?')[0] === '/'
+                      ? 0
+                      : href.startsWith('/admin')
+                        ? 1
+                        : 2;
+                  return rank(a.props.href) - rank(b.props.href);
+                })
+                .map((link) =>
+                  cloneElement(link, {
+                    className: 'app-rail-link',
+                    title: String(link.props.children),
+                    'aria-label': String(link.props.children),
+                    children: (
+                      <>
+                        {!showNavigation && activeRail === link.props.href ? (
+                          <motion.span
+                            aria-hidden="true"
+                            className="app-rail-highlight"
+                            layoutId="rail-interaction"
+                            initial={false}
+                            style={{ borderRadius: 16 }}
+                            transition={
+                              reducedMotion
+                                ? { duration: 0 }
+                                : {
+                                    type: 'spring',
+                                    stiffness: 540,
+                                    damping: 42,
+                                  }
+                            }
+                          />
+                        ) : null}
+                        <RailIcon href={link.props.href} />
+                      </>
+                    ),
+                  }),
+                )}
+            </nav>
+          </LayoutGroup>
+          <div
+            id="workspace-navigation-panel"
+            data-visible={showNavigation}
+            aria-hidden={!showNavigation}
+            inert={!showNavigation}
+            className="workspace-navigation-content"
+            onClick={(event) => {
+              if (
+                event.target instanceof Element &&
+                event.target.closest('a,button') &&
+                !disabled
+              )
+                closeDrawer();
+            }}
+          >
+            {navigation}
+            {currentLocation}
+          </div>
         </div>
       </dialog>
       <header ref={header} id="app-header">

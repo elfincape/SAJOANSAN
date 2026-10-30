@@ -1,4 +1,6 @@
 html[data-theme] {
+  scrollbar-gutter: stable;
+  background: var(--theme-page);
   --theme-primary: #285d82;
   --theme-sidebar: #eaf0f5;
   --theme-sidebar-text: #263c4b;
@@ -25,6 +27,8 @@ html[data-theme] {
   --theme-warn-bg: #f1eaf4;
   --theme-control-hover: #204e6f;
   --ean-glass: rgb(255 255 255 / 0.46);
+  --ean-sidebar-glass: rgb(255 255 255 / 0.24);
+  --ean-sidebar-sheen: rgb(255 255 255 / 0.2);
   --ean-edge: rgb(255 255 255 / 0.9);
   --ean-sheen: rgb(255 255 255 / 0.6);
   --ean-rim: rgb(255 255 255 / 0.72);
@@ -66,6 +70,8 @@ html[data-theme='dark'] {
   --theme-warn: #d9c0e8;
   --theme-warn-bg: #392b42;
   --ean-glass: rgb(42 45 50 / 0.62);
+  --ean-sidebar-glass: rgb(36 39 44 / 0.3);
+  --ean-sidebar-sheen: rgb(233 238 245 / 0.035);
   --ean-edge: rgb(225 238 248 / 0.35);
   --ean-sheen: rgb(233 238 245 / 0.045);
   --ean-rim: rgb(214 232 248 / 0.23);
@@ -97,6 +103,18 @@ html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-brand a {
   font-size: 25px;
   letter-spacing: -0.03em;
   font-weight: 750;
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar[data-rail] {
+  background: linear-gradient(135deg, var(--ean-sidebar-sheen), transparent 60%)
+    var(--ean-sidebar-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(110%);
+  backdrop-filter: blur(20px) saturate(110%);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  .workspace-current-location {
+  background: transparent;
 }
 .workspace-navigation-content {
   display: contents;
@@ -140,6 +158,81 @@ html[data-theme]
   outline: 2px solid var(--theme-accent);
   outline-offset: 3px;
 }
+html[data-theme] body.workspace-ui :is(button, .btn, [role='tab'], summary) {
+  transition:
+    scale 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme]
+    body.workspace-ui
+    :is(button, .btn, [role='tab'], summary):not(:disabled):not(
+      [aria-disabled='true']
+    ):not(.ean-drag-handle):active {
+    scale: 0.98;
+    transition-duration: 60ms;
+  }
+}
+html[data-theme] body.workspace-ui :is(input, select, textarea):focus-visible {
+  border-color: var(--theme-accent);
+}
+html[data-theme] body.workspace-ui .ean-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 30px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-muted);
+  cursor: grab;
+  touch-action: none;
+}
+html[data-theme] body.workspace-ui .ean-drag-handle:active {
+  cursor: grabbing;
+}
+html[data-theme] body.workspace-ui .ean-drag-chosen {
+  background: var(--theme-hover);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.12);
+}
+html[data-theme] body.workspace-ui .ean-drag-ghost {
+  opacity: 0.4;
+  background: var(--theme-selected);
+  outline: 1px dashed var(--theme-selected-border);
+  outline-offset: -1px;
+}
+.ean-reorder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+html[data-theme] body.workspace-ui .ean-reorder-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  min-height: 28px;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-muted);
+}
+html[data-theme]
+  body.workspace-ui
+  .ean-reorder-actions
+  button:hover:not(:disabled) {
+  background: var(--theme-hover);
+  color: var(--theme-text);
+}
+html[data-theme] body.workspace-ui .ean-reorder-actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 html[data-theme]
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   .workspace-content
@@ -155,6 +248,16 @@ html[data-theme]
 }
 html[data-theme] body.workspace-ui :is(table, .ag-root-wrapper) {
   background: var(--theme-panel);
+}
+html[data-theme]
+  body.workspace-ui.portal-shell
+  #portal-main
+  :is(.list, #detail) {
+  border-radius: 16px;
+}
+html[data-theme] body.workspace-ui.portal-shell #portal-main .list-heading {
+  border-start-start-radius: 16px;
+  border-start-end-radius: 16px;
 }
 html[data-theme] body.workspace-ui .work-section-navigation {
   display: flex;
@@ -282,11 +385,15 @@ html[data-theme] body.workspace-ui .ean-tab:disabled {
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-theme] {
     --ean-glass: var(--theme-panel);
+    --ean-sidebar-glass: var(--theme-panel);
+    --ean-sidebar-sheen: transparent;
     --ean-surface: var(--theme-panel);
     --ean-floor: none;
     --ean-rim: var(--theme-border);
   }
-  html[data-theme] body.workspace-ui.app-shell :is(#app-header, #app-sidebar),
+  html[data-theme]
+    body.workspace-ui.app-shell
+    :is(#app-header, #app-sidebar[data-rail]),
   .ean-account-menu .account-glass,
   .ean-modal-overlay {
     backdrop-filter: none;
@@ -317,6 +424,10 @@ html[data-theme] body.workspace-ui .ean-tab:disabled {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  html[data-theme] body.workspace-ui :is(button, .btn, [role='tab'], summary) {
+    transition: none;
+    scale: none;
+  }
   html[data-theme] body.workspace-ui.app-shell #app-sidebar,
   #app-sidebar details::details-content {
     transition: none;
