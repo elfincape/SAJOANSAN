@@ -37,7 +37,9 @@ html[data-theme] body.portal-shell .employee-permission-search input {
 }
 html[data-theme] body.portal-shell .employee-permission-people > button {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
+  justify-content: stretch;
   justify-items: start;
   align-items: start;
   width: 100%;
@@ -50,6 +52,12 @@ html[data-theme] body.portal-shell .employee-permission-people > button {
   color: var(--theme-text);
   text-align: left;
   box-shadow: none;
+}
+.employee-permission-people > button > :is(strong, span) {
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .employee-permission-people strong {
   font-size: 14px;
@@ -316,5 +324,24 @@ html[data-theme]
   }
   .employee-permission-table td:last-child {
     grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1001px) {
+  .employee-permission-directory {
+    position: sticky;
+    top: calc(var(--app-header-height) + 24px);
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - var(--app-header-height) - 48px);
+  }
+  .employee-permission-directory > :not(.employee-permission-people) {
+    flex-shrink: 0;
+  }
+  .employee-permission-people {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
   }
 }

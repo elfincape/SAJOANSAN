@@ -27,7 +27,8 @@ import { PortalHistoryView } from '../components/portal/PortalHistoryView';
 import { PortalHeadquarters } from '../components/portal/PortalHeadquarters';
 import { PortalTickets } from '../components/portal/PortalTickets';
 import { PortalTaskDetail } from '../components/portal/PortalTaskDetail';
-import { portalViewTitle } from '../domain/portal-navigation';
+import { getSelectedCenter } from '../lib/center';
+import { PORTAL_VIEWS, portalViewTitle } from '../domain/portal-navigation';
 import { PortalShell } from '../components/portal/PortalShell';
 import { PortalStore } from '../components/portal/PortalStore';
 import type { PortalState } from '../components/portal/PortalStore';
@@ -109,7 +110,13 @@ function Icon({ kind }: { kind: string }) {
 }
 function Work({ profile }: { profile: Profile }) {
   const [state, setState] = useState<PortalState>(() => ({
-      view: 'center',
+      view: (() => {
+        const params = new URLSearchParams(location.search);
+        const requested = params.get('view');
+        const permissions = getLoadedAuthContext()?.permissions;
+        if (requested && requested !== 'mail' && PORTAL_VIEWS.some(view => view.id === requested) && permissionAllowed(permissions, viewResource(requested), 'read')) return requested;
+        return profile.role === 'admin' && !params.has('center') && permissionAllowed(permissions, 'hq', 'read') ? 'hq' : 'center';
+      })(),
       refreshVersion: 0,
       registrationTab: 'templates',
       unit: 'week',
@@ -119,8 +126,8 @@ function Work({ profile }: { profile: Profile }) {
       mine: false,
       context: null,
       briefing: null,
-      permissions: { access: {}, rules: [] },
-      center: '',
+      permissions: { access: getLoadedAuthContext()?.permissions.access ?? {}, rules: [] },
+      center: getSelectedCenter()?.code ?? '',
       tasks: [],
       incidents: [],
       templates: [],

@@ -97,7 +97,7 @@ function CharterParserContent(){
   <CharterStatistics trips={view.trips} busy={view.busy} excludeCombined={view.excludeCombined} onExclude={value=>update({excludeCombined:value,page:0})} resetPage={()=>update({page:0})}/>
   <section id="work-section-4" className="panel space-y-3">
    <h2 className="font-semibold">가로형 정산 파일</h2>
-   <p className="text-xs muted">운행ID마다 한 행으로 출력합니다. 차량번호·기사명·연락처는 E~G, 납품처는 I~T, 지역은 U~AF, 총착지·지역이동은 AG·AH에 출력합니다. 오른쪽 상세에는 납품처명·고객사·냉동·냉장·총수량을 포함하며 물량의 소수점 아래는 버립니다. 납품처·지역 6~12열은 엑셀에서 숨깁니다. 검색에 해당하는 운행의 동승 납품처도 함께 내려받습니다.</p>
+   <p className="text-xs muted">운행별 1행 · 물량 소수점 버림 · 납품처·지역 6~12열 숨김 · 동승 납품처 포함</p>
    <div className="toolbar"><button id="download-btn" disabled={view.busy || !shown.length} onClick={()=>void task(downloadExcel)} className="btn btn-primary">가로형 엑셀 다운로드</button><button id="json-export" disabled={view.busy || !shown.length} onClick={()=>void task(downloadJson)} className="btn btn-ghost">조회 운행 JSON 다운로드</button><button id="preview-toggle" disabled={view.busy || !shown.length} onClick={()=>void task(togglePreview)} className="btn btn-ghost">가로형 미리보기</button></div>
    <div id="preview-wrap" className="scroll" hidden={!view.preview}><table id="preview" className="app-table"><thead><tr>{previewData.headers.map((header,index)=><th key={index}>{XLSX.utils.encode_col(index)} · {header}</th>)}</tr></thead><tbody>{previewData.rows.slice(page*50,(page+1)*50).map((row,index)=><tr key={index}>{row.map((value,col)=><td key={col}>{value??""}</td>)}</tr>)}</tbody></table></div>
   </section>

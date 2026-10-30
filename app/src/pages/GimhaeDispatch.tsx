@@ -692,7 +692,7 @@ function Work() {
     ['arrival', '입차시간 조건', 80],
   ];
   return (
-    <main id="gm-app" tabIndex={-1}>
+    <main id="gm-app" className="app-main" tabIndex={-1}>
       <div id="gm-work" aria-busy={view.busy}>
         <div className="gm-toolbar gm-topbar">
           <label>

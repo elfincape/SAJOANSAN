@@ -205,9 +205,11 @@ export function Modal({
                     position: 'absolute',
                     inset: 0,
                     borderRadius: 20,
-                    background: 'var(--theme-panel)',
+                    background: 'var(--ean-surface)',
+                    WebkitBackdropFilter: 'blur(24px) saturate(110%)',
+                    backdropFilter: 'blur(24px) saturate(110%)',
                     border: '1px solid var(--ean-rim)',
-                    boxShadow: 'var(--ean-shadow)',
+                    boxShadow: 'inset 0 1px var(--ean-edge), var(--ean-shadow)',
                     pointerEvents: 'none',
                   }}
                   initial={{ opacity: reduced ? 1 : 0 }}
@@ -216,6 +218,7 @@ export function Modal({
                   ref={content}
                   style={{
                     position: 'relative',
+                    background: 'transparent',
                     borderRadius: 20,
                     maxHeight: 'calc(100dvh - 40px)',
                     overflow: 'auto',

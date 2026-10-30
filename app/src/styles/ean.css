@@ -26,7 +26,7 @@ html[data-theme] {
   --theme-warn: #725080;
   --theme-warn-bg: #f1eaf4;
   --theme-control-hover: #414148;
-  --ean-glass: rgb(255 255 255 / 0.55);
+  --ean-glass: rgb(255 255 255 / 0.4);
   --ean-sidebar-glass: rgb(255 255 255 / 0.24);
   --ean-sidebar-sheen: rgb(255 255 255 / 0.2);
   --ean-edge: rgb(255 255 255 / 0.9);
@@ -71,7 +71,7 @@ html[data-theme='dark'] {
   --theme-accent: #dedee5;
   --theme-warn: #d9c0e8;
   --theme-warn-bg: #392b42;
-  --ean-glass: rgb(44 44 49 / 0.64);
+  --ean-glass: rgb(36 39 44 / 0.48);
   --ean-sidebar-glass: rgb(36 39 44 / 0.3);
   --ean-sidebar-sheen: rgb(233 238 245 / 0.035);
   --ean-edge: rgb(225 238 248 / 0.35);
@@ -238,7 +238,15 @@ html[data-theme] body.workspace-ui .ean-reorder-actions button:disabled {
 html[data-theme]
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   .workspace-content
-  :is(.work-panel, .work-editor, .panel, .step-card, section.bg-zinc-800) {
+  :is(
+    .work-panel,
+    .work-editor,
+    .panel,
+    .step-card,
+    .work-surface,
+    section.bg-zinc-800,
+    section[class~='bg-zinc-800/40']
+  ) {
   background: var(--ean-surface);
   border-color: var(--ean-rim);
   border-radius: 16px;
@@ -324,8 +332,9 @@ html[data-theme]
   position: fixed;
   inset: 0;
   z-index: 10000;
-  background: rgb(12 23 34 / 0.32);
-  backdrop-filter: blur(6px);
+  background: rgb(12 12 16 / 0.24);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
 }
 .ean-modal-position {
   position: fixed;
@@ -349,6 +358,11 @@ html[data-theme]
 }
 .ean-modal-panel:focus {
   outline: none;
+}
+html[data-theme] body.workspace-ui .ean-modal-panel .ean-detail-section {
+  border: 0;
+  border-top: 1px solid var(--theme-border-soft);
+  background: transparent;
 }
 .ean-modal-panel:focus-visible {
   outline: none;
@@ -398,6 +412,10 @@ html[data-theme] body.workspace-ui .ean-tab:disabled {
   .ean-account-menu .account-glass,
   .ean-modal-overlay {
     backdrop-filter: none;
+  }
+  .ean-modal-surface {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }
 @supports (interpolate-size: allow-keywords) {

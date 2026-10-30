@@ -1,0 +1,24 @@
+.ean-rail-tooltip {
+  position: fixed;
+  z-index: 11000;
+  padding: 8px 12px;
+  max-width: min(240px, calc(100vw - 120px));
+  border: 1px solid var(--ean-rim);
+  border-radius: 10px;
+  background: var(--ean-surface);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 var(--ean-edge), 0 4px 16px rgb(0 0 0 / 10%);
+  color: var(--theme-text);
+  font-size: 12px;
+  line-height: 1.4;
+  transform: translateY(-50%);
+  animation: ean-rail-label-in 140ms ease-out both;
+}
+@keyframes ean-rail-label-in {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to { opacity: 1; transform: translate(0, -50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ean-rail-tooltip { animation: none; }
+}

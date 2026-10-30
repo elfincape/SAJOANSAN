@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { AccountMenu } from './AccountMenu';
+import { RailTooltip } from './RailTooltip';
 import { ThemeToggle } from './ThemeToggle';
 import { WorkspaceCommands } from './WorkspaceCommands';
 import type { WorkspaceCommand } from './WorkspaceCommands';
@@ -188,13 +189,6 @@ export function WorkspaceFrame({
                   ? '메뉴 접기'
                   : '업무 메뉴 펼치기'
             }
-            title={
-              mobile
-                ? '메뉴 닫기'
-                : showNavigation
-                  ? '메뉴 접기'
-                  : '업무 메뉴 펼치기'
-            }
             aria-controls="workspace-navigation-panel"
             aria-expanded={showNavigation}
             onClick={() =>
@@ -248,7 +242,7 @@ export function WorkspaceFrame({
                 .map((link) =>
                   cloneElement(link, {
                     className: 'app-rail-link',
-                    title: String(link.props.children),
+                    title: undefined,
                     'aria-label': String(link.props.children),
                     children: (
                       <>
@@ -296,6 +290,7 @@ export function WorkspaceFrame({
           </div>
         </div>
       </dialog>
+      <RailTooltip sidebar={sidebar} expanded={showNavigation} />
       <header ref={header} id="app-header">
         <div className="app-header-row">
           <a className="app-brand" href={brandHref}>

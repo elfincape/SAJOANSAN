@@ -35,9 +35,12 @@ function CategoryIcon({ category }: { category: string }) {
 function HubContent() {
   const { profile, permissions, center } = useAdminPage();
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState<string>(() => history.state?.__workspaceHub?.search ?? '');
   const [pointerTabs, setPointerTabs] = useState(false);
-  const [category, setCategory] = useState('dispatch');
+  const [category, setCategory] = useState<string>(() => history.state?.__workspaceHub?.category ?? 'dispatch');
+  useEffect(() => {
+    history.replaceState({ ...history.state, __workspaceHub: { search, category } }, '', location.href);
+  }, [search, category]);
   const input = useRef<HTMLInputElement>(null);
   const groupId = useId();
   const reducedMotion = useReducedMotion();

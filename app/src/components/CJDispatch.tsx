@@ -1031,7 +1031,7 @@ export function CJDispatch({
     <section
       id="dispatch-workspace"
       hidden={!active}
-      className="panel space-y-4"
+      className="panel space-y-4 p-5"
     >
       <h2 className="font-semibold">평택 배차 작업</h2>
       <p className="text-sm muted">

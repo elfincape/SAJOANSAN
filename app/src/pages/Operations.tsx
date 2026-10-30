@@ -280,7 +280,7 @@ function Work() {
       <div className="heading">
         <div>
           <h1>업무와 특이사항</h1>
-          <p>센터별 진행 상황과 실제 처리 기록을 확인하세요.</p>
+
         </div>
         <div>
           <button id="refresh" disabled={busy} onClick={() => void load()}>

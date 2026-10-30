@@ -1,5 +1,4 @@
 #dispatch-app {
-  padding: 20px;
   color: var(--theme-text);
 }
 #dispatch-app:not(.app-main) {
@@ -38,6 +37,9 @@
   flex-wrap: wrap;
   gap: 10px;
   margin: 12px 0;
+}
+#dispatch-app > .pd-toolbar:first-child {
+  margin-top: 0;
 }
 .pd-heading > label {
   margin-left: auto;
@@ -251,9 +253,6 @@
   font-weight: 600;
 }
 @media (max-width: 640px) {
-  #dispatch-app {
-    padding: 12px;
-  }
   .pd-heading > label {
     margin-left: 0;
     width: 100%;
