@@ -2,7 +2,6 @@ import { SavedViews } from '../components/SavedViews';
 import { SelectionActions, useSelectionExport } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
 import { permissionAllowed } from '../lib/permissions';
-import '../styles/common.css';
 import '../styles/routes.css';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';

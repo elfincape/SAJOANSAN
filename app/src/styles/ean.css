@@ -1,0 +1,324 @@
+html[data-theme] {
+  --theme-primary: #285d82;
+  --theme-sidebar: #eaf0f5;
+  --theme-sidebar-text: #263c4b;
+  --theme-sidebar-muted: #536675;
+  --theme-sidebar-hover: #dde7ee;
+  --theme-sidebar-border: #ccd7e0;
+  --theme-page: #edf1f5;
+  --theme-panel: #ffffff;
+  --theme-soft: #f3f6f8;
+  --theme-stripe: #f8fafb;
+  --theme-text: #202e39;
+  --theme-muted: #526471;
+  --theme-border: #cbd5df;
+  --theme-border-soft: #e1e7ed;
+  --theme-hover: #e8eff5;
+  --theme-selected: #dfeaf3;
+  --theme-selected-text: #204d70;
+  --theme-selected-border: #9cb6cc;
+  --theme-selection-bg: #c7ddea;
+  --theme-selection-text: #173b56;
+  --theme-control-border: #8d9fad;
+  --theme-accent: #285d82;
+  --theme-warn: #725080;
+  --theme-warn-bg: #f1eaf4;
+  --theme-control-hover: #204e6f;
+  --ean-glass: rgb(255 255 255 / 0.76);
+  --ean-edge: rgb(255 255 255 / 0.9);
+  --ean-shadow: 0 8px 28px rgb(29 49 65 / 0.06);
+  --workspace-shadow-soft: 0 4px 16px rgb(29 49 65 / 0.04);
+  --workspace-shadow: var(--ean-shadow);
+}
+html[data-theme='dark'] {
+  --theme-sidebar: #1a222b;
+  --theme-sidebar-text: #dde6ee;
+  --theme-sidebar-muted: #aab9c6;
+  --theme-sidebar-hover: #2c3947;
+  --theme-sidebar-border: #364554;
+  --theme-page: #141a21;
+  --theme-panel: #202933;
+  --theme-soft: #26323e;
+  --theme-stripe: #232e39;
+  --theme-text: #e9eff5;
+  --theme-muted: #afbfcc;
+  --theme-border: #425362;
+  --theme-border-soft: #33424f;
+  --theme-hover: #2b3b4b;
+  --theme-selected: #2a4357;
+  --theme-selected-text: #d4e9fb;
+  --theme-selected-border: #617e95;
+  --theme-selection-bg: #446783;
+  --theme-selection-text: #f2f7fc;
+  --theme-control-border: #758a9c;
+  --theme-accent: #a2c9e6;
+  --theme-warn: #d9c0e8;
+  --theme-warn-bg: #392b42;
+  --ean-glass: rgb(32 41 51 / 0.82);
+  --ean-edge: rgb(214 232 248 / 0.13);
+  --ean-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+  --workspace-shadow-soft: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+html[data-theme] body.workspace-ui {
+  background-image: none;
+  font-variant-numeric: tabular-nums;
+  caret-color: var(--theme-accent);
+}
+html[data-theme] body.workspace-ui.app-shell :is(#app-header, #app-sidebar) {
+  background: var(--ean-glass);
+  border-color: var(--theme-border-soft);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  animation: none;
+  box-shadow: inset 0 1px var(--ean-edge);
+  color: var(--theme-text);
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-brand a {
+  color: var(--theme-text);
+  font-size: 25px;
+  letter-spacing: -0.03em;
+  font-weight: 750;
+}
+.workspace-navigation-content {
+  display: contents;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is(.workspace-link, .app-function-link, summary, .app-local-menu button) {
+  border-radius: 10px;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(.btn, button.btn, .app-input, .app-select, .app-textarea) {
+  border-radius: 10px;
+  box-shadow: none;
+  background-image: none;
+  transform: none;
+}
+html[data-theme] body.workspace-ui :is(.btn, button.btn):hover {
+  box-shadow: none;
+  transform: none;
+}
+html[data-theme] body.workspace-ui :is(.btn-primary, .btn-green, .primary) {
+  background: var(--theme-primary);
+  color: #fff;
+}
+html[data-theme] body.workspace-ui.portal-shell button {
+  border-radius: 10px;
+  box-shadow: none;
+}
+html[data-theme] body.workspace-ui.portal-shell .primary:hover:not(:disabled) {
+  background: var(--theme-control-hover);
+  border-color: var(--theme-control-hover);
+}
+html[data-theme]
+  body.workspace-ui
+  :is(input, select, textarea, button, a):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 3px;
+}
+html[data-theme]
+  body.workspace-ui
+  :is(.work-panel, .work-editor, .panel, .step-card) {
+  border-radius: 16px;
+  box-shadow: none;
+}
+html[data-theme] body.workspace-ui :is(table, .ag-root-wrapper) {
+  background: var(--theme-panel);
+}
+html[data-theme] body.workspace-ui .work-section-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 16px;
+  background: var(--ean-glass);
+  backdrop-filter: blur(16px);
+}
+html[data-theme] body.workspace-ui .work-section-navigation a {
+  padding: 10px 14px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-toggle {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+}
+.account-glass {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--ean-glass);
+  border: 1px solid var(--theme-border);
+  box-shadow: inset 0 1px var(--ean-edge);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-account-menu.ean-account-menu {
+  position: relative;
+  inset: auto;
+  isolation: isolate;
+  min-width: 180px;
+  padding: 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--ean-shadow);
+  z-index: 10001;
+}
+.ean-account-menu .account-glass {
+  backdrop-filter: blur(20px);
+}
+html[data-theme] body.workspace-ui.app-shell #app-account-menu > button {
+  min-height: 42px;
+  border-radius: 10px;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-account-menu
+  > button[data-highlighted] {
+  background: var(--theme-hover);
+  outline: none;
+}
+.ean-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgb(12 23 34 / 0.32);
+  backdrop-filter: blur(6px);
+}
+.ean-modal-position {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  pointer-events: none;
+}
+.ean-modal-panel {
+  pointer-events: auto;
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--ean-shadow);
+}
+.ean-modal-panel:focus {
+  outline: none;
+}
+.ean-modal-panel:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 3px;
+}
+.workspace-selection {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--theme-selected);
+  border: 1px solid var(--theme-selected-border);
+}
+.ean-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html[data-theme] body.workspace-ui .ean-tab {
+  position: relative;
+  isolation: isolate;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--theme-muted);
+  background: transparent;
+  cursor: pointer;
+}
+html[data-theme] body.workspace-ui .ean-tab[data-state='active'] {
+  color: var(--theme-selected-text);
+}
+html[data-theme] body.workspace-ui .ean-tab:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-theme] {
+    --ean-glass: var(--theme-panel);
+  }
+  html[data-theme] body.workspace-ui.app-shell :is(#app-header, #app-sidebar),
+  .ean-account-menu .account-glass,
+  .ean-modal-overlay {
+    backdrop-filter: none;
+  }
+}
+@supports (interpolate-size: allow-keywords) {
+  #app-sidebar details {
+    interpolate-size: allow-keywords;
+  }
+  #app-sidebar details::details-content {
+    height: 0;
+    overflow: clip;
+    opacity: 0;
+    transition:
+      height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 180ms,
+      content-visibility 260ms allow-discrete;
+  }
+  #app-sidebar details[open]::details-content {
+    height: auto;
+    opacity: 1;
+  }
+}
+@media (max-width: 1000px) {
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar {
+    transform-origin: 22px 22px;
+    border-radius: 0 22px 22px 0;
+    transition:
+      transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 200ms,
+      border-radius 300ms,
+      display 300ms allow-discrete,
+      overlay 300ms allow-discrete;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar:not([open]) {
+    transform: translate(12px, 12px) scale(0.12, 0.06);
+    opacity: 0;
+    border-radius: 28px;
+  }
+  @starting-style {
+    html[data-theme] body.workspace-ui.app-shell #app-sidebar[open] {
+      transform: translate(12px, 12px) scale(0.12, 0.06);
+      opacity: 0;
+      border-radius: 28px;
+    }
+  }
+  #app-sidebar::backdrop {
+    background: rgb(12 23 34 / 0.32);
+    backdrop-filter: blur(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar,
+  #app-sidebar details::details-content {
+    transition: none;
+  }
+}
+@media print {
+  .ean-modal-overlay,
+  .ean-modal-position,
+  .ean-account-menu {
+    display: none;
+  }
+}

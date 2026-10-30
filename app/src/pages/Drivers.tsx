@@ -3,7 +3,6 @@ import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSel
 import { useWorkspaceActions } from '../lib/workspace-actions';
 import { permissionAllowed } from '../lib/permissions';
 import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
-import '../styles/common.css';
 import '../styles/driver-documents.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';

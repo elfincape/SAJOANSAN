@@ -13,11 +13,16 @@ html[data-theme] body.workspace-ui.app-shell {
   color: var(--theme-text);
   letter-spacing: 0;
 }
-html[data-theme] body.workspace-ui.app-shell > .app-main {
+html[data-theme] body.workspace-ui.app-shell > .workspace-content {
   width: calc(100% - var(--app-sidebar-width));
+  margin-left: var(--app-sidebar-width);
+  min-width: 0;
+}
+html[data-theme] body.workspace-ui.app-shell .workspace-content .app-main {
+  width: 100%;
   max-width: none;
   min-width: 0;
-  margin: 0 0 0 var(--app-sidebar-width);
+  margin: 0;
   padding: 24px;
   scroll-margin-top: calc(var(--app-header-height) + 12px);
   background: var(--theme-page);
@@ -25,13 +30,17 @@ html[data-theme] body.workspace-ui.app-shell > .app-main {
   border-radius: 0;
   box-shadow: none;
 }
-html[data-theme] body.workspace-ui.app-shell > #portal-content {
+html[data-theme]
+  body.workspace-ui.app-shell
+  .workspace-content
+  > #portal-content {
   padding: 0;
+  margin: 0;
 }
 html[data-theme] body.workspace-ui.app-shell #portal-main {
   padding: 24px;
 }
-html[data-theme] body.workspace-ui.app-shell > #app {
+html[data-theme] body.workspace-ui.app-shell .workspace-content > #app {
   height: calc(100dvh - var(--app-header-height));
   background: var(--theme-page);
   padding: 0;
@@ -442,14 +451,17 @@ html[data-theme] body.workspace-ui.app-shell #app-account-menu > button:hover {
   html[data-theme] body.workspace-ui.app-shell #app-account-toggle {
     max-width: 136px;
   }
-  html[data-theme] body.workspace-ui.app-shell > .app-main,
+  html[data-theme] body.workspace-ui.app-shell .workspace-content .app-main,
   html[data-theme] body.workspace-ui.app-shell #portal-main {
     padding: 20px 14px;
   }
-  html[data-theme] body.workspace-ui.app-shell > #portal-content {
+  html[data-theme]
+    body.workspace-ui.app-shell
+    .workspace-content
+    > #portal-content {
     padding: 0;
   }
-  html[data-theme] body.workspace-ui.app-shell > #app {
+  html[data-theme] body.workspace-ui.app-shell .workspace-content > #app {
     height: calc(100dvh - var(--app-header-height));
     padding: 0;
   }

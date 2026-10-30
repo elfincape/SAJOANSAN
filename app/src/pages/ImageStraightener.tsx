@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/image-straightener.css';
 import { useEffect, useRef, useState } from 'react';
 import { FileArea } from '../components/FileArea';

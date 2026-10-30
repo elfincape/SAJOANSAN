@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/charter.css';
 import { useEffect,useRef,useState } from 'react';
 import * as XLSX from 'xlsx';

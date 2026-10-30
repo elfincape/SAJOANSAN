@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/one-top.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties,ReactNode } from 'react';

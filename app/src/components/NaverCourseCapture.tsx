@@ -347,10 +347,7 @@ export function NaverCourseCapture({
     >
       <div>
         <h2>코스별 지도 캡처</h2>
-        <p>
-          차고지·센터·복귀지를 고정하고, 회전별로 선택한 비교 방식의 네이버
-          도로 경로를 저장합니다.
-        </p>
+
       </div>
       <div className="toolbar">
         <label>비교 방식 <select className="app-input" aria-label="경로 비교 방식" value={strategy} disabled={locked} onChange={e=>setStrategy(e.target.value as 'api3'|'full')}>

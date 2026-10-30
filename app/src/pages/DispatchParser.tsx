@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/dispatch-parser.css';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage } from '../components/AdminPage';
@@ -39,12 +38,12 @@ export default function DispatchParser() {
   return <AdminPage title="배차정보 파서" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-6 flex flex-col gap-5">
       <section className="border border-zinc-700 rounded-lg overflow-hidden">
-        <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400" /><span className="text-sm font-medium">배차 원문</span></div><div className="flex-1" /><button id="clear-btn" className="btn btn-ghost text-xs" onClick={() => { setRaw(''); setShowResults(false); setRecords([]); input.current?.focus(); }}>지우기</button><button id="parse-btn" className="btn btn-primary" onClick={runParse}>▶ 파싱 실행</button></div>
+        <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400" /><label htmlFor="raw-input" className="text-sm font-medium">1 · 배차 원문 입력</label></div><div className="flex-1" /><button id="clear-btn" className="btn btn-ghost text-xs" onClick={() => { setRaw(''); setShowResults(false); setRecords([]); input.current?.focus(); }}>지우기</button><button id="parse-btn" className="btn btn-primary" onClick={runParse}>파싱 실행</button></div>
         <div className="p-3"><textarea ref={input} id="raw-input" className="app-textarea w-full" rows={9} value={raw} onChange={event => setRaw(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); runParse(); } }} /></div>
         <div className="px-3 pb-2 text-xs text-zinc-500">※ 레코드 구분자 <code> / </code> (공백·슬래시·공백) &nbsp;|&nbsp; <kbd className="bg-zinc-700 px-1 py-0.5 rounded text-zinc-300">Ctrl</kbd>+<kbd className="bg-zinc-700 px-1 py-0.5 rounded text-zinc-300">Enter</kbd> 로 파싱</div>
       </section>
       <section ref={section} id="result-section" className={`border border-zinc-700 rounded-lg overflow-hidden${showResults ? '' : ' hidden'}`}>
-        <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-sm font-medium">파싱 결과</span></div><span id="result-count" className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">{records.length}건</span><div className="flex-1" />
+        <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-sm font-medium">2 · 결과 확인·복사</span></div><span id="result-count" className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">{records.length}건</span><div className="flex-1" />
           <button id="copy-tsv-btn" className="btn btn-ghost text-xs" onClick={() => { if (records.length) copy(['거래처명\t톤수\t기사명\t차량번호\t연락처', ...records.map(r => [r.name, r.ton, r.driver, r.vehicle, r.phone].join('\t'))].join('\n'), `전체 ${records.length}건 TSV 복사됨`); }}>전체 TSV 복사</button>
           <button id="copy-all-btn" className="btn btn-ghost text-xs" onClick={() => { if (records.length) copy(records.map(resultValue).join(','), `전체 ${records.length}건 복사됨`); }}>전체 결과값 복사</button>
         </div>

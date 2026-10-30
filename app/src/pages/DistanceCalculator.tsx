@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/distance.css';
 import { useEffect,useRef,useState } from 'react';
 import ExcelJS from 'exceljs';

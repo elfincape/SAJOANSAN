@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/coupang.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';

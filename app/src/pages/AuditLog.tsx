@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/audit-log.css';
 import { useCallback, useEffect, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
