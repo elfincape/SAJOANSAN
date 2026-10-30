@@ -4,6 +4,10 @@
   "buildCommand": "cd app && npm run build",
   "outputDirectory": "app/dist",
   "functions": {
+    "api/private-mail-worker.mjs": {
+      "regions": ["icn1"],
+      "maxDuration": 240
+    },
     "api/private-mail-diagnostic.mjs": {
       "maxDuration": 30
     },

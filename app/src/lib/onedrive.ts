@@ -3,13 +3,13 @@ import type { DocumentAdapter, DocumentRecord, DocumentUpload } from '../domain/
 import type { PdfSaved } from '../domain/driver-documents';
 import { prepareCompilation } from './driver-pdf';
 
-export async function oneDriveCall<T>(action: string, body?: FormData | Record<string, unknown>, binary = false): Promise<T> {
+export async function oneDriveCall<T>(action: string, body?: FormData | Record<string, unknown>, binary = false, timeoutMs = 110000): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('다시 로그인해 주세요.');
   const multipart = body instanceof FormData;
   const response = await fetch(import.meta.env.VITE_SUPABASE_URL + '/functions/v1/onedrive-auth/' + action, {
     method: 'POST', headers: { Authorization: 'Bearer ' + session.access_token, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, ...(multipart ? {} : { 'Content-Type': 'application/json' }) },
-    body: multipart ? body : JSON.stringify(body || {}), signal: AbortSignal.timeout(110000),
+    body: multipart ? body : JSON.stringify(body || {}), signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -58,11 +58,11 @@ export const oneDriveDocuments: DocumentAdapter & typeof oneDriveConnection & { 
     }
   },
 };
-export async function connectOneDrive() {
-  const result = await oneDriveCall<{ authorizationUrl: string; state: string; proof: string }>('start', { returnPath: location.pathname + location.search });
+export async function connectOneDrive(purpose?: 'mail-briefing') {
+  const result = await oneDriveCall<{ authorizationUrl: string; state: string; proof: string }>(purpose === 'mail-briefing' ? 'notes-start' : 'start', { returnPath: location.pathname + location.search });
   const target = new URL(result.authorizationUrl);
   if (target.origin !== 'https://login.microsoftonline.com') throw new Error('로그인 주소가 올바르지 않습니다.');
-  sessionStorage.setItem('onedrive-proof', JSON.stringify({ state: result.state, proof: result.proof, returnPath: location.pathname + location.search }));
+  sessionStorage.setItem('onedrive-proof', JSON.stringify({ state: result.state, proof: result.proof, purpose, returnPath: location.pathname + location.search }));
   location.assign(result.authorizationUrl);
 }
 export async function finishOneDrive() {
@@ -70,7 +70,7 @@ export async function finishOneDrive() {
   if (!state) return false;
   const saved = JSON.parse(sessionStorage.getItem('onedrive-proof') || 'null');
   if (!saved || saved.state !== state) throw new Error('연결을 시작한 브라우저에서 다시 로그인해 주세요.');
-  await oneDriveCall('finish', { state, proof: saved.proof }); sessionStorage.removeItem('onedrive-proof');
+  await oneDriveCall(saved.purpose === 'mail-briefing' ? 'notes-finish' : 'finish', { state, proof: saved.proof }); sessionStorage.removeItem('onedrive-proof');
   const path = String(saved.returnPath || '/admin/drivers.html');
   history.replaceState(null, '', path.startsWith('/portal/') || path.startsWith('/admin/drivers.html') ? path : '/admin/drivers.html');
   return true;

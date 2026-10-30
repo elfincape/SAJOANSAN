@@ -1,7 +1,16 @@
 import PostalMime from 'postal-mime';
 import { createHash } from 'node:crypto';
-export const RAW_LIMIT = 10 * 1024 * 1024;
-export const PACKAGE_LIMIT = 64 * 1024;
+import {
+  MAIL_RAW_LIMIT,
+  MAIL_DATA_LIMIT,
+  MAIL_DERIVED_FILE_LIMIT,
+  MAIL_METADATA_LIMIT,
+  MAIL_FILE_COUNT_LIMIT,
+} from '../supabase/functions/onedrive-auth/private-mail-limits.js';
+export const RAW_LIMIT = MAIL_RAW_LIMIT;
+export const PACKAGE_LIMIT = MAIL_METADATA_LIMIT;
+export const DATA_LIMIT = MAIL_DATA_LIMIT;
+export const DERIVED_FILE_LIMIT = MAIL_DERIVED_FILE_LIMIT;
 const digest = (data) => createHash('sha256').update(data).digest('hex');
 export function safeName(value) {
   const name =
@@ -20,7 +29,11 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
     throw Error('LIMIT_REACHED');
   let mail;
   try {
-    mail = await PostalMime.parse(raw, {
+    const input =
+      raw.byteOffset === 0 && raw.byteLength === raw.buffer.byteLength
+        ? raw.buffer
+        : raw;
+    mail = await PostalMime.parse(input, {
       forceRfc822Attachments: true,
       maxNestingDepth: 20,
       maxPartCount: 60,
@@ -39,14 +52,36 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
   const add = (kind, name, data) => {
     if (!data.length) return;
     total += data.length;
-    if (data.length > RAW_LIMIT || total > 2 * RAW_LIMIT || files.length >= 50)
-      throw Error('LIMIT_REACHED');
+    if (
+      data.length > DERIVED_FILE_LIMIT ||
+      total > DATA_LIMIT ||
+      files.length >= MAIL_FILE_COUNT_LIMIT
+    )
+      throw Error('PACKAGE_LIMIT_REACHED');
     files.push({ kind, name: safeName(name), bytes: data });
   };
-  if (mail.text) add('text', 'text', Buffer.from(mail.text));
-  if (mail.html) add('html', 'html', Buffer.from(mail.html));
-  for (const a of mail.attachments || [])
-    add('attachment', a.filename || 'attachment', Buffer.from(a.content));
+  for (const [kind, name, value] of [
+    ['text', 'text', mail.text],
+    ['html', 'html', mail.html],
+  ]) {
+    if (!value) continue;
+    const length = Buffer.byteLength(value);
+    if (length > DERIVED_FILE_LIMIT || total + length > DATA_LIMIT)
+      throw Error('PACKAGE_LIMIT_REACHED');
+    add(kind, name, Buffer.from(value));
+    mail[kind] = undefined;
+  }
+  for (const a of mail.attachments || []) {
+    signal?.throwIfAborted();
+    const content = a.content;
+    const bytes = ArrayBuffer.isView(content)
+      ? Buffer.from(content.buffer, content.byteOffset, content.byteLength)
+      : content instanceof ArrayBuffer
+        ? Buffer.from(content)
+        : null;
+    if (!bytes) throw Error('MIME_INVALID');
+    add('attachment', a.filename || 'attachment', bytes);
+  }
   const result = {
     uidl: digest(uidl),
     hash: digest(raw),
@@ -67,6 +102,6 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
       }),
     ) > PACKAGE_LIMIT
   )
-    throw Error('LIMIT_REACHED');
+    throw Error('PACKAGE_LIMIT_REACHED');
   return result;
 }

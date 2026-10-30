@@ -760,3 +760,86 @@ try {
 console.log(
   'PASS whole-request budget: slow discovery cannot start another 180-second collection window',
 );
+
+const { handlePrivateMailWorker } =
+  await import('../server/private-mail-worker.mjs');
+const workerKey = 'fixture-worker-credential-0000000000000000';
+let workerCollectCalls = 0,
+  workerOps = [];
+const workerRequest = (kind = 'collect', auth = workerKey) =>
+  new Request('https://sajoansan.vercel.app/api/private-mail-worker', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + auth },
+    body: JSON.stringify({
+      kind,
+      mailboxId: '39045005-313e-42e1-b50c-2394b3b6ff26',
+      jobId: '00000000-0000-4000-8000-000000000096',
+      messageId: '00000000-0000-4000-8000-000000000097',
+      day: '2026-10-30',
+    }),
+  });
+const workerOptions = {
+  env: { MAIL_COLLECTOR_KEY: workerKey },
+  logger: () => {},
+  fetcher: async (url, options) => {
+    assert.equal(
+      url,
+      'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-background-work',
+    );
+    assert.equal(options.headers.Authorization, 'Bearer ' + workerKey);
+    const body = JSON.parse(options.body);
+    workerOps.push(body.operation);
+    if (body.operation === 'job-claim')
+      return Response.json({ job: { id: body.id, cycleId: null } });
+    if (body.operation === 'job-finish')
+      return Response.json({ job: { status: 'queued' } });
+    if (body.operation === 'analyze') return Response.json({ status: 'done' });
+    if (body.operation === 'report')
+      return Response.json({ status: 'updated' });
+    throw Error('Unexpected worker operation');
+  },
+  collect: async (request, options) => {
+    workerCollectCalls++;
+    assert.equal(options.background, true);
+    const payload = await request.json();
+    assert.equal(payload.continuous, true);
+    assert.equal(payload.requestId, '00000000-0000-4000-8000-000000000096');
+    return Response.json({
+      progress: {
+        cycleId: '00000000-0000-4000-8000-000000000098',
+        total: 40,
+        processed: 20,
+        saved: 20,
+        remaining: 20,
+        phase: 'collecting',
+      },
+    });
+  },
+};
+assert.equal(
+  (
+    await handlePrivateMailWorker(
+      workerRequest('collect', 'invalid'),
+      workerOptions,
+    )
+  ).status,
+  403,
+);
+assert.equal(workerCollectCalls, 0);
+assert.equal(
+  (await handlePrivateMailWorker(workerRequest(), workerOptions)).status,
+  200,
+);
+assert.equal(workerCollectCalls, 1);
+assert.deepEqual(workerOps, ['job-claim', 'job-finish']);
+workerOps = [];
+await handlePrivateMailWorker(workerRequest('analyze'), workerOptions);
+assert.deepEqual(workerOps, ['analyze']);
+assert.equal(workerCollectCalls, 1);
+workerOps = [];
+await handlePrivateMailWorker(workerRequest('report'), workerOptions);
+assert.deepEqual(workerOps, ['report']);
+assert.equal(workerCollectCalls, 1);
+console.log(
+  'PASS durable worker boundary: fixed scoped credential/mailbox, no unauthorized POP, same persisted job identity, independent AI/report requests',
+);

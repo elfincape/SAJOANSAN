@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { packageMessage, RAW_LIMIT } from '../server/private-mail-package.mjs';
+import { MAIL_UPLOAD_CHUNK_BYTES } from '../server/private-mail-upload.mjs';
 import { ownerBridge } from '../server/private-mail-owner-collect.mjs';
 import { handlePrivateMail } from '../supabase/functions/onedrive-auth/private-mail.js';
 import { hash } from '../supabase/functions/onedrive-auth/handler.js';
@@ -12,6 +14,8 @@ const prefix = Buffer.from(
 const full = Buffer.alloc(RAW_LIMIT, 120);
 prefix.copy(full);
 const maxPackage = await packageMessage(full, Buffer.from('max'));
+assert.equal(RAW_LIMIT, 50_000_000);
+assert.equal(maxPackage.files[0].bytes, full);
 assert.equal(maxPackage.files[0].bytes.length, RAW_LIMIT);
 assert.ok(maxPackage.files.every((f) => f.data === undefined));
 await assert.rejects(
@@ -45,11 +49,19 @@ const box = {
   cutoff_at: '2026-08-18T00:00:00Z',
 };
 const items = new Map();
+const sessions = new Map(),
+  verifiedReads = new Set();
+const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+assert.equal(maxPackage.hash, sha(full));
 let published = false,
   failPublish = true,
   puts = 0,
   maxJSON = 0,
   maxBinary = 0,
+  maxSessionChunk = 0,
+  sessionPuts = 0,
+  loseFinalResponse = true,
+  lostFinalResponses = 0,
   inFlight = 0,
   maxInFlight = 0,
   shared = false,
@@ -81,6 +93,7 @@ const ctx = {
     if (path === 'rpc/private_mail_publish') {
       assert.equal(items.size, message.files.length);
       assert.equal(opts.body.p_files.length, message.files.length);
+      assert.equal(verifiedReads.size, message.files.length);
       if (failPublish) throw fail('publish unavailable', 503);
       published = true;
       return id;
@@ -102,10 +115,51 @@ const ctx = {
       const item = [...items.values()].find((i) =>
         path.includes('/items/' + i.id + '/'),
       );
-      return new Response(corrupt ? new Uint8Array([1]) : item.bytes);
+      assert.ok(item, 'Only committed Graph items may be read');
+      const bytes = item.bytes;
+      let offset = 0;
+      const response = new Response(
+        new ReadableStream({
+          pull(controller) {
+            if (offset === bytes.length) {
+              verifiedReads.add(item.name);
+              controller.close();
+              return;
+            }
+            const end = Math.min(offset + 65536, bytes.length);
+            let chunk = bytes.subarray(offset, end);
+            if (corrupt && offset === 0) {
+              chunk = Buffer.from(chunk);
+              chunk[0] ^= 1;
+            }
+            controller.enqueue(chunk);
+            offset = end;
+          },
+        }),
+      );
+      if (item.size > MAIL_UPLOAD_CHUNK_BYTES)
+        response.arrayBuffer = async () =>
+          assert.fail('Large content verification must stream');
+      return response;
     }
     if (path.includes('folder:/')) {
       const name = decodeURIComponent(path.split('folder:/')[1].split(':/')[0]);
+      if (opts.method === 'POST' && path.endsWith(':/createUploadSession')) {
+        assert.equal(published, false);
+        assert.equal(items.has(name), false);
+        const body = JSON.parse(opts.body);
+        assert.equal(body.item.name, name);
+        assert.equal(body.item['@microsoft.graph.conflictBehavior'], 'fail');
+        const index = Number(/_(\d+)\.bin$/.exec(name)?.[1]);
+        assert.ok(Number.isInteger(index));
+        const url =
+          'https://tenant.up.1drv.com/upload/session-' + sessions.size;
+        sessions.set(url, { name, index, offset: 0, chunks: [] });
+        return json({
+          uploadUrl: url,
+          expirationDateTime: new Date(Date.now() + 60000).toISOString(),
+        });
+      }
       if (opts.method === 'PUT') {
         assert.equal(published, false);
         assert.ok(!items.has(name));
@@ -129,20 +183,81 @@ const ctx = {
   },
 };
 const fetcher = async (url, opts) => {
-  assert.equal(opts.headers.Authorization, 'Bearer mock-owner');
   assert.equal(opts.redirect, 'error');
-  const binary = opts.headers['Content-Type'] === 'application/octet-stream';
-  if (binary) {
-    assert.ok(Buffer.isBuffer(opts.body));
-    maxBinary = Math.max(maxBinary, opts.body.length);
-  } else {
-    maxJSON = Math.max(maxJSON, Buffer.byteLength(opts.body));
-    assert.ok(Buffer.byteLength(opts.body) < 65536);
-    assert.ok(!opts.body.includes(base64.slice(0, 100)));
-  }
   inFlight++;
   maxInFlight = Math.max(maxInFlight, inFlight);
   try {
+    if (new URL(url).hostname === 'tenant.up.1drv.com') {
+      const session = sessions.get(url);
+      assert.ok(session, 'Only scoped session capabilities may receive chunks');
+      assert.equal(opts.method, 'PUT');
+      assert.equal(opts.credentials, 'omit');
+      assert.equal(
+        Object.keys(opts.headers).some(
+          (key) => key.toLowerCase() === 'authorization',
+        ),
+        false,
+      );
+      assert.ok(opts.body instanceof Uint8Array);
+      const file = message.files[session.index];
+      const end = Math.min(
+        session.offset + MAIL_UPLOAD_CHUNK_BYTES,
+        file.byte_size,
+      );
+      assert.equal(
+        opts.headers['Content-Range'],
+        `bytes ${session.offset}-${end - 1}/${file.byte_size}`,
+      );
+      assert.equal(
+        Number(opts.headers['Content-Length']),
+        end - session.offset,
+      );
+      assert.equal(opts.body.byteLength, end - session.offset);
+      assert.deepEqual(opts.body, file.bytes.subarray(session.offset, end));
+      assert.equal(
+        items.has(session.name),
+        false,
+        'Partial uploads cannot become stored files',
+      );
+      assert.equal(published, false);
+      maxSessionChunk = Math.max(maxSessionChunk, opts.body.byteLength);
+      sessionPuts++;
+      session.chunks.push(Buffer.from(opts.body));
+      session.offset = end;
+      if (end < file.byte_size) {
+        assert.equal(opts.body.byteLength % (320 * 1024), 0);
+        return json({ nextExpectedRanges: [end + '-'] }, { status: 202 });
+      }
+      puts++;
+      const item = {
+        id: 'file' + puts,
+        name: session.name,
+        size: file.byte_size,
+        file: {},
+        parentReference: { id: 'folder', driveId: 'drive' },
+        bytes: Buffer.concat(session.chunks, file.byte_size),
+      };
+      assert.equal(sha(item.bytes), file.content_hash);
+      items.set(session.name, item);
+      if (loseFinalResponse) {
+        loseFinalResponse = false;
+        lostFinalResponses++;
+        throw Error('mock final upload acknowledgement lost');
+      }
+      return json({ id: item.id }, { status: 201 });
+    }
+    assert.match(url, /\/private-mail-owner-(?:sync|file)$/);
+    assert.equal(opts.headers.Authorization, 'Bearer mock-owner');
+    const binary = opts.headers['Content-Type'] === 'application/octet-stream';
+    if (binary) {
+      assert.ok(Buffer.isBuffer(opts.body));
+      maxBinary = Math.max(maxBinary, opts.body.length);
+      assert.ok(opts.body.length <= MAIL_UPLOAD_CHUNK_BYTES);
+    } else {
+      maxJSON = Math.max(maxJSON, Buffer.byteLength(opts.body));
+      assert.ok(Buffer.byteLength(opts.body) < 65536);
+      assert.ok(!opts.body.includes(base64.slice(0, 100)));
+    }
     return await handlePrivateMail(
       'private-mail-sync',
       new Request(url, {
@@ -162,26 +277,59 @@ await bridge.begin();
 await assert.rejects(() => bridge.ingest(message), /publish unavailable/);
 assert.equal(published, false);
 assert.equal(puts, message.files.length);
+assert.equal(sessions.size, 2);
+assert.equal(
+  lostFinalResponses,
+  1,
+  'A lost final response must recover through Edge verification',
+);
+assert.ok(sessionPuts > sessions.size);
+const completedSessionPuts = sessionPuts;
+for (const [index, file] of message.files.entries()) {
+  const item = items.get(`${message.uidl}_${message.hash}_${index}.bin`);
+  assert.ok(item);
+  assert.equal(sha(item.bytes), file.content_hash);
+  assert.deepEqual(Buffer.from(item.bytes), file.bytes);
+}
+assert.equal(sha(raw), message.hash);
+assert.equal(
+  message.files.find((file) => file.kind === 'attachment').content_hash,
+  sha(attachment),
+);
 failPublish = false;
+verifiedReads.clear();
 await bridge.ingest(message);
 assert.equal(published, true);
 assert.equal(puts, message.files.length);
+assert.equal(
+  sessions.size,
+  2,
+  'Retry must verify existing files without a new session',
+);
+assert.equal(
+  sessionPuts,
+  completedSessionPuts,
+  'Retry cannot retransmit committed chunks',
+);
 assert.equal(maxInFlight, 1);
-assert.ok(maxBinary > 4.5 * 1024 * 1024);
+assert.ok(maxBinary > 0 && maxBinary <= MAIL_UPLOAD_CHUNK_BYTES);
+assert.equal(maxSessionChunk, MAIL_UPLOAD_CHUNK_BYTES);
 assert.ok(maxJSON < 65536);
 // Metadata cannot forge missing bytes, altered hashes, sharing state or lease ownership.
 published = false;
 corrupt = true;
-await assert.rejects(() => bridge.ingest(message));
+await assert.rejects(() => bridge.ingest(message), /MAIL_STREAM_HASH/);
 corrupt = false;
 shared = true;
 await assert.rejects(() => bridge.ingest(message));
 shared = false;
-const file = message.files[0],
+assert.equal(puts, message.files.length);
+assert.equal(sessionPuts, completedSessionPuts);
+const file = message.files.find((file) => file.kind === 'text'),
   metadata = {
     operation: 'file',
     mailbox: id,
-    lease,
+    lease: box.lease,
     uidl: message.uidl,
     hash: message.hash,
     index: 0,
@@ -190,28 +338,32 @@ const file = message.files[0],
     byte_size: file.byte_size,
     content_hash: 'f'.repeat(64),
   };
-await assert.rejects(() =>
-  handlePrivateMail(
-    'private-mail-sync',
-    new Request('https://db.test/file', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Mail-Metadata': encodeURIComponent(JSON.stringify(metadata)),
-      },
-      body: file.bytes,
-    }),
-    { id: owner },
-    ctx,
-  ),
+await assert.rejects(
+  () =>
+    handlePrivateMail(
+      'private-mail-sync',
+      new Request('https://db.test/file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Mail-Metadata': encodeURIComponent(JSON.stringify(metadata)),
+        },
+        body: file.bytes,
+      }),
+      { id: owner },
+      ctx,
+    ),
+  /FILE_HASH_REJECTED/,
 );
 box.lease_until = '2000-01-01';
 await assert.rejects(() => bridge.ingest(message));
 console.log(
   JSON.stringify({
-    pass: '10MiB EML, 7MiB attachment, binary-only sequential files, small metadata, verify-before-publish, partial recovery, immutable retry, corruption/shared/expired lease denied',
+    pass: '50MB source boundary, 7MiB attachment, serial chunked sessions, bounded Edge binary/metadata, streamed verify-before-publish, immutable retry, corruption/shared/expired lease denied',
     maxBinaryBytes: maxBinary,
     maxMetadataBytes: maxJSON,
+    maxSessionChunkBytes: maxSessionChunk,
+    sessionPuts,
     maxInFlight,
   }),
 );

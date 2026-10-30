@@ -405,3 +405,87 @@ assert.equal(
   2,
   'lost publish acknowledgement is reconciled by persisted UIDL rather than counted as missing',
 );
+
+const { MAIL_RAW_LIMIT } =
+  await import('../supabase/functions/onedrive-auth/private-mail-limits.js');
+assert.equal(MAIL_RAW_LIMIT, 50_000_000);
+assert.doesNotThrow(() => new ReadOnlyPop(transport, { maxBytes: 50_000_000 }));
+assert.throws(
+  () => new ReadOnlyPop(transport, { maxBytes: 50_000_001 }),
+  /CONFIG_REQUIRED/,
+);
+for (const [lineBytes, maxBytes, accepted] of [
+  [62, 64, true],
+  [63, 64, false],
+  [70000, 80000, true],
+]) {
+  let response = Buffer.from('+OK\r\n' + 'a'.repeat(lineBytes) + '\r\n.\r\n');
+  const sizedPop = new ReadOnlyPop(
+    {
+      write: async () => {},
+      close() {},
+      async read(buffer) {
+        if (!response.length) return null;
+        const length = Math.min(buffer.length, response.length);
+        buffer.set(response.subarray(0, length));
+        response = response.subarray(length);
+        return length;
+      },
+    },
+    { maxBytes },
+  );
+  if (accepted) assert.equal((await sizedPop.retr(1)).length, lineBytes + 2);
+  else await assert.rejects(() => sizedPop.retr(1), /LIMIT_REACHED/);
+}
+const sizeReviewed = [];
+const sizePop = {
+  uidl: async () => [
+    [1, 'allowed-fifty-megabyte'],
+    [2, 'over-fifty-megabyte'],
+  ],
+  list: async () =>
+    new Map([
+      [1, 50_000_000],
+      [2, 50_000_001],
+    ]),
+  top: async () => Buffer.from('Date: Fri, 30 Oct 2026 00:00:00 GMT\r\n\r\n'),
+  retr: async (number) => {
+    sizeReviewed.push(number);
+    return Buffer.from('Date: Fri, 30 Oct 2026 00:00:00 GMT\r\n\r\nbody');
+  },
+  close() {},
+};
+const sizeCounts = await syncBatch({
+  pop: sizePop,
+  bridge: { seen: async () => false, ingest: async () => {} },
+  cutoff: new Date('2026-09-01Z'),
+  packageMessage: async () => ({}),
+});
+assert.equal(sizeCounts.saved, 1);
+assert.equal(sizeCounts.oversized, 1);
+assert.deepEqual(sizeReviewed, [1]);
+assert.deepEqual(sizeCounts.review, [
+  {
+    uidl: createHash('sha256').update('over-fifty-megabyte').digest('hex'),
+    reason: 'RAW_SIZE_LIMIT',
+    reportedBytes: 50_000_001,
+    limitBytes: 50_000_000,
+  },
+]);
+const boundedReviews = await syncBatch({
+  pop: {
+    ...sizePop,
+    uidl: async () =>
+      Array.from({ length: 60 }, (_, i) => [i + 1, `oversized-${i}`]),
+    list: async () =>
+      new Map(Array.from({ length: 60 }, (_, i) => [i + 1, 50_000_001])),
+  },
+  bridge: { seen: async () => false },
+  cutoff: new Date('2026-09-01Z'),
+  packageMessage: async () => ({}),
+});
+assert.equal(boundedReviews.review.length, 50);
+assert.equal(boundedReviews.deferred, 10);
+console.log(
+  'PASS decimal 50MB source limit, exact POP boundary, long body lines, retained per-UIDL review and bounded review checkpoint',
+);

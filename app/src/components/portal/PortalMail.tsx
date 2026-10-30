@@ -16,6 +16,7 @@ import type {
 } from '../../domain/portal-mail';
 import { portalStamp } from '../../domain/portal-types';
 import { useDownload } from '../useDownload';
+import { MailBriefingConnection } from './MailBriefingConnection';
 function MailReceipt({
   onCollected,
   initialProgress,
@@ -497,6 +498,7 @@ export function PortalMail() {
               onCollected={refreshAfterReceipt}
               initialProgress={box?.last_counts?.progress}
             />
+            <MailBriefingConnection />
           </>
         ) : null}
       </section>

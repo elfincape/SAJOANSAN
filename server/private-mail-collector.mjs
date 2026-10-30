@@ -1,6 +1,7 @@
 // Inert transport/core only: no route, environment reader, credentials or scheduler.
 import { createHash } from 'node:crypto';
-const LIMIT = 10 * 1024 * 1024;
+import { MAIL_RAW_LIMIT } from '../supabase/functions/onedrive-auth/private-mail-limits.js';
+const LIMIT = MAIL_RAW_LIMIT;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const RESPONSE_CODES = new Set([
   'AUTH',
@@ -25,7 +26,14 @@ export class ReadOnlyPop {
   #maxBytes;
   #timeout;
   constructor(transport, { maxBytes = LIMIT, timeoutMs = 3000 } = {}) {
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > LIMIT)
+    if (
+      !Number.isSafeInteger(maxBytes) ||
+      maxBytes < 1 ||
+      maxBytes > LIMIT ||
+      !Number.isInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > 120000
+    )
       throw Error('CONFIG_REQUIRED');
     this.#transport = transport;
     this.#maxBytes = maxBytes;
@@ -34,7 +42,7 @@ export class ReadOnlyPop {
   close() {
     this.#transport.close();
   }
-  async #bounded(operation) {
+  async #bounded(operation, timeoutMs = this.#timeout) {
     let timer;
     try {
       return await Promise.race([
@@ -43,23 +51,33 @@ export class ReadOnlyPop {
           timer = setTimeout(() => {
             this.close();
             reject(Error('POP_TIMEOUT'));
-          }, this.#timeout);
+          }, timeoutMs);
         }),
       ]);
     } finally {
       clearTimeout(timer);
     }
   }
-  async #line() {
+  async #line(maxLineBytes = 65536) {
+    const parts = [];
+    let size = 0;
     for (;;) {
       const end = this.#buffer.indexOf('\r\n');
       if (end >= 0) {
-        if (end > 65536) throw Error('LIMIT_REACHED');
+        if (size + end > maxLineBytes) throw Error('LIMIT_REACHED');
         const line = this.#buffer.subarray(0, end);
         this.#buffer = this.#buffer.subarray(end + 2);
-        return line;
+        return parts.length
+          ? Buffer.concat([...parts, line], size + end)
+          : line;
       }
-      if (this.#buffer.length > 65536) throw Error('LIMIT_REACHED');
+      const count = this.#buffer.length - (this.#buffer.at(-1) === 13 ? 1 : 0);
+      if (size + count > maxLineBytes) throw Error('LIMIT_REACHED');
+      if (count) {
+        parts.push(this.#buffer.subarray(0, count));
+        size += count;
+        this.#buffer = this.#buffer.subarray(count);
+      }
       const chunk = new Uint8Array(8192);
       const n = await this.#transport.read(chunk);
       if (!Number.isInteger(n) || n <= 0 || n > chunk.length)
@@ -83,51 +101,58 @@ export class ReadOnlyPop {
     if (this.#busy) throw Error('POP_BUSY');
     this.#busy = true;
     try {
-      return await this.#bounded(async () => {
-        await this.#transport.write(
-          Buffer.from(verb + (arg ? ' ' + arg : '') + '\r\n'),
-        );
-        const status = (await this.#line()).toString('ascii');
-        if (!/^\+OK(?: |$)/.test(status)) {
-          const error = Error(
-            /^-ERR(?: |$)/.test(status) ? 'POP_REJECTED' : 'POP_PROTOCOL_ERROR',
+      return await this.#bounded(
+        async () => {
+          await this.#transport.write(
+            Buffer.from(verb + (arg ? ' ' + arg : '') + '\r\n'),
           );
-          const code = /^-ERR \[([A-Z/-]+)\](?: |$)/.exec(status)?.[1];
-          if (RESPONSE_CODES.has(code)) error.responseCode = code;
-          throw error;
-        }
-        if (!multiline) return;
-        const blocks = [],
-          crlf = Buffer.from('\r\n');
-        let size = 0,
-          used = 0,
-          block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
-        const append = (part) => {
-          let offset = 0;
-          while (offset < part.length) {
-            if (used === block.length) {
-              blocks.push(block);
-              block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
-              used = 0;
-            }
-            const count = Math.min(block.length - used, part.length - offset);
-            part.copy(block, used, offset, offset + count);
-            used += count;
-            offset += count;
+          const status = (await this.#line()).toString('ascii');
+          if (!/^\+OK(?: |$)/.test(status)) {
+            const error = Error(
+              /^-ERR(?: |$)/.test(status)
+                ? 'POP_REJECTED'
+                : 'POP_PROTOCOL_ERROR',
+            );
+            const code = /^-ERR \[([A-Z/-]+)\](?: |$)/.exec(status)?.[1];
+            if (RESPONSE_CODES.has(code)) error.responseCode = code;
+            throw error;
           }
-        };
-        for (;;) {
-          let line = await this.#line();
-          if (line.length === 1 && line[0] === 46) break;
-          if (line[0] === 46) line = line.subarray(1);
-          size += line.length + 2;
-          if (size > this.#maxBytes) throw Error('LIMIT_REACHED');
-          append(line);
-          append(crlf);
-        }
-        blocks.push(block.subarray(0, used));
-        return Buffer.concat(blocks, size);
-      });
+          if (!multiline) return;
+          const blocks = [],
+            crlf = Buffer.from('\r\n');
+          let size = 0,
+            used = 0,
+            block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
+          const append = (part) => {
+            let offset = 0;
+            while (offset < part.length) {
+              if (used === block.length) {
+                blocks.push(block);
+                block = Buffer.allocUnsafe(Math.min(65536, this.#maxBytes));
+                used = 0;
+              }
+              const count = Math.min(block.length - used, part.length - offset);
+              part.copy(block, used, offset, offset + count);
+              used += count;
+              offset += count;
+            }
+          };
+          for (;;) {
+            let line = await this.#line(
+              verb === 'RETR' ? Math.max(1, this.#maxBytes - size) : 65536,
+            );
+            if (line.length === 1 && line[0] === 46) break;
+            if (line[0] === 46) line = line.subarray(1);
+            size += line.length + 2;
+            if (size > this.#maxBytes) throw Error('LIMIT_REACHED');
+            append(line);
+            append(crlf);
+          }
+          blocks.push(block.subarray(0, used));
+          return Buffer.concat(blocks, size);
+        },
+        verb === 'RETR' ? Math.max(this.#timeout, 120000) : this.#timeout,
+      );
     } catch (error) {
       if (error.message !== 'POP_REJECTED') this.close();
       throw error;
@@ -229,6 +254,7 @@ export class ReadOnlyPop {
 
 function sentDate(raw) {
   const end = raw.indexOf('\r\n\r\n');
+  if (end > 65536 || (end < 0 && raw.length > 65536)) return null;
   const header = raw
     .subarray(0, end < 0 ? raw.length : end)
     .toString('latin1')
@@ -245,7 +271,7 @@ export async function syncBatch({
   batch = 5,
   seconds = 20,
   cursor = null,
-  maxMessageBytes = 10 * 1024 * 1024,
+  maxMessageBytes = MAIL_RAW_LIMIT,
   uidls = null,
 }) {
   if (
@@ -278,6 +304,7 @@ export async function syncBatch({
     oversized: 0,
     deferred: 0,
     cursor,
+    review: [],
     ...(uidls !== null ? { processedUidls: [], missing: 0, recovered: 0 } : {}),
   };
   const start = Date.now();
@@ -313,7 +340,11 @@ export async function syncBatch({
       if (index >= 0) entries.push(...entries.splice(0, index + 1));
     }
     for (let index = 0; index < entries.length; index++) {
-      if (Date.now() - start >= seconds * 1000 || counts.saved >= batch) {
+      if (
+        Date.now() - start >= seconds * 1000 ||
+        counts.saved >= batch ||
+        counts.review.length >= 50
+      ) {
         counts.deferred = entries.length - index;
         return counts;
       }
@@ -323,6 +354,13 @@ export async function syncBatch({
         counts.cursor = id;
         if (uidls !== null) counts.processedUidls.push(id);
       };
+      const review = (reason) =>
+        counts.review.push({
+          uidl: id,
+          reason,
+          reportedBytes: sizes.get(number) ?? null,
+          limitBytes: maxMessageBytes,
+        });
       if (number === null) {
         counts.missing++;
         counts.skipped++;
@@ -337,11 +375,13 @@ export async function syncBatch({
       }
       if ((sizes.get(number) ?? maxMessageBytes + 1) > maxMessageBytes) {
         counts.oversized++;
+        review(sizes.has(number) ? 'RAW_SIZE_LIMIT' : 'SIZE_UNAVAILABLE');
         processed();
         continue;
       }
       const stopOversized = () => {
         counts.oversized++;
+        review('RAW_SIZE_LIMIT');
         processed();
         counts.deferred = entries.length - index - 1;
         return counts;
@@ -366,9 +406,11 @@ export async function syncBatch({
         if (error.message === 'LIMIT_REACHED') return stopOversized();
         throw error;
       }
+      if (raw.length > maxMessageBytes) return stopOversized();
       const sent = sentDate(raw);
       if (sent === null) {
         counts.undated++;
+        review('MISSING_DATE');
         processed();
         continue;
       }
@@ -384,13 +426,24 @@ export async function syncBatch({
         );
       } catch (error) {
         if (
-          !['LIMIT_REACHED', 'MIME_INVALID', 'MISSING_DATE'].includes(
-            error.message,
-          )
+          ![
+            'LIMIT_REACHED',
+            'PACKAGE_LIMIT_REACHED',
+            'MIME_INVALID',
+            'MISSING_DATE',
+          ].includes(error.message)
         )
           throw error;
-        if (error.message === 'LIMIT_REACHED') counts.oversized++;
+        if (['LIMIT_REACHED', 'PACKAGE_LIMIT_REACHED'].includes(error.message))
+          counts.oversized++;
         else counts.undated++;
+        review(
+          error.message === 'LIMIT_REACHED'
+            ? 'RAW_SIZE_LIMIT'
+            : error.message === 'PACKAGE_LIMIT_REACHED'
+              ? 'PACKAGE_LIMIT'
+              : error.message,
+        );
         processed();
         continue;
       }

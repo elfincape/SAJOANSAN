@@ -1,8 +1,9 @@
+import { MAIL_DIAGNOSTIC_OWNER_ID } from './portal-mail';
 export interface Feature {
   id: string; href?: string; title: string; desc?: string;
   category: 'dispatch' | 'transport' | 'daily' | 'documents' | 'administration'; resource?: string;
   aliases: readonly string[]; centers: readonly string[]; defaultEnabled: boolean;
-  adminOnly?: boolean; ownerOnly?: boolean; fixed?: boolean; hub?: boolean;
+  adminOnly?: boolean; ownerOnly?: boolean; ownerId?: string; fixed?: boolean; hub?: boolean;
   parent?: string; legacyFeature?: string;
   navigationScope: 'center' | 'shared';
 }
@@ -23,6 +24,16 @@ export const FEATURE_CATALOG = Object.freeze(
       title: '업무 포털',
       desc: '오늘 할 일·업무 처리·인계·센터 업무조사',
       category: 'daily',
+      fixed: true,
+    },
+    {
+      id: 'mailDailyBriefing',
+      href: '/admin/mail-daily-briefing.html',
+      title: '일일정리',
+      desc: '본인 메일의 이슈·할 일·회신 대기와 자동화 설정',
+      category: 'daily',
+      navigationScope: 'shared',
+      ownerId: MAIL_DIAGNOSTIC_OWNER_ID,
       fixed: true,
     },
     {
@@ -341,9 +352,10 @@ export function featureForPath(path: string) {
     )
   );
 }
-export function featureAvailable(feature: Feature, profile: { role?: string } | null | undefined, centerCode: string) {
+export function featureAvailable(feature: Feature, profile: { id?: string; role?: string; active?: boolean } | null | undefined, centerCode: string) {
   return (
     (!feature.adminOnly || profile?.role === 'admin') &&
+    (!feature.ownerId || (profile?.id === feature.ownerId && profile?.active === true)) &&
     (!feature.centers.length || feature.centers.includes(centerCode))
   );
 }

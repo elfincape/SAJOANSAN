@@ -1,4 +1,17 @@
 import { createOneDriveStorage } from './storage.js';
+import { inspectBriefingTarget } from './private-mail-briefing.js';
+import { handleMailAutomation } from './private-mail-background.js';
+import { createMailSource } from './private-mail-source.js';
+import { handleMailFilter } from './private-mail-filter-actions.js';
+import {
+  MAIL_RAW_LIMIT,
+  MAIL_DATA_LIMIT,
+  MAIL_DERIVED_FILE_LIMIT,
+} from './private-mail-limits.js';
+import {
+  verifyMailStream,
+  checkedMailStream,
+} from './private-mail-stream-verify.js';
 import {
   startCollection,
   advanceCollection,
@@ -13,8 +26,10 @@ import {
 } from './private-mail-policy.js';
 const approvedAnonymousDestination =
   createAnonymousDestinationCheck(APPROVED_MAIL_TARGET);
-const enc = encodeURIComponent,
-  MAX = 10 * 1024 * 1024;
+const enc = encodeURIComponent;
+const DIRECT_FILE_BYTES = 3276800;
+const fileLimit = (kind) =>
+  kind === 'eml' ? MAIL_RAW_LIMIT : MAIL_DERIVED_FILE_LIMIT;
 const uuid = (s) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     s || '',
@@ -117,6 +132,18 @@ export async function handlePrivateMail(action, req, user, ctx) {
     hash,
     fetcher,
   } = ctx;
+  if (action === 'private-mail-briefing-status') {
+    if (user.id !== APPROVED_MAIL_TARGET.owner_id)
+      throw fail('OWNER_REQUIRED', 403);
+    return json(
+      await withLock(() =>
+        inspectBriefingTarget({
+          connected: ctx.connectedNotes || connected,
+          graph,
+        }),
+      ),
+    );
+  }
   const { environment, verify } = createOneDriveStorage({
     settings,
     connected,
@@ -279,12 +306,38 @@ export async function handlePrivateMail(action, req, user, ctx) {
           )
         ).json();
     await privatePermissions(box, item.id, env, driveOwner, item);
-    await verify(
-      { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
-      item,
-      env.access,
-    );
+    await verifyStored(box, file, item, env.access);
     return { ...file, item_id: item.id };
+  }
+  function storedMetadata(box, file, item) {
+    if (
+      !item?.file ||
+      !item.id ||
+      item.name !== file.file_name ||
+      item.size !== file.byte_size ||
+      item.parentReference?.id !== box.folder_id ||
+      String(item.parentReference?.driveId).toLowerCase() !==
+        box.drive_id.toLowerCase()
+    )
+      throw fail('FILE_HASH_REJECTED', 409);
+  }
+  async function verifyStored(box, file, item, access) {
+    if (file.byte_size <= DIRECT_FILE_BYTES)
+      return verify(
+        { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
+        item,
+        access,
+      );
+    storedMetadata(box, file, item);
+    const response = await graph(
+      '/drives/' + enc(box.drive_id) + '/items/' + enc(item.id) + '/content',
+      access,
+      { timeoutMs: 120000 },
+    );
+    await verifyMailStream(response, {
+      expectedBytes: file.byte_size,
+      expectedHash: file.content_hash,
+    });
   }
   const length = Number(req.headers.get('content-length') || 0);
   if (length > 30 * 1024 * 1024)
@@ -446,6 +499,48 @@ export async function handlePrivateMail(action, req, user, ctx) {
       throw fail('메일함에 접근할 수 없습니다.', 403);
     return box;
   };
+  const filterActions = [
+    'private-mail-filter-status',
+    'private-mail-rules-preview',
+    'private-mail-rules-save',
+    'private-mail-filter-override',
+    'private-mail-filter-apply-preview',
+    'private-mail-item-status',
+  ];
+  const automationActions = [
+    'private-mail-background-work',
+    'private-mail-automation-status',
+    'private-mail-automation-config',
+    'private-mail-run-now',
+    'private-mail-job-stop',
+    'private-mail-daily-overview',
+    'private-mail-analyze-one',
+    'private-mail-report-now',
+  ];
+  if ([...automationActions, ...filterActions].includes(action)) {
+    const source = createMailSource({
+      db,
+      withLock,
+      mailbox,
+      environment,
+      graph,
+      verify,
+      privateDestination,
+      privatePermissions,
+    });
+    if (filterActions.includes(action))
+      return handleMailFilter(action, body, user, {
+        db,
+        json,
+        fail,
+        loadText: source.loadText,
+      });
+    return handleMailAutomation(action, body, user, {
+      ...ctx,
+      ...source,
+      connectedNotes: () => withLock(() => ctx.connectedNotes()),
+    });
+  }
   if (action === 'private-mail-sync') {
     if (ctx.ownerSync && body.operation === 'begin' && !body.mailbox)
       body.mailbox = ctx.collectorMailboxId;
@@ -454,6 +549,12 @@ export async function handlePrivateMail(action, req, user, ctx) {
     if (body.mailbox !== ctx.collectorMailboxId)
       throw fail('수집 대상 메일함이 아닙니다.', 403);
     const box = await mailbox(body.mailbox);
+    if (
+      ctx.background &&
+      body.operation === 'begin' &&
+      box.automation_config?.enabled !== true
+    )
+      throw fail('AUTOMATION_DISABLED', 403);
     if (body.operation === 'begin') {
       const lease = crypto.randomUUID();
       const rows = await withLock(async () => {
@@ -698,6 +799,48 @@ export async function handlePrivateMail(action, req, user, ctx) {
         counts.deferred = cycle.pending.length;
       }
       if (cycle) counts.cycle = cycle;
+      const review = body.review ?? [];
+      const reviewReasons = new Set([
+        'RAW_SIZE_LIMIT',
+        'SIZE_UNAVAILABLE',
+        'PACKAGE_LIMIT',
+        'MIME_INVALID',
+        'MISSING_DATE',
+      ]);
+      if (
+        !Array.isArray(review) ||
+        review.length > 50 ||
+        review.some(
+          (item) =>
+            !hex(item?.uidl) ||
+            !reviewReasons.has(item.reason) ||
+            (item.reportedBytes !== null &&
+              (!Number.isSafeInteger(item.reportedBytes) ||
+                item.reportedBytes < 0)) ||
+            !Number.isSafeInteger(item.limitBytes) ||
+            item.limitBytes < 0,
+        )
+      )
+        throw fail('REVIEW_METADATA_REJECTED');
+      const reviews = new Map(
+        (Array.isArray(box.last_counts?.reviews)
+          ? box.last_counts.reviews
+          : []
+        ).map((item) => [item.uidl, item]),
+      );
+      for (const item of review) reviews.set(item.uidl, item);
+      if (body.processedUidls?.length) {
+        const published = await db(
+          'private_mail_messages?select=uidl_hash&mailbox_id=eq.' +
+            box.id +
+            '&uidl_hash=in.(' +
+            body.processedUidls.join(',') +
+            ')&limit=50',
+        );
+        for (const row of published) reviews.delete(row.uidl_hash);
+      }
+      if (reviews.size > 5000) throw fail('REVIEW_METADATA_LIMIT', 409);
+      if (reviews.size) counts.reviews = [...reviews.values()];
       await withLock(async () => {
         await fenceMailbox(box, body.lease);
         return db(
@@ -720,6 +863,91 @@ export async function handlePrivateMail(action, req, user, ctx) {
       });
       return json({ ok: true });
     }
+    if (['upload-session', 'upload-complete'].includes(body.operation)) {
+      if (
+        !ctx.ownerSync ||
+        !hex(body.uidl) ||
+        !hex(body.hash) ||
+        !Number.isInteger(body.index) ||
+        body.index < 0 ||
+        body.index >= 50 ||
+        !['eml', 'text', 'html', 'attachment'].includes(body.kind) ||
+        typeof body.name !== 'string' ||
+        body.name.length > 200 ||
+        !hex(body.content_hash) ||
+        !Number.isInteger(body.byte_size) ||
+        body.byte_size < 1 ||
+        body.byte_size > fileLimit(body.kind)
+      )
+        throw fail('FILE_METADATA_REJECTED');
+      if (body.kind === 'eml' && body.content_hash !== body.hash)
+        throw fail('EML_HASH_REJECTED');
+      const file = {
+        kind: body.kind,
+        original_name: mailFilename(body.name),
+        file_name: body.uidl + '_' + body.hash + '_' + body.index + '.bin',
+        byte_size: body.byte_size,
+        content_hash: storedHash(body.content_hash),
+      };
+      return withLock(async (holder) => {
+        const env = await environment(),
+          owner = await privateDestination(box, env);
+        await fenceMailbox(box, body.lease);
+        await renew(holder);
+        const path =
+          '/drives/' +
+          enc(box.drive_id) +
+          '/items/' +
+          enc(box.folder_id) +
+          ':/' +
+          enc(file.file_name);
+        const old = await graph(path, env.access, { allowMissing: true });
+        if (old) {
+          const item = await old.json();
+          await privatePermissions(box, item.id, env, owner, item);
+          await verifyStored(box, file, item, env.access);
+          return json({ file: { ...file, item_id: item.id } });
+        }
+        if (body.operation === 'upload-complete')
+          throw fail('FILE_NOT_UPLOADED', 409);
+        const session = await (
+          await graph(path + ':/createUploadSession', env.access, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              item: {
+                name: file.file_name,
+                '@microsoft.graph.conflictBehavior': 'fail',
+              },
+            }),
+          })
+        ).json();
+        let url;
+        try {
+          url = new URL(session.uploadUrl);
+        } catch {
+          throw fail('UPLOAD_SESSION_REJECTED', 502);
+        }
+        if (
+          url.protocol !== 'https:' ||
+          url.username ||
+          url.password ||
+          url.port ||
+          url.hash ||
+          ![
+            '.1drv.com',
+            '.onedrive.com',
+            '.microsoftpersonalcontent.com',
+            '.sharepoint.com',
+          ].some((host) => url.hostname.endsWith(host))
+        )
+          throw fail('UPLOAD_SESSION_REJECTED', 502);
+        return json({
+          uploadUrl: url.href,
+          expiresAt: session.expirationDateTime,
+        });
+      });
+    }
     if (body.operation === 'file') {
       if (
         !binary ||
@@ -735,7 +963,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
         !hex(body.content_hash) ||
         !Number.isInteger(body.byte_size) ||
         body.byte_size < 1 ||
-        body.byte_size > MAX
+        body.byte_size > DIRECT_FILE_BYTES
       )
         throw fail('FILE_METADATA_REJECTED');
       if (body.kind === 'eml' && body.content_hash !== body.hash)
@@ -836,14 +1064,14 @@ export async function handlePrivateMail(action, req, user, ctx) {
           file.name.length > 200 ||
           !Number.isInteger(file.byte_size) ||
           file.byte_size < 1 ||
-          file.byte_size > MAX ||
+          file.byte_size > fileLimit(file.kind) ||
           !hex(file.content_hash) ||
           file.bytes !== undefined ||
           file.data !== undefined
         )
           throw fail('MANIFEST_REJECTED');
         total += file.byte_size;
-        if (total > 2 * MAX) throw fail('MANIFEST_LIMIT', 413);
+        if (total > MAIL_DATA_LIMIT) throw fail('MANIFEST_LIMIT', 413);
         refs.push({
           kind: file.kind,
           original_name: mailFilename(file.name),
@@ -888,12 +1116,12 @@ export async function handlePrivateMail(action, req, user, ctx) {
       if (
         !['eml', 'text', 'html', 'attachment'].includes(file.kind) ||
         typeof file.data !== 'string' ||
-        file.data.length > Math.ceil((MAX * 4) / 3) + 4
+        file.data.length > Math.ceil((fileLimit(file.kind) * 4) / 3) + 4
       )
         throw fail('메일 파일 제한을 초과했습니다.', 413);
       const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
       total += bytes.length;
-      if (bytes.length > MAX || total > 2 * MAX)
+      if (bytes.length > fileLimit(file.kind) || total > MAIL_DATA_LIMIT)
         throw fail('메일 파일 제한을 초과했습니다.', 413);
       const contentHash = await hash(bytes);
       files.push({
@@ -1054,11 +1282,30 @@ export async function handlePrivateMail(action, req, user, ctx) {
       )
     ).json();
     await privatePermissions(box, item.id, env, driveOwner, item);
-    const bytes = await verify(
-      { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
-      item,
-      env.access,
-    );
+    const large = file.byte_size > DIRECT_FILE_BYTES;
+    if (large && ['text', 'html'].includes(file.kind))
+      throw fail(
+        '본문이 커서 미리보기를 제한했습니다. 원본 EML을 내려받아 확인해 주세요.',
+        413,
+      );
+    let bytes, download;
+    if (large) {
+      storedMetadata(box, file, item);
+      download = await graph(
+        '/drives/' +
+          enc(box.drive_id) +
+          '/items/' +
+          enc(file.item_id) +
+          '/content',
+        env.access,
+        { timeoutMs: 120000 },
+      );
+    } else
+      bytes = await verify(
+        { ...file, drive_id: box.drive_id, folder_id: box.folder_id },
+        item,
+        env.access,
+      );
     // Recheck RLS immediately before returning bytes, including active-profile revocation.
     if (
       !(
@@ -1091,6 +1338,14 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'Content-Disposition',
       "attachment; filename*=UTF-8''" + enc(mailFilename(file.original_name)),
     );
-    return new Response(bytes, { headers });
+    return new Response(
+      large
+        ? checkedMailStream(download.body, {
+            expectedBytes: file.byte_size,
+            expectedHash: file.content_hash,
+          })
+        : bytes,
+      { headers },
+    );
   });
 }

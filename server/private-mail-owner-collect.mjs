@@ -1,4 +1,5 @@
 import tls from 'node:tls';
+import { uploadMailFile } from './private-mail-upload.mjs';
 import { createHash } from 'node:crypto';
 import {
   advanceCollection,
@@ -99,7 +100,15 @@ export async function openPop() {
     { maxBytes: RAW_LIMIT },
   );
 }
-export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
+export function ownerBridge(
+  authorization,
+  fetcher = fetch,
+  processingSignal,
+  background = false,
+) {
+  const endpoint = background
+    ? BRIDGE.replace('private-mail-owner-sync', 'private-mail-background-sync')
+    : BRIDGE;
   let lease, mailbox;
   async function call(operation, values = {}, signal) {
     const body = JSON.stringify({ operation, mailbox, lease, ...values });
@@ -109,7 +118,7 @@ export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
     )
       throw Error('LIMIT_REACHED');
     // Only the fixed Edge endpoint receives the user session; no redirects/retries.
-    const response = await fetcher(BRIDGE, {
+    const response = await fetcher(endpoint, {
       method: 'POST',
       headers: {
         Authorization: authorization,
@@ -120,7 +129,9 @@ export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
         AbortSignal.timeout(
           ['begin', 'start-cycle'].includes(operation)
             ? 15000
-            : operation === 'finish'
+            : ['finish', 'upload-session', 'upload-complete'].includes(
+                  operation,
+                )
               ? 60000
               : 8000,
         ),
@@ -196,8 +207,25 @@ export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
           byte_size: file.byte_size,
           content_hash: file.content_hash,
         };
+        if (file.byte_size > 3276800) {
+          const values = { ...metadata };
+          delete values.operation;
+          delete values.mailbox;
+          delete values.lease;
+          await uploadMailFile({
+            file,
+            fetcher,
+            signal,
+            begin: () => call('upload-session', values, signal),
+            complete: () => call('upload-complete', values, signal),
+          });
+          continue;
+        }
         const response = await fetcher(
-          BRIDGE.replace('private-mail-owner-sync', 'private-mail-owner-file'),
+          endpoint.replace(
+            /private-mail-(owner|background)-sync$/,
+            'private-mail-$1-file',
+          ),
           {
             method: 'POST',
             headers: {
@@ -227,11 +255,13 @@ export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
       const payload = {
         counts: Object.fromEntries(
           Object.entries(counts || {}).filter(
-            ([k]) => !['cursor', 'processedUidls', 'cycleId'].includes(k),
+            ([k]) =>
+              !['cursor', 'processedUidls', 'cycleId', 'review'].includes(k),
           ),
         ),
         cursor: counts?.cursor ?? null,
         error: error ? 'SYNC_FAILED' : null,
+        ...(Array.isArray(counts?.review) ? { review: counts.review } : {}),
         ...(counts?.cycleId
           ? {
               cycleId: counts.cycleId,
@@ -260,6 +290,7 @@ export async function handleOwnerCollect(
     connect = openPop,
     packager = packageMessage,
     logger = (entry) => console.warn(entry),
+    background = false,
   } = {},
 ) {
   const json = (data, status = 200) =>
@@ -308,7 +339,12 @@ export async function handleOwnerCollect(
   }
   const processing = new AbortController(),
     deadline = Date.now() + 180000;
-  const bridge = ownerBridge(authorization, fetcher, processing.signal);
+  const bridge = ownerBridge(
+    authorization,
+    fetcher,
+    processing.signal,
+    background,
+  );
   let pop,
     info,
     counts,
@@ -445,7 +481,8 @@ export async function handleOwnerCollect(
         region: env.VERCEL_REGION,
         counts: Object.fromEntries(
           Object.entries(counts).filter(
-            ([key]) => !['cursor', 'processedUidls', 'cycleId'].includes(key),
+            ([key]) =>
+              !['cursor', 'processedUidls', 'cycleId', 'review'].includes(key),
           ),
         ),
         ...(progress ? { progress } : {}),

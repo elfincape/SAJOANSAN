@@ -1,0 +1,198 @@
+.mail-daily-briefing {
+  min-width: 0;
+  color: var(--theme-text);
+}
+.mail-daily-briefing .daily-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mail-daily-briefing .daily-toolbar label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.mail-daily-briefing .daily-toolbar input {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.mail-daily-briefing .daily-feedback {
+  min-height: 24px;
+  margin: 10px 0;
+  color: var(--theme-muted);
+}
+.mail-daily-briefing .daily-title {
+  margin: 20px 0 12px;
+  font-size: 20px;
+}
+.mail-daily-briefing .daily-section {
+  margin-top: 26px;
+}
+.mail-daily-briefing .daily-section > h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.mail-daily-briefing .daily-count {
+  color: var(--theme-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.mail-daily-briefing .daily-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--theme-border-soft);
+}
+.mail-daily-briefing .daily-items > li {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--theme-border-soft);
+  overflow-wrap: anywhere;
+}
+.mail-daily-briefing .daily-item-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mail-daily-briefing .daily-task-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mail-daily-briefing .daily-task-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+}
+.mail-daily-briefing .daily-item-status {
+  color: var(--theme-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.mail-daily-briefing :is(.daily-evidence, .daily-task-meta, .daily-empty) {
+  color: var(--theme-muted);
+  font-size: 13px;
+}
+.mail-daily-briefing .daily-evidence p {
+  margin: 6px 0 0;
+}
+.mail-daily-briefing a:not(.btn) {
+  color: var(--theme-text);
+  text-underline-offset: 3px;
+}
+.mail-daily-briefing :is(.daily-sources, .daily-settings) {
+  margin-top: 26px;
+}
+.mail-daily-briefing .daily-settings {
+  border-top: 1px solid var(--theme-border-soft);
+  padding-top: 12px;
+}
+.mail-daily-briefing summary {
+  cursor: pointer;
+}
+.mail-daily-briefing .daily-settings button {
+  min-height: 36px;
+  border: 1px solid var(--theme-border);
+  border-radius: var(--ean-control-radius);
+  padding: 7px 12px;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  font: inherit;
+  cursor: pointer;
+}
+.mail-daily-briefing .daily-settings button:hover:not(:disabled) {
+  background: var(--theme-hover);
+}
+.mail-daily-briefing .daily-settings button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.mail-daily-briefing .daily-filters {
+  margin-top: 26px;
+  border-top: 1px solid var(--theme-border-soft);
+  padding-top: 16px;
+}
+.mail-daily-briefing .daily-filter-fields {
+  border: 0;
+  padding: 0;
+  margin: 22px 0 0;
+  min-width: 0;
+}
+.mail-daily-briefing .daily-filter-fields > legend {
+  font-weight: 600;
+}
+.mail-daily-briefing :is(.daily-filter-rules, .daily-filter-messages) {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+}
+.mail-daily-briefing :is(.daily-filter-rules, .daily-filter-messages) > li {
+  border-bottom: 1px solid var(--theme-border-soft);
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.mail-daily-briefing .daily-filter-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.mail-daily-briefing .daily-filter-actions label {
+  display: grid;
+  gap: 6px;
+}
+.mail-daily-briefing .daily-filter-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mail-daily-briefing .daily-filter-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.mail-daily-briefing .daily-rule-editor {
+  display: grid;
+  gap: 12px;
+  padding: 18px 0;
+}
+.mail-daily-briefing .daily-rule-editor > label:not(.daily-filter-check) {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+.mail-daily-briefing .daily-filters :is(input:not([type='checkbox']), select) {
+  padding: 7px 10px;
+  min-height: 36px;
+  max-width: 100%;
+}
+.mail-daily-briefing .daily-rule-condition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.mail-daily-briefing .daily-rule-condition label {
+  display: grid;
+  gap: 6px;
+}
+.mail-daily-briefing .daily-filters p {
+  color: var(--theme-muted);
+  font-size: 13px;
+}
+.mail-daily-briefing .daily-filter-messages {
+  max-height: 640px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.mail-daily-briefing .daily-rule-preview {
+  max-height: 360px;
+  overflow: auto;
+}

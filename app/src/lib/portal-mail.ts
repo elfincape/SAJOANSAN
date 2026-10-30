@@ -6,7 +6,204 @@ import type {
   MailMessage,
   MailCollectionProgress,
 } from '../domain/portal-mail';
+export interface MailAutomationStatus {
+  schemaReady: boolean;
+  workerReady: boolean;
+  schedulerReady: boolean;
+  notesConnected: boolean;
+  analysisReady: boolean;
+  config: {
+    enabled: boolean;
+    readStateVerified: boolean;
+    analysisConsent: boolean;
+    analysisConsentAt: string | null;
+  };
+  nextRunAt: string | null;
+  job: {
+    id: string;
+    status: 'queued' | 'running' | 'complete' | 'stopped' | 'failed';
+    stopRequested: boolean;
+    error: string | null;
+    updatedAt: string;
+  } | null;
+  progress: MailCollectionProgress | null;
+  reports: {
+    day: string;
+    dirty: boolean;
+    error: string | null;
+    pageId: string | null;
+  }[];
+  recent: {
+    id: string;
+    subject: string;
+    sent_at: string;
+    created_at: string;
+    analysis_status: string;
+    analysis_error: string | null;
+  }[];
+}
+export interface DailyMailSource {
+  id: string;
+  subject: string;
+  sender: string;
+  receivedAt: string;
+  sentAt?: string;
+}
+export interface DailyMailItem {
+  ref: string;
+  text: string;
+  status: string;
+  evidence: string;
+  source: DailyMailSource;
+  sourceType?: 'body' | 'image';
+  confidence?: 'readable' | 'uncertain';
+  assignee?: string | null;
+  assigneeConfirmed?: boolean;
+  due?: string | null;
+  dueOriginal?: string | null;
+  resolution?: {
+    manual: boolean;
+    done?: boolean;
+    actor?: string;
+    updatedAt?: string;
+    evidence?: string;
+    source?: DailyMailSource;
+  };
+}
+export interface DailyMailOverview {
+  day: string;
+  title: string;
+  groups: {
+    name: string;
+    threads: {
+      subject: string;
+      mails: {
+        source: DailyMailSource;
+        summary: { text: string; evidence: string }[];
+      }[];
+    }[];
+  }[];
+  issues: DailyMailItem[];
+  tasks: DailyMailItem[];
+  waiting: DailyMailItem[];
+  resolvedWaiting?: DailyMailItem[];
+  sources: DailyMailSource[];
+}
+export interface MailAnalysisRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mode: 'all' | 'any';
+  conditions: {
+    field: 'subject' | 'body' | 'sender' | 'domain';
+    value: string;
+  }[];
+}
+export interface MailFilterStatus {
+  schemaReady: boolean;
+  offset?: number;
+  nextOffset?: number;
+  hasMore?: boolean;
+  rules: MailAnalysisRule[];
+  messages: {
+    id: string;
+    subject: string;
+    sender: string;
+    sent_at: string;
+    analysis_status: string;
+    analysis_excluded: boolean;
+    analysis_filter_override: 'inherit' | 'include' | 'exclude';
+    analysis_exclusion?: {
+      reason?: string;
+      ruleName?: string;
+      ruleId?: string;
+    } | null;
+  }[];
+}
+export interface MailRulePreview {
+  matches: {
+    id: string;
+    subject: string;
+    sender: string;
+    matched: boolean;
+    reason?: string | null;
+    matchedFields: string[];
+  }[];
+  scanned: number;
+  nextOffset: number;
+  more: boolean;
+  unresolved: { id: string; subject?: string; code: string; reason?: string }[];
+}
 export const privateMail = {
+  dailyOverview: (day?: string) =>
+    oneDriveCall<DailyMailOverview>('private-mail-daily-overview', { day }),
+  setTaskStatus: (body: { ref: string; done: boolean; day: string }) =>
+    oneDriveCall<{ saved: boolean }>('private-mail-item-status', body),
+  filterStatus: (offset = 0) =>
+    oneDriveCall<MailFilterStatus>('private-mail-filter-status', { offset }),
+  previewRule: (body: {
+    rule: MailAnalysisRule;
+    offset?: number;
+    limit?: number;
+  }) => oneDriveCall<MailRulePreview>('private-mail-rules-preview', body),
+  saveRules: (body: { rules: MailAnalysisRule[]; previewConfirmed: boolean }) =>
+    oneDriveCall<{ saved: boolean }>('private-mail-rules-save', body),
+  setMailFilter: (body: {
+    id: string;
+    override: 'inherit' | 'include' | 'exclude';
+    confirmExisting?: boolean;
+  }) => oneDriveCall<{ saved: boolean }>('private-mail-filter-override', body),
+  applyRules: (body: { ids: string[]; confirmExisting?: boolean }) =>
+    oneDriveCall<{
+      results: {
+        id: string;
+        excluded?: boolean;
+        reason?: string;
+        ruleName?: string;
+      }[];
+      scanned: number;
+      unresolved: { id: string; code: string }[];
+    }>('private-mail-filter-apply-preview', body),
+  analyzeOne: (id: string) =>
+    oneDriveCall<{ status: string; code?: string; reportDay?: string }>(
+      'private-mail-analyze-one',
+      { id },
+      false,
+      255000,
+    ),
+  writeReport: (day: string) =>
+    oneDriveCall<{ status: string; code?: string }>(
+      'private-mail-report-now',
+      { day },
+      false,
+      255000,
+    ),
+  automationStatus: () =>
+    oneDriveCall<MailAutomationStatus>('private-mail-automation-status'),
+  automationConfig: (config: {
+    enabled: boolean;
+    readStateVerified: boolean;
+    analysisConsent: boolean;
+  }) =>
+    oneDriveCall<{ saved: boolean; config: MailAutomationStatus['config'] }>(
+      'private-mail-automation-config',
+      config,
+    ),
+  runAutomation: () =>
+    oneDriveCall<{ job: { id: string; status: string } }>(
+      'private-mail-run-now',
+    ),
+  stopAutomation: () =>
+    oneDriveCall<{ stopped: boolean }>('private-mail-job-stop'),
+  briefingStatus: () =>
+    oneDriveCall<{
+      readable: boolean;
+      writeVerified: boolean;
+      hasWriteScope?: boolean;
+      reason: string;
+      notebookName?: string;
+      sectionName?: string;
+    }>('private-mail-briefing-status'),
   status: () => oneDriveCall<{ mailboxes: Mailbox[] }>('private-mail-status'),
   list: (query = '', offset = 0) =>
     oneDriveCall<{ messages: MailMessage[]; more: boolean }>(
