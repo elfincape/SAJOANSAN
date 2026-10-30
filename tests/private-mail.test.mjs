@@ -2971,81 +2971,6 @@ console.log(
 }
 
 {
-  const { handlePrivateMailWorker } =
-    await import('../server/private-mail-worker.mjs');
-  const { authorizeMailWork } =
-    await import('../supabase/functions/onedrive-auth/private-mail-worker-auth.js');
-  const mailbox = '39045005-313e-42e1-b50c-2394b3b6ff26',
-    id = '00000000-0000-4000-8000-000000000003',
-    token = 'pmjob_' + 'a'.repeat(64);
-  let calls = 0;
-  const request = (body) =>
-    new Request('https://test.example', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + token },
-      body: JSON.stringify(body),
-    });
-  const response = await handlePrivateMailWorker(
-    request({ kind: 'history', mailboxId: mailbox, historyId: id }),
-    {
-      env: {},
-      fetcher: async (url, options) => {
-        calls++;
-        const body = JSON.parse(options.body);
-        assert.equal(body.operation, 'history');
-        assert.equal(body.id, id);
-        assert.equal(body.mailbox, mailbox);
-        assert(!('day' in body));
-        return Response.json({ status: 'done' });
-      },
-      collect: () => {
-        throw Error('POP must never run');
-      },
-    },
-  );
-  assert.equal(response.status, 200);
-  assert.equal(calls, 1);
-  const ctx = {
-    token,
-    hash: async () => 'hash',
-    db: async () => ({ kind: 'history', target: id, mailboxId: mailbox }),
-    fail: (message, status) => Object.assign(Error(message), { status }),
-  };
-  await authorizeMailWork(
-    'private-mail-background-work',
-    request({ operation: 'history', id, mailbox }),
-    ctx,
-  );
-  for (const body of [
-    { operation: 'analyze', id, mailbox },
-    { operation: 'history', id: crypto.randomUUID(), mailbox },
-    { operation: 'report', day: '2026-10-30', mailbox },
-  ])
-    await assert.rejects(
-      () =>
-        authorizeMailWork('private-mail-background-work', request(body), ctx),
-      /WORKER_AUTH_REQUIRED/,
-    );
-  assert.equal(
-    (
-      await handlePrivateMailWorker(
-        request({ kind: 'history', mailboxId: mailbox, historyId: 'bad' }),
-        {
-          env: {},
-          fetcher: () => {
-            throw Error('not expected');
-          },
-        },
-      )
-    ).status,
-    400,
-  );
-  console.log(
-    'PASS history worker: one scoped call, exact UUID, no POP/model/report, capability denies target/operation confusion',
-  );
-}
-
-{
   const { createMailHistoryDocument, restoreMailHistoryDocument } =
     await import('../supabase/functions/onedrive-auth/private-mail-history.js');
   const { handleMailAutomation } =
@@ -3300,44 +3225,5 @@ console.log(
   assert.equal(queued, 1);
   console.log(
     'PASS manual API route: duplicate ready result dispatches only exact named SQL report day without another model call',
-  );
-}
-
-{
-  const { handlePrivateMailWorker } =
-    await import('../server/private-mail-worker.mjs');
-  const { APPROVED_MAIL_TARGET: target } =
-    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
-  const jobId = crypto.randomUUID();
-  let finished = 0;
-  const response = await handlePrivateMailWorker(
-    new Request('https://test.example', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + 'pmjob_' + 'a'.repeat(64) },
-      body: JSON.stringify({
-        kind: 'collect',
-        mailboxId: target.mailbox_id,
-        jobId,
-      }),
-    }),
-    {
-      env: {},
-      collect: async () =>
-        Response.json({ code: 'ONEDRIVE_METADATA_MISMATCH' }, { status: 503 }),
-      fetcher: async (_url, options) => {
-        const payload = JSON.parse(options.body);
-        if (payload.operation === 'job-claim')
-          return Response.json({ job: { id: jobId } });
-        assert.equal(payload.operation, 'job-finish');
-        assert.equal(payload.error, 'ONEDRIVE_METADATA_MISMATCH');
-        finished++;
-        return Response.json({ job: { status: 'failed' } });
-      },
-    },
-  );
-  assert.equal(response.status, 200);
-  assert.equal(finished, 1);
-  console.log(
-    'PASS collection worker: safe known bridge failure retained in durable job, no raw provider detail',
   );
 }

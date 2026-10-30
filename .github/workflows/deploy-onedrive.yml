@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/onedrive-auth/**'
+      - 'supabase/functions/_shared/luna.js'
+      - 'tests/private-mail.test.mjs'
       - '.github/workflows/deploy-onedrive.yml'
       - 'repo-root/sql/onedrive-document-sides.sql'
       - 'repo-root/sql/onedrive-pdf.sql'
