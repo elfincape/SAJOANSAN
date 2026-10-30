@@ -634,6 +634,7 @@ export async function writeDailyBriefing({
   now,
   analyses,
   overrides = {},
+  manual,
   images = [],
   loadImage,
   maxImageBatches = 2,
@@ -650,7 +651,7 @@ export async function writeDailyBriefing({
     (deadline !== Infinity && !Number.isFinite(deadline))
   )
     throw Error('NOTES_IMAGE_LIMIT');
-  const base = renderDailyBriefing({ now, analyses, overrides });
+  const base = renderDailyBriefing({ now, analyses, overrides, manual });
   const photos = describeImages(images, base.sourceIds);
   for (const image of photos)
     if (image.bytes instanceof Uint8Array)

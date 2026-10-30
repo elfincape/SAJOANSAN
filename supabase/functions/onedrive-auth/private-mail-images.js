@@ -28,7 +28,252 @@ function canonicalHash(value) {
   ).join('');
 }
 
-export function selectMailPhotos({ subject = '', text = '', files = [] } = {}) {
+export const MAIL_IMAGE_KINDS = Object.freeze([
+  'business_document',
+  'business_scene',
+  'signature',
+  'business_card',
+  'logo',
+  'irrelevant',
+  'uncertain',
+]);
+
+export function selectBriefingImages(analysis) {
+  const images = analysis?.source?.images,
+    decisions = analysis?.imageDecisions;
+  if (
+    !Array.isArray(images) ||
+    images.length > 3 ||
+    !Array.isArray(decisions) ||
+    decisions.length > 3
+  )
+    return [];
+  const byId = new Map();
+  for (const decision of decisions) {
+    if (
+      typeof decision?.imageId !== 'string' ||
+      !decision.imageId ||
+      byId.has(decision.imageId) ||
+      !MAIL_IMAGE_KINDS.includes(decision.kind) ||
+      typeof decision.include !== 'boolean'
+    )
+      return [];
+    byId.set(decision.imageId, decision);
+  }
+  const ids = new Set();
+  for (const image of images) {
+    if (
+      typeof image?.id !== 'string' ||
+      !image.id ||
+      ids.has(image.id) ||
+      !byId.has(image.id)
+    )
+      return [];
+    ids.add(image.id);
+  }
+  if (
+    decisions.some(
+      (decision) =>
+        decision.include &&
+        ['business_document', 'business_scene'].includes(decision.kind) &&
+        !ids.has(decision.imageId),
+    )
+  )
+    return [];
+  return images.filter((image) => {
+    const decision = byId.get(image.id);
+    return (
+      decision.include &&
+      ['business_document', 'business_scene'].includes(decision.kind)
+    );
+  });
+}
+
+const businessName =
+  /사고|파손|불량|누수|현장|제품|상품|화물|적재|상차|하차|온도|운송장|인수증|영수증|거래명세|납품확인|계약서|동의서|확인서|(?:^|[_. -])(?:accident|damage|cargo|product|temperature|receipt|delivery[ _-]?proof|pod)(?:[_. -]|\d|$)/i;
+const businessCaption =
+  /사고|파손|불량|누수|(?:현장|제품|상품|화물)\s*(?:사진|상태|상황|라벨|증빙|확인)|온도\s*(?:기록|사진|증빙|확인|영수증)|적재|상차|하차|운송장|인수증|거래명세|납품확인|accident|damage|cargo|temperature|delivery[ _-]?proof/i;
+const cardName =
+  /명함|(?:^|[_. -])(?:business[ _-]?card|name[ _-]?card|vcard)(?:[_. -]|\d|$)/i;
+const signatureName =
+  /(?:메일|이메일)\s*서명|(?:^|[_. -])(?:signature|email[ _-]?sig(?:nature)?|mail[ _-]?sig(?:nature)?)(?:[_. -]|\d|$)|^서명(?:[_. -]|\d|$)/i;
+const logoName = /(?:^|[_. -])(?:logo|brand[ _-]?mark)(?:[_. -]|\d|$)|로고/i;
+const decorationName =
+  /(?:^|[_. -])(?:icon|spacer|pixel|tracking|beacon|social|facebook|instagram|linkedin|banner|divider|footer|sns)(?:[_. -]|\d|$)|아이콘|구분선/i;
+const closing =
+  /감사합니다[.!]?|고맙습니다[.!]?|(?:best\s+)?regards[,.]?|sincerely[,.]?|thank\s+you[,.]?|[가-힣A-Za-z]{2,20}\s+(?:드림|올림)/gi;
+const contact =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|(?:\+82[- .]?\d{1,2}|0\d{1,2})[- .)]?\d{3,4}[- .]?\d{4}/i;
+const plainHtml = (value) =>
+  value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ');
+function cid(value) {
+  if (typeof value !== 'string') return '';
+  try {
+    value = decodeURIComponent(value);
+  } catch {}
+  return value.replace(/^cid:/i, '').replace(/^<|>$/g, '').trim().toLowerCase();
+}
+function attributes(tag) {
+  const result = {};
+  for (const match of tag.matchAll(
+    /([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g,
+  ))
+    result[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4];
+  return result;
+}
+function imagePositions(input) {
+  // Context only; no HTML is rendered and no image URL is requested.
+  const html =
+    typeof input === 'string'
+      ? input
+          .slice(0, 300000)
+          .replace(
+            /<(script|style|head|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi,
+            (value) => ' '.repeat(value.length),
+          )
+      : '';
+  const stack = [],
+    images = [],
+    voids = new Set([
+      'area',
+      'base',
+      'br',
+      'col',
+      'embed',
+      'hr',
+      'img',
+      'input',
+      'link',
+      'meta',
+      'param',
+      'source',
+      'track',
+      'wbr',
+    ]);
+  for (const match of html.matchAll(/<\/?([A-Za-z][\w:-]*)\b[^>]{0,16000}>/g)) {
+    const name = match[1].toLowerCase(),
+      tag = match[0];
+    if (tag.startsWith('</')) {
+      const index = stack.findLastIndex((entry) => entry.name === name);
+      if (index >= 0) stack.splice(index);
+      continue;
+    }
+    const attrs = attributes(tag),
+      signature =
+        [attrs.id, attrs.class, attrs['data-smartmail']].some((value) =>
+          /(?:^|[\s_-])(?:gmail_signature|moz-signature|(?:mail|email)[_-]?signature|signature)(?:[\s_-]|$)/i.test(
+            value ?? '',
+          ),
+        ) || Object.hasOwn(attrs, 'data-mso-signature');
+    if (name === 'img')
+      images.push({
+        src: attrs.src ?? '',
+        position: match.index,
+        width: Number(attrs.width),
+        height: Number(attrs.height),
+        signature: signature || stack.some((entry) => entry.signature),
+        signatureStart: signature
+          ? match.index
+          : stack.filter((entry) => entry.signature).at(-1)?.position,
+      });
+    if (!voids.has(name) && !/\/\s*>$/.test(tag) && stack.length < 128)
+      stack.push({ name, signature, position: match.index });
+  }
+  return { html, images };
+}
+function photoReason(file, info = {}, context = {}) {
+  const name = file.name ?? file.original_name ?? '';
+  if (cardName.test(name)) return 'BUSINESS_CARD_IMAGE';
+  const { html, images } = context.positions ?? imagePositions(context.html);
+  const contentId = cid(file.contentId ?? file.content_id ?? file.cid),
+    filename = cid(name.split(/[\\/]/).at(-1));
+  const refs = images.filter(
+    (image) =>
+      /^cid:/i.test(image.src) &&
+      (contentId
+        ? cid(image.src) === contentId
+        : cid(image.src) === filename ||
+          cid(image.src).split('@')[0] === filename),
+  );
+  const fileHash = canonicalHash(file.content_hash);
+  const repeated =
+    !!fileHash &&
+    Array.isArray(context.repeatedHashes) &&
+    context.repeatedHashes.some((value) => canonicalHash(value) === fileHash);
+  const inline =
+    refs.length > 0 ||
+    file.inline === true ||
+    file.isInline === true ||
+    file.disposition === 'inline';
+  let footer = false,
+    caption = false,
+    displaySmall = false;
+  for (const ref of refs) {
+    const before = plainHtml(
+      html.slice(
+        Math.max(0, ref.position - 3000, ref.signatureStart ?? 0),
+        ref.position,
+      ),
+    );
+    const endings = [...before.matchAll(closing)],
+      last = endings.at(-1);
+    const afterClosing = last
+      ? before.slice(last.index + last[0].length)
+      : before.slice(-500);
+    caption ||= businessCaption.test(afterClosing);
+    footer ||= !!last && contact.test(before.slice(-1200));
+    displaySmall ||=
+      ref.width > 0 && ref.height > 0 && ref.width <= 1600 && ref.height <= 400;
+  }
+  if (businessName.test(name) || caption) return null;
+  if (signatureName.test(name) || refs.some((ref) => ref.signature))
+    return 'SIGNATURE_IMAGE';
+  const { width, height } = info;
+  const small =
+    width > 0 &&
+    height > 0 &&
+    width <= 1600 &&
+    height <= 400 &&
+    file.byte_size <= 350000;
+  if (
+    width > 0 &&
+    height > 0 &&
+    width <= 64 &&
+    height <= 64 &&
+    file.byte_size <= 16000
+  )
+    return 'TINY_IMAGE';
+  if (logoName.test(name) && file.byte_size <= 150000 && (small || inline))
+    return 'LOGO_IMAGE';
+  if (businessName.test(`${context.subject ?? ''}\n${context.text ?? ''}`))
+    return null;
+  if (
+    footer &&
+    inline &&
+    (small ||
+      (displaySmall && file.byte_size <= 350000) ||
+      repeated ||
+      decorationName.test(name))
+  )
+    return 'SIGNATURE_IMAGE';
+  if (decorationName.test(name) && inline && (small || displaySmall))
+    return 'DECORATIVE_IMAGE';
+  if (repeated && inline && (small || displaySmall))
+    return 'REPEATED_DECORATION';
+  return null;
+}
+
+export function selectMailPhotos({
+  subject = '',
+  text = '',
+  html = '',
+  files = [],
+  repeatedHashes = [],
+} = {}) {
   if (!Array.isArray(files)) throw Error('IMAGE_MANIFEST');
   const selected = [],
     excluded = [],
@@ -38,6 +283,13 @@ export function selectMailPhotos({ subject = '', text = '', files = [] } = {}) {
   const privacy =
     requiresMailPrivacyReview(`${subject}\n${text}`) ||
     files.some((file) => requiresMailPrivacyReview(file?.name));
+  const context = {
+    subject,
+    text,
+    html,
+    repeatedHashes: Array.isArray(repeatedHashes) ? repeatedHashes : [],
+    positions: imagePositions(html),
+  };
   let total = 0;
   for (const file of files) {
     if (!/\.(?:jpe?g|png|webp)$/i.test(file?.name || '')) {
@@ -68,6 +320,11 @@ export function selectMailPhotos({ subject = '', text = '', files = [] } = {}) {
       continue;
     }
     indexes.add(file.index);
+    const reason = photoReason(file, file, context);
+    if (reason) {
+      excluded.push({ ...file, reason });
+      continue;
+    }
     hashes.add(hash);
     if (
       file.byte_size > MAIL_PHOTO_LIMITS.perImageBytes ||
@@ -83,27 +340,8 @@ export function selectMailPhotos({ subject = '', text = '', files = [] } = {}) {
   return { selected, excluded, review };
 }
 
-export function mailPhotoExclusionReason(file, { width, height }) {
-  if (
-    width > 0 &&
-    height > 0 &&
-    width <= 64 &&
-    height <= 64 &&
-    file.byte_size <= 16000
-  )
-    return 'TINY_IMAGE';
-  if (
-    /(?:\blogo\b|(?:^|[_ .-])logo(?:[_ .-]|\d|$)|로고)/i.test(
-      file.name || '',
-    ) &&
-    width > 0 &&
-    height > 0 &&
-    width <= 1200 &&
-    height <= 240 &&
-    file.byte_size <= 150000
-  )
-    return 'LOGO_IMAGE';
-  return null;
+export function mailPhotoExclusionReason(file, info, context = {}) {
+  return photoReason(file, info, context);
 }
 
 function exifOrientation(bytes, start, end) {

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
+import {
+  MailBriefingManualEntries,
+  formatBriefingTimestamp,
+} from '../components/portal/MailBriefingManualEntries';
 import { MailFilterControls } from '../components/portal/MailFilterControls';
 import { MailBriefingConnection } from '../components/portal/MailBriefingConnection';
 import { MAIL_DIAGNOSTIC_OWNER_ID } from '../domain/portal-mail';
@@ -82,6 +86,7 @@ function DailyOverview() {
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState('');
   const [filtersBusy, setFiltersBusy] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const mounted = useRef(false);
   const request = useRef(0);
@@ -100,7 +105,7 @@ function DailyOverview() {
         setFeedback(
           error instanceof Error &&
             error.message === 'AUTOMATION_SCHEMA_REQUIRED'
-            ? '일일정리 준비가 아직 완료되지 않았습니다. OneNote 권한 연결은 아래 설정에서 확인해 주세요.'
+            ? '일일정리를 준비하고 있습니다. 잠시 후 다시 조회해 주세요.'
             : '일일정리를 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 조회해 주세요.',
         );
       return false;
@@ -185,7 +190,12 @@ function DailyOverview() {
                         type="checkbox"
                         aria-label={`${item.text} 직접 완료 확인`}
                         checked={item.status === 'complete'}
-                        disabled={loading || pending !== null || filtersBusy}
+                        disabled={
+                          loading ||
+                          pending !== null ||
+                          filtersBusy ||
+                          manualBusy
+                        }
                         onChange={(event) =>
                           void complete(item, event.target.checked)
                         }
@@ -199,13 +209,38 @@ function DailyOverview() {
                     {statusLabels[item.status] || '확인 필요'}
                   </span>
                 </div>
-                {tasks && (item.assignee || item.due || item.dueOriginal) ? (
+                {tasks &&
+                (item.assignee ||
+                  item.dueAt ||
+                  item.dueDate ||
+                  item.due ||
+                  item.dueOriginal ||
+                  item.serviceDate ||
+                  item.serviceOriginal) ? (
                   <p className="daily-task-meta">
                     {item.assignee
                       ? `담당: ${item.assignee}${item.assigneeConfirmed === true ? '' : ' (확인 필요)'}`
                       : '담당 미정'}{' '}
-                    · 기한: {item.due || item.dueOriginal || '미정'}
-                    {!item.due && item.dueOriginal ? ' (날짜 확인 필요)' : ''}
+                    · 처리기한:{' '}
+                    {item.dueAt
+                      ? formatBriefingTimestamp(item.dueAt)
+                      : item.dueDate || item.due || item.dueOriginal || '미정'}
+                    {!item.dueAt &&
+                    !item.dueDate &&
+                    !item.due &&
+                    item.dueOriginal
+                      ? ' (날짜 확인 필요)'
+                      : ''}
+                    {item.serviceDate || item.serviceOriginal ? (
+                      <>
+                        {' '}
+                        · 운행·납품 대상일:{' '}
+                        {item.serviceDate || item.serviceOriginal}
+                        {!item.serviceDate && item.serviceOriginal
+                          ? ' (날짜 확인 필요)'
+                          : ''}
+                      </>
+                    ) : null}
                   </p>
                 ) : null}
                 <ItemEvidence item={item} />
@@ -226,7 +261,7 @@ function DailyOverview() {
             className="app-input"
             type="date"
             value={dateInput}
-            disabled={pending !== null || filtersBusy}
+            disabled={pending !== null || filtersBusy || manualBusy}
             onChange={(event) => setDateInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') applyDate();
@@ -237,7 +272,11 @@ function DailyOverview() {
           className="btn btn-primary"
           type="button"
           disabled={
-            loading || pending !== null || filtersBusy || !validDay(dateInput)
+            loading ||
+            pending !== null ||
+            filtersBusy ||
+            manualBusy ||
+            !validDay(dateInput)
           }
           onClick={applyDate}
         >
@@ -254,6 +293,11 @@ function DailyOverview() {
             ? '일일정리를 불러오는 중…'
             : feedback}
       </p>
+      <MailBriefingManualEntries
+        day={day}
+        disabled={pending !== null || filtersBusy}
+        onBusyChange={setManualBusy}
+      />
       <div aria-busy={loading}>
         <h2 className="daily-title">{overview?.title || `${day} 일일정리`}</h2>
         {overview ? (
@@ -290,7 +334,7 @@ function DailyOverview() {
         ) : null}
       </div>
       <MailFilterControls
-        disabled={pending !== null}
+        disabled={pending !== null || manualBusy}
         onBusyChange={setFiltersBusy}
         onChanged={() => void load()}
       />

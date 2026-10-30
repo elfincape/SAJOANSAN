@@ -1,4 +1,31 @@
 import assert from 'node:assert/strict';
+import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
+function lunaResponseFixture(content, stopReason = 'end_turn') {
+  return Response.json({
+    model: LUNA_MODEL,
+    status:
+      stopReason === 'end_turn'
+        ? 'completed'
+        : stopReason === 'max_tokens'
+          ? 'incomplete'
+          : stopReason,
+    incomplete_details:
+      stopReason === 'max_tokens' ? { reason: 'max_output_tokens' } : null,
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: content.map((block) =>
+          block?.type === 'text'
+            ? { type: 'output_text', text: block.text }
+            : block,
+        ),
+      },
+    ],
+    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+  });
+}
 import {
   handlePrivateMail,
   safeMailHtml,
@@ -1035,10 +1062,10 @@ const approvedReport = briefing.renderDailyBriefing({
   analyses: [approvedAnalysis],
 });
 for (const label of [
-  '1. 메일 요약',
-  '2. 주요 이슈',
-  '4. 회신·확인 대기',
-  '5. 직접 메모',
+  '메일 요약',
+  '주요 이슈',
+  '회신·확인 대기',
+  '직접 메모',
   '최종 업데이트',
   '평택센터',
   '확인 필요',
@@ -1048,10 +1075,7 @@ for (const label of [
   assert.ok(approvedReport.html.includes(label), label);
 assert.ok(!approvedReport.html.includes('<blockquote>'));
 assert.ok(!approvedReport.html.includes('납품 지연으로 재확인 중입니다.'));
-assert.ok(
-  !approvedReport.html.includes('3. 할 일'),
-  'empty sections are omitted',
-);
+assert.ok(!approvedReport.html.includes('할 일'), 'empty sections are omitted');
 assert.equal(
   (
     approvedReport.html.match(
@@ -1062,11 +1086,11 @@ assert.equal(
   'mail source appears once',
 );
 assert.ok(
-  !approvedReport.managedHtml.includes('5. 직접 메모'),
+  !approvedReport.managedHtml.includes('직접 메모'),
   'manual area must be outside replaceable managed region',
 );
 assert.ok(
-  approvedReport.html.indexOf('5. 직접 메모') >
+  approvedReport.html.indexOf('직접 메모') >
     approvedReport.html.indexOf(approvedReport.managedHtml),
 );
 assert.throws(
@@ -1320,61 +1344,6 @@ console.log(
     'report snapshot is loaded only after revision lease',
   );
   assert.equal(released, true, 'failed report releases its own lease');
-  mailbox.automation_config.modelProbe = {
-    id: '33333333-3333-4333-8333-333333333333',
-    status: 'pending',
-  };
-  let modelProbes = 0;
-  const probeCtx = {
-    ...ctx,
-    background: true,
-    aiKey: 'fixture-key',
-    fetcher: async (_url, options) => {
-      const request = JSON.parse(options.body);
-      assert.equal(request.model, 'claude-haiku-5-5');
-      assert.equal(request.max_tokens, 32);
-      assert.ok(!JSON.stringify(request).includes('미확정'));
-      assert.ok(!JSON.stringify(request).includes(analysis.source.subject));
-      modelProbes++;
-      return Response.json({
-        model: 'claude-haiku-5-5',
-        content: [{ type: 'text', text: 'OK' }],
-      });
-    },
-    db: async (path, options) => {
-      if (
-        path.startsWith('private_mailboxes?') &&
-        options?.method === 'PATCH'
-      ) {
-        const prior = new URLSearchParams(path.split('?')[1])
-          .get('automation_config')
-          .slice(3);
-        if (prior !== JSON.stringify(mailbox.automation_config)) return [];
-        mailbox.automation_config = options.body.automation_config;
-        return options.prefer ? [mailbox] : null;
-      }
-      return ctx.db(path, options);
-    },
-  };
-  console.warn = () => {};
-  try {
-    for (let n = 0; n < 2; n++)
-      await handleMailAutomation(
-        'private-mail-background-work',
-        { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
-        { id: target.owner_id },
-        probeCtx,
-      );
-  } finally {
-    console.warn = previousReportWarn;
-  }
-  assert.equal(
-    modelProbes,
-    1,
-    'one-shot probe survives repeated report delivery without another paid call',
-  );
-  assert.equal(mailbox.automation_config.modelProbe.httpStatus, 200);
-  assert.equal(mailbox.automation_config.modelProbe.normalResponse, true);
   console.log(
     'PASS daily overview owner override and report claim-before-input ordering',
   );
@@ -1796,15 +1765,16 @@ console.log(
     1,
     'resuming approved automation immediately resumes its unfinished receipt',
   );
-  await assert.rejects(
-    () =>
-      handleMailAutomation(
-        'private-mail-automation-config',
-        { enabled: true },
-        { id: target.owner_id },
-        { ...ctx, connectedNotes: async () => ({ notesGranted: false }) },
-      ),
-    /NOTES_PERMISSION_REQUIRED/,
+  await handleMailAutomation(
+    'private-mail-automation-config',
+    { enabled: true },
+    { id: target.owner_id },
+    { ...ctx, connectedNotes: async () => ({ notesGranted: false }) },
+  );
+  assert.equal(
+    saved.enabled,
+    true,
+    'analysis resumes independently of Notes connection',
   );
   console.log(
     'PASS approved automation pause/resume needs no extra consent checkbox or fabricated read verification',
@@ -1823,6 +1793,7 @@ console.log(
     text: '보고서 제출을 확인해 주세요.',
   };
   const value = {
+    intent: { kind: 'unknown', evidence: null },
     summary: [{ text: '제출 확인 요청', evidence: source.text }],
     issues: [],
     tasks: [],
@@ -1837,12 +1808,10 @@ console.log(
       messageId: source.id,
       key: 'fixture-key',
       loadMail: async () => source,
-      fetcher: async (_url, options) => {
-        assert.equal(
-          JSON.parse(options.body).model,
-          'claude-haiku-4-5-20251001',
-        );
-        return Response.json({ stop_reason, content });
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://aiapiflow.com/v1/responses');
+        assert.equal(JSON.parse(options.body).model, 'gpt-5.6-luna');
+        return lunaResponseFixture(content, stop_reason);
       },
       store: {
         claim: async () => ({ row: source, lease: 'fixture-lease' }),
@@ -1965,5 +1934,1371 @@ console.log(
   }
   console.log(
     'PASS mail model response: anchored JSON fences, rejected prose/tools/multiple blocks/truncation, exact evidence and metadata-only diagnostics',
+  );
+}
+{
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const source = {
+    id: '11111111-1111-4111-8111-111111111111',
+    uidl_hash: 'a'.repeat(64),
+    subject: 'PRIVATE_FORMAT_SUBJECT',
+    sender: 'PRIVATE_FORMAT_SENDER',
+    text: '자료를 확인해 주세요.',
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+  };
+  const base = {
+    intent: { kind: 'unknown', evidence: null },
+    summary: [{ text: '확인 요청', evidence: source.text }],
+    issues: [],
+    tasks: [],
+    waiting: [],
+    group: null,
+  };
+  const warnings = [],
+    originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  const run = (value) =>
+    analyzePrivateMail({
+      messageId: source.id,
+      key: 'fixture-key',
+      loadMail: async () => source,
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://aiapiflow.com/v1/responses');
+        assert.equal(JSON.parse(options.body).text.format.strict, true);
+        return lunaResponseFixture([
+          { type: 'text', text: JSON.stringify(value) },
+        ]);
+      },
+      store: {
+        claim: async () => ({ row: source, lease: 'fixture' }),
+        finish: async () => true,
+        fail: async ({ code }) => {
+          assert.equal(code, 'ANALYSIS_FORMAT');
+          return true;
+        },
+      },
+    });
+  try {
+    const cases = [
+      { value: [], stage: 'parse', check: 'top_level' },
+      { value: { ...base, tasks: {} }, stage: 'parse', check: 'array' },
+      {
+        value: {
+          ...base,
+          issues: [
+            {
+              text: 'PRIVATE_FORMAT_TEXT',
+              evidence: 'PRIVATE_FORMAT_EVIDENCE',
+              status: 'PRIVATE_FORMAT_STATUS',
+            },
+          ],
+        },
+        stage: 'parse',
+        check: 'status',
+      },
+      {
+        value: {
+          ...base,
+          summary: [{ text: 'PRIVATE_FORMAT_TEXT', evidence: [source.text] }],
+        },
+        stage: 'normalize_mail',
+        check: 'fields',
+      },
+      {
+        value: {
+          ...base,
+          summary: [{ text: ['PRIVATE_FORMAT_TEXT'], evidence: source.text }],
+        },
+        stage: 'normalize_mail',
+        check: 'fields',
+      },
+      {
+        value: {
+          ...base,
+          summary: [{ text: '가'.repeat(1001), evidence: source.text }],
+        },
+        stage: 'normalize_mail',
+        check: 'fields',
+      },
+      {
+        value: {
+          ...base,
+          group: { name: ['PRIVATE_FORMAT_NAME'], evidence: source.text },
+        },
+        stage: 'normalize_mail',
+        check: 'fields',
+      },
+    ];
+    for (const fixture of cases) {
+      const count = warnings.length;
+      assert.equal((await run(fixture.value)).code, 'ANALYSIS_FORMAT');
+      assert.equal(warnings.length, count + 1);
+      const [label, meta] = warnings.at(-1);
+      assert.equal(label, 'PRIVATE_MAIL_ANALYSIS_FORMAT');
+      assert.equal(meta.stage, fixture.stage);
+      assert.equal(meta.check, fixture.check);
+      assert.ok(meta.shape);
+    }
+    const diagnostic = JSON.stringify(warnings);
+    for (const secret of [
+      'PRIVATE_FORMAT_SUBJECT',
+      'PRIVATE_FORMAT_SENDER',
+      'PRIVATE_FORMAT_TEXT',
+      'PRIVATE_FORMAT_EVIDENCE',
+      'PRIVATE_FORMAT_STATUS',
+      'PRIVATE_FORMAT_NAME',
+      source.text,
+      'fixture-key',
+    ])
+      assert.ok(!diagnostic.includes(secret));
+    assert.equal(warnings[3][1].shape.fields.summary.evidenceTypes.array, 1);
+    assert.equal(warnings[4][1].shape.fields.summary.textTypes.array, 1);
+    assert.equal(warnings[5][1].shape.fields.summary.maxTextLength, 1001);
+    assert.equal(warnings[6][1].shape.fields.group.name.type, 'array');
+  } finally {
+    console.warn = originalWarn;
+  }
+  console.log(
+    'PASS mail analysis format diagnostics: parse vs normalization stages, enum/count/type/length metadata only, array evidence and malformed statuses remain rejected',
+  );
+}
+{
+  const { MAIL_ANALYSIS_SCHEMA } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const { MANUAL_MESSAGE_SCHEMA, normalizeManualItems, manualDailyView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const checkSchema = (schema) => {
+    if (schema.type === 'object') {
+      assert.equal(schema.additionalProperties, false);
+      assert.deepEqual(schema.required, Object.keys(schema.properties));
+      for (const child of Object.values(schema.properties)) checkSchema(child);
+    }
+    if (schema.items) checkSchema(schema.items);
+    for (const child of schema.anyOf ?? []) checkSchema(child);
+  };
+  checkSchema(MAIL_ANALYSIS_SCHEMA);
+  checkSchema(MANUAL_MESSAGE_SCHEMA);
+  assert.equal(MAIL_ANALYSIS_SCHEMA.properties.summary.maxItems, 3);
+  assert.equal(
+    MAIL_ANALYSIS_SCHEMA.properties.summary.items.properties.evidence.type,
+    'string',
+  );
+  assert.equal(
+    MANUAL_MESSAGE_SCHEMA.properties.items.items.properties.completionEvents,
+    undefined,
+  );
+  const png = 'iVBORw0KGgo=',
+    schema = {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      additionalProperties: false,
+    };
+  let paidCalls = 0;
+  const args = {
+    key: 'fixture-key',
+    prompt: 'fixture private input',
+    schema,
+    schemaName: 'fixture_schema',
+    maxTokens: 2048,
+  };
+  const answer = {
+    status: 'completed',
+    model: 'gpt-5.6-luna',
+    output: [
+      {
+        type: 'reasoning',
+        summary: [{ type: 'summary_text', text: 'PRIVATE_LUNA_REASONING' }],
+      },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: '{"ok":true}' }],
+      },
+    ],
+    usage: {
+      input_tokens: 12,
+      output_tokens: 7,
+      total_tokens: 19,
+      input_tokens_details: { cached_tokens: 3 },
+      output_tokens_details: { reasoning_tokens: 2 },
+      cost: 'PRIVATE_LUNA_COST',
+    },
+  };
+  const response = await callLuna({
+    ...args,
+    images: [{ mediaType: 'image/png', data: png }],
+    fetcher: async (url, options) => {
+      paidCalls++;
+      assert.equal(url, 'https://aiapiflow.com/v1/responses');
+      assert.equal(options.headers.authorization, 'Bearer fixture-key');
+      assert.equal(options.headers['x-api-key'], undefined);
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, 'gpt-5.6-luna');
+      assert.equal(request.store, false);
+      assert.equal(request.max_output_tokens, 2048);
+      assert.ok(!('messages' in request));
+      assert.ok(!('tools' in request));
+      assert.equal(request.text.format.type, 'json_schema');
+      assert.equal(request.text.format.strict, true);
+      assert.deepEqual(request.text.format.schema, schema);
+      assert.deepEqual(request.input[0].content, [
+        { type: 'input_text', text: args.prompt },
+        { type: 'input_image', image_url: 'data:image/png;base64,' + png },
+      ]);
+      return Response.json(answer);
+    },
+  });
+  assert.equal(response.model, 'gpt-5.6-luna');
+  assert.equal(response.stop_reason, 'end_turn');
+  assert.equal(response.content[0].text, '{"ok":true}');
+  assert.deepEqual(response.usage, {
+    input_tokens: 12,
+    output_tokens: 7,
+    total_tokens: 19,
+    cached_input_tokens: 3,
+    reasoning_tokens: 2,
+  });
+  assert.ok(!JSON.stringify(response).includes('PRIVATE_LUNA_'));
+  assert.equal(paidCalls, 1);
+  const rejected = [
+    [
+      {
+        ...answer,
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+      },
+      'MODEL_TRUNCATED',
+    ],
+    [
+      {
+        ...answer,
+        status: 'incomplete',
+        incomplete_details: { reason: 'PRIVATE_LUNA_REASON' },
+      },
+      'MODEL_RESPONSE',
+    ],
+    [
+      { ...answer, status: 'failed', error: { message: 'PRIVATE_LUNA_ERROR' } },
+      'MODEL_FAILED',
+    ],
+    [
+      {
+        ...answer,
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'refusal', refusal: 'PRIVATE_LUNA_REFUSAL' }],
+          },
+        ],
+      },
+      'MODEL_RESPONSE',
+    ],
+    [
+      {
+        ...answer,
+        output: [
+          {
+            type: 'function_call',
+            name: 'PRIVATE_LUNA_TOOL',
+            arguments: 'PRIVATE_LUNA_ARGUMENTS',
+          },
+        ],
+      },
+      'MODEL_RESPONSE',
+    ],
+    [
+      {
+        ...answer,
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'in_progress',
+            content: [{ type: 'output_text', text: '{"ok":true}' }],
+          },
+        ],
+      },
+      'MODEL_RESPONSE',
+    ],
+  ];
+  for (const [body, code] of rejected)
+    await assert.rejects(
+      () => callLuna({ ...args, fetcher: async () => Response.json(body) }),
+      (error) => {
+        assert.equal(error.code, code);
+        assert.ok(!JSON.stringify(error).includes('PRIVATE_LUNA_'));
+        return true;
+      },
+    );
+  for (const status of [429, 502])
+    await assert.rejects(
+      () =>
+        callLuna({
+          ...args,
+          fetcher: async () => ({
+            ok: false,
+            status,
+            json: async () => assert.fail('error bodies must not be read'),
+          }),
+        }),
+      (error) =>
+        error.code === (status === 429 ? 'RATE_LIMITED' : 'MODEL_FAILED') &&
+        error.providerStatus === status,
+    );
+  await assert.rejects(
+    () =>
+      callLuna({
+        ...args,
+        fetcher: async () => {
+          throw new DOMException('PRIVATE_LUNA_TIMEOUT', 'TimeoutError');
+        },
+      }),
+    (error) =>
+      error.code === 'MODEL_FAILED' &&
+      error.status === 504 &&
+      !JSON.stringify(error).includes('PRIVATE_LUNA_TIMEOUT'),
+  );
+  for (const images of [
+    Array(4).fill({ mediaType: 'image/png', data: png }),
+    [{ mediaType: 'image/png', data: 'A'.repeat(2800004) }],
+  ])
+    await assert.rejects(
+      () =>
+        callLuna({
+          ...args,
+          images,
+          fetcher: async () =>
+            assert.fail('image limits must precede paid call'),
+        }),
+      (error) => error.code === 'IMAGE_LIMIT',
+    );
+  const historicalItems = normalizeManualItems(
+    {
+      items: [
+        {
+          kind: 'dispatch',
+          text: '차량 배차',
+          evidence: '내일 배차해주세요',
+          serviceOriginal: '내일',
+        },
+      ],
+    },
+    {
+      text: '내일 배차해주세요',
+      entryId: '11111111-1111-4111-8111-111111111111',
+      submittedAt: '2026-10-30T10:00:00Z',
+    },
+  );
+  assert.deepEqual(historicalItems[0].completionEvents, []);
+  const entry = {
+    entryId: '11111111-1111-4111-8111-111111111111',
+    status: 'ready',
+    submittedAt: '2026-10-30T10:00:00Z',
+    items: [
+      {
+        ...historicalItems[0],
+        done: false,
+        completedAt: null,
+        completionEvents: [
+          { done: true, at: '2026-11-01T01:00:00Z' },
+          { done: false, at: '2026-11-02T01:00:00Z' },
+        ],
+      },
+    ],
+  };
+  assert.equal(manualDailyView([entry], '2026-11-01').tasks[0].done, true);
+  assert.equal(
+    manualDailyView([entry], '2026-11-01').tasks[0].completedAt,
+    '2026-11-01T01:00:00Z',
+  );
+  assert.equal(manualDailyView([entry], '2026-11-02').tasks[0].done, false);
+  assert.equal(
+    manualDailyView([entry], '2026-11-02').tasks[0].completedAt,
+    null,
+  );
+  assert.ok(
+    !JSON.stringify(manualDailyView([entry], '2026-11-02')).includes(
+      'completionEvents',
+    ),
+  );
+  console.log(
+    'PASS Luna Responses: strict mail/manual schemas, text/images, real model and integer usage, refusal/truncation/tools/HTTP/timeout boundaries, no secret output and historical manual completion',
+  );
+}
+{
+  const response = await callLuna({
+    key: 'fixture-key',
+    prompt: 'free text fixture',
+    fetcher: async (url, options) => {
+      assert.equal(url, 'https://aiapiflow.com/v1/responses');
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, 'gpt-5.6-luna');
+      assert.equal(request.store, false);
+      assert.equal(request.text, undefined);
+      return lunaResponseFixture([{ type: 'text', text: 'fixture answer' }]);
+    },
+  });
+  assert.equal(response.content[0].text, 'fixture answer');
+  for (const partial of [
+    {
+      schema: {
+        type: 'object',
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    { schemaName: 'missing_schema' },
+  ])
+    await assert.rejects(
+      () =>
+        callLuna({
+          key: 'fixture-key',
+          prompt: 'fixture',
+          ...partial,
+          fetcher: async () =>
+            assert.fail('partial schema must reject before request'),
+        }),
+      (error) =>
+        error.code === 'MODEL_FAILED' && error.reason === 'configuration',
+    );
+  console.log(
+    'PASS generic Luna helper: absent schema omits text.format; incomplete schema configuration never reaches provider',
+  );
+}
+{
+  const { manualDailyView, normalizeManualItems } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const entryId = '88888888-8888-4888-8888-888888888888';
+  const submittedAt = '2026-10-30T01:00:00Z';
+  const original = '11월2일 배차 준비해주세요.';
+  const items = normalizeManualItems(
+    {
+      items: [
+        {
+          kind: 'dispatch',
+          text: '운행 차량 섭외 및 배차',
+          evidence: original,
+          serviceOriginal: '11월2일',
+          dueOriginal: null,
+          assignee: null,
+          needsConfirmation: false,
+        },
+      ],
+    },
+    { text: original, submittedAt, referenceDate: '2026-10-30', entryId },
+  );
+  const entry = {
+    entryId,
+    submittedAt,
+    referenceDate: '2026-10-30',
+    referenceSource: 'received',
+    status: 'ready',
+    items,
+  };
+  const manual = manualDailyView({ [entryId]: entry }, '2026-10-30');
+  const report = briefing.renderDailyBriefing({
+    now: '2026-10-30T12:00:00+09:00',
+    analyses: [],
+    manual,
+  });
+  assert.ok(report.html.includes('운행 차량 섭외 및 배차'));
+  assert.ok(report.html.includes('대상일: 2026-11-02'));
+  assert.ok(report.html.includes('할 일'));
+  assert.ok(!report.html.includes('메일 요약'));
+  assert.ok(!report.html.includes('정리된 메일 없음'));
+  assert.ok(!report.html.includes(original));
+  assert.ok(!report.html.includes(entryId));
+  assert.ok(!report.html.includes('23:59'));
+  assert.ok(report.sourceIds.includes(entryId));
+  console.log(
+    'PASS manual OneNote integration: current preparation with future service date, stable private source, concise output without fake deadline or empty mail section',
+  );
+}
+{
+  const { analyzePrivateMail, mailOwnershipContext, MAIL_ANALYSIS_SCHEMA } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const account = 'owner-private@example.test',
+    headers =
+      'From: Manager <sender@example.test>\r\nTo: Owner <' +
+      account +
+      '>\r\nCc: PRIVATE_CC@example.test\r\nMessage-ID: <synthetic-owner@example.test>';
+  const document =
+    '-----Original Message-----\nFrom: 타인\nTo: 다른 수신자\nSubject: 자료\n검토 후 재가 요청드립니다.';
+  const forwarded = '참고하시라고 전달드립니다.\n' + document;
+  const context = mailOwnershipContext({ text: forwarded, headers, account });
+  assert.equal(context.currentBody, '참고하시라고 전달드립니다.');
+  assert.ok(context.documentBody.includes('검토 후 재가'));
+  assert.equal(context.ownerContext.recipientRole, 'to');
+  assert.equal(context.bodySeparation, 'forwarded');
+  assert.ok(!JSON.stringify(context.ownerContext).includes(account));
+  const ccContext = mailOwnershipContext({
+    text: '검토 후 재가 부탁드립니다.',
+    headers: 'To: 다른사람 <other@example.test>\r\nCc: ' + account,
+    account,
+  });
+  assert.equal(ccContext.ownerContext.recipientRole, 'cc');
+  const quoted = mailOwnershipContext({
+    text: '자료 참고 바랍니다.\n> 검토 후 재가 요청드립니다.',
+    headers,
+    account,
+  });
+  assert.equal(quoted.currentBody, '자료 참고 바랍니다.');
+  assert.equal(quoted.bodySeparation, 'quoted');
+  const source = {
+    id: '11111111-1111-4111-8111-111111111111',
+    uidl_hash: 'a'.repeat(64),
+    subject: '자료 전달',
+    sender: 'sender@example.test',
+    text: forwarded,
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+    headers,
+    ...context,
+  };
+  const ownership = {
+    forOwner: true,
+    recipientScope: 'owner_direct',
+    selfRequestEvidence: '검토 후 재가 요청드립니다.',
+  };
+  const task = {
+    text: '검토 후 재가',
+    evidence: '검토 후 재가 요청드립니다.',
+    status: 'pending',
+    assignee: null,
+    due: null,
+    serviceOriginal: null,
+    completionEvidence: null,
+    ...ownership,
+  };
+  const value = {
+    intent: { kind: 'request', evidence: '검토 후 재가 요청드립니다.' },
+    group: null,
+    summary: [
+      {
+        text: '조건 자료를 참고용으로 전달했습니다.',
+        evidence: '참고하시라고 전달드립니다.',
+      },
+    ],
+    issues: [],
+    tasks: [task],
+    waiting: [
+      {
+        text: '재가 회신',
+        evidence: task.evidence,
+        person: null,
+        ...ownership,
+      },
+    ],
+    updates: [],
+    imageFacts: [],
+    imageDecisions: [],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  let saved;
+  const run = (mail, answer, extra = {}) =>
+    analyzePrivateMail({
+      messageId: mail.id,
+      key: 'fixture-key',
+      loadMail: async () => mail,
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://aiapiflow.com/v1/responses');
+        const request = JSON.parse(options.body);
+        assert.equal(request.model, 'gpt-5.6-luna');
+        assert.equal(request.text.format.strict, true);
+        assert.ok(!options.body.includes(account));
+        assert.ok(!options.body.includes('PRIVATE_CC'));
+        return lunaResponseFixture([
+          { type: 'text', text: JSON.stringify(answer) },
+        ]);
+      },
+      store: {
+        claim: async () => ({ row: mail, lease: 'fixture' }),
+        finish: async ({ analysis }) => {
+          saved = analysis;
+          return true;
+        },
+        fail: async () => true,
+      },
+      ...extra,
+    });
+  let result = await run(source, value, { intentOverride: 'reference' });
+  assert.equal(result.status, 'done');
+  assert.equal(saved.intent.kind, 'reference');
+  assert.equal(saved.tasks.length, 0);
+  assert.equal(saved.waiting.length, 0);
+  assert.equal(saved.summary.length, 1);
+  assert.equal(saved.review.withheldTasks, 1);
+  assert.equal(saved.source.analysisPolicy.ownerFeedback, 'owner_feedback');
+  assert.equal(source.text, forwarded, 'original source must remain intact');
+  result = await run(source, value);
+  assert.equal(result.status, 'done');
+  assert.equal(saved.tasks.length, 0);
+  assert.equal(saved.waiting.length, 0);
+  assert.ok(saved.review.reasons.includes('intent_not_current'));
+  const direct = '장희성님, 검토 후 재가 부탁드립니다.';
+  const directSource = {
+    ...source,
+    text: direct + '\n' + document,
+    ...mailOwnershipContext({
+      text: direct + '\n' + document,
+      headers,
+      account,
+    }),
+  };
+  const directValue = {
+    ...value,
+    intent: { kind: 'request', evidence: direct },
+    summary: [
+      { text: '사용자에게 자료 검토와 재가를 요청했습니다.', evidence: direct },
+    ],
+    tasks: [{ ...task, evidence: direct, selfRequestEvidence: direct }],
+    waiting: [],
+  };
+  result = await run(directSource, directValue);
+  assert.equal(result.status, 'done');
+  assert.equal(
+    saved.tasks.length,
+    1,
+    'forwarded approval request addressed directly to owner remains valid',
+  );
+  assert.equal(saved.tasks[0].forOwner, true);
+  assert.equal(saved.tasks[0].selfRequestEvidence, direct);
+  const generic = '검토 후 재가 부탁드립니다.';
+  const ccMail = { ...source, text: generic, ...ccContext };
+  const ccValue = {
+    ...directValue,
+    intent: { kind: 'request', evidence: generic },
+    summary: [{ text: '자료 검토 요청이 전달되었습니다.', evidence: generic }],
+    tasks: [
+      {
+        ...task,
+        evidence: generic,
+        selfRequestEvidence: generic,
+        recipientScope: 'owner_cc',
+      },
+    ],
+  };
+  result = await run(ccMail, ccValue);
+  assert.equal(result.status, 'done');
+  assert.equal(saved.tasks.length, 0, 'CC alone does not assign owner');
+  assert.ok(saved.review.reasons.includes('recipient_not_direct'));
+  const toMail = {
+    ...ccMail,
+    ...mailOwnershipContext({ text: generic, headers, account }),
+  };
+  result = await run(toMail, ccValue);
+  assert.equal(result.status, 'done');
+  assert.equal(
+    saved.tasks.length,
+    1,
+    'unambiguous current request to owner To remains valid',
+  );
+  const other = '홍길동님, 검토 후 재가 부탁드립니다.';
+  const otherMail = {
+    ...source,
+    text: other,
+    ...mailOwnershipContext({ text: other, headers, account }),
+  };
+  result = await run(otherMail, {
+    ...directValue,
+    intent: { kind: 'request', evidence: other },
+    summary: [{ text: '타인에게 자료 검토를 요청했습니다.', evidence: other }],
+    tasks: [{ ...task, evidence: other, selfRequestEvidence: other }],
+  });
+  assert.equal(result.status, 'done');
+  assert.equal(
+    saved.tasks.length,
+    0,
+    'named other recipient does not become owner task',
+  );
+  assert.equal(
+    MAIL_ANALYSIS_SCHEMA.properties.intent.additionalProperties,
+    false,
+  );
+  assert.equal(
+    MAIL_ANALYSIS_SCHEMA.properties.tasks.items.properties.forOwner.type,
+    'boolean',
+  );
+  assert.ok(
+    MAIL_ANALYSIS_SCHEMA.properties.tasks.items.required.includes(
+      'serviceOriginal',
+    ),
+  );
+  console.log(
+    'PASS mail intent: outer forwarding vs quoted approval, source-specific reference override, no To/Cc address transmission, review-only uncertain CC/other actor and valid direct forwarded approval retained',
+  );
+}
+{
+  const { analyzePrivateMail, mailOwnershipContext } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const { selectBriefingImages } =
+    await import('../supabase/functions/onedrive-auth/private-mail-images.js');
+  const text = '업무 자료 참고 바랍니다.';
+  const source = {
+    id: '11111111-1111-4111-8111-111111111111',
+    uidl_hash: 'a'.repeat(64),
+    subject: '업무 자료',
+    sender: 'sender@example.test',
+    text,
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+    ...mailOwnershipContext({ text }),
+  };
+  const makeImage = async (id, last) => {
+    const bytes = new Uint8Array([
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10,
+      0,
+      0,
+      0,
+      last,
+    ]);
+    return {
+      id,
+      name: 'image00' + last + '.png',
+      mediaType: 'image/png',
+      width: 200,
+      height: 200,
+      bytes,
+      contentHash: Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+        (byte) => byte.toString(16).padStart(2, '0'),
+      ).join(''),
+    };
+  };
+  source.images = [await makeImage('work-1', 1), await makeImage('card-1', 2)];
+  const answer = {
+    intent: { kind: 'reference', evidence: text },
+    summary: [
+      { text: '업무 자료가 참고용으로 전달되었습니다.', evidence: text },
+    ],
+    group: null,
+    issues: [],
+    tasks: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [
+      {
+        imageId: 'work-1',
+        text: '하역장 바닥에 물이 고여 있습니다.',
+        confidence: 'readable',
+      },
+      {
+        imageId: 'card-1',
+        text: 'PRIVATE_CARD_OCR_SENTINEL',
+        confidence: 'readable',
+      },
+    ],
+    imageDecisions: [
+      { imageId: 'work-1', kind: 'business_scene', include: true },
+      { imageId: 'card-1', kind: 'business_card', include: false },
+    ],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  let analysis;
+  const run = (value) =>
+    analyzePrivateMail({
+      messageId: source.id,
+      key: 'fixture-key',
+      loadMail: async () => source,
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://aiapiflow.com/v1/responses');
+        const request = JSON.parse(options.body);
+        assert.equal(
+          request.input[0].content.filter((item) => item.type === 'input_image')
+            .length,
+          2,
+        );
+        return lunaResponseFixture([
+          { type: 'text', text: JSON.stringify(value) },
+        ]);
+      },
+      store: {
+        claim: async () => ({ row: source, lease: 'fixture' }),
+        finish: async ({ analysis: value }) => {
+          analysis = value;
+          return true;
+        },
+        fail: async () => true,
+      },
+    });
+  let result = await run(answer);
+  assert.equal(result.status, 'done');
+  assert.deepEqual(
+    analysis.source.images.map((image) => image.id),
+    ['work-1'],
+  );
+  assert.deepEqual(
+    analysis.imageFacts.map((fact) => fact.imageId),
+    ['work-1'],
+  );
+  assert.ok(!JSON.stringify(analysis).includes('PRIVATE_CARD_OCR_SENTINEL'));
+  assert.deepEqual(
+    selectBriefingImages(analysis).map((image) => image.id),
+    ['work-1'],
+  );
+  assert.equal(
+    source.images.length,
+    2,
+    'original loaded image manifest remains intact',
+  );
+  result = await run({
+    ...answer,
+    imageDecisions: answer.imageDecisions.slice(0, 1),
+  });
+  assert.equal(
+    result.code,
+    'IMAGE_EVIDENCE',
+    'every input image needs exactly one decision',
+  );
+  result = await run({
+    ...answer,
+    imageDecisions: [
+      { imageId: 'work-1', kind: 'uncertain', include: true },
+      answer.imageDecisions[1],
+    ],
+  });
+  assert.equal(result.status, 'done');
+  assert.equal(analysis.source.images.length, 0);
+  assert.equal(analysis.imageFacts.length, 0);
+  assert.equal(analysis.imageDecisions[0].include, false);
+  assert.deepEqual(selectBriefingImages(analysis), []);
+  console.log(
+    'PASS analyzed image decisions: scene retained, card OCR excluded from stored/exported analysis, complete image coverage required, uncertain fail-closed and original files untouched',
+  );
+}
+{
+  const { createMailSource } =
+    await import('../supabase/functions/onedrive-auth/private-mail-source.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const account = 'owner-private@example.test',
+    bodyText =
+      '참고하시라고 전달드립니다.\n-----Original Message-----\n검토 후 재가 요청드립니다.';
+  const emlBytes = new TextEncoder().encode(
+    'From: Manager <sender@example.test>\r\nTo: Other <other@example.test>\r\nCc: Owner <' +
+      account +
+      '>\r\nMessage-ID: <readonly-source@example.test>\r\n\r\nORIGINAL_EML_BODY_SENTINEL',
+  );
+  const files = [
+    {
+      kind: 'text',
+      item_id: 'body',
+      file_name: 'body.txt',
+      original_name: '본문.txt',
+      byte_size: new TextEncoder().encode(bodyText).length,
+    },
+    {
+      kind: 'eml',
+      item_id: 'eml',
+      file_name: 'message.eml',
+      original_name: 'message.eml',
+      byte_size: emlBytes.length,
+      content_hash: Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', emlBytes)),
+        (byte) => byte.toString(16).padStart(2, '0'),
+      ).join(''),
+    },
+  ];
+  const row = {
+    id: '11111111-1111-4111-8111-111111111111',
+    owner_id: target.owner_id,
+    mailbox_id: target.mailbox_id,
+    uidl_hash: 'a'.repeat(64),
+    subject: '자료 참고',
+    sender: 'sender@example.test',
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+    files,
+  };
+  const loader = createMailSource({
+    db: async () => [],
+    withLock: async (fn) => fn(),
+    mailbox: async () => ({
+      account,
+      drive_id: 'drive',
+      folder_id: 'folder',
+      analysis_rules: [],
+    }),
+    environment: async () => ({ access: 'fixture-access' }),
+    privateDestination: async () => ({}),
+    privatePermissions: async () => {},
+    verify: async (file) => {
+      assert.equal(file.item_id, 'body');
+      return new TextEncoder().encode(bodyText);
+    },
+    graph: async (path) => {
+      if (path === '/drives/drive/items/eml/content')
+        return new Response(emlBytes);
+      const file = files.find(
+        (value) => path === '/drives/drive/items/' + value.item_id,
+      );
+      assert.ok(file);
+      return Response.json({
+        id: file.item_id,
+        name: file.file_name,
+        size: file.byte_size,
+        file: {},
+        parentReference: { driveId: 'drive', id: 'folder' },
+      });
+    },
+  });
+  const loaded = await loader.loadMail(row);
+  assert.equal(loaded.ownerContext.recipientRole, 'cc');
+  assert.equal(loaded.currentBody, '참고하시라고 전달드립니다.');
+  assert.ok(loaded.documentBody.includes('재가 요청'));
+  assert.ok(!loaded.headers.includes('ORIGINAL_EML_BODY_SENTINEL'));
+  assert.equal(loaded.text, bodyText);
+  assert.equal(row.files.length, 2);
+  console.log(
+    'PASS readonly mail source: verified EML header-only owner To/Cc role, current/forwarded bodies separated and original source preserved',
+  );
+}
+
+{
+  const { normalizeMailAnalysis, renderDailyBriefing } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const source = {
+    id: '00000000-0000-4000-8000-000000000003',
+    uidl_hash: 'a'.repeat(64),
+    subject: '배차 요청',
+    sender: '운수사',
+    sent_at: '2026-10-30T08:00:00Z',
+    created_at: '2026-10-30T08:01:00Z',
+    text: '11월2일 배차 부탁합니다. 오늘17:00까지 회신 부탁합니다.',
+  };
+  const value = {
+    summary: [],
+    issues: [],
+    tasks: [
+      {
+        text: '11/2 운행 차량 배차',
+        evidence: source.text,
+        serviceOriginal: '11월2일',
+        due: null,
+      },
+      {
+        text: '회신',
+        evidence: source.text,
+        serviceOriginal: null,
+        due: '오늘17:00까지',
+      },
+    ],
+    waiting: [],
+  };
+  const normalized = normalizeMailAnalysis(value, source);
+  assert.equal(normalized.tasks[0].visibleFrom, '2026-10-30');
+  assert.equal(normalized.tasks[0].serviceDate, '2026-11-02');
+  assert.equal(normalized.tasks[0].dueDate, null);
+  assert.equal(normalized.tasks[1].dueAt, '2026-10-30T08:00:00.000Z');
+  const page = renderDailyBriefing({
+    now: '2026-10-30T09:00:00Z',
+    analyses: [normalized],
+  });
+  assert.match(page.managedHtml, /대상일: 2026-11-02/);
+  assert.match(page.managedHtml, /기한: 2026-10-30 17:00/);
+  assert.doesNotMatch(page.html, /<h2>\d+\./);
+  console.log(
+    'PASS mail: immediate task visibility, service date independent of deadline, explicit KST time, unnumbered sections',
+  );
+}
+
+{
+  const { dailyBriefingView, renderDailyBriefing } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const id = '00000000-0000-4000-8000-000000000003';
+  const old = {
+    source: {
+      id,
+      uidl: 'a'.repeat(64),
+      subject: '어제 요청',
+      sender: '운수사',
+      sentAt: '2026-10-30T08:00:00Z',
+      receivedAt: '2026-10-30T08:00:00Z',
+      carryOnly: true,
+    },
+    revision: 1,
+    updatedAt: '2026-10-30T08:00:00Z',
+    summary: [{ text: '어제 참고', evidence: '요청' }],
+    tasks: [
+      {
+        text: '11/2 배차',
+        evidence: '요청',
+        status: 'pending',
+        serviceDate: '2026-11-02',
+      },
+    ],
+    issues: [],
+    waiting: [],
+  };
+  const now = '2026-10-31T09:00:00Z';
+  assert.equal(dailyBriefingView({ now, analyses: [old] }).tasks.length, 1);
+  const closed = dailyBriefingView({
+    now,
+    analyses: [old],
+    overrides: {
+      [id + ':tasks:0']: {
+        actor: 'owner',
+        done: true,
+        updatedAt: '2026-10-30T09:00:00Z',
+      },
+    },
+  });
+  assert.equal(
+    closed.tasks.length,
+    0,
+    'prior completed task must not return as today task',
+  );
+  const html = renderDailyBriefing({ now, analyses: [old] }).managedHtml;
+  assert.match(html, /11\/2 배차/);
+  assert.doesNotMatch(html, /어제 참고/);
+  console.log(
+    'PASS mail carry: incomplete visible now, prior completed removed, old summary not repeated',
+  );
+}
+
+{
+  const { handlePrivateMailWorker } =
+    await import('../server/private-mail-worker.mjs');
+  const { authorizeMailWork } =
+    await import('../supabase/functions/onedrive-auth/private-mail-worker-auth.js');
+  const mailbox = '39045005-313e-42e1-b50c-2394b3b6ff26',
+    id = '00000000-0000-4000-8000-000000000003',
+    token = 'pmjob_' + 'a'.repeat(64);
+  let calls = 0;
+  const request = (body) =>
+    new Request('https://test.example', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token },
+      body: JSON.stringify(body),
+    });
+  const response = await handlePrivateMailWorker(
+    request({ kind: 'history', mailboxId: mailbox, historyId: id }),
+    {
+      env: {},
+      fetcher: async (url, options) => {
+        calls++;
+        const body = JSON.parse(options.body);
+        assert.equal(body.operation, 'history');
+        assert.equal(body.id, id);
+        assert.equal(body.mailbox, mailbox);
+        assert(!('day' in body));
+        return Response.json({ status: 'done' });
+      },
+      collect: () => {
+        throw Error('POP must never run');
+      },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(calls, 1);
+  const ctx = {
+    token,
+    hash: async () => 'hash',
+    db: async () => ({ kind: 'history', target: id, mailboxId: mailbox }),
+    fail: (message, status) => Object.assign(Error(message), { status }),
+  };
+  await authorizeMailWork(
+    'private-mail-background-work',
+    request({ operation: 'history', id, mailbox }),
+    ctx,
+  );
+  for (const body of [
+    { operation: 'analyze', id, mailbox },
+    { operation: 'history', id: crypto.randomUUID(), mailbox },
+    { operation: 'report', day: '2026-10-30', mailbox },
+  ])
+    await assert.rejects(
+      () =>
+        authorizeMailWork('private-mail-background-work', request(body), ctx),
+      /WORKER_AUTH_REQUIRED/,
+    );
+  assert.equal(
+    (
+      await handlePrivateMailWorker(
+        request({ kind: 'history', mailboxId: mailbox, historyId: 'bad' }),
+        {
+          env: {},
+          fetcher: () => {
+            throw Error('not expected');
+          },
+        },
+      )
+    ).status,
+    400,
+  );
+  console.log(
+    'PASS history worker: one scoped call, exact UUID, no POP/model/report, capability denies target/operation confusion',
+  );
+}
+
+{
+  const { createMailHistoryDocument, restoreMailHistoryDocument } =
+    await import('../supabase/functions/onedrive-auth/private-mail-history.js');
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const snapshot = {
+    kind: 'mail',
+    sourceId: crypto.randomUUID(),
+    revision: 1,
+    eventAt: '2026-10-30T08:00:00Z',
+    model: 'unknown',
+    rulesVersion: 'legacy-unversioned',
+    structuredResult: { summary: [{ text: '참고자료' }], tasks: [] },
+    correction: { intent: 'reference', reason: '발신자의 참고용 공유' },
+    completionEvents: [],
+  };
+  const document = await createMailHistoryDocument(snapshot);
+  const rawPayload = JSON.stringify(document.record, null, 2);
+  const restored = await restoreMailHistoryDocument(
+    JSON.parse(rawPayload),
+    rawPayload,
+  );
+  assert.equal(new TextDecoder().decode(restored.bytes), rawPayload);
+  assert.notEqual(restored.historyId, document.historyId);
+  await assert.rejects(
+    () =>
+      createMailHistoryDocument({
+        ...snapshot,
+        structuredResult: { api_key: 'never-store' },
+      }),
+    /HISTORY_FORMAT/,
+  );
+  const entryId = crypto.randomUUID();
+  let writes = 0,
+    finishes = 0,
+    claims = 0;
+  const context = {
+    background: true,
+    db: async (path, options) => {
+      if (path.startsWith('private_mailboxes?'))
+        return [
+          {
+            id: target.mailbox_id,
+            owner_id: target.owner_id,
+            automation_config: {},
+            briefing_pages: { '2026-10-30': { ownerPreviewHold: true } },
+          },
+        ];
+      if (path === 'rpc/private_mail_history_claim') {
+        claims++;
+        return [
+          {
+            id: entryId,
+            mailbox_id: target.mailbox_id,
+            owner_id: target.owner_id,
+            payload: rawPayload,
+            history_id: restored.historyId,
+            file_name: restored.fileName,
+          },
+        ];
+      }
+      if (path === 'rpc/private_mail_history_finish') {
+        assert.equal(options.body.p_history, entryId);
+        assert.equal(options.body.p_item_id, 'verified-json');
+        finishes++;
+        return true;
+      }
+      throw Error('Unexpected path ' + path);
+    },
+    json: Response.json,
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    connectedNotes: () => {
+      throw Error('OneNote must remain untouched');
+    },
+    writeHistory: async (value) => {
+      writes++;
+      assert.equal(value.historyId, restored.historyId);
+      return { itemId: 'verified-json' };
+    },
+  };
+  const result = await handleMailAutomation(
+    'private-mail-background-work',
+    { operation: 'history', id: entryId, mailbox: target.mailbox_id },
+    { id: target.owner_id },
+    context,
+  );
+  assert.equal((await result.json()).status, 'done');
+  assert.equal(claims, 1);
+  assert.equal(writes, 1);
+  assert.equal(finishes, 1);
+  const held = await handleMailAutomation(
+    'private-mail-background-work',
+    { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
+    { id: target.owner_id },
+    context,
+  );
+  assert.deepEqual(await held.json(), {
+    status: 'waiting',
+    code: 'OWNER_REVIEW',
+  });
+  assert.equal(claims, 1);
+  console.log(
+    'PASS history integration: raw SQL payload preserved, credential fields rejected, exact delivery acknowledgment and owner-held Note untouched',
+  );
+}
+
+{
+  const { deadline } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  assert.equal(
+    deadline('11월2일', '회신기한: 11월2일', '2026-10-30').dueDate,
+    '2026-11-02',
+  );
+  assert.equal(
+    deadline('11월2일', '11월2일 운행, 마감: 11월1일', '2026-10-30').dueDate,
+    null,
+  );
+  console.log(
+    'PASS labelled deadline: adjacent explicit label only, no service date promoted',
+  );
+}
+
+{
+  const { reconcileMailItems, dailyBriefingView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const source = {
+    id: '00000000-0000-4000-8000-000000000003',
+    uidl: 'a'.repeat(64),
+    subject: '업무',
+    sender: '발신자',
+    sentAt: '2026-10-30T08:00:00Z',
+    receivedAt: '2026-10-30T08:00:00Z',
+  };
+  const a = {
+      text: '배차 확인',
+      evidence: '배차 확인 부탁합니다',
+      status: 'pending',
+    },
+    b = { text: '회신', evidence: '결과 회신 부탁합니다', status: 'pending' },
+    c = {
+      text: '서류 제출',
+      evidence: '서류 제출 부탁합니다',
+      status: 'pending',
+    };
+  const old = {
+    source,
+    revision: 1,
+    summary: [],
+    issues: [],
+    waiting: [],
+    tasks: [a, b],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  const revised = structuredClone({ ...old, tasks: [b, c, a] });
+  reconcileMailItems(revised, old);
+  assert.deepEqual(
+    revised.tasks.map((x) => x.itemIndex),
+    [1, 2, 0],
+  );
+  const view = dailyBriefingView({
+    now: '2026-10-30T09:00:00Z',
+    analyses: [revised],
+    overrides: {
+      [source.id + ':tasks:0']: {
+        actor: 'owner',
+        done: true,
+        updatedAt: '2026-10-30T08:30:00Z',
+      },
+    },
+  });
+  assert.equal(view.tasks.find((x) => x.text === a.text).status, 'complete');
+  assert.equal(view.tasks.find((x) => x.text === c.text).status, 'pending');
+  const cleared = structuredClone({ ...revised, tasks: [] });
+  reconcileMailItems(cleared, revised);
+  const fresh = structuredClone({
+    ...cleared,
+    tasks: [{ ...c, text: '새로운 업무' }],
+  });
+  reconcileMailItems(fresh, cleared);
+  assert.equal(
+    fresh.tasks[0].itemIndex,
+    3,
+    'retired index cannot attach old completed checkbox to new work',
+  );
+  console.log(
+    'PASS stable mail items: reordered exact source tasks retain completion; new/reintroduced work never reuses retired refs',
+  );
+}
+
+{
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const entryId = crypto.randomUUID();
+  let queued = 0;
+  const entry = {
+    entryId,
+    status: 'ready',
+    submittedAt: '2026-10-30T08:00:00Z',
+    referenceDate: '2026-10-30',
+    items: [
+      {
+        itemId: 'item-001',
+        text: '자료 회신',
+        kind: 'task',
+        visibleFrom: '2026-10-30',
+        submittedAt: '2026-10-30T08:00:00Z',
+        done: false,
+      },
+    ],
+  };
+  const ctx = {
+    aiKey: 'mock-only',
+    json: Response.json,
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    db: async (path, options) => {
+      if (path.startsWith('private_mailboxes?'))
+        return [
+          {
+            id: target.mailbox_id,
+            owner_id: target.owner_id,
+            enabled: true,
+            manual_entries: {},
+          },
+        ];
+      if (path === 'rpc/private_mail_manual_claim')
+        return { claimed: false, entry };
+      if (path === 'rpc/private_mail_dispatch_report') {
+        assert.deepEqual(options.body, {
+          p_box: target.mailbox_id,
+          p_report_day: '2026-10-30',
+        });
+        queued++;
+        return true;
+      }
+      throw Error('Unexpected manual route ' + path);
+    },
+  };
+  const response = await handlePrivateMail(
+    'private-mail-manual-add',
+    new Request('https://test.example', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: '자료 회신 부탁합니다',
+        clientRequestId: entryId,
+      }),
+    }),
+    { id: target.owner_id },
+    ctx,
+  );
+  assert.equal((await response.json()).reportQueued, true);
+  assert.equal(queued, 1);
+  console.log(
+    'PASS manual API route: duplicate ready result dispatches only exact named SQL report day without another model call',
   );
 }
