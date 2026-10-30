@@ -53,15 +53,19 @@ begin
  j=b.automation_job;
  if j->>'status' in ('queued','running') then return j; end if;
  if b.lease_until>clock_timestamp() then return null; end if;
+ if coalesce((j->>'leaseUntil')::timestamptz,'-infinity')>clock_timestamp() then return null; end if;
  if not coalesce(p_force,false) and b.automation_next_at>clock_timestamp() then return null; end if;
  c=b.last_counts->'cycle';
  if c->>'phase'='collecting' then
-  -- Only explicit owner run-now may resume an expired manual receipt unchanged.
-  if not coalesce(p_force,false) or coalesce(c->>'requestId','') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return null; end if;
+  -- Scheduled recovery only adopts the same failed automated receipt when due.
+  if coalesce(c->>'requestId','') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return null; end if;
+  if not coalesce(p_force,false) and (j->>'status' is distinct from 'failed'
+   or j->>'id' is distinct from c->>'requestId' or coalesce((j->>'stopRequested')::boolean,false)
+   or b.automation_next_at is null or b.automation_next_at>clock_timestamp()) then return null; end if;
   request=(c->>'requestId')::uuid;
  else request=gen_random_uuid(); end if;
  j=jsonb_build_object('id',request,'status','queued','cycleId',case when c->>'phase'='collecting' then c->>'id' else null end,'attempts',0,
- 'stopRequested',false,'lease',null,'leaseUntil',null,'notBefore',clock_timestamp(),
+ 'stopRequested',false,'periodFailures',0,'lease',null,'leaseUntil',null,'notBefore',clock_timestamp(),
  'createdAt',clock_timestamp(),'updatedAt',clock_timestamp(),'error',null,'progress',null);
  update public.private_mailboxes set automation_job=j,automation_next_at=clock_timestamp()+interval '3 hours' where id=p_box;
  perform public.private_mail_dispatch(p_box); return j;
@@ -107,13 +111,14 @@ begin
   j=j||jsonb_build_object('cycleId',c->>'id','progress',c);
  elsif p_error is null then raise exception 'JOB_PROGRESS'; end if;
  if coalesce((j->>'stopRequested')::boolean,false) or not public.private_mail_automation_allowed(p_box) then state='stopped';
- elsif p_error is not null and (j->>'attempts')::integer>=5 then state='failed';
+ elsif p_error is not null and ((j->>'attempts')::integer>=5 or coalesce((j->>'periodFailures')::integer,0)+1>=5) then state='failed';
  elsif p_error is not null then state='queued';
  elsif c->>'phase'='complete' then state='complete'; else state='queued'; end if;
  delay=case when p_error is null then 0 else least(300,15*power(2,greatest(0,(j->>'attempts')::integer-1))::integer) end;
  j=j||jsonb_build_object('status',state,'lease',null,'leaseUntil',null,'error',p_error,
+ 'periodFailures',coalesce((j->>'periodFailures')::integer,0)+case when p_error is null then 0 else 1 end,
  'notBefore',clock_timestamp()+make_interval(secs=>delay),'updatedAt',clock_timestamp());
- -- Successful chunks reset the crash/error budget, independent of total chunk count.
+ -- Successful chunks reset consecutive claims, never the period's failure total.
  if p_error is null then j=jsonb_set(j,'{attempts}','0'::jsonb); end if;
  update public.private_mailboxes set automation_job=j where id=p_box;
  perform public.private_mail_dispatch_clear(p_box,'collect',p_job::text);
