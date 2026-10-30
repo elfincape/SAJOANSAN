@@ -98,11 +98,41 @@ body = await (await handleOwnerCollect(req(), options)).json();
 assert.equal(body.ok, true);
 assert.ok(commands.indexOf('login') < commands.indexOf('UIDL'));
 for (const log of logs) {
-  assert.deepEqual(Object.keys(JSON.parse(log)).sort(), [
-    'code',
-    'event',
-    'stage',
-  ]);
+  const metadata = JSON.parse(log);
+  assert.ok(
+    Object.keys(metadata).every((key) =>
+      [
+        'code',
+        'event',
+        'stage',
+        'bridgeCode',
+        'bridgeOperation',
+        'bridgeStatus',
+      ].includes(key),
+    ),
+  );
+  if (metadata.bridgeCode) assert.match(metadata.bridgeCode, /^[A-Z_]{1,64}$/);
+  if (metadata.bridgeOperation)
+    assert.ok(
+      [
+        'begin',
+        'seen',
+        'seen-many',
+        'start-cycle',
+        'attach-cycle',
+        'file',
+        'upload-session',
+        'upload-complete',
+        'finish',
+        'end',
+      ].includes(metadata.bridgeOperation),
+    );
+  if (metadata.bridgeStatus != null)
+    assert.ok(
+      Number.isInteger(metadata.bridgeStatus) &&
+        metadata.bridgeStatus >= 400 &&
+        metadata.bridgeStatus <= 599,
+    );
   assert.ok(!/fixture-private|private\.test/.test(log));
 }
 console.log(

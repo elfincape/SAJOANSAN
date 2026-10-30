@@ -6,7 +6,11 @@ import {
   validateCollection,
   collectionProgress,
 } from '../supabase/functions/onedrive-auth/private-mail-collection-state.js';
-import { ReadOnlyPop, syncBatch } from './private-mail-collector.mjs';
+import {
+  ReadOnlyPop,
+  syncBatch,
+  collectionBridgeDetails,
+} from './private-mail-collector.mjs';
 import {
   packageMessage,
   RAW_LIMIT,
@@ -142,9 +146,40 @@ export function ownerBridge(
     });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
+      const aliases = new Map([
+        [
+          '다른 서류를 처리 중입니다. 잠시 후 다시 시도해 주세요.',
+          'ONEDRIVE_LOCK_BUSY',
+        ],
+        ['OneDrive 연결 잠금이 만료되었습니다.', 'ONEDRIVE_LOCK_EXPIRED'],
+        [
+          'OneDrive 계정이 메일 보관 계정과 다릅니다.',
+          'ONEDRIVE_ACCOUNT_MISMATCH',
+        ],
+        [
+          'OneDrive 저장 결과가 원본 보관 요청과 다릅니다.',
+          'ONEDRIVE_METADATA_MISMATCH',
+        ],
+        [
+          '보관 파일 내용 검증에 실패했습니다. 원본은 유지됩니다.',
+          'ONEDRIVE_CONTENT_MISMATCH',
+        ],
+        ['수집 잠금이 만료되었습니다.', 'MAILBOX_LEASE_EXPIRED'],
+      ]);
+      const classified = collectionBridgeDetails({
+        bridgeCode: failure.error,
+      }).bridgeCode;
+      const code = SAFE_CODES.has(failure.error)
+        ? failure.error
+        : (classified ?? aliases.get(failure.error));
       throw Object.assign(Error('BRIDGE_REJECTED'), {
         status: response.status,
-        code: SAFE_CODES.has(failure.error) ? failure.error : undefined,
+        code,
+        ...collectionBridgeDetails({
+          bridgeCode: code ?? 'BRIDGE_REJECTED',
+          bridgeOperation: operation,
+          bridgeStatus: response.status,
+        }),
       });
     }
     return response.json();
@@ -352,6 +387,7 @@ export async function handleOwnerCollect(
     progress,
     error,
     code,
+    bridgeDiagnostic = {},
     stage = 'begin';
   const budgetTimer = setTimeout(() => {
     processing.abort();
@@ -433,14 +469,18 @@ export async function handleOwnerCollect(
   } catch (failure) {
     if (failure?.counts) counts = failure.counts;
     error = true;
-    code = SAFE_CODES.has(failure?.code)
-      ? failure.code
-      : {
-          begin: 'BEGIN_FAILED',
-          connect: 'POP_CONNECTION_FAILED',
-          login: 'POP_LOGIN_FAILED',
-          collect: 'COLLECTION_FAILED',
-        }[stage];
+    bridgeDiagnostic = collectionBridgeDetails(failure);
+    code =
+      SAFE_CODES.has(failure?.code) ||
+      (bridgeDiagnostic.bridgeCode &&
+        bridgeDiagnostic.bridgeCode === failure?.code)
+        ? failure.code
+        : {
+            begin: 'BEGIN_FAILED',
+            connect: 'POP_CONNECTION_FAILED',
+            login: 'POP_LOGIN_FAILED',
+            collect: 'COLLECTION_FAILED',
+          }[stage];
     if (processing.signal.aborted || Date.now() >= deadline)
       code = 'BATCH_TIMEOUT';
   } finally {
@@ -466,17 +506,26 @@ export async function handleOwnerCollect(
     if (info)
       try {
         await bridge.end(counts || { cursor: info.cursor }, error);
-      } catch {
+      } catch (failure) {
         error = true;
         if (!code) {
           code = 'FINALIZE_FAILED';
           stage = 'finalize';
+          bridgeDiagnostic = collectionBridgeDetails(failure);
         }
       }
   }
-  if (error) logger(JSON.stringify({ event: 'private_mail', stage, code }));
+  if (error)
+    logger(
+      JSON.stringify({
+        event: 'private_mail',
+        stage,
+        code,
+        ...bridgeDiagnostic,
+      }),
+    );
   return error
-    ? json({ error: 'SYNC_FAILED', code, stage }, 503)
+    ? json({ error: 'SYNC_FAILED', code, stage, ...bridgeDiagnostic }, 503)
     : json({
         ok: true,
         mode,

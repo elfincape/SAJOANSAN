@@ -3302,3 +3302,42 @@ console.log(
     'PASS manual API route: duplicate ready result dispatches only exact named SQL report day without another model call',
   );
 }
+
+{
+  const { handlePrivateMailWorker } =
+    await import('../server/private-mail-worker.mjs');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const jobId = crypto.randomUUID();
+  let finished = 0;
+  const response = await handlePrivateMailWorker(
+    new Request('https://test.example', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + 'pmjob_' + 'a'.repeat(64) },
+      body: JSON.stringify({
+        kind: 'collect',
+        mailboxId: target.mailbox_id,
+        jobId,
+      }),
+    }),
+    {
+      env: {},
+      collect: async () =>
+        Response.json({ code: 'ONEDRIVE_METADATA_MISMATCH' }, { status: 503 }),
+      fetcher: async (_url, options) => {
+        const payload = JSON.parse(options.body);
+        if (payload.operation === 'job-claim')
+          return Response.json({ job: { id: jobId } });
+        assert.equal(payload.operation, 'job-finish');
+        assert.equal(payload.error, 'ONEDRIVE_METADATA_MISMATCH');
+        finished++;
+        return Response.json({ job: { status: 'failed' } });
+      },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(finished, 1);
+  console.log(
+    'PASS collection worker: safe known bridge failure retained in durable job, no raw provider detail',
+  );
+}

@@ -1329,3 +1329,84 @@ assert.equal(emptyDeadline.checkpoint.processedUidls.length, 0);
 console.log(
   'PASS real processing abort/deadline: completed prefix checkpoints and yields, unfinished mail stays pending, ordinary failures and zero-progress deadlines remain failures',
 );
+{
+  const data = Buffer.alloc(3276801, 1),
+    contentHash = createHash('sha256').update(data).digest('hex');
+  for (const [failure, expected] of [
+    ['FILE_HASH_REJECTED', 'FILE_HASH_REJECTED'],
+    [
+      '다른 서류를 처리 중입니다. 잠시 후 다시 시도해 주세요.',
+      'ONEDRIVE_LOCK_BUSY',
+    ],
+    [
+      'OneDrive 저장 결과가 원본 보관 요청과 다릅니다.',
+      'ONEDRIVE_METADATA_MISMATCH',
+    ],
+    ['PRIVATE_PROVIDER_MESSAGE_SENTINEL', 'COLLECTION_FAILED'],
+  ]) {
+    const logs = [];
+    let checkpoint;
+    const response = await handleOwnerCollect(request(), {
+      env,
+      connect,
+      background: true,
+      logger: (line) => logs.push(JSON.parse(line)),
+      packager: async () => ({
+        ...packaged,
+        hash: contentHash,
+        files: [
+          {
+            kind: 'eml',
+            name: 'original.eml',
+            byte_size: data.length,
+            content_hash: contentHash,
+            bytes: data,
+          },
+        ],
+      }),
+      fetcher: async (url, options) => {
+        assert.ok(!url.includes('PRIVATE_PROVIDER_MESSAGE_SENTINEL'));
+        const body = JSON.parse(options.body);
+        if (body.operation === 'begin')
+          return Response.json({
+            mailbox: '00000000-0000-4000-8000-000000000003',
+            lease: '00000000-0000-4000-8000-000000000004',
+            cutoff: '2026-08-18T00:00:00Z',
+            cursor: null,
+          });
+        if (body.operation === 'seen') return Response.json({ seen: false });
+        if (body.operation === 'upload-session')
+          return Response.json({ error: failure }, { status: 409 });
+        if (body.operation === 'end') {
+          checkpoint = body;
+          return Response.json({ ok: true });
+        }
+        assert.fail('Unexpected mocked collector operation');
+      },
+    });
+    const result = await response.json();
+    assert.equal(result.code, expected);
+    assert.equal(result.stage, 'collect');
+    assert.equal(result.bridgeOperation, 'upload-session');
+    assert.equal(result.bridgeStatus, 409);
+    assert.equal(logs.at(-1).bridgeOperation, 'upload-session');
+    assert.equal(logs.at(-1).bridgeStatus, 409);
+    assert.equal(checkpoint.error, 'SYNC_FAILED');
+    assert.equal(checkpoint.counts.saved, 0);
+    const serialized = JSON.stringify({ result, logs });
+    for (const secret of [
+      'PRIVATE_PROVIDER_MESSAGE_SENTINEL',
+      'fake-only',
+      'mock-owner',
+      'original.eml',
+      packaged.uidl,
+      contentHash,
+      'sender@example.test',
+      'uploadUrl',
+    ])
+      assert.ok(!serialized.includes(secret));
+  }
+  console.log(
+    'PASS collector bridge diagnostics: upload-session 409 fixed code/operation/status survive batch boundary without provider text, IDs, filenames or credentials',
+  );
+}

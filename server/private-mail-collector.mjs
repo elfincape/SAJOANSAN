@@ -19,6 +19,48 @@ const COMMANDS = new Set([
   'RETR',
   'QUIT',
 ]);
+const BRIDGE_CODES = new Set([
+  'BRIDGE_REJECTED',
+  'FILE_UPLOAD_FAILED',
+  'FILE_HASH_REJECTED',
+  'FILE_NOT_UPLOADED',
+  'FILE_METADATA_REJECTED',
+  'EML_HASH_REJECTED',
+  'UPLOAD_SESSION_REJECTED',
+  'COLLECTION_CHECKPOINT',
+  'ONEDRIVE_LOCK_BUSY',
+  'ONEDRIVE_LOCK_EXPIRED',
+  'ONEDRIVE_ACCOUNT_MISMATCH',
+  'ONEDRIVE_METADATA_MISMATCH',
+  'ONEDRIVE_CONTENT_MISMATCH',
+  'MAILBOX_LEASE_EXPIRED',
+]);
+const BRIDGE_OPERATIONS = new Set([
+  'begin',
+  'seen',
+  'seen-many',
+  'start-cycle',
+  'attach-cycle',
+  'file',
+  'upload-session',
+  'upload-complete',
+  'finish',
+  'end',
+]);
+export function collectionBridgeDetails(failure) {
+  const code = failure?.bridgeCode ?? failure?.code;
+  return {
+    ...(BRIDGE_CODES.has(code) ? { bridgeCode: code } : {}),
+    ...(BRIDGE_OPERATIONS.has(failure?.bridgeOperation)
+      ? { bridgeOperation: failure.bridgeOperation }
+      : {}),
+    ...(Number.isInteger(failure?.bridgeStatus) &&
+    failure.bridgeStatus >= 400 &&
+    failure.bridgeStatus <= 599
+      ? { bridgeStatus: failure.bridgeStatus }
+      : {}),
+  };
+}
 export class ReadOnlyPop {
   #transport;
   #buffer = Buffer.alloc(0);
@@ -456,10 +498,15 @@ export async function syncBatch({
   } catch (failure) {
     controller.abort();
     pop.close();
+    const diagnostic = collectionBridgeDetails(failure);
     throw Object.assign(Error('SYNC_FAILED'), {
-      code: ['BATCH_TIMEOUT', 'FILE_UPLOAD_FAILED'].includes(failure?.message)
-        ? failure.message
-        : undefined,
+      code:
+        diagnostic.bridgeCode && diagnostic.bridgeCode !== 'BRIDGE_REJECTED'
+          ? diagnostic.bridgeCode
+          : ['BATCH_TIMEOUT', 'FILE_UPLOAD_FAILED'].includes(failure?.message)
+            ? failure.message
+            : undefined,
+      ...diagnostic,
       counts: { ...counts },
     });
   }
