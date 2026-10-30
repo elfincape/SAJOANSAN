@@ -17,6 +17,18 @@ const CODES = new Set([
   'OWNER_SYNC_DISABLED',
   'BEGIN_FAILED',
   'COLLECTION_NOT_CONFIGURED',
+  'FILE_HASH_REJECTED',
+  'FILE_NOT_UPLOADED',
+  'FILE_METADATA_REJECTED',
+  'EML_HASH_REJECTED',
+  'UPLOAD_SESSION_REJECTED',
+  'COLLECTION_CHECKPOINT',
+  'ONEDRIVE_LOCK_BUSY',
+  'ONEDRIVE_LOCK_EXPIRED',
+  'ONEDRIVE_ACCOUNT_MISMATCH',
+  'ONEDRIVE_METADATA_MISMATCH',
+  'ONEDRIVE_CONTENT_MISMATCH',
+  'MAILBOX_LEASE_EXPIRED',
 ]);
 export async function handlePrivateMailWorker(
   request,
@@ -76,7 +88,7 @@ export async function handlePrivateMailWorker(
     typeof body !== 'object' ||
     Array.isArray(body) ||
     body.mailboxId !== BOX ||
-    !['collect', 'analyze', 'report'].includes(body.kind)
+    !['collect', 'analyze', 'report', 'history'].includes(body.kind)
   )
     return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
   if (
@@ -84,6 +96,8 @@ export async function handlePrivateMailWorker(
       (typeof body.jobId !== 'string' || !UUID.test(body.jobId))) ||
     (body.kind === 'analyze' &&
       (typeof body.messageId !== 'string' || !UUID.test(body.messageId))) ||
+    (body.kind === 'history' &&
+      (typeof body.historyId !== 'string' || !UUID.test(body.historyId))) ||
     (body.kind === 'report' &&
       (typeof body.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)))
   )
@@ -106,13 +120,15 @@ export async function handlePrivateMailWorker(
     return response.json();
   }
   try {
-    if (body.kind === 'analyze' || body.kind === 'report') {
+    if (['analyze', 'report', 'history'].includes(body.kind)) {
       const result = await edge(
         {
           operation: body.kind,
-          ...(body.kind === 'analyze'
-            ? { id: body.messageId }
-            : { day: body.day }),
+          ...(body.kind === 'history'
+            ? { id: body.historyId }
+            : body.kind === 'analyze'
+              ? { id: body.messageId }
+              : { day: body.day }),
         },
         210000,
       );

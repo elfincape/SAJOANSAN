@@ -134,10 +134,7 @@ export function MailBriefingConnection() {
     }
   }
   const ready = Boolean(
-    data?.schemaReady &&
-    data.workerReady &&
-    data.schedulerReady &&
-    data.notesConnected,
+    data?.schemaReady && data.workerReady && data.schedulerReady,
   );
   const canRun = Boolean(
     ready && data?.config.enabled && !loadError && !running,
@@ -152,11 +149,9 @@ export function MailBriefingConnection() {
         ? '서버 실행 준비 중'
         : !data.schedulerReady
           ? '예약 실행 준비 중'
-          : !data.notesConnected
-            ? 'OneNote 연결 필요'
-            : data.config.enabled
-              ? '3시간마다 자동화 실행'
-              : '자동화 일시정지';
+          : data.config.enabled
+            ? '3시간마다 자동화 실행'
+            : '자동화 일시정지';
   return (
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
       <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
@@ -171,9 +166,9 @@ export function MailBriefingConnection() {
       <div style={{ display: 'grid', gap: 14, padding: '12px 0', minWidth: 0 }}>
         <div>
           <p>
-            OneNote{' '}
-            {!data ? '확인 중…' : data.notesConnected ? '연결됨' : '연결 필요'}{' '}
-            · 할 일 목록 → 일일정리
+            OneNote (선택 출력){' '}
+            {!data ? '확인 중…' : data.notesConnected ? '연결됨' : '미연결'} ·
+            할 일 목록 → 일일정리
           </p>
           {data && !data.notesConnected ? (
             <button

@@ -321,10 +321,10 @@ export function MailFilterControls({
       setReportRetry(null);
       return result.status === 'skipped'
         ? '저장된 분석과 OneNote 정리가 같습니다. 추가 변경은 없습니다.'
-        : '선택한 메일의 분석과 OneNote 정리 반영을 확인했습니다.';
+        : 'OneNote 기록을 확인했습니다.';
     }
     if (result.status === 'pending')
-      return '본문 정리를 반영했으며 사진 추가 반영이 남아 있습니다. 정리·사진 반영 이어서 버튼으로 계속할 수 있습니다.';
+      return '본문 정리를 반영했으며 사진 추가 반영이 남아 있습니다. OneNote에 기록 버튼으로 계속할 수 있습니다.';
     if (result.status === 'busy')
       return '같은 날짜의 정리가 진행 중입니다. 잠시 후 정리 반영을 이어서 확인해 주세요.';
     return 'OneNote 정리 반영이 대기 중입니다. 연결 상태를 확인한 뒤 정리 반영을 이어서 확인해 주세요.';
@@ -344,22 +344,17 @@ export function MailFilterControls({
             : '이 메일의 분석을 완료하지 못했습니다. 상태와 연결을 확인한 뒤 다시 시도해 주세요.')
         );
       onChanged();
-      if (!result.reportDay)
-        return '메일 분석은 저장했지만 정리 날짜를 확인하지 못했습니다. 목록을 새로고침해 주세요.';
-      const message = await writeSelectedReport(
-        result.reportDay,
-        mail.subject || '(제목 없음)',
-      );
-      if (!mounted.current) return;
+      if (result.reportDay)
+        setReportRetry({
+          day: result.reportDay,
+          subject: mail.subject || '(제목 없음)',
+        });
       try {
         await read();
       } catch {
-        return (
-          (message || '메일 분석을 저장했습니다.') +
-          ' 메일 목록은 새로고침해 주세요.'
-        );
+        return '메일 분석은 포털에 저장했습니다. 메일 목록은 새로고침해 주세요.';
       }
-      return message;
+      return '메일 분석을 포털에 저장했습니다.';
     }, '선택한 기존 메일 1건을 정리하는 중…');
   }
   async function resumeReport() {
@@ -387,7 +382,7 @@ export function MailFilterControls({
         <strong>메일 선택·정리·분석 제외</strong>
       </summary>
       <p>
-        수집된 메일을 한 건씩 선택해 OneNote에 정리하고, 분석 제외와 제외 규칙을
+        수집된 메일을 한 건씩 포털에 정리하고, 분석 제외와 제외 규칙을
         설정합니다. 제외한 메일의 원본 수집·보관은 유지합니다.
       </p>
       <p className="daily-feedback" role="status" aria-live="polite">
@@ -404,7 +399,7 @@ export function MailFilterControls({
             disabled={busy || disabled}
             onClick={() => void resumeReport()}
           >
-            정리·사진 반영 이어서
+            OneNote에 기록
           </button>
         </div>
       ) : null}
@@ -711,9 +706,8 @@ export function MailFilterControls({
           ) : null}
           <h3>메일별 정리·제외·복원</h3>
           <p>
-            OneNote 권한을 연결한 뒤 ‘선택 메일 정리’를 누르면 저장된 해당 메일
-            1건만 분석합니다. 자동 수집 설정을 켜지 않아도 사용할 수 있습니다.
-            이미 분석된 메일은 저장된 분석으로 정리 반영을 이어갑니다.
+            ‘선택 메일 정리’는 저장된 해당 메일 1건을 포털에 분석·저장합니다.
+            OneNote 기록은 선택입니다.
           </p>
           <p>
             ‘규칙 무시·포함’은 제외 규칙보다 우선하며, ‘규칙에 맡김’은 저장된

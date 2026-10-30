@@ -38,7 +38,7 @@ export async function authorizeMailWork(
   if (
     !session ||
     session.mailboxId !== TARGET.mailbox_id ||
-    !['collect', 'analyze', 'report'].includes(session.kind)
+    !['collect', 'analyze', 'report', 'history'].includes(session.kind)
   )
     denied();
   if (session.kind !== 'report' && !UUID.test(session.target ?? '')) denied();
@@ -96,6 +96,8 @@ export async function authorizeMailWork(
       denied();
   } else if (session.kind === 'analyze') {
     if (body.operation !== 'analyze' || body.id !== session.target) denied();
+  } else if (session.kind === 'history') {
+    if (body.operation !== 'history' || body.id !== session.target) denied();
   } else if (
     body.operation !== 'report' ||
     body.day !== session.target ||

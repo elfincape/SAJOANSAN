@@ -61,6 +61,12 @@ export interface DailyMailItem {
   assigneeConfirmed?: boolean;
   due?: string | null;
   dueOriginal?: string | null;
+  visibleFrom?: string;
+  serviceDate?: string | null;
+  serviceOriginal?: string | null;
+  dueAt?: string | null;
+  dueDate?: string | null;
+  duePrecision?: 'time' | 'day' | null;
   resolution?: {
     manual: boolean;
     done?: boolean;
@@ -134,7 +140,69 @@ export interface MailRulePreview {
   more: boolean;
   unresolved: { id: string; subject?: string; code: string; reason?: string }[];
 }
+export interface MailManualItem {
+  entryId?: string;
+  itemId: string;
+  ref: string;
+  text: string;
+  kind: 'task' | 'dispatch' | 'issue';
+  visibleFrom: string;
+  receivedAt: string;
+  submittedAt?: string;
+  serviceDate: string | null;
+  serviceOriginal?: string | null;
+  dueAt: string | null;
+  dueDate?: string | null;
+  duePrecision?: 'time' | 'day' | null;
+  dueOriginal?: string | null;
+  assignee: string | null;
+  done: boolean;
+  completedAt: string | null;
+  needsConfirmation?: boolean;
+}
+export interface MailManualEntry {
+  entryId: string;
+  status: 'ready' | 'processing' | 'failed';
+  submittedAt: string;
+  receivedAt?: string;
+  reportDay: string;
+  referenceDate: string | null;
+  referenceSource: 'owner' | 'received';
+  authoredDate: string | null;
+  needsConfirmation: boolean;
+  error?: string | null;
+  items: MailManualItem[];
+}
+export interface MailManualList {
+  day: string;
+  entries: MailManualEntry[];
+  tasks: MailManualItem[];
+  issues: MailManualItem[];
+}
 export const privateMail = {
+  manualAdd: (body: {
+    text: string;
+    clientRequestId: string;
+    referenceDate?: string | null;
+    retry?: boolean;
+  }) =>
+    oneDriveCall<MailManualEntry>(
+      'private-mail-manual-add',
+      body,
+      false,
+      255000,
+    ),
+  manualList: (day: string) =>
+    oneDriveCall<MailManualList>('private-mail-manual-list', { day }),
+  manualUpdate: (body: { entryId: string; itemId: string; done: boolean }) =>
+    oneDriveCall<{
+      entryId: string;
+      itemId: string;
+      done: boolean;
+      completedAt: string | null;
+      reportDay: string;
+    }>('private-mail-manual-update', body),
+
   dailyOverview: (day?: string) =>
     oneDriveCall<DailyMailOverview>('private-mail-daily-overview', { day }),
   setTaskStatus: (body: { ref: string; done: boolean; day: string }) =>

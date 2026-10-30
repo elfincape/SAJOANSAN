@@ -1,6 +1,8 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
-import { callHaiku } from '../_shared/haiku.js';
+import { manualDailyView } from './private-mail-manual.js';
+import { selectBriefingImages } from './private-mail-images.js';
+import { restoreMailHistoryDocument } from './private-mail-history.js';
 import { writeDailyBriefing } from './private-mail-notes-writer.js';
 import {
   collectionProgress,
@@ -124,9 +126,6 @@ export async function handleMailAutomation(action, body, user, ctx) {
   }
   if (action === 'private-mail-analyze-one') {
     if (!uuid(body.id)) throw fail('ANALYSIS_SOURCE');
-    const connection = await connectedNotes();
-    if (connection.notesGranted !== true)
-      throw fail('NOTES_PERMISSION_REQUIRED', 409);
     const selection = await rpc('private_mail_analysis_select', {
       p_box: current.id,
       p_message: body.id,
@@ -157,9 +156,9 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const analyses = [];
     for (let offset = 0; offset < 5000; offset += 100) {
       const rows = await db(
-        'private_mail_messages?select=analysis,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
+        'private_mail_messages?select=analysis,report_day,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
           current.id +
-          '&analysis=not.is.null&report_day=eq.' +
+          '&analysis=not.is.null&report_day=lte.' +
           enc(date) +
           '&order=created_at.asc,id.asc&limit=100&offset=' +
           offset,
@@ -169,6 +168,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           ...row.analysis,
           source: {
             ...row.analysis.source,
+            carryOnly: row.report_day != null && row.report_day < date,
             excluded:
               row.analysis_excluded === true &&
               row.analysis_filter_override !== 'include',
@@ -208,8 +208,6 @@ export async function handleMailAutomation(action, body, user, ctx) {
     )
       throw fail('AUTOMATION_CONNECTION_REQUIRED', 409);
     if (body.enabled && !ctx.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
-    if (body.enabled && (await connectedNotes()).notesGranted !== true)
-      throw fail('NOTES_PERMISSION_REQUIRED', 409);
     const config = {
       ...previous,
       enabled: body.enabled,
@@ -252,6 +250,57 @@ export async function handleMailAutomation(action, body, user, ctx) {
   if (action !== 'private-mail-background-work' || !ctx.background)
     throw fail('WORKER_AUTH_REQUIRED', 403);
   if (body.mailbox !== current.id) throw fail('MAILBOX_TARGET_REJECTED', 403);
+  if (body.operation === 'history') {
+    if (!uuid(body.id)) throw fail('HISTORY_SOURCE');
+    const lease = crypto.randomUUID();
+    const claimed = await rpc('private_mail_history_claim', {
+      p_history: body.id,
+      p_lease: lease,
+    });
+    const entry = claimed?.[0];
+    if (!entry) return json({ status: 'skipped' });
+    try {
+      if (
+        entry.id !== body.id ||
+        entry.mailbox_id !== current.id ||
+        entry.owner_id !== user.id ||
+        typeof ctx.writeHistory !== 'function'
+      )
+        throw Error('HISTORY_TARGET');
+      const document = await restoreMailHistoryDocument(
+        JSON.parse(entry.payload),
+        entry.payload,
+      );
+      if (
+        document.historyId !== entry.history_id ||
+        document.fileName !== entry.file_name
+      )
+        throw Error('HISTORY_CONFLICT');
+      const saved = await ctx.writeHistory(document);
+      const finished = await rpc('private_mail_history_finish', {
+        p_history: body.id,
+        p_lease: lease,
+        p_item_id: saved.itemId,
+      });
+      return json({ status: finished ? 'done' : 'stale' });
+    } catch (error) {
+      const code = [
+        'HISTORY_TARGET',
+        'HISTORY_FORMAT',
+        'HISTORY_LIMIT',
+        'HISTORY_CONFLICT',
+        'HISTORY_RETRY',
+      ].includes(error?.message)
+        ? error.message
+        : 'HISTORY_RETRY';
+      await rpc('private_mail_history_fail', {
+        p_history: body.id,
+        p_lease: lease,
+        p_code: code,
+      });
+      return json({ status: 'waiting', code });
+    }
+  }
   if (body.operation === 'job-claim') {
     if (!uuid(body.id) || !uuid(body.lease)) throw fail('JOB_REQUEST_INVALID');
     return json({
@@ -290,6 +339,8 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const lease = crypto.randomUUID();
     const result = await analyzePrivateMail({
       messageId: body.id,
+      intentOverride:
+        current.automation_config?.intentOverrides?.[body.id]?.intent,
       key: ctx.aiKey,
       fetcher,
       loadMail,
@@ -328,6 +379,8 @@ export async function handleMailAutomation(action, body, user, ctx) {
   }
   if (body.operation === 'report') {
     if (!day(body.day)) throw fail('REPORT_DATE');
+    if (current.briefing_pages?.[body.day]?.ownerPreviewHold === true)
+      return json({ status: 'waiting', code: 'OWNER_REVIEW' });
     const lease = crypto.randomUUID();
     let claim = null;
     let reportStage = 'claim';
@@ -357,93 +410,13 @@ export async function handleMailAutomation(action, body, user, ctx) {
       claim = { day: body.day, lease, state };
       reportStage = 'snapshot';
       const fresh = await box();
-      const probe = fresh.automation_config?.modelProbe;
-      if (probe?.status === 'pending' && uuid(probe.id)) {
-        const started = {
-          ...probe,
-          status: 'started',
-          startedAt: new Date().toISOString(),
-        };
-        const config = { ...fresh.automation_config, modelProbe: started };
-        const claimed = await db(
-          'private_mailboxes?id=eq.' +
-            current.id +
-            '&automation_config=eq.' +
-            enc(JSON.stringify(fresh.automation_config)),
-          {
-            method: 'PATCH',
-            body: { automation_config: config },
-            prefer: 'return=representation',
-          },
-        );
-        if (claimed?.length === 1) {
-          let result;
-          try {
-            const response = await callHaiku({
-              model: 'claude-haiku-5-5',
-              key: ctx.aiKey,
-              fetcher,
-              prompt: '연결 확인 테스트입니다. 다른 설명 없이 OK만 응답하세요.',
-              maxTokens: 32,
-            });
-            result = {
-              status: 'done',
-              httpStatus: 200,
-              model:
-                typeof response.model === 'string' &&
-                /^claude-[a-z0-9.-]{1,80}$/.test(response.model)
-                  ? response.model
-                  : 'unreported',
-              normalResponse:
-                response.content?.some(
-                  (item) =>
-                    item.type === 'text' &&
-                    /^OK[.!\s]*$/i.test(item.text?.trim() ?? ''),
-                ) === true,
-            };
-          } catch (error) {
-            result = {
-              status: 'failed',
-              httpStatus: Number.isInteger(error?.providerStatus)
-                ? error.providerStatus
-                : null,
-              code: [
-                'MODEL_FAILED',
-                'RATE_LIMITED',
-                'AI_NOT_CONFIGURED',
-              ].includes(error?.code)
-                ? error.code
-                : 'PROBE_FAILED',
-            };
-          }
-          await db(
-            'private_mailboxes?id=eq.' +
-              current.id +
-              '&automation_config=eq.' +
-              enc(JSON.stringify(config)),
-            {
-              method: 'PATCH',
-              body: {
-                automation_config: {
-                  ...config,
-                  modelProbe: {
-                    ...started,
-                    ...result,
-                    finishedAt: new Date().toISOString(),
-                  },
-                },
-              },
-            },
-          );
-        }
-      }
       reportStage = 'analyses';
       const analyses = await reportAnalyses(body.day);
       reportStage = 'images';
       const images = analyses
-        .filter((item) => !item.source.excluded)
+        .filter((item) => !item.source.excluded && !item.source.carryOnly)
         .flatMap((item) =>
-          (item.source.images ?? [])
+          selectBriefingImages(item)
             .filter((image) =>
               ['image/jpeg', 'image/png'].includes(image.mediaType),
             )
@@ -459,13 +432,24 @@ export async function handleMailAutomation(action, body, user, ctx) {
       const unsupportedPhotos = analyses.some(
         (item) =>
           !item.source.excluded &&
-          (item.source.images ?? []).some(
+          !item.source.carryOnly &&
+          selectBriefingImages(item).some(
             (image) => !['image/jpeg', 'image/png'].includes(image.mediaType),
           ),
       );
 
       reportStage = 'notes_writer';
+      const manual = manualDailyView(fresh.manual_entries ?? {}, body.day);
+      const relevantEntries = new Set(
+        manual.entries.map((entry) => entry.entryId),
+      );
+      manual.updatedAt = Object.values(fresh.manual_entries ?? {})
+        .filter((entry) => relevantEntries.has(entry.entryId))
+        .map((entry) => entry.updatedAt ?? entry.submittedAt)
+        .sort()
+        .at(-1);
       const result = await writeDailyBriefing({
+        manual,
         now: body.day + 'T12:00:00+09:00',
         analyses,
         overrides: fresh.briefing_overrides ?? {},

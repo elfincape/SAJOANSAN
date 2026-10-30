@@ -1,6 +1,9 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { mailBodyText, emlHeaderText } from './private-mail-body.js';
-import { extractMailThreadHeaders } from './private-mail-analysis.js';
+import {
+  extractMailThreadHeaders,
+  mailOwnershipContext,
+} from './private-mail-analysis.js';
 import { matchMailRules } from './private-mail-filter.js';
 import {
   selectMailPhotos,
@@ -210,17 +213,33 @@ export function createMailSource({
         index,
         name: file.original_name,
       }));
+      const htmlFile = row.files.find((file) => file.kind === 'html');
+      const hasImage = files.some((file) =>
+        /\.(?:jpe?g|png|webp)$/i.test(file.name ?? ''),
+      );
+      const html =
+        hasImage && htmlFile
+          ? new TextDecoder().decode(await bytes(htmlFile))
+          : '';
       const candidates = selectMailPhotos({
         subject: row.subject,
         text,
         files,
+        html,
       });
       if (candidates.review.length) throw Error(candidates.review[0].reason);
       const images = [];
       for (const file of candidates.selected) {
         const data = await bytes(file),
           info = inspectMailImage(data);
-        if (mailPhotoExclusionReason(file, info)) continue;
+        if (
+          mailPhotoExclusionReason(file, info, {
+            html,
+            text,
+            subject: row.subject,
+          })
+        )
+          continue;
         images.push({
           id: row.id + ':' + file.index,
           name: file.original_name,
@@ -232,7 +251,17 @@ export function createMailSource({
         });
       }
       const eml = row.files.find((file) => file.kind === 'eml');
-      return { ...base, images, headers: eml ? await headers(eml) : '' };
+      const verifiedHeaders = eml ? await headers(eml) : '';
+      return {
+        ...base,
+        images,
+        headers: verifiedHeaders,
+        ...mailOwnershipContext({
+          text,
+          headers: verifiedHeaders,
+          account: box.account,
+        }),
+      };
     });
     if (source.exclusion?.excluded) return source;
     const thread = extractMailThreadHeaders(source.headers);

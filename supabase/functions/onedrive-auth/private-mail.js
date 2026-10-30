@@ -3,6 +3,8 @@ import { inspectBriefingTarget } from './private-mail-briefing.js';
 import { handleMailAutomation } from './private-mail-background.js';
 import { createMailSource } from './private-mail-source.js';
 import { handleMailFilter } from './private-mail-filter-actions.js';
+import { handleManualMessage } from './private-mail-manual.js';
+import { writeMailHistoryDocument } from './private-mail-history.js';
 import {
   MAIL_RAW_LIMIT,
   MAIL_DATA_LIMIT,
@@ -499,6 +501,22 @@ export async function handlePrivateMail(action, req, user, ctx) {
       throw fail('메일함에 접근할 수 없습니다.', 403);
     return box;
   };
+  if (
+    [
+      'private-mail-manual-add',
+      'private-mail-manual-list',
+      'private-mail-manual-update',
+    ].includes(action)
+  ) {
+    return handleManualMessage(action, body, user, {
+      ...ctx,
+      enqueueManualReport: (day) =>
+        db('rpc/private_mail_dispatch_report', {
+          method: 'POST',
+          body: { p_box: APPROVED_MAIL_TARGET.mailbox_id, p_report_day: day },
+        }),
+    });
+  }
   const filterActions = [
     'private-mail-filter-status',
     'private-mail-rules-preview',
@@ -538,6 +556,16 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return handleMailAutomation(action, body, user, {
       ...ctx,
       ...source,
+      writeHistory: (document) =>
+        writeMailHistoryDocument({
+          document,
+          mailbox,
+          environment,
+          withLock,
+          graph,
+          privateDestination,
+          privatePermissions,
+        }),
       connectedNotes: () => withLock(() => ctx.connectedNotes()),
     });
   }

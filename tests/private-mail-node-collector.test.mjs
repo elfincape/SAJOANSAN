@@ -489,3 +489,30 @@ assert.equal(boundedReviews.deferred, 10);
 console.log(
   'PASS decimal 50MB source limit, exact POP boundary, long body lines, retained per-UIDL review and bounded review checkpoint',
 );
+{
+  const { collectionBridgeDetails } =
+    await import('../server/private-mail-collector.mjs');
+  assert.deepEqual(
+    collectionBridgeDetails({
+      bridgeCode: 'FILE_HASH_REJECTED',
+      bridgeOperation: 'upload-session',
+      bridgeStatus: 409,
+    }),
+    {
+      bridgeCode: 'FILE_HASH_REJECTED',
+      bridgeOperation: 'upload-session',
+      bridgeStatus: 409,
+    },
+  );
+  assert.deepEqual(
+    collectionBridgeDetails({
+      bridgeCode: 'PRIVATE_PROVIDER_SENTINEL',
+      bridgeOperation: 'https://private.test/upload?token=secret',
+      bridgeStatus: '409',
+    }),
+    {},
+  );
+  console.log(
+    'PASS collector bridge metadata accepts only fixed codes/operations and integer HTTP status',
+  );
+}
