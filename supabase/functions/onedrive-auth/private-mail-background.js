@@ -329,6 +329,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     if (!day(body.day)) throw fail('REPORT_DATE');
     const lease = crypto.randomUUID();
     let claim = null;
+    let reportStage = 'claim';
     const store = {
       claim: async () => claim,
       save: async ({ day, lease, value }) => {
@@ -353,8 +354,11 @@ export async function handleMailAutomation(action, body, user, ctx) {
       });
       if (!state) return json({ status: 'busy' });
       claim = { day: body.day, lease, state };
+      reportStage = 'snapshot';
       const fresh = await box();
+      reportStage = 'analyses';
       const analyses = await reportAnalyses(body.day);
+      reportStage = 'images';
       const images = analyses
         .filter((item) => !item.source.excluded)
         .flatMap((item) =>
@@ -379,6 +383,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           ),
       );
 
+      reportStage = 'notes_writer';
       const result = await writeDailyBriefing({
         now: body.day + 'T12:00:00+09:00',
         analyses,
@@ -388,8 +393,28 @@ export async function handleMailAutomation(action, body, user, ctx) {
         maxImageBatches: 2,
         deadline: Date.now() + 180000,
         store,
-        connected: connectedNotes,
-        graph,
+        connected: async () => {
+          reportStage = 'notes_connection';
+          const connection = await connectedNotes();
+          reportStage = 'notes_writer';
+          return connection;
+        },
+        graph: async (path, access, options) => {
+          reportStage = path.includes('/notebooks/')
+            ? 'notebook'
+            : path.includes('/sections/')
+              ? options?.method === 'POST'
+                ? 'page_create'
+                : path.includes('/pages')
+                  ? 'page_list'
+                  : 'section'
+              : options?.method === 'PATCH'
+                ? 'page_update'
+                : 'page_read';
+          const response = await graph(path, access, options);
+          reportStage = 'notes_writer';
+          return response;
+        },
         hash: async (value) => {
           const input =
             value instanceof Uint8Array
@@ -429,6 +454,23 @@ export async function handleMailAutomation(action, body, user, ctx) {
       const code = /^[A-Z_]{1,64}$/.test(error?.message ?? '')
         ? error.message
         : 'NOTES_SYNC_FAILED';
+      console.warn('PRIVATE_MAIL_REPORT_FAILED', {
+        stage: reportStage,
+        code,
+        errorName: [
+          'Error',
+          'TypeError',
+          'RangeError',
+          'AbortError',
+          'TimeoutError',
+        ].includes(error?.name)
+          ? error.name
+          : 'other',
+        status: Number.isInteger(error?.status) ? error.status : null,
+        providerStatus: Number.isInteger(error?.providerStatus)
+          ? error.providerStatus
+          : null,
+      });
       if (claim)
         await store.save({
           day: body.day,

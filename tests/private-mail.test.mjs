@@ -1279,11 +1279,26 @@ console.log(
     false,
     'read-only overview does not claim a writer lease',
   );
-  await handleMailAutomation(
-    'private-mail-background-work',
-    { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
-    { id: target.owner_id },
-    { ...ctx, background: true },
+  const reportWarnings = [];
+  const previousReportWarn = console.warn;
+  console.warn = (...args) => reportWarnings.push(args);
+  try {
+    await handleMailAutomation(
+      'private-mail-background-work',
+      { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
+      { id: target.owner_id },
+      { ...ctx, background: true },
+    );
+  } finally {
+    console.warn = previousReportWarn;
+  }
+  assert.ok(
+    reportWarnings.some(
+      ([label, detail]) =>
+        label === 'PRIVATE_MAIL_REPORT_FAILED' &&
+        detail.stage === 'notes_connection' &&
+        detail.code === 'NOTES_PERMISSION_REQUIRED',
+    ),
   );
   assert.equal(
     snapshotAfterClaim,
