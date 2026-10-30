@@ -579,7 +579,9 @@ export async function writeDailyBriefing({
       }[status];
       throw Object.assign(Error(code), { providerStatus: status });
     }
-    throw Error('PAGE_WRITE_UNCERTAIN');
+    throw Object.assign(Error('PAGE_WRITE_UNCERTAIN'), {
+      providerStatus: status ?? null,
+    });
   };
   try {
     const connection = await connected();
@@ -616,7 +618,8 @@ export async function writeDailyBriefing({
       };
     };
     const initial = await stage(0);
-    const pending = (desired, previousHash) => ({
+    const pending = (desired, previousHash, operation = 'replace') => ({
+      operation,
       fingerprint: desired.fingerprint,
       desiredHash: desired.desiredHash,
       contentHash: desired.contentHash,
@@ -735,6 +738,10 @@ export async function writeDailyBriefing({
           !state.managedHash &&
           state.createAttempted === true &&
           JSON.stringify(contentSignature(current.managed)) === initial.content;
+        const unchangedReplacement =
+          current.managedHash !== null &&
+          current.managedHash === intent.previousHash &&
+          (intent.operation === 'replace' || intent.imageProgress?.next === 0);
         if (
           !hex.test(intent.fingerprint ?? '') ||
           !hex.test(intent.desiredHash ?? '') ||
@@ -743,14 +750,18 @@ export async function writeDailyBriefing({
           (current.managedHash !== intent.desiredHash &&
             (!hex.test(intent.contentHash ?? '') ||
               contentHash !== intent.contentHash) &&
-            !legacyInitial)
+            !legacyInitial &&
+            !unchangedReplacement)
         )
           throw Error('PAGE_WRITE_UNCERTAIN');
         await save({
           pageId,
           managedHash: current.managedHash,
-          fingerprint: legacyInitial ? null : intent.fingerprint,
-          imageProgress: intent.imageProgress ?? null,
+          fingerprint:
+            legacyInitial || unchangedReplacement ? null : intent.fingerprint,
+          imageProgress: unchangedReplacement
+            ? null
+            : (intent.imageProgress ?? null),
           pendingWrite: null,
         });
         status = 'reconciled';
@@ -814,7 +825,11 @@ export async function writeDailyBriefing({
             change,
             ...(current.managedTargets ?? [])
               .slice(1)
-              .map((node) => ({ target: node.attrs.id, action: 'delete' })),
+              .map((node) => ({
+                target: node.attrs.id,
+                action: 'replace',
+                content: '<div></div>',
+              })),
           ]),
         });
       } catch (error) {
@@ -884,7 +899,7 @@ export async function writeDailyBriefing({
       }
       await save({
         pageId,
-        pendingWrite: pending(desired, current.managedHash),
+        pendingWrite: pending(desired, current.managedHash, 'images'),
       });
       const headers = {};
       if (current.etag) headers['If-Match'] = current.etag;
