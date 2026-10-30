@@ -42,6 +42,8 @@
 
 ## 새 페이지 추가
 
+클릭 가능한 목록·메뉴·접이식 제목은 호버와 키보드 포커스에 공통 `--ean-interaction-surface`를 사용한다. 10px 곡률의 반투명 강조와 얇은 테두리를 사용하며, 목록 구분선은 강조 표면과 분리해 직선으로 유지한다. 선택·비활성 상태를 호버가 덮지 않게 하고, 비활성 항목은 조작 가능한 것처럼 강조하지 않는다. 강조를 위해 항목마다 실시간 블러를 추가하지 않는다.
+
 구조 결정은 [UX Patterns](https://uxpatterns.dev/)의 패턴 비교를 먼저 확인한다. 허브는 분류 선택과 짧은 기능 목록, 비교 작업은 표, 짧은 계정 동작은 메뉴, 집중 입력·확인은 모달을 사용한다. 구현은 기존 Radix 기반 공통 컴포넌트를 우선 재사용하고 부족한 구성만 [shadcn/ui](https://ui.shadcn.com/blocks/sidebar)에서 보완한다. 모션은 [Motion Primitives](https://github.com/ibelick/motion-primitives)의 표면·내용·오버레이 분리와 연결 전환을 참고하되 기존 포커스·권한·모션 감소 동작을 유지한다. 마지막으로 공통 프로스티드 글라스 토큰을 적용한다.
 
 1. `app/src/pages/`에 페이지를 만들고 관리 기능은 `AdminPage`로 감싼다. 본문에는 `id="work-main"`, `tabIndex={-1}`와 `app-main`을 사용한다.
