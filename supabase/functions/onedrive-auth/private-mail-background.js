@@ -1,5 +1,9 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
-import { analyzePrivateMail } from './private-mail-analysis.js';
+import {
+  analyzePrivateMail,
+  MAIL_ANALYSIS_MODEL,
+} from './private-mail-analysis.js';
+import { callHaiku } from '../_shared/haiku.js';
 import { writeDailyBriefing } from './private-mail-notes-writer.js';
 import {
   collectionProgress,
@@ -356,6 +360,86 @@ export async function handleMailAutomation(action, body, user, ctx) {
       claim = { day: body.day, lease, state };
       reportStage = 'snapshot';
       const fresh = await box();
+      const probe = fresh.automation_config?.modelProbe;
+      if (probe?.status === 'pending' && uuid(probe.id)) {
+        const started = {
+          ...probe,
+          status: 'started',
+          startedAt: new Date().toISOString(),
+        };
+        const config = { ...fresh.automation_config, modelProbe: started };
+        const claimed = await db(
+          'private_mailboxes?id=eq.' +
+            current.id +
+            '&automation_config=eq.' +
+            enc(JSON.stringify(fresh.automation_config)),
+          {
+            method: 'PATCH',
+            body: { automation_config: config },
+            prefer: 'return=representation',
+          },
+        );
+        if (claimed?.length === 1) {
+          let result;
+          try {
+            const response = await callHaiku({
+              model: MAIL_ANALYSIS_MODEL,
+              key: ctx.aiKey,
+              fetcher,
+              prompt: '연결 확인 테스트입니다. 다른 설명 없이 OK만 응답하세요.',
+              maxTokens: 32,
+            });
+            result = {
+              status: 'done',
+              httpStatus: 200,
+              model:
+                typeof response.model === 'string' &&
+                /^claude-[a-z0-9.-]{1,80}$/.test(response.model)
+                  ? response.model
+                  : 'unreported',
+              normalResponse:
+                response.content?.some(
+                  (item) =>
+                    item.type === 'text' &&
+                    /^OK[.!\s]*$/i.test(item.text?.trim() ?? ''),
+                ) === true,
+            };
+          } catch (error) {
+            result = {
+              status: 'failed',
+              httpStatus: Number.isInteger(error?.providerStatus)
+                ? error.providerStatus
+                : null,
+              code: [
+                'MODEL_FAILED',
+                'RATE_LIMITED',
+                'AI_NOT_CONFIGURED',
+              ].includes(error?.code)
+                ? error.code
+                : 'PROBE_FAILED',
+            };
+          }
+          await db(
+            'private_mailboxes?id=eq.' +
+              current.id +
+              '&automation_config=eq.' +
+              enc(JSON.stringify(config)),
+            {
+              method: 'PATCH',
+              body: {
+                automation_config: {
+                  ...config,
+                  modelProbe: {
+                    ...started,
+                    ...result,
+                    finishedAt: new Date().toISOString(),
+                  },
+                },
+              },
+            },
+          );
+        }
+      }
       reportStage = 'analyses';
       const analyses = await reportAnalyses(body.day);
       reportStage = 'images';

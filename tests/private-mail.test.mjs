@@ -1306,6 +1306,61 @@ console.log(
     'report snapshot is loaded only after revision lease',
   );
   assert.equal(released, true, 'failed report releases its own lease');
+  mailbox.automation_config.modelProbe = {
+    id: '33333333-3333-4333-8333-333333333333',
+    status: 'pending',
+  };
+  let modelProbes = 0;
+  const probeCtx = {
+    ...ctx,
+    background: true,
+    aiKey: 'fixture-key',
+    fetcher: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, 'claude-haiku-5-5');
+      assert.equal(request.max_tokens, 32);
+      assert.ok(!JSON.stringify(request).includes('미확정'));
+      assert.ok(!JSON.stringify(request).includes(analysis.source.subject));
+      modelProbes++;
+      return Response.json({
+        model: 'claude-haiku-5-5',
+        content: [{ type: 'text', text: 'OK' }],
+      });
+    },
+    db: async (path, options) => {
+      if (
+        path.startsWith('private_mailboxes?') &&
+        options?.method === 'PATCH'
+      ) {
+        const prior = new URLSearchParams(path.split('?')[1])
+          .get('automation_config')
+          .slice(3);
+        if (prior !== JSON.stringify(mailbox.automation_config)) return [];
+        mailbox.automation_config = options.body.automation_config;
+        return options.prefer ? [mailbox] : null;
+      }
+      return ctx.db(path, options);
+    },
+  };
+  console.warn = () => {};
+  try {
+    for (let n = 0; n < 2; n++)
+      await handleMailAutomation(
+        'private-mail-background-work',
+        { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
+        { id: target.owner_id },
+        probeCtx,
+      );
+  } finally {
+    console.warn = previousReportWarn;
+  }
+  assert.equal(
+    modelProbes,
+    1,
+    'one-shot probe survives repeated report delivery without another paid call',
+  );
+  assert.equal(mailbox.automation_config.modelProbe.httpStatus, 200);
+  assert.equal(mailbox.automation_config.modelProbe.normalResponse, true);
   console.log(
     'PASS daily overview owner override and report claim-before-input ordering',
   );
@@ -1768,7 +1823,10 @@ console.log(
       messageId: source.id,
       key: 'fixture-key',
       loadMail: async () => source,
-      fetcher: async () => Response.json({ stop_reason, content }),
+      fetcher: async (_url, options) => {
+        assert.equal(JSON.parse(options.body).model, 'claude-haiku-5-5');
+        return Response.json({ stop_reason, content });
+      },
       store: {
         claim: async () => ({ row: source, lease: 'fixture-lease' }),
         finish: async () => true,

@@ -4,6 +4,7 @@ import { normalizeMailAnalysis } from './private-mail-briefing-model.js';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hex = /^[0-9a-f]{64}$/;
 const BODY_LIMIT = 48000;
+export const MAIL_ANALYSIS_MODEL = 'claude-haiku-5-5';
 const codes = new Set([
   'AI_NOT_CONFIGURED',
   'RATE_LIMITED',
@@ -534,6 +535,7 @@ export async function analyzePrivateMail({
     const related = relatedItems(loaded.related, thread, mail.id);
     phase = 'MODEL_FAILED';
     const response = await callHaiku({
+      model: MAIL_ANALYSIS_MODEL,
       key,
       fetcher,
       maxTokens: images.length ? 8000 : 6000,

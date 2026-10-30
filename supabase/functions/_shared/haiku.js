@@ -6,6 +6,7 @@ export async function callHaiku({
   maxTokens = 2400,
   timeoutMs = 45000,
   fetcher = fetch,
+  model = HAIKU_MODEL,
 }) {
   if (!key)
     throw Object.assign(new Error('AI 서버 설정이 필요합니다.'), {
@@ -48,7 +49,7 @@ export async function callHaiku({
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: HAIKU_MODEL,
+      model,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content }],
     }),
@@ -63,6 +64,7 @@ export async function callHaiku({
       ),
       {
         code: response.status === 429 ? 'RATE_LIMITED' : 'MODEL_FAILED',
+        providerStatus: response.status,
         status: response.status === 429 ? 429 : 502,
       },
     );
