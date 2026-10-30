@@ -186,4 +186,3 @@ function Workspace() {
 }
 document.title = pageTitle(location.pathname) ?? document.title;
 if (InitialPage) createRoot(document.body).render(<StrictMode><WorkspaceProvider><FileTransfers><Workspace /></FileTransfers></WorkspaceProvider></StrictMode>);
-
