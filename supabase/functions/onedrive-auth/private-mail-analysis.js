@@ -1054,6 +1054,7 @@ export async function analyzePrivateMail({
       mail.id,
     );
     analysis.intent = ownership.intent;
+    analysis.source.intent = ownership.intent.kind;
     analysis.review = ownership.review;
     analysis.source.ownerContext = context.ownerContext;
     analysis.source.bodySeparation = context.bodySeparation;

@@ -11,6 +11,7 @@ import {
 import {
   dailyReportIdentity,
   dailyBriefingView,
+  applyMailIntentOverride,
 } from './private-mail-briefing-model.js';
 const uuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -156,7 +157,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const analyses = [];
     for (let offset = 0; offset < 5000; offset += 100) {
       const rows = await db(
-        'private_mail_messages?select=analysis,report_day,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
+        'private_mail_messages?select=analysis,report_day,analysis_status,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
           current.id +
           '&analysis=not.is.null&report_day=lte.' +
           enc(date) +
@@ -165,9 +166,20 @@ export async function handleMailAutomation(action, body, user, ctx) {
       );
       analyses.push(
         ...rows.map((row) => ({
-          ...row.analysis,
+          ...applyMailIntentOverride(
+            row.analysis,
+            current.automation_config?.intentOverrides?.[
+              row.analysis.source.id
+            ],
+          ),
           source: {
             ...row.analysis.source,
+            analysisState: row.analysis_status,
+            ...(current.automation_config?.intentOverrides?.[
+              row.analysis.source.id
+            ]?.intent === 'reference'
+              ? { intent: 'reference' }
+              : {}),
             carryOnly: row.report_day != null && row.report_day < date,
             excluded:
               row.analysis_excluded === true &&

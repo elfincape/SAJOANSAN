@@ -48,6 +48,18 @@ export function mailItemIndex(item, fallback) {
     throw Error('ANALYSIS_FORMAT');
   return index;
 }
+export function applyMailIntentOverride(analysis, correction) {
+  if (correction?.intent !== 'reference') return analysis;
+  return {
+    ...analysis,
+    source: { ...analysis.source, intent: 'reference' },
+    intent: { kind: 'reference', evidence: null, ownerFeedback: true },
+    tasks: [],
+    waiting: [],
+    updates: [],
+    imageItems: { ...(analysis.imageItems ?? {}), tasks: [], waiting: [] },
+  };
+}
 export function reconcileMailItems(analysis, previous) {
   if (previous?.source?.id !== analysis.source.id) previous = null;
   const signature = (item) =>

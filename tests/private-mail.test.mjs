@@ -3227,3 +3227,83 @@ console.log(
     'PASS manual API route: duplicate ready result dispatches only exact named SQL report day without another model call',
   );
 }
+
+{
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (tag, metadata) => warnings.push({ tag, metadata });
+  try {
+    await assert.rejects(
+      () =>
+        callLuna({
+          key: 'PRIVATE_KEY_SENTINEL',
+          prompt: 'synthetic provider failure check',
+          fetcher: async () =>
+            new Response('PRIVATE_PROVIDER_BODY_SENTINEL', { status: 503 }),
+        }),
+      (error) => error.providerStatus === 503,
+    );
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(warnings, [
+    {
+      tag: 'PRIVATE_MAIL_MODEL_FAILURE',
+      metadata: { model: LUNA_MODEL, reason: 'http', providerStatus: 503 },
+    },
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(warnings),
+    /PRIVATE_KEY_SENTINEL|PRIVATE_PROVIDER_BODY_SENTINEL/,
+  );
+  console.log(
+    'PASS model diagnostics: provider HTTP status retained without key, body or private input',
+  );
+}
+
+{
+  const { applyMailIntentOverride } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const analysis = {
+    source: { id: '00000000-0000-4000-8000-000000000003' },
+    summary: [{ text: '참고자료' }],
+    tasks: [{ text: '과거오인업무' }],
+    waiting: [{ text: '과거오인대기' }],
+    updates: [{ ref: 'old' }],
+    imageItems: { tasks: [{ text: '문서요청' }], waiting: [], issues: [] },
+  };
+  const original = structuredClone(analysis);
+  const projected = applyMailIntentOverride(analysis, { intent: 'reference' });
+  assert.equal(projected.tasks.length, 0);
+  assert.equal(projected.waiting.length, 0);
+  assert.equal(projected.updates.length, 0);
+  assert.equal(projected.imageItems.tasks.length, 0);
+  assert.equal(projected.source.intent, 'reference');
+  assert.deepEqual(analysis, original);
+  assert.deepEqual(projected.summary, original.summary);
+  assert.equal(applyMailIntentOverride(analysis, undefined), analysis);
+  console.log(
+    'PASS owner correction projection: explicit source reference wins over legacy task inference without modifying saved analysis or completion history',
+  );
+}
+
+{
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      callLuna({
+        key: 'mock-only',
+        prompt: 'synthetic minimum boundary',
+        maxTokens: 15,
+        fetcher: async () => {
+          calls++;
+          throw Error('must not run');
+        },
+      }),
+    (error) => error.reason === 'configuration',
+  );
+  assert.equal(calls, 0);
+  console.log(
+    'PASS Luna minimum output limit: invalid allocation rejected before provider',
+  );
+}

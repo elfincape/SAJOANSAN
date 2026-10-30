@@ -502,3 +502,334 @@ assert.equal(releases, 1);
 console.log(
   'PASS mailbox begin/end cannot race active Graph writes; revoked body-reading leases are fenced',
 );
+
+{
+  const fetchBeforeEmptyRecovery = globalThis.fetch;
+  try {
+    const { createHash } = await import('node:crypto');
+    const { handlePrivateMail } =
+      await import('../supabase/functions/onedrive-auth/private-mail.js');
+    const { uploadMailFile } =
+      await import('../server/private-mail-upload.mjs');
+    globalThis.fetch = async () => assert.fail('Remote calls are forbidden');
+    const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
+      boxId = '00000000-0000-4000-8000-000000000003',
+      lease = '00000000-0000-4000-8000-000000000004';
+    const content = Buffer.alloc(3_276_801, 0x61),
+      digest = createHash('sha256').update(content).digest('hex');
+    const metadata = {
+      mailbox: boxId,
+      lease,
+      uidl: 'a'.repeat(64),
+      hash: 'b'.repeat(64),
+      index: 0,
+      kind: 'attachment',
+      name: 'fixture.bin',
+      byte_size: content.length,
+      content_hash: digest,
+    };
+    const canonical = metadata.uidl + '_' + metadata.hash + '_0.bin';
+    const fail = (message, status = 400) =>
+      Object.assign(Error(message), { status });
+    function fixture(change = {}, mode = {}) {
+      const box = {
+        id: boxId,
+        owner_id: owner,
+        enabled: true,
+        drive_id: 'drive',
+        folder_id: 'folder',
+        lease,
+        lease_until: new Date(Date.now() + 600000).toISOString(),
+      };
+      const old = {
+        id: 'reserved-item',
+        name: canonical,
+        size: 0,
+        file: {},
+        eTag: '"original-etag"',
+        parentReference: { id: 'folder', driveId: 'drive' },
+        bytes: new Uint8Array(),
+        ...change,
+      };
+      const items = new Map([[old.id, old]]),
+        patches = [],
+        calls = [],
+        logs = [];
+      let sessions = 0,
+        currentNew = null,
+        offset = 0;
+      const ctx = {
+        ownerSync: true,
+        collectorMailboxId: boxId,
+        fail,
+        json: Response.json,
+        withLock: (action) => action(lease),
+        settings: async () => ({ expected_drive_id: 'drive' }),
+        connected: async () => ({ accessToken: 'fixture-access' }),
+        db: async (path) => {
+          if (path.startsWith('private_mailboxes?')) return [{ ...box }];
+          if (path.startsWith('private_mail_messages?')) return [];
+          if (path.startsWith('onedrive_locks?')) return [{ holder: lease }];
+          assert.fail('Unexpected mock DB operation');
+        },
+        graph: async (path, _access, options = {}) => {
+          calls.push({ path, method: options.method ?? 'GET' });
+          if (path.startsWith('/me/drive'))
+            return Response.json({
+              id: 'drive',
+              owner: { user: { id: 'owner' } },
+            });
+          if (path.endsWith('/permissions'))
+            return Response.json({ value: [] });
+          if (path.startsWith('/drives/drive/items/folder?'))
+            return Response.json({
+              id: 'folder',
+              folder: {},
+              parentReference: { driveId: 'drive' },
+            });
+          if (
+            path === '/drives/drive/items/' + encodeURIComponent(old.id) &&
+            options.method === 'PATCH'
+          ) {
+            patches.push(options);
+            assert.equal(options.headers['If-Match'], '"original-etag"');
+            const body = JSON.parse(options.body);
+            assert.equal(body['@microsoft.graph.conflictBehavior'], 'fail');
+            assert.ok(
+              body.name.startsWith(canonical.slice(0, -4) + '_미완료업로드_'),
+            );
+            assert.ok(body.name.endsWith('.bin'));
+            if (mode.etagRace) throw fail('PRECONDITION_FAILED', 412);
+            if (mode.renameConflict) throw fail('NAME_CONFLICT', 409);
+            old.name = body.name;
+            old.eTag = '"preserved-etag"';
+            return Response.json({ ...old, bytes: undefined });
+          }
+          if (path === '/drives/drive/items/' + encodeURIComponent(old.id)) {
+            if (mode.leaseRace)
+              box.lease = '00000000-0000-4000-8000-000000000009';
+            return Response.json({
+              ...old,
+              ...(mode.freshId ? { id: 'different-item' } : {}),
+              ...(mode.freshEtag ? { eTag: '"changed-etag"' } : {}),
+              bytes: undefined,
+            });
+          }
+          if (path.includes(':/createUploadSession')) {
+            assert.equal(
+              [...items.values()].some((item) => item.name === canonical),
+              false,
+              'Canonical path must be free before a new session',
+            );
+            sessions++;
+            currentNew = {
+              id: 'new-session-item',
+              name: canonical,
+              size: 0,
+              file: {},
+              eTag: '"new-etag"',
+              parentReference: { id: 'folder', driveId: 'drive' },
+              bytes: new Uint8Array(),
+            };
+            items.set(currentNew.id, currentNew);
+            return Response.json({
+              uploadUrl: 'https://fixture.up.1drv.com/upload',
+              expirationDateTime: new Date(Date.now() + 60000).toISOString(),
+            });
+          }
+          if (path.endsWith('/content')) {
+            const item = [...items.values()].find(
+              (value) =>
+                path ===
+                '/drives/drive/items/' +
+                  encodeURIComponent(value.id) +
+                  '/content',
+            );
+            assert.ok(item);
+            let at = 0;
+            return new Response(
+              new ReadableStream({
+                pull(controller) {
+                  if (at === item.bytes.length) {
+                    controller.close();
+                    return;
+                  }
+                  const end = Math.min(at + 65536, item.bytes.length);
+                  controller.enqueue(item.bytes.subarray(at, end));
+                  at = end;
+                },
+              }),
+            );
+          }
+          if (path.startsWith('/drives/drive/items/folder:/')) {
+            const name = decodeURIComponent(path.split('folder:/')[1]);
+            const item =
+              sessions === 0 && patches.length === 0
+                ? old
+                : [...items.values()].find((value) => value.name === name);
+            return item ? Response.json({ ...item, bytes: undefined }) : null;
+          }
+          assert.fail('Unexpected mock Graph operation');
+        },
+      };
+      const call = async (operation) => {
+        const warn = console.warn;
+        console.warn = (entry) => logs.push(JSON.parse(entry));
+        try {
+          return await handlePrivateMail(
+            'private-mail-sync',
+            new Request('https://fixture.test/bridge', {
+              method: 'POST',
+              body: JSON.stringify({ ...metadata, operation }),
+            }),
+            { id: owner },
+            ctx,
+          );
+        } finally {
+          console.warn = warn;
+        }
+      };
+      const upload = () =>
+        uploadMailFile({
+          file: { ...metadata, bytes: content },
+          begin: async () => (await call('upload-session')).json(),
+          complete: async () => (await call('upload-complete')).json(),
+          fetcher: async (url, options) => {
+            assert.equal(url, 'https://fixture.up.1drv.com/upload');
+            assert.equal(options.headers.Authorization, undefined);
+            const end = offset + options.body.byteLength;
+            assert.equal(
+              options.headers['Content-Range'],
+              `bytes ${offset}-${end - 1}/${content.length}`,
+            );
+            offset = end;
+            if (end < content.length)
+              return Response.json(
+                { nextExpectedRanges: [end + '-'] },
+                { status: 202 },
+              );
+            currentNew.bytes = content;
+            currentNew.size = content.length;
+            return Response.json({ id: currentNew.id }, { status: 201 });
+          },
+        });
+      return {
+        old,
+        items,
+        patches,
+        calls,
+        logs,
+        call,
+        upload,
+        get sessions() {
+          return sessions;
+        },
+      };
+    }
+    const recovered = fixture();
+    const result = await recovered.upload();
+    assert.equal(result.file.item_id, 'new-session-item');
+    assert.equal(recovered.patches.length, 1);
+    assert.equal(recovered.sessions, 1);
+    assert.equal(recovered.old.id, 'reserved-item');
+    assert.equal(recovered.old.size, 0);
+    assert.ok(recovered.old.name.includes('_미완료업로드_'));
+    assert.equal(recovered.items.get('new-session-item').name, canonical);
+    assert.equal(
+      createHash('sha256')
+        .update(recovered.items.get('new-session-item').bytes)
+        .digest('hex'),
+      digest,
+    );
+    assert.ok(recovered.calls.every((call) => call.method !== 'DELETE'));
+    for (const change of [
+      { size: 1 },
+      { file: undefined },
+      { name: 'different.bin' },
+      { parentReference: { id: 'other', driveId: 'drive' } },
+      { parentReference: { id: 'folder', driveId: 'other' } },
+      { remoteItem: { id: 'remote' } },
+      { folder: {} },
+      { eTag: undefined },
+      { eTag: ' * ' },
+      { eTag: '\r\n' },
+      { id: '' },
+    ]) {
+      const test = fixture(change);
+      await assert.rejects(() => test.call('upload-session'));
+      assert.equal(test.patches.length, 0);
+      assert.equal(test.sessions, 0);
+    }
+    for (const mode of [
+      { freshId: true },
+      { freshEtag: true },
+      { leaseRace: true },
+      { etagRace: true },
+      { renameConflict: true },
+    ]) {
+      const test = fixture({}, mode);
+      await assert.rejects(() => test.call('upload-session'));
+      assert.equal(test.old.name, canonical);
+      assert.equal(test.old.size, 0);
+      assert.equal(test.sessions, 0);
+      assert.equal(
+        test.patches.length,
+        mode.etagRace || mode.renameConflict ? 1 : 0,
+      );
+    }
+    const completing = fixture();
+    await assert.rejects(
+      () => completing.call('upload-complete'),
+      /FILE_HASH_REJECTED/,
+    );
+    assert.equal(completing.patches.length, 0);
+    assert.equal(completing.sessions, 0);
+    const positive = fixture({ size: content.length, bytes: content });
+    assert.equal(
+      (await (await positive.call('upload-session')).json()).file.item_id,
+      'reserved-item',
+    );
+    assert.equal(positive.patches.length, 0);
+    assert.equal(positive.sessions, 0);
+    const wrongPositive = fixture({
+      size: content.length,
+      bytes: Buffer.alloc(content.length, 0x62),
+    });
+    await assert.rejects(
+      () => wrongPositive.call('upload-session'),
+      /MAIL_STREAM_HASH/,
+    );
+    assert.equal(wrongPositive.patches.length, 0);
+    assert.equal(wrongPositive.sessions, 0);
+    assert.equal(wrongPositive.old.name, canonical);
+    assert.equal(wrongPositive.old.bytes[0], 0x62);
+    for (const entry of [...recovered.logs, ...completing.logs]) {
+      assert.equal(entry.event, 'PRIVATE_MAIL_STORED_METADATA_REJECTED');
+      assert.deepEqual(
+        Object.keys(entry).sort(),
+        [
+          'event',
+          'hasfile',
+          'nameMatches',
+          'folderMatches',
+          'driveMatches',
+          'sizeZero',
+          'sizeMatches',
+        ].sort(),
+      );
+      for (const [key, value] of Object.entries(entry))
+        if (key !== 'event') assert.equal(typeof value, 'boolean');
+      assert.equal(JSON.stringify(entry).includes(metadata.uidl), false);
+    }
+    assert.ok(
+      recovered.logs.some(
+        (entry) => entry.sizeZero === true && entry.sizeMatches === false,
+      ),
+    );
+    console.log(
+      'PASS safe empty reservation preservation: exact metadata/ID/ETag/lease, If-Match conflict-fail rename once, chunk upload and final SHA, positive/mismatch/remote/race/complete denied, boolean-only diagnostics',
+    );
+  } finally {
+    globalThis.fetch = fetchBeforeEmptyRecovery;
+  }
+}
