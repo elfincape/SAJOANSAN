@@ -17,6 +17,8 @@ export interface NaverCourse {
   sourceRow: number;
   name: string;
   stops: string[];
+  originalStops?: string[];
+  sourceRoles?: string[];
   sourceRows?: number[];
   rotations?: 2;
   sourceSheet?: string;
@@ -150,6 +152,12 @@ export function parseNaverCourses(
       sourceRow: i + 1,
       name,
       stops,
+      sourceRoles: [
+        ...(rotation === 2 ? ['센터(출발)'] : ['차고지(출발)', '센터']),
+        ...destinations.flatMap((column, delivery) =>
+          text(row[column]) ? [`납품처 ${delivery + 1}`] : []),
+        rotation === 1 ? '센터(복귀)' : '차고지(복귀)',
+      ],
       ...(rotation ? { rotation, groupName, garage, center } : {}),
     };
     let message = '';

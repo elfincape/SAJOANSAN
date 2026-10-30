@@ -51,7 +51,18 @@ export function courseLegRows(course: NaverCourse, result?: CourseCapture) {
         : !evidence
           ? '이전 캡처 · 구간자료 없음'
           : evidence.issue || '동일 경로 구간 합계 미확인');
+  const sourceDeliveryIndices = course.stops.map((_, i) => i).filter(i => i >= fixed && i < course.stops.length - 1);
+  const usedDeliveryIndices = new Set<number>();
   const rows = stops.map((address, i) => {
+    // Keep provenance attached to the delivery after the winning permutation.
+    const sourceIndex = i < fixed
+      ? i
+      : i === stops.length - 1
+        ? course.stops.length - 1
+        : sourceDeliveryIndices.find(index => !usedDeliveryIndices.has(index) && course.stops[index] === address)!;
+    usedDeliveryIndices.add(sourceIndex);
+    const originalAddress = course.originalStops?.[sourceIndex] ?? address;
+    const confirmed = sameOrder ? result?.confirmedAddresses?.[i] || '' : '';
     const distance = i && bound ? evidence!.distancesMeters[i - 1] : null;
     const role =
       i === 0
@@ -66,9 +77,9 @@ export function courseLegRows(course: NaverCourse, result?: CourseCapture) {
             ? '센터'
             : `납품처 ${i - fixed + 1}`;
     return {
-      address,
-      role,
-      confirmedAddress: sameOrder ? result?.confirmedAddresses?.[i] || '' : '',
+      address: originalAddress,
+      role: course.sourceRoles?.[sourceIndex] ?? role,
+      confirmedAddress: originalAddress !== address ? `입력: ${address}\n확인: ${confirmed || '미확인'}` : confirmed,
       distanceKm: i && meters(distance) ? distance / 1000 : null,
       status: !i
         ? '출발 · 이전 구간 없음'

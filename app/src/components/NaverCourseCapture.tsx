@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useAdminPage } from './AdminPage';
 import { NaverCourseMapping } from './NaverCourseMapping';
+import { NaverAddressValidation } from './NaverAddressValidation';
+import { sameRoutingCourse, validatedCourseIds } from '../domain/naver-address-validation';
+import type { AddressValidationJob } from '../lib/naver-address-validation';
 import type { CourseSheetTable } from './NaverCourseMapping';
 import { findCourseTables, courseTableAt } from '../domain/naver-course-import';
 import type {
@@ -78,6 +81,8 @@ export function NaverCourseCapture({
     [job, setJob] = useState<CaptureJob | null>(null),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState('');
+  const [validation, setValidation] = useState<AddressValidationJob | null>(null),
+    [validationRunning, setValidationRunning] = useState(false), [inputVersion,setInputVersion] = useState(0);
   const [sources, setSources] = useState<CourseSheetTable[]>([]),
     [choice, setChoice] = useState(''),
     [table, setTable] = useState<CourseTable | null>(null);
@@ -87,6 +92,11 @@ export function NaverCourseCapture({
     (c) => c.rotations === 2 && !c.rotation,
   );
   const running = !!job && ['queued', 'running'].includes(job.status);
+  const locked = busy || running || validationRunning,
+    confirmedIds = validation?.center_code === center && validation.status === 'completed'
+      ? validatedCourseIds(input.courses, validation.results) : [],
+    inputMatchesJob = !!job && input.courses.length === job.courses.length && input.courses.every(c => job.courses.some(old => sameRoutingCourse(c, old)));
+  useEffect(() => { setJob(null);setValidation(null);setInput({courses:[],issues:[]});setSources([]);setFilename(''); }, [center]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -94,10 +104,10 @@ export function NaverCourseCapture({
     };
   }, []);
   useEffect(() => {
-    onBusy(busy || running);
-    setControlsDisabled(busy || running);
+    onBusy(locked);
+    setControlsDisabled(locked);
     return () => setControlsDisabled(false);
-  }, [busy, running, setControlsDisabled, onBusy]);
+  }, [locked, setControlsDisabled, onBusy]);
   useEffect(() => {
     if (!running || !job) return;
     let active = true;
@@ -143,6 +153,7 @@ export function NaverCourseCapture({
     );
   }
   function applyMapping(source: CourseSheetTable, next: CourseTable) {
+    setInputVersion(value=>value+1);
     setTable(next);
     const parsed = parseNaverCourses(source.rows, next);
     setInput({
@@ -159,7 +170,7 @@ export function NaverCourseCapture({
   async function upload(file: File) {
     setInput({ courses: [], issues: [] });
     setFilename(file.name);
-    setJob(null);
+    if (!job) setJob(await getCapture(undefined, center));
     setSources([]);
     setChoice('');
     setTable(null);
@@ -272,17 +283,18 @@ export function NaverCourseCapture({
       '네이버_코스_입력양식.xlsx',
     );
   }
-  async function start(retry = false) {
+  async function start() {
+    if (!validation || validation.center_code !== center || validation.status !== 'completed') throw Error('주소 사전 검증을 먼저 완료해 주세요.');
+    if (!confirmedIds.length) throw Error('주소가 모두 확인된 코스가 없습니다. 주소 검증 표를 확인해 주세요.');
     const id = await enqueueCapture(
         center,
-        retry
-          ? job!.courses
-          : input.courses.map((c, i) =>
+        input.courses.map((c, i) =>
               i === 0 && input.issues.length
                 ? { ...c, importIssues: input.issues }
                 : c,
             ),
-        retry ? job!.id : undefined,
+        job?.center_code === center ? job.id : undefined,
+        validation.id,
       ),
       next = await getCapture(id, center);
     if (!next)
@@ -319,14 +331,14 @@ export function NaverCourseCapture({
       <div className="toolbar">
         <button
           className="btn btn-ghost"
-          disabled={busy || running}
+          disabled={locked}
           onClick={template}
         >
           예시 엑셀 다운로드
         </button>
         <button
           className="btn btn-ghost"
-          disabled={busy || running}
+          disabled={locked}
           onClick={() =>
             void run(async () => {
               const j = await getCapture(undefined, center);
@@ -337,6 +349,8 @@ export function NaverCourseCapture({
                   issues: j.courses.flatMap((c) => c.importIssues ?? []),
                 });
                 setFilename('최근 캡처 작업');
+                setInputVersion(value=>value+1);
+                setSources([]);setChoice('');setTable(null);
               } else setStatus('저장된 캡처 작업이 없습니다.');
             })
           }
@@ -346,7 +360,7 @@ export function NaverCourseCapture({
       </div>
       <FileArea
         accept=".xlsx,.xls,.csv"
-        disabled={busy || running}
+        disabled={locked}
         onFiles={(files) => {
           if (files[0]) void run(() => upload(files[0]));
         }}
@@ -357,7 +371,7 @@ export function NaverCourseCapture({
             className="app-input"
             type="file"
             accept=".xlsx,.xls,.csv"
-            disabled={busy || running}
+            disabled={locked}
             onChange={(e) => {
               const f = e.currentTarget.files?.[0];
               if (f) void run(() => upload(f));
@@ -379,12 +393,12 @@ export function NaverCourseCapture({
         동률이면 원본 납품처 순서 기준으로 결정합니다. 일부 조합이 실패하면 최단
         검증은 미완료로 남습니다.
       </p>
-      {!job && sources.length > 0 && (
+      {sources.length > 0 && (
         <NaverCourseMapping
           sources={sources}
           choice={choice}
           table={table}
-          disabled={busy || running}
+          disabled={locked}
           onSource={mapSource}
           onHeader={(row) => {
             if (choice !== '')
@@ -396,6 +410,9 @@ export function NaverCourseCapture({
           onRole={roleChange}
         />
       )}
+      <NaverAddressValidation center={center} courses={input.courses} disabled={busy || running} resetKey={inputVersion}
+        onCoursesChange={courses => setInput(previous => ({...previous,courses}))}
+        onJobChange={setValidation} onRunningChange={setValidationRunning} />
       {input.issues.length > 0 && (
         <div role="alert">
           <strong>열 연결 또는 아래 원본 값을 확인해 주세요.</strong>
@@ -414,7 +431,7 @@ export function NaverCourseCapture({
             )}
         </div>
       )}
-      {input.courses.length > 0 && !job && (
+      {input.courses.length > 0 && !inputMatchesJob && (
         <div
           className="scroll"
           role="region"
@@ -462,15 +479,15 @@ export function NaverCourseCapture({
           disabled={
             busy ||
             running ||
+            validationRunning ||
+            !confirmedIds.length ||
             !input.courses.length ||
             input.issues.some((issue) => !issue.courseId) ||
             input.courses.some((c) => c.rotations === 2 && !c.rotation)
           }
           onClick={() => void run(() => start())}
         >
-          {input.issues.some((issue) => issue.courseId) && input.courses.length
-            ? `정상 ${input.courses.length}건 캡처 시작`
-            : '코스별 캡처 시작'}
+          주소 확인된 {confirmedIds.length}건 캡처 시작
         </button>
         {running && (
           <button
@@ -491,8 +508,8 @@ export function NaverCourseCapture({
         {job && !running && failed.length > 0 && (
           <button
             className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => void run(() => start(true))}
+            disabled={busy || validationRunning || !confirmedIds.length}
+            onClick={() => void run(() => start())}
           >
             미완료 {failed.length}건 재시도
           </button>
@@ -519,6 +536,7 @@ export function NaverCourseCapture({
       )}
       {job && (
         <>
+          {!inputMatchesJob && <p>이전 저장 결과입니다. 주소가 달라진 코스는 새 검증·캡처 후 갱신하며 기존 성공 결과는 보존합니다.</p>}
           <progress
             aria-label="코스 캡처 진행"
             value={

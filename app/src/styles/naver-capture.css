@@ -76,3 +76,24 @@
 .naver-capture button:disabled {
   opacity: 0.55;
 }
+.capture-validation {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--theme-border);
+}
+.capture-validation > p {
+  margin: 0.65rem 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.capture-validation .scroll { max-height: 560px; }
+.capture-address-table { min-width: 1080px; width: 100%; }
+.capture-address-table th { position: sticky; top: 0; background: var(--theme-surface); z-index: 1; }
+.naver-capture .capture-address-table td { white-space: normal; vertical-align: top; overflow-wrap: anywhere; }
+.capture-address-table td:first-child { min-width: 210px; max-width: 260px; }
+.capture-address-table td:nth-child(2) { min-width: 210px; max-width: 280px; }
+.capture-address-table td:nth-child(4) { min-width: 230px; max-width: 320px; }
+.capture-address-table td p { margin: 0.35rem 0; }
+.capture-address-table input { width: 100%; }
+.capture-address-table small { display: block; margin-top: 0.35rem; }
+.capture-address-table details { margin: 0; }
+.capture-validation-filter { display: flex; align-items: center; gap: 0.5rem; margin: 0.75rem 0; }

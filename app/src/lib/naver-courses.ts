@@ -69,11 +69,13 @@ export async function enqueueCapture(
   center: string,
   courses: NaverCourse[],
   previousJob?: string,
+  validationJob?: string,
 ) {
-  const { data, error } = await supabase.rpc('naver_capture_enqueue', {
+  const { data, error } = await supabase.rpc(validationJob ? 'naver_capture_validated_enqueue' : 'naver_capture_enqueue', {
     p_center: center,
     p_courses: courses,
     p_previous_job: previousJob ?? null,
+    ...(validationJob ? { p_validation_job: validationJob } : {}),
   });
   if (error) throw Error(error.message);
   return data as string;
