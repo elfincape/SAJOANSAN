@@ -436,6 +436,53 @@ const analysisInput = {
   ],
 };
 const normalized = briefing.normalizeMailAnalysis(analysisInput, mailSource);
+{
+  const originalQuote = '요청: [A.+] 냉장 5톤\r\n\t  수량 12개\u00a0확인';
+  const evidence = '요청: [A.+] 냉장 5톤 수량 12개 확인';
+  const input = {
+    summary: [{ text: '수량 확인', evidence }],
+    issues: [],
+    tasks: [],
+  };
+  const source = {
+    ...mailSource,
+    text: '앞 내용\n' + originalQuote + '\n뒤 내용',
+  };
+  assert.equal(
+    briefing.normalizeMailAnalysis(input, source).summary[0].evidence,
+    originalQuote,
+  );
+  assert.equal(
+    briefing.normalizeMailAnalysis(input, {
+      ...source,
+      text: '',
+      subject: originalQuote,
+    }).summary[0].evidence,
+    originalQuote,
+  );
+  for (const changed of [
+    evidence.replace('12', '13'),
+    evidence.replace('냉장', '냉동'),
+    evidence.replace('[A.+]', '[AX+]'),
+  ]) {
+    assert.throws(
+      () =>
+        briefing.normalizeMailAnalysis(
+          { ...input, summary: [{ text: '수량 확인', evidence: changed }] },
+          source,
+        ),
+      /ANALYSIS_EVIDENCE/,
+    );
+  }
+  assert.throws(
+    () =>
+      briefing.normalizeMailAnalysis(input, {
+        ...source,
+        text: originalQuote.replace(/\r\n\t  /, ' 다른 내용 '),
+      }),
+    /ANALYSIS_EVIDENCE/,
+  );
+}
 assert.equal(normalized.tasks[0].due, '2026-10-31');
 assert.equal(normalized.tasks[0].assignee, '김담당');
 assert.throws(

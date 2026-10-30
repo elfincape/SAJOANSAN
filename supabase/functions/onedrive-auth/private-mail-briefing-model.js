@@ -56,9 +56,16 @@ export function normalizeMailAnalysis(value, mail) {
     throw Error('ANALYSIS_FORMAT');
   const quote = (value) => {
     const evidence = text(value, 3000);
-    if (!body.includes(evidence) && !subject.includes(evidence))
-      throw Error('ANALYSIS_EVIDENCE');
-    return evidence;
+    if (body.includes(evidence) || subject.includes(evidence)) return evidence;
+    const pattern = evidence
+      .split(/\s+/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('\\s+');
+    const original =
+      body.match(new RegExp(pattern))?.[0] ??
+      subject.match(new RegExp(pattern))?.[0];
+    if (!original || original.length > 3000) throw Error('ANALYSIS_EVIDENCE');
+    return original;
   };
   const completion = (raw) => {
     const evidence = quote(raw.completionEvidence);
@@ -70,9 +77,7 @@ export function normalizeMailAnalysis(value, mail) {
     if (!Array.isArray(value[key]) || value[key].length > limit)
       throw Error('ANALYSIS_FORMAT');
     return value[key].map((item) => {
-      const evidence = text(item?.evidence, 3000);
-      if (!body.includes(evidence) && !subject.includes(evidence))
-        throw Error('ANALYSIS_EVIDENCE');
+      const evidence = quote(item?.evidence);
       return { text: text(item.text), evidence };
     });
   }
