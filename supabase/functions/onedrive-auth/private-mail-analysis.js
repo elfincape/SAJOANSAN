@@ -360,7 +360,12 @@ function promptFor(mail, related, images) {
 원문 밖의 사실, 담당자, 날짜, 완료 상태를 만들지 마세요. 한국어 JSON 객체 하나만 반환하세요.
 본문 기반 항목의 evidence/completionEvidence는 mail.text 또는 mail.subject의 연속된 정확한 인용이어야 합니다.
 group은 원문에서 명시한 업체/거래처 이름만 {name,evidence}로 쓰고 없으면 null입니다.
-summary(최대 6), issues(최대 10), tasks(최대 15), waiting(최대 10)은 배열입니다.
+summary(최대 3), issues(최대 10), tasks(최대 15), waiting(최대 10)은 배열입니다.
+summary는 원문 문장을 나열하지 말고, 읽는 사람이 바로 판단할 수 있게 1) 누가 어떤 상황/요청인지 2) 중요한 금액·수량·기간·변경 조건 3) 확인할 결정만 짧고 자연스럽게 통합하세요. 의미가 겹치는 항목은 합치세요.
+주소·중개업소 연락처·기안일·서명·명함·전화·팩스·인사말·회신 인용문은 핵심 업무 판단에 꼭 필요한 경우에만 사용하고 단순 상세 나열은 빼세요.
+승인 요청에 승인 결과 근거가 없으면 '미승인/승인 대기 중'이라고 단정하지 말고 '승인 여부 확인 필요'로 표현하세요. 실제로 사용자가 결정/처리해야 할 일만 tasks에 넣고 같은 업무를 issues/tasks/waiting에 중복하지 마세요.
+담당·회신기한이 명시되지 않으면 null로 두며, 빈 구분을 채우려고 업무나 상태를 만들지 마세요. 이미지의 명함·서명·로고 정보는 imageFacts에 상세 전사하지 마세요. 업무에 필요한 문서·현장 정보만 사진 근거로 정리하세요.
+evidence는 화면 출력용이 아니라 내부 원문 검증용입니다. 요약에 원문을 다시 붙이지 말고 evidence 필드에만 정확히 보존하세요.
 각 항목은 {text,evidence}입니다. issues는 status(in_progress|needs_confirmation|resolved), impact, latest, completionEvidence를 추가할 수 있습니다.
 tasks는 status(pending|complete), assignee, due, completionEvidence를 추가합니다. waiting은 person을 추가할 수 있습니다.
 담당자를 추측하지 말고 assignee/person은 evidence에 실제 적힌 이름만 쓰거나 null로 쓰세요.
