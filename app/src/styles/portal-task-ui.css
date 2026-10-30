@@ -32,7 +32,7 @@ html[data-theme]
   .task-row:not(.calendar-task-bar):not(.selected):not(:disabled):hover {
   border-color: transparent;
   border-bottom-color: var(--theme-border-soft);
-  background: var(--theme-hover);
+  background: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-ui.portal-shell .hq-review > summary::after {

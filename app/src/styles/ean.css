@@ -2,6 +2,15 @@ html[data-theme] {
   --ean-control-radius: 10px;
   --ean-badge-radius: 6px;
   --ean-panel-radius: 16px;
+  --ean-interaction-fill: rgb(255 255 255 / 0.58);
+  --ean-interaction-rim: rgb(255 255 255 / 0.85);
+  --ean-interaction-sheen: rgb(255 255 255 / 0.55);
+  --ean-interaction-surface: linear-gradient(
+      125deg,
+      var(--ean-interaction-sheen),
+      transparent 55%
+    )
+    var(--ean-interaction-fill);
   scrollbar-gutter: stable;
   background: var(--theme-page);
   --theme-primary: #29292d;
@@ -49,6 +58,9 @@ html[data-theme] {
   --workspace-shadow: var(--ean-shadow);
 }
 html[data-theme='dark'] {
+  --ean-interaction-fill: rgb(255 255 255 / 0.085);
+  --ean-interaction-rim: rgb(255 255 255 / 0.16);
+  --ean-interaction-sheen: rgb(255 255 255 / 0.065);
   --theme-control-hover: #5b5b65;
   --theme-primary: #4b4b53;
   --theme-sidebar: #242428;
@@ -166,7 +178,7 @@ html[data-theme] body.workspace-ui.portal-shell .primary:hover:not(:disabled) {
 }
 html[data-theme]
   body.workspace-ui
-  :is(input, select, textarea, button, a):focus-visible {
+  :is(input, select, textarea, button, a, summary):focus-visible {
   outline: 2px solid var(--theme-accent);
   outline-offset: 3px;
 }
@@ -465,6 +477,154 @@ html[data-theme] body.workspace-ui .ean-tab:disabled {
   html[data-theme] body.workspace-ui.app-shell #app-sidebar,
   #app-sidebar details::details-content {
     transition: none;
+  }
+}
+/* Row dividers stay straight; the interactive surface is inset and rounded. */
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  ):focus-visible {
+  outline: none;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  ):focus-visible::before {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .task-row.selected,
+    .employee-permission-people > button[aria-pressed='true']
+  ):focus-visible::before {
+  background: transparent;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  )::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: var(--ean-control-radius);
+  background: var(--ean-interaction-surface);
+  box-shadow: inset 0 0 0 1px var(--ean-interaction-rim);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  ):not(:disabled):not([aria-disabled='true']):not(.selected):not(
+    [aria-pressed='true']
+  ):is(:hover, :focus-visible) {
+  background: transparent;
+  color: var(--theme-text);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .hub-directory .hub-tool,
+    .task-row:not(.calendar-task-bar),
+    .employee-permission-people > button
+  ):not(:disabled):not([aria-disabled='true']):not(.selected):not(
+    [aria-pressed='true']
+  ):is(:hover, :focus-visible)::before {
+  opacity: 1;
+}
+html[data-theme] body.workspace-ui.app-shell .hub-directory .hub-tool {
+  padding-inline: 12px;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is(.workspace-link, .app-function-link, .app-local-menu button, summary):not(
+    :disabled
+  ):not([aria-disabled='true']):not([aria-current]):not(
+    [aria-pressed='true']
+  ):is(:hover, :focus-visible) {
+  background: var(--ean-interaction-surface);
+  color: var(--theme-text);
+  box-shadow: inset 0 0 0 1px var(--ean-interaction-rim);
+}
+html[data-theme] body.workspace-ui.app-shell #app-sidebar summary {
+  cursor: pointer;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .workspace-content summary,
+    .workspace-split-controls button,
+    .selection-actions button,
+    .ops-assistant-head button,
+    .workspace-center-option
+  ) {
+  border-radius: var(--ean-control-radius);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  :is(
+    .workspace-content summary,
+    .workspace-split-controls button,
+    .selection-actions button,
+    .ops-assistant-head button,
+    .workspace-center-option
+  ):not(:disabled):not([aria-disabled='true']):not([data-disabled]):is(
+    :hover,
+    :focus-visible,
+    [data-highlighted]
+  ) {
+  background: var(--ean-interaction-surface);
+  color: var(--theme-text);
+  box-shadow: inset 0 0 0 1px var(--ean-interaction-rim);
+  cursor: pointer;
+}
+.account-item-highlight {
+  background: var(--ean-interaction-surface);
+  border-color: var(--ean-interaction-rim);
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme]
+    body.workspace-ui.app-shell
+    :is(
+      .hub-directory .hub-tool,
+      .task-row:not(.calendar-task-bar),
+      .employee-permission-people > button
+    )::before {
+    transition: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html[data-theme] {
+    --ean-interaction-surface: var(--theme-sidebar-hover);
+    --ean-interaction-rim: var(--theme-border);
   }
 }
 @media print {
