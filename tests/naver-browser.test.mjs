@@ -207,3 +207,22 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const result=await map.browserValidateAddress(page,'B',{routeContext:{validationReady:true}});
  assert.equal(result.status,'network_error');assert.equal(result.point,undefined,'Unchanged URL token cannot validate a different selected address');
 }
+
+// API partial-distance ranking selects candidates; the web compares full routes.
+{
+ const {createShortlistPlan,rankShortlist}=await import('../scripts/lib/naver-candidate-shortlist.mjs');
+ const c={id:'row-4',sourceRow:4,name:'API shortlist fixture',stops:['G','C','A','B','D','G']},at='2026-10-30T01:00:00Z';
+ const points=Object.fromEntries(['G','C','A','B','D'].map((a,i)=>[a,{coordinates:[127+i*.01,37]}]));
+ const plan=createShortlistPlan(c,points),selection=rankShortlist(plan,plan.edges.filter(e=>!e.zeroCost).map(e=>({key:e.key,distanceMeters:100,option:'traoptimal',measuredAt:at})),{now:at});
+ const looked=[];const result=await optimizeCourseCapture({},c,{candidatePlan:selection,measure:async(_p,stops,o)=>{
+  const index=coursePermutations(c).findIndex(s=>JSON.stringify(s)===JSON.stringify(stops));looked.push(index);
+  const detail={method:'naver-map-display',distanceMeters:[30000,10000,20000,1000,2000,3000][index],distanceKm:[30,10,20,1,2,3][index],distanceText:'web full route',routeLabel:'free',sourceUrl:'https://map.naver.com/p/directions/a/b/c/car',requestedStops:stops};
+  return {...detail,...(o.screenshot||o.captureIf?.(detail)?{png:Buffer.from('winner-'+index)}:{})};
+ }});
+ assert.deepEqual(looked,[0,1,2]);assert.equal(result.distanceMeters,10000);assert.equal(result.png.toString(),'winner-1');assert.equal(result.optimization.total,3);assert.equal(result.optimization.allPermutations,6);assert.equal(result.optimization.globalMinimumGuaranteed,false);assert.equal(result.optimization.selection.candidates[0].apiPartialMeters,300);
+ assert(captureResultVerified(c,{...result,imagePath:'winner.png'}));
+ const bad=structuredClone(selection);bad.candidates[0].stops=['G','A','C','B','D','G'];await assert.rejects(()=>optimizeCourseCapture({},c,{candidatePlan:bad,measure:async()=>{throw Error('must not query');}}),e=>e.code==='SHORTLIST_INVALID_INPUT');
+ const reordered=structuredClone(selection);reordered.candidates.reverse();
+ const tied=await optimizeCourseCapture({},c,{candidatePlan:reordered,measure:async(_p,stops,o)=>{const r={method:'naver-map-display',distanceKm:5,distanceMeters:5000,distanceText:'5km',routeLabel:'free',requestedStops:stops};return {...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('tie')}:{})};}});
+ assert.deepEqual(tied.orderedStops,coursePermutations(c)[0],'Web ties use original permutation order, not API score order');
+}

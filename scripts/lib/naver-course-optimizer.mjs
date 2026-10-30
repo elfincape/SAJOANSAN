@@ -1,35 +1,34 @@
 export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
+export const SHORTLIST_WEB_POLICY='naver-api-top3-web-meters-v1';
 
-export function coursePermutations(course) {
- const {stops,rotation}=course;
- if(course.rotations===2&&!rotation)throw Error('이전 통합 코스는 원본 엑셀을 다시 등록해 주세요.');
- if(!Array.isArray(stops)||stops.length<(rotation===2?3:4)||stops.length>7||stops.some(s=>typeof s!=='string'||!s.trim()))throw Error('코스 주소 또는 경유지 한도 확인 필요');
- const fixed=rotation===2?1:2,deliveries=stops.slice(fixed,-1),routes=[];
- function visit(prefix,remaining){
-  if(!remaining.length){routes.push([...stops.slice(0,fixed),...prefix,stops.at(-1)]);return;}
-  const used=new Set();
-  for(let i=0;i<remaining.length;i++)if(!used.has(remaining[i])){used.add(remaining[i]);visit([...prefix,remaining[i]],remaining.filter((_,j)=>j!==i));}
- }
- visit([],deliveries);return routes;
-}
+import {coursePermutations} from '../../supabase/functions/naver-relations/course-permutations.js';
+export {coursePermutations};
 
 const validDistance=r=>typeof r?.routeLabel==='string'&&r.routeLabel.trim()&&r.method==='naver-map-display'&&Number.isFinite(r.distanceKm)&&r.distanceKm>=0&&typeof r.distanceText==='string'&&(r.distanceMeters===undefined||Number.isSafeInteger(r.distanceMeters)&&r.distanceMeters>=0&&r.distanceKm===r.distanceMeters/1000);
 const inputKeyFor=course=>JSON.stringify([COMPARISON_POLICY,course.rotation??0,course.stops]);
+export function comparisonScope(course,candidatePlan){
+ const all=coursePermutations(course);
+ if(!candidatePlan)return {routes:all,policy:COMPARISON_POLICY,inputKey:inputKeyFor(course)};
+ let source;try{source=JSON.parse(candidatePlan.inputKey??'null');}catch{throw Object.assign(Error('서버 API 후보 입력 증거를 읽지 못했습니다.'),{code:'SHORTLIST_INVALID_INPUT'});}const candidates=candidatePlan.candidates;
+ if(candidatePlan.policy!=='naver-directed-leg-meter-shortlist-v2'||candidatePlan.scoreScope!=='center-through-deliveries'||!candidatePlan.completeMatrix||candidatePlan.globalMinimumGuaranteed!==false||candidatePlan.webEligible!==true||candidatePlan.totalPermutations!==all.length||!Array.isArray(source)||source[1]!== (course.rotation??0)||JSON.stringify(source[2])!==JSON.stringify(course.stops)||!Array.isArray(candidates)||candidates.length!==Math.min(3,all.length)||new Set(candidates.map(c=>c.index)).size!==candidates.length||candidates.some(c=>!Number.isInteger(c.index)||!all[c.index]||JSON.stringify(c.stops)!==JSON.stringify(all[c.index])||!Number.isSafeInteger(c.apiPartialMeters)||c.apiPartialMeters<0))throw Object.assign(Error('서버 API 후보 증거가 현재 코스와 일치하지 않습니다.'),{code:'SHORTLIST_INVALID_INPUT'});
+ const ordered=[...candidates].sort((a,b)=>a.index-b.index);
+ return {routes:ordered.map(c=>c.stops),policy:SHORTLIST_WEB_POLICY,inputKey:JSON.stringify([SHORTLIST_WEB_POLICY,course.rotation??0,course.stops,candidatePlan.inputKey,ordered.map(c=>c.index)]),selection:candidatePlan};
+}
 const pointKey=url=>{try{const p=new URL(url).pathname.split('/');return p[6]==='car'?p.slice(3,6):null;}catch{return null;}};
 const evidenceKey=r=>JSON.stringify([r.distanceMeters??null,r.legEvidence?.source??null,r.legEvidence?.verified??null,r.legEvidence?.pathIdentity??null,r.legEvidence?.totalMeters??null,r.legEvidence?.distancesMeters??null,r.legEvidence?.logicalPointMapping??null,r.legEvidence?.providerOption?[r.legEvidence.providerOption.main,r.legEvidence.providerOption.sub]:null,r.requestSettings?Object.entries(r.requestSettings).sort(([a],[b])=>a.localeCompare(b)):null,pointKey(r.sourceUrl)]);
 export function captureResultVerified(course,result){
  try{
-  const routes=coursePermutations(course),state=result?.optimization,keys=routes.map(stops=>JSON.stringify(stops)),selected=JSON.stringify(result?.orderedStops);
-  if(!result?.imagePath||!result.sourceUrl?.startsWith('https://map.naver.com/')||!validDistance(result)||!state?.complete||state.policy!==COMPARISON_POLICY||state.inputKey!==inputKeyFor(course)||state.total!==routes.length||state.completed!==routes.length||state.failed?.length!==0||Object.keys(state.evaluations??{}).length!==routes.length||!keys.includes(selected)||JSON.stringify(result.requestedStops)!==selected)return false;
+  const state=result?.optimization,scope=comparisonScope(course,state?.selection),routes=scope.routes,keys=routes.map(stops=>JSON.stringify(stops)),selected=JSON.stringify(result?.orderedStops);
+  if(!result?.imagePath||!result.sourceUrl?.startsWith('https://map.naver.com/')||!validDistance(result)||!state?.complete||state.policy!==scope.policy||state.inputKey!==scope.inputKey||state.total!==routes.length||state.completed!==routes.length||state.failed?.length!==0||Object.keys(state.evaluations??{}).length!==routes.length||!keys.includes(selected)||JSON.stringify(result.requestedStops)!==selected)return false;
   const evaluations=keys.map(key=>state.evaluations[key]),winner=state.evaluations[selected];
   return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel&&evidenceKey(result)===evidenceKey(winner);
  }catch{return false;}
 }
-export async function optimizeCourseCapture(page,course,{measure,previous,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={}}={}) {
+export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={}}={}) {
  const started=performance.now(),metrics={routeLookups:0,routeCacheHits:0,addressResolutionMs:0,searchRefreshMs:0,routeRequestMs:0,optionCompareMs:0,captureMs:0,addressQueries:0,addressCacheHits:0,routeRequests:0,networkAddressRequests:0};
  const lookup=async(stops,options)=>{metrics.routeLookups++;const result=await measure(page,stops,{...options,addressCache,routeContext});for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
- const routes=coursePermutations(course),inputKey=inputKeyFor(course);
- const evaluations={},state={version:1,policy:COMPARISON_POLICY,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false};
+ const scope=comparisonScope(course,candidatePlan),{routes,inputKey}=scope;
+ const evaluations={},state={version:1,policy:scope.policy,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false,...(scope.selection?{selection:scope.selection,allPermutations:scope.selection.totalPermutations,globalMinimumGuaranteed:false}:{})};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};
  await checkActive();await report();let consecutiveFailures=0,bestCapture;

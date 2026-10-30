@@ -1,0 +1,30 @@
+begin;
+do $shortlist$
+declare actor uuid;validation uuid;api uuid;capture uuid;full_job uuid;again uuid;fixture jsonb;plan jsonb;rejected boolean;
+begin
+ select id into actor from public.user_profiles where active and role='admin' limit 1;
+ perform set_config('request.jwt.claim.sub',actor::text,true);
+ fixture:='[{"id":"row-999992","sourceRow":999992,"name":"Shortlist rollback fixture","stops":["G","C","A","G"]}]'::jsonb;
+ validation:=public.naver_address_validate_enqueue('002',fixture);
+ update public.naver_browser_jobs set status='completed',results='{"G":{"query":"G","status":"valid","point":{}},"C":{"query":"C","status":"valid","point":{}},"A":{"query":"A","status":"valid","point":{}}}'::jsonb where id=validation;
+ plan:='{"policy":"naver-directed-leg-meter-shortlist-v2","scoreScope":"center-through-deliveries","completeMatrix":true,"globalMinimumGuaranteed":false,"webEligible":true,"totalPermutations":1,"candidates":[{"index":0,"stops":["G","C","A","G"],"apiPartialMeters":100}]}'::jsonb;
+ plan:=plan||jsonb_build_object('timestamps',jsonb_build_array(jsonb_build_object('measuredAt',clock_timestamp())));
+ insert into public.naver_api_jobs(owner_id,center_code,status,state,directions_budget,geocoding_budget) values(actor,'002','completed',jsonb_build_object('kind','capture-shortlist','validationJob',validation,'courses',fixture,'shortlists',jsonb_build_object('row-999992',plan)),1,0) returning id into api;
+ capture:=public.naver_capture_shortlist_enqueue('002',fixture,validation,api);
+ if not exists(select 1 from public.naver_browser_jobs where id=capture and status='queued' and addresses='["row-999992"]' and candidate_plans->'row-999992'=plan and shortlist_job_id=api) then raise exception 'Trusted API plan was not bound to the course';end if;
+ update public.naver_browser_jobs set status='completed',results='{"row-999992":{"imagePath":"shortlist-fixture.png","optimization":{"policy":"naver-api-top3-web-meters-v1"}}}'::jsonb where id=capture;
+ full_job:=public.naver_capture_validated_enqueue('002',fixture,validation,capture);
+ if exists(select 1 from public.naver_browser_jobs where id=full_job and results->'row-999992'->>'imagePath' is not null) then raise exception 'Approximate API result was reused as full-permutation verification';end if;
+ update public.naver_browser_jobs set status='completed' where id=full_job;
+ again:=public.naver_capture_shortlist_enqueue('002',fixture,validation,api,full_job);
+ if not exists(select 1 from public.naver_browser_jobs where id=again and status='completed' and results->'row-999992'->>'imagePath'='shortlist-fixture.png') then raise exception 'Exact same API plan success was not preserved';end if;
+ update public.naver_api_jobs set state=jsonb_set(state,'{shortlists,row-999992,timestamps}',jsonb_build_array(jsonb_build_object('measuredAt',clock_timestamp()-interval '1 hour'))) where id=api;
+ again:=public.naver_capture_shortlist_enqueue('002',fixture,validation,api,again);
+ if not exists(select 1 from public.naver_browser_jobs where id=again and addresses='[]' and results->'row-999992'->>'issue' like 'API%') then raise exception 'Expired matrix queued a new capture';end if;
+ rejected:=false;begin perform public.naver_capture_shortlist_enqueue('001',fixture,validation,api);exception when others then rejected:=true;end;
+ if not rejected then raise exception 'Cross-center shortlist accepted';end if;
+ perform set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+ rejected:=false;begin perform public.naver_capture_shortlist_enqueue('002',fixture,validation,api);exception when others then rejected:=true;end;
+ if not rejected then raise exception 'Cross-owner shortlist accepted';end if;
+end $shortlist$;
+rollback;

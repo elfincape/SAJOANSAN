@@ -1,4 +1,5 @@
 import {destinationRegion} from '../naver-distance/provider.js';
+import {minimumRouteMeters} from './shortlist-model.js';
 
 const fail=(message,status=502)=>Object.assign(new Error(message),{status});
 const routeErrors={1:'출발·도착 도로 지점이 같습니다.',2:'출발지 또는 도착지가 도로 주변이 아닙니다.',3:'자동차 경로를 제공할 수 없습니다.',4:'경유지가 도로 주변이 아닙니다.',5:'경로의 직선거리 합이 허용 범위를 초과합니다.'};
@@ -55,4 +56,14 @@ export async function queryLeg(from,to,env,fetcher=fetch,signal=AbortSignal.time
  if(data?.code!==0||!summary)throw fail('네이버 경로 응답이 올바르지 않습니다.');
  if(!Number.isFinite(summary.distance)||summary.distance<0||!Number.isFinite(summary.duration)||summary.duration<0)throw fail('네이버 구간 거리·시간 값이 올바르지 않습니다.');
  return {distance_meters:summary.distance,duration_seconds:summary.duration/1000,measured_at:new Date().toISOString()};
+}
+
+// Candidate scoring only: one metered request, all three requested options checked.
+export async function queryShortlistLeg(from,to,env,fetcher=fetch,signal=AbortSignal.timeout(10000)){
+ const start=point({x:from?.coordinates?.[0],y:from?.coordinates?.[1]}),goal=point({x:to?.coordinates?.[0],y:to?.coordinates?.[1]});
+ const options=['traoptimal','trafast','tracomfort'];
+ if(start===goal)return {distanceMeters:0,option:options[0],measuredAt:new Date().toISOString()};
+ const data=await request('/map-direction/v1/driving',{start,goal,option:options.join(':'),fueltype:'diesel',cartype:'1'},env,fetcher,signal);
+ if(Number.isInteger(data?.code)&&Object.hasOwn(routeErrors,data.code))throw Object.assign(fail('Naver could not provide this directed road leg.',422),{providerCode:data.code});
+ return minimumRouteMeters(data,options,new Date().toISOString());
 }

@@ -1,3 +1,4 @@
+import {handleShortlist,shortlistSummary} from './shortlist-handler.js';
 import {normalizeAddress,groupAddresses,buildCandidates,pointIdentity,consolidateCoordinates} from './model.js';
 import {geocodeAddress,queryLeg,coordinateKey} from './provider.js';
 
@@ -7,6 +8,7 @@ const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function integer(value,fallback,min,max){const n=value??fallback;if(!Number.isInteger(n)||n<min||n>max)throw fail('조회 범위와 요청 한도를 확인해 주세요.');return n;}
 function summary(job){
+ if(job.state?.kind==='capture-shortlist')return shortlistSummary(job);
  const s=structuredClone(job.state??{});consolidateCoordinates(s);
  const points=s.points??[],byId=new Map(points.map(p=>[p.id,p]));
  return {id:job.id,status:job.status,error:job.error||'',updatedAt:job.updated_at,
@@ -31,11 +33,12 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
    const token=req.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];if(!token)throw fail('로그인이 필요합니다.',401);
    const raw=await req.text();if(raw.length>4000000)throw fail('입력 자료가 너무 큽니다.',413);
    let body;try{body=JSON.parse(raw);}catch{throw fail('조회 요청을 확인해 주세요.');}
-   if(!body||body.center!=='002'||!['preview','create','batch','status','resume'].includes(body.action))throw fail('평택센터 조회 요청을 확인해 주세요.');
+   const shortlistAction=['shortlist-create','shortlist-batch','shortlist-status'].includes(body?.action);
+   if(!body||!(shortlistAction?['001','002'].includes(body.center):body.center==='002'&&['preview','create','batch','status','resume'].includes(body.action)))throw fail('Invalid center or API action');
    const headers={apikey:env.SUPABASE_ANON_KEY,Authorization:'Bearer '+token,'Content-Type':'application/json'};
    const auth=await fetcher(env.SUPABASE_URL+'/auth/v1/user',{headers,signal:AbortSignal.timeout(10000)});
    if(!auth.ok)throw fail('다시 로그인해 주세요.',401);const user=await auth.json();if(!user.id)throw fail('로그인이 필요합니다.',401);
-   const permission=await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/operations_resource_allowed',{method:'POST',headers,body:JSON.stringify({p_resource:'delivery_points',p_action:'edit',p_center:'002'}),signal:AbortSignal.timeout(10000)});
+   const permission=await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/operations_resource_allowed',{method:'POST',headers,body:JSON.stringify({p_resource:'delivery_points',p_action:'edit',p_center:body.center}),signal:AbortSignal.timeout(10000)});
    if(!permission.ok||await permission.json()!==true)throw fail('평택 납품처 수정 권한이 없습니다.',403);
    async function db(path,init={},service=true){
     if(service&&!env.SUPABASE_SERVICE_ROLE_KEY)throw fail('구간 저장 서버 설정이 없습니다.',503);
@@ -45,6 +48,7 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
     const text=await res.text();return text?JSON.parse(text):null;
    }
    const rpc=(name,args)=>db('rpc/'+name,{method:'POST',body:JSON.stringify(args)});
+   if(shortlistAction)return reply(200,await handleShortlist({body,user,env,db,rpc,fetcher,sleep}));
    if(body.action==='preview'||body.action==='create'){
     const limit=integer(body.limit,50,1,50),directionsBudget=integer(body.directionsBudget,60,1,25000),geocodingBudget=integer(body.geocodingBudget,2000,1,2000);
     const centerOrigin=normalizeAddress(body.origin??originDefault);if(!centerOrigin||centerOrigin.length>300)throw fail('센터 출발지 주소를 확인해 주세요.');
@@ -71,6 +75,7 @@ export function makeRelationsHandler(env,fetcher=fetch,sleep=wait){
    if(!uuid(body.jobId))throw fail('수집 작업을 확인해 주세요.');
    const jobs=await db('naver_api_jobs?'+new URLSearchParams({select:'*',id:'eq.'+body.jobId,center_code:'eq.002'}),{},false);
    if(!jobs?.length)throw fail('수집 작업이 없거나 열람 권한이 없습니다.',404);let job=jobs[0];
+   if(job.state?.kind==='capture-shortlist')throw fail('Use the owner-scoped shortlist actions');
    if(body.action==='status')return reply(200,summary(job));
    if(body.action==='resume'){
     if(typeof body.expectedUpdatedAt!=='string'||!Number.isFinite(Date.parse(body.expectedUpdatedAt)))throw fail('최근 작업을 불러온 뒤 재개해 주세요.');

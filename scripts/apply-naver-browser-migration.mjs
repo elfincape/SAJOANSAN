@@ -5,5 +5,7 @@ const rows=await query("select pg_get_functiondef(to_regprocedure('public.naver_
 const definition=rows[0]?.definition,updated=upgradeCaptureContract(definition);
 if(updated!==definition)await query(updated);
 const validation=await query("select pg_get_functiondef(to_regprocedure('public.naver_address_validate_enqueue(text,jsonb,uuid,jsonb)')) as validation,pg_get_functiondef(to_regprocedure('public.naver_capture_validated_enqueue(text,jsonb,uuid,uuid)')) as capture");
-if(!validation[0]?.validation?.includes('address-prevalidation-v1')||!validation[0]?.capture?.includes('address-prevalidation-v1'))await query('begin;\n'+await readFile(new URL('../repo-root/sql/naver-address-validation.sql',import.meta.url),'utf8')+'\ncommit;');
+if(!validation[0]?.validation?.includes('address-prevalidation-v2')||!validation[0]?.capture?.includes('address-prevalidation-v2'))await query('begin;\n'+await readFile(new URL('../repo-root/sql/naver-address-validation.sql',import.meta.url),'utf8')+'\ncommit;');
+const shortlist=await query("select pg_get_functiondef(to_regprocedure('public.naver_capture_shortlist_enqueue(text,jsonb,uuid,uuid,uuid)')) as definition");
+if(!shortlist[0]?.definition?.includes('capture-shortlist-v1'))await query('begin;\n'+await readFile(new URL('../repo-root/sql/naver-capture-shortlist.sql',import.meta.url),'utf8')+'\ncommit;');
 console.log('Naver queue validates each rotation separately. Storage policies and execution grants were not reapplied.');

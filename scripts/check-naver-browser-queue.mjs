@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {query,quote} from './naver-browser-db.mjs';
 import {captureResultVerified} from './lib/naver-course-optimizer.mjs';
 await query(await readFile(new URL('./lib/naver-address-validation-check.sql',import.meta.url),'utf8'));
+await query(await readFile(new URL('./lib/naver-capture-shortlist-check.sql',import.meta.url),'utf8'));
 console.log('Address preflight deduplication, targeted retry, trusted gating, history preservation and owner isolation verified; fixtures rolled back');
 async function inspectPublicSearch(page,run){
  const pending=[],failures=[],responses=[];
