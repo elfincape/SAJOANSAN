@@ -62,15 +62,12 @@ export function PortalShell({
       subscribePrivateFeatures(() => setFeatures(loadPrivateFeatures(profile))),
     [profile],
   );
-  const [groups, setGroups] = useState(
-    () => new Set(['center', 'hq', 'lookup']),
-  );
+  const [groups, setGroups] = useState(() => new Set(['center']));
   function group(name: string, open: boolean) {
     setGroups((previous) => {
       if (previous.has(name) === open) return previous;
-      const next = new Set(previous);
-      if (open) next.add(name);
-      else next.delete(name);
+      const next = open ? new Set([name]) : new Set(previous);
+      if (!open) next.delete(name);
       return next;
     });
   }
@@ -282,6 +279,7 @@ export function PortalShell({
                   id={section.id === 'hq' ? 'hq-navigation' : undefined}
                 >
                   <details
+                    name="workspace-navigation"
                     className="sidebar-group"
                     open={groups.has(section.id)}
                     onToggle={(e) => group(section.id, e.currentTarget.open)}

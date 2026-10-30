@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import '../styles/driver-documents.css';
 import '../styles/dashboard.css';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
-import { Modal } from '../components/Modal';
+import { Modal, ModalClose } from '../components/Modal';
 import { DashboardDetail } from '../components/DashboardDetail';
 import { OperationsAssistant } from '../components/OperationsAssistant';
 import { SavedViews } from '../components/SavedViews';
@@ -1258,9 +1258,9 @@ function Work({
               <dd>{profile.active ? '활성' : '비활성'}</dd>
             </dl>
             <div className="mt-4 text-right">
-              <button id="me-close" className="btn" onClick={onCloseMe}>
+              <ModalClose id="me-close" className="btn">
                 닫기
-              </button>
+              </ModalClose>
             </div>
           </div>
         </Modal>
@@ -1270,13 +1270,13 @@ function Work({
           <div className="p-5 w-[420px] max-w-full">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold">컬럼 설정</h2>
-              <button
+              <ModalClose
                 id="cc-close"
                 className="btn btn-ghost text-xs"
-                onClick={() => setColumnConfig(null)}
+                aria-label="닫기"
               >
                 ×
-              </button>
+              </ModalClose>
             </div>
             <p className="text-xs text-zinc-400 mb-2">
               표시할 컬럼을 선택하세요. 순서는 헤더를 직접 드래그하거나 ↑↓ 으로

@@ -2,6 +2,7 @@ import { Children, isValidElement, useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import { ChevronDown } from 'lucide-react';
 
 export function AccountMenu({
   name,
@@ -36,17 +37,7 @@ export function AccountMenu({
               />
             ) : null}
             <span id="app-profile-label">{name}</span>
-            <svg
-              aria-hidden="true"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
+            <ChevronDown aria-hidden="true" size={18} strokeWidth={1.5} />
           </button>
         </Menu.Trigger>
         <AnimatePresence>

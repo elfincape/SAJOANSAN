@@ -3,7 +3,6 @@ import { AdminPage } from '../components/AdminPage';
 export default function NotionHealth() {
   return <AdminPage title="보건증 Notion 연동" minRole="admin">
   <main id="work-main" tabIndex={-1} className="app-main max-w-3xl mx-auto px-4 py-8">
-    <nav className="work-section-navigation" aria-label="작업 단계">{['연결 확인', '보건증 관리 대상 동기화', '보건증 갱신 완료 자동 반영'].map((title, index) => <a key={title} href={`#work-section-${index + 1}`}>{title}</a>)}</nav>
     <section id="work-section-1" className="rounded-lg border border-zinc-700 bg-zinc-800/40 p-5">
       <h2 className="app-function-title text-lg font-semibold">연결 확인</h2>
       <p className="text-sm text-zinc-400 mt-2">보건증 갱신 목록의 접근 권한과 필요한 열을 확인합니다.</p>

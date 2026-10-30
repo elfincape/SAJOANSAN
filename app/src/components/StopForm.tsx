@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Modal } from './Modal';
+import { Modal, ModalClose } from './Modal';
 import { useAdminPage } from './AdminPage';
 import type { useFeedback } from './useFeedback';
 import { reorderAroundSaved, upsertRouteStop } from '../lib/route-stops';
@@ -43,7 +43,7 @@ export function StopForm({ stop, details, routeId, close, saved, toast, confirm 
     catch { toast('저장 중 오류가 발생했습니다.', 'error'); }
     finally { submitting.current = false; }
   }
-  return <Modal width="xl" label={stop ? '납품처 편집' : '납품처 추가'} onClose={close}><div className="p-5 max-h-[85vh] overflow-auto"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{stop ? '납품처 편집' : '납품처 추가'}</h2><button data-x className="btn btn-ghost text-xs" onClick={close}>닫기</button></div>
+  return <Modal width="xl" label={stop ? '납품처 편집' : '납품처 추가'} onClose={close}><div className="p-5 max-h-[85vh] overflow-auto"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{stop ? '납품처 편집' : '납품처 추가'}</h2><ModalClose data-x className="btn btn-ghost text-xs">닫기</ModalClose></div>
     <form data-permission-action="edit" id="stop-form" className="space-y-3" noValidate onSubmit={event => { event.preventDefault(); void submit(); }}>
       <div><div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px] gap-2 items-end"><div><label className="app-label" htmlFor="dp-search">납품처 *</label><input id="dp-search" className="app-input" placeholder="코드 또는 이름으로 검색" autoComplete="off" value={search} onChange={event => { setSearch(event.target.value); setShowResults(true); }} /></div><div><label className="app-label" htmlFor="dp-unregistered">미등록 납품처</label><select id="dp-unregistered" className="app-select" value={unregisteredValue} onChange={event => { setUnregisteredValue(event.target.value); const point = details.points.find(point => point.id === event.target.value); if (point) selectPoint(point); }}><option value="">미등록 납품처 선택</option>{unregistered.length ? unregistered.map(point => <option key={point.id} value={point.id}>{`${point.code || ''} ${point.name || ''}`.trim()}{point.region ? ' · ' + point.region : ''}</option>) : <option value="" disabled>미등록 납품처 없음</option>}</select></div></div>
         <div id="dp-results" className={`mt-1 max-h-40 overflow-auto border border-zinc-700 rounded-md bg-zinc-900${showResults && hits.length ? '' : ' hidden'}`}>{hits.map(point => <div key={point.id} className="px-2 py-1.5 text-sm hover:bg-zinc-700 cursor-pointer" data-id={point.id} onClick={() => selectPoint(point)}><strong>{point.code || ''}</strong> · {point.name} <span className="muted text-xs">{point.region || ''}</span></div>)}</div>
@@ -54,7 +54,7 @@ export function StopForm({ stop, details, routeId, close, saved, toast, confirm 
         ['delivery', 'ov-dmethod', '납품방식', ['대면', '검수', '무인']], ['access', 'ov-amethod', '진입방식', ['보안키', '열쇠', '없음']], ['location', 'ov-dloc', '납품장소', ['창고', '탑차', '야적']],
       ] as const).map(([key, id, label, values]) => <div key={key}><label className="app-label" htmlFor={id}>{label}</label><select id={id} className="app-select" value={draft[key]} onChange={event => update(key, event.target.value)}><option value="">기본값 사용</option>{values.map(value => <option key={value} value={value}>{value}</option>)}</select></div>)}</div></details>
       <div><label className="app-label" htmlFor="s-memo">비고</label><textarea id="s-memo" rows={2} className="app-textarea" value={draft.memo} onChange={event => update('memo', event.target.value)} /></div><div id="form-warn" className="hidden text-xs text-amber-400 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2" />
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!editable}>저장</button><button type="button" data-x className="btn btn-ghost" onClick={close}>취소</button></div>
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!editable}>저장</button><ModalClose data-x className="btn btn-ghost">취소</ModalClose></div>
     </form>
   </div></Modal>;
 }

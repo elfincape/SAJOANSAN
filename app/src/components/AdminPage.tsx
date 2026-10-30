@@ -214,10 +214,12 @@ function Shell({
                 return items.length ? (
                   <details
                     key={category}
+                    name="workspace-navigation"
                     className="work-nav-group"
                     open={
-                      category === 'transport' ||
-                      items.some((item) => activePath(item.href!))
+                      category ===
+                      (menus.find((item) => activePath(item.href!))?.category ??
+                        'transport')
                     }
                   >
                     <summary>{label}</summary>

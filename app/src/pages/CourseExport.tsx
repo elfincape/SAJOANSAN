@@ -1,4 +1,3 @@
-import { WorkflowNavigation } from '../components/WorkflowNavigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -59,11 +58,9 @@ function CourseExportContent() {
 <main className="app-main max-w-6xl mx-auto px-4 py-6 space-y-4" id="work-main" tabIndex={-1}>
 
   
-  <WorkflowNavigation steps={[["export-options", "파일·조회 조건"], ["export-preview", "미리보기 확인"], ["export-download", "다운로드"]]} />
   <details id="export-options" className="bg-zinc-800/50 border border-zinc-700 rounded-lg" open>
     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
       <span>파일 옵션</span>
-      <span className="text-xs text-zinc-500">파일 형식 · 파일명 · 활성 코스</span>
     </summary>
     <div className="px-4 pb-4 pt-1 space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -85,15 +82,13 @@ function CourseExportContent() {
         <input id="opt-active-only" type="checkbox" className="rounded border-zinc-600 bg-zinc-900" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} />
         활성 코스만 포함
       </label>
-      <p className="text-xs text-zinc-500">시간 표기는 24시간제(0~24시) 표준만 사용합니다.</p>
     </div>
   </details>
 
   
   <details className="bg-zinc-800/50 border border-zinc-700 rounded-lg">
     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
-      <span>🔍 필터 <span id="filter-badge" className="ml-2 text-xs text-emerald-400">{filterCount ? `${filterCount}개 적용` : ""}</span></span>
-      <span className="text-xs text-zinc-500">운수사 · 코스 · 호차 · 기사 · 지역 · 납품처 (모두 교집합)</span>
+      <span>필터 <span id="filter-badge" className="ml-2 text-xs text-emerald-400">{filterCount ? `${filterCount}개 적용` : ""}</span></span>
     </summary>
     <div className="px-4 pb-4 pt-1 space-y-3">
       <div className="flex justify-end">
@@ -114,19 +109,19 @@ function CourseExportContent() {
   
   <details className="bg-zinc-800/50 border border-zinc-700 rounded-lg">
     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
-      <span>↕ 정렬 순서</span>
+      <span>정렬 순서</span>
       <span id="sort-summary" className="text-xs text-zinc-500">{sorts.length ? sorts.map((sort,i)=>`${i+1}.${SORT_KEYS.find(key=>key.key===sort.key)?.label || sort.key}${sort.dir==='asc' ? '↑' : '↓'}`).join(" → ") : "정렬 없음"}</span>
     </summary>
     <div className="px-4 pb-4 pt-1 space-y-3">
       <div className="flex flex-wrap gap-2">
-        <button data-preset="default" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["default"].map(sort=>({...sort})))}>📋 기본</button>
-        <button data-preset="route" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["route"].map(sort=>({...sort})))}>🚚 코스순</button>
-        <button data-preset="time" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["time"].map(sort=>({...sort})))}>⏰ 시간순</button>
-        <button id="btn-sort-clear" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts([])}>🗑 초기화</button>
+        <button data-preset="default" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["default"].map(sort=>({...sort})))}>기본</button>
+        <button data-preset="route" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["route"].map(sort=>({...sort})))}>코스순</button>
+        <button data-preset="time" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts(PRESETS["time"].map(sort=>({...sort})))}>시간순</button>
+        <button id="btn-sort-clear" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => setSorts([])}>초기화</button>
       </div>
       <div id="sort-list" className="space-y-2">{sortEditor}</div>
       <button id="btn-sort-add" className="text-xs px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-600/50 rounded" onClick={addSortKey}>
-        ➕ 정렬 키 추가
+        정렬 키 추가
       </button>
     </div>
   </details>
@@ -134,8 +129,7 @@ function CourseExportContent() {
   
   <details className="bg-zinc-800/50 border border-zinc-700 rounded-lg">
     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
-      <span>📋 포함 컬럼 <span id="cols-badge" className="ml-2 text-xs text-emerald-400">{`${cols.length}/${HEADERS.length}`}</span></span>
-      <span className="text-xs text-zinc-500">파일에 포함할 컬럼/순서 선택</span>
+      <span>포함 컬럼 <span id="cols-badge" className="ml-2 text-xs text-emerald-400">{`${cols.length}/${HEADERS.length}`}</span></span>
     </summary>
     <div className="px-4 pb-4 pt-1 space-y-3">
       <div className="flex flex-wrap gap-2">
@@ -144,8 +138,7 @@ function CourseExportContent() {
         <button id="btn-cols-default" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => updateCols([...HEADERS])}>기본값</button>
       </div>
       <p className="text-xs text-zinc-500">
-        체크된 컬럼만 파일에 포함됩니다. 다시 import 하려면 모든 컬럼을 포함하세요.
-        드래그(⋮⋮)로 순서를 변경할 수 있습니다.
+        다시 가져올 파일은 모든 컬럼을 포함해야 합니다.
       </p>
       <div id="cols-list" className="grid grid-cols-2 md:grid-cols-3 gap-1.5">{columnEditor}</div>
     </div>
