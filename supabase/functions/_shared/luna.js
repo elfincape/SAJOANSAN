@@ -81,7 +81,7 @@ export async function callLuna({
         !schema.properties ||
         !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(schemaName ?? ''))) ||
     !Number.isSafeInteger(maxTokens) ||
-    maxTokens < 1 ||
+    maxTokens < 16 ||
     maxTokens > 16000
   )
     throw failure('MODEL_FAILED', 500, 'configuration');
@@ -143,6 +143,14 @@ export async function callLuna({
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
+    console.warn('PRIVATE_MAIL_MODEL_FAILURE', {
+      model: LUNA_MODEL,
+      reason:
+        error?.name === 'AbortError' || error?.name === 'TimeoutError'
+          ? 'timeout'
+          : 'network',
+      providerStatus: null,
+    });
     throw failure(
       'MODEL_FAILED',
       error?.name === 'AbortError' || error?.name === 'TimeoutError'
@@ -153,7 +161,12 @@ export async function callLuna({
         : 'network',
     );
   }
-  if (!response.ok)
+  if (!response.ok) {
+    console.warn('PRIVATE_MAIL_MODEL_FAILURE', {
+      model: LUNA_MODEL,
+      reason: 'http',
+      providerStatus: response.status,
+    });
     throw Object.assign(
       failure(
         response.status === 429 ? 'RATE_LIMITED' : 'MODEL_FAILED',
@@ -162,6 +175,7 @@ export async function callLuna({
       ),
       { providerStatus: response.status },
     );
+  }
   let value;
   try {
     value = await response.json();

@@ -312,16 +312,32 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return { ...file, item_id: item.id };
   }
   function storedMetadata(box, file, item) {
+    const state = {
+      hasfile: !!item?.file,
+      nameMatches: item?.name === file.file_name,
+      folderMatches: item?.parentReference?.id === box.folder_id,
+      driveMatches:
+        String(item?.parentReference?.driveId).toLowerCase() ===
+        box.drive_id.toLowerCase(),
+      sizeZero: item?.size === 0,
+      sizeMatches: item?.size === file.byte_size,
+    };
     if (
-      !item?.file ||
-      !item.id ||
-      item.name !== file.file_name ||
-      item.size !== file.byte_size ||
-      item.parentReference?.id !== box.folder_id ||
-      String(item.parentReference?.driveId).toLowerCase() !==
-        box.drive_id.toLowerCase()
-    )
+      !state.hasfile ||
+      !item?.id ||
+      !state.nameMatches ||
+      !state.sizeMatches ||
+      !state.folderMatches ||
+      !state.driveMatches
+    ) {
+      console.warn(
+        JSON.stringify({
+          event: 'PRIVATE_MAIL_STORED_METADATA_REJECTED',
+          ...state,
+        }),
+      );
       throw fail('FILE_HASH_REJECTED', 409);
+    }
   }
   async function verifyStored(box, file, item, access) {
     if (file.byte_size <= DIRECT_FILE_BYTES)
@@ -933,8 +949,75 @@ export async function handlePrivateMail(action, req, user, ctx) {
         if (old) {
           const item = await old.json();
           await privatePermissions(box, item.id, env, owner, item);
-          await verifyStored(box, file, item, env.access);
-          return json({ file: { ...file, item_id: item.id } });
+          let preservedEmpty = false;
+          try {
+            storedMetadata(box, file, item);
+          } catch (error) {
+            const recoverable = (candidate) =>
+              !!candidate?.file &&
+              !candidate.folder &&
+              !candidate.remoteItem &&
+              typeof candidate.id === 'string' &&
+              candidate.id.length > 0 &&
+              candidate.id.length <= 512 &&
+              !/[\r\n\0]/.test(candidate.id) &&
+              candidate.size === 0 &&
+              candidate.name === file.file_name &&
+              candidate.parentReference?.id === box.folder_id &&
+              String(candidate.parentReference?.driveId).toLowerCase() ===
+                box.drive_id.toLowerCase() &&
+              typeof candidate.eTag === 'string' &&
+              candidate.eTag.trim().length > 0 &&
+              candidate.eTag.trim() !== '*' &&
+              candidate.eTag.length <= 1024 &&
+              !/[\r\n\0]/.test(candidate.eTag);
+            if (
+              error?.message !== 'FILE_HASH_REJECTED' ||
+              body.operation !== 'upload-session' ||
+              !recoverable(item)
+            )
+              throw error;
+            // Preserve a possible prior session reservation as a separate item.
+            const current = await (
+              await graph(
+                '/drives/' + enc(box.drive_id) + '/items/' + enc(item.id),
+                env.access,
+              )
+            ).json();
+            if (
+              !recoverable(current) ||
+              current.id !== item.id ||
+              current.eTag !== item.eTag
+            )
+              throw fail('FILE_HASH_REJECTED', 409);
+            await privatePermissions(box, current.id, env, owner, current);
+            await fenceMailbox(box, body.lease);
+            await renew(holder);
+            const recoveryName = file.file_name.replace(
+              /\.bin$/,
+              '_미완료업로드_' + crypto.randomUUID() + '.bin',
+            );
+            await graph(
+              '/drives/' + enc(box.drive_id) + '/items/' + enc(item.id),
+              env.access,
+              {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'If-Match': item.eTag,
+                },
+                body: JSON.stringify({
+                  name: recoveryName,
+                  '@microsoft.graph.conflictBehavior': 'fail',
+                }),
+              },
+            );
+            preservedEmpty = true;
+          }
+          if (!preservedEmpty) {
+            await verifyStored(box, file, item, env.access);
+            return json({ file: { ...file, item_id: item.id } });
+          }
         }
         if (body.operation === 'upload-complete')
           throw fail('FILE_NOT_UPLOADED', 409);

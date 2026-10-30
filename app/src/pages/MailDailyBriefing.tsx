@@ -41,16 +41,17 @@ function initialDay() {
     .map((type) => parts.find((part) => part.type === type)?.value)
     .join('-');
 }
-function SourceLink({ source }: { source: Source }) {
+function SourceLink({ source, label }: { source: Source; label?: string }) {
   return (
     <a href={'/portal/?view=mail&message=' + encodeURIComponent(source.id)}>
-      {source.subject || '(제목 없음)'}
+      {label || source.subject || '(제목 없음)'}
     </a>
   );
 }
 function ItemEvidence({ item }: { item: Item }) {
   return (
-    <div className="daily-evidence">
+    <details className="daily-evidence">
+      <summary>근거·원문</summary>
       <p>
         {item.sourceType === 'image' ? '사진 근거' : '메일 근거'}:{' '}
         <q>{item.evidence}</q>
@@ -76,7 +77,7 @@ function ItemEvidence({ item }: { item: Item }) {
           ) : null}
         </p>
       ) : null}
-    </div>
+    </details>
   );
 }
 function DailyOverview() {
@@ -285,6 +286,9 @@ function DailyOverview() {
         <a className="btn btn-ghost" href="/portal/?view=mail">
           개인 메일함
         </a>
+        <a className="btn btn-ghost" href="#manual-messages">
+          메시지 추가
+        </a>
       </div>
       <p className="daily-feedback" role="status" aria-live="polite">
         {pending
@@ -293,11 +297,6 @@ function DailyOverview() {
             ? '일일정리를 불러오는 중…'
             : feedback}
       </p>
-      <MailBriefingManualEntries
-        day={day}
-        disabled={pending !== null || filtersBusy}
-        onBusyChange={setManualBusy}
-      />
       <div aria-busy={loading}>
         <h2 className="daily-title">{overview?.title || `${day} 일일정리`}</h2>
         {overview ? (
@@ -307,6 +306,61 @@ function DailyOverview() {
                 이 날짜에 정리된 메일이 없습니다. 새 메일의 분석이 완료되면
                 표시됩니다.
               </p>
+            ) : null}
+            {overview.groups.length ? (
+              <section className="daily-section" aria-label="메일 정리">
+                <h2>메일 정리</h2>
+                {overview.groups.map((group, groupIndex) => (
+                  <div
+                    className="daily-mail-group"
+                    key={`${group.name}:${groupIndex}`}
+                  >
+                    {group.name &&
+                    !['분류 미확정', '분류미확정'].includes(group.name) ? (
+                      <h3>{group.name}</h3>
+                    ) : null}
+                    {group.threads.map((thread, threadIndex) => (
+                      <div key={`${thread.subject}:${threadIndex}`}>
+                        <h4>{thread.subject || '(제목 없음)'}</h4>
+                        {thread.mails.map((mail) => (
+                          <article
+                            className="daily-mail-summary"
+                            aria-label={mail.source.subject || thread.subject}
+                            key={mail.source.id}
+                          >
+                            <p className="daily-mail-summary-meta">
+                              {mail.source.intent === 'reference' ? (
+                                <span className="daily-item-status">참고</span>
+                              ) : null}
+                              {mail.source.analysisState === 'failed' ||
+                              mail.source.analysisState === 'blocked' ? (
+                                <span className="daily-item-status">
+                                  이전 정리
+                                </span>
+                              ) : null}
+                              <SourceLink source={mail.source} label="원문" />
+                              {mail.source.sender ? (
+                                <span>{mail.source.sender}</span>
+                              ) : null}
+                              <span>
+                                수신{' '}
+                                {formatBriefingTimestamp(
+                                  mail.source.receivedAt,
+                                )}
+                              </span>
+                            </p>
+                            <ul className="daily-mail-summary-points">
+                              {mail.summary.map((summary, index) => (
+                                <li key={index}>{summary.text}</li>
+                              ))}
+                            </ul>
+                          </article>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
             ) : null}
             {section('이슈', overview.issues, '정리된 이슈가 없습니다.')}
             {section('할 일', overview.tasks, '정리된 할 일이 없습니다.', true)}
@@ -332,6 +386,13 @@ function DailyOverview() {
         ) : !loading ? (
           <p>표시할 일일정리를 확인하지 못했습니다.</p>
         ) : null}
+      </div>
+      <div id="manual-messages" tabIndex={-1}>
+        <MailBriefingManualEntries
+          day={day}
+          disabled={pending !== null || filtersBusy}
+          onBusyChange={setManualBusy}
+        />
       </div>
       <MailFilterControls
         disabled={pending !== null || manualBusy}

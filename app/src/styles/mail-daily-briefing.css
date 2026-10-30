@@ -237,3 +237,27 @@
 .mail-daily-briefing .manual-completed {
   margin-top: 20px;
 }
+.mail-daily-briefing .daily-mail-group h3 {
+  margin: 16px 0 6px;
+  font-size: 15px;
+}
+.mail-daily-briefing .daily-mail-group h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+.mail-daily-briefing .daily-mail-summary {
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--theme-border-soft);
+}
+.mail-daily-briefing .daily-mail-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+  color: var(--theme-muted);
+  font-size: 13px;
+}
+.mail-daily-briefing .daily-mail-summary-points {
+  margin: 0;
+  padding-inline-start: 20px;
+}

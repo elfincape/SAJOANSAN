@@ -5,6 +5,7 @@ import {
   mailOwnershipContext,
 } from './private-mail-analysis.js';
 import { matchMailRules } from './private-mail-filter.js';
+import { applyMailIntentOverride } from './private-mail-briefing-model.js';
 import {
   selectMailPhotos,
   inspectMailImage,
@@ -136,6 +137,7 @@ export function createMailSource({
     return result;
   }
   async function related(ids, { includeExcluded = false } = {}) {
+    const ownerBox = await mailbox(TARGET.mailbox_id);
     const unique = [...new Set(ids)],
       result = [],
       seen = new Set();
@@ -172,7 +174,12 @@ export function createMailSource({
           continue;
         seen.add(row.analysis.source.id);
         result.push({
-          ...row.analysis,
+          ...applyMailIntentOverride(
+            row.analysis,
+            ownerBox.automation_config?.intentOverrides?.[
+              row.analysis.source.id
+            ],
+          ),
           source: { ...row.analysis.source, excluded },
         });
       }

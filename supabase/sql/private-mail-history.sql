@@ -100,7 +100,7 @@ begin
   'source',jsonb_build_object('kind','mail','id',m.id),'revision',revision_number,
   'eventAt',to_char(event_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   'model',coalesce(p_analysis->'inference'->>'model',p_analysis->>'model'),
-  'rulesVersion',coalesce(nullif(p_analysis->>'rulesVersion',''),'legacy-unversioned'),
+  'rulesVersion',coalesce(nullif(p_analysis->>'rulesVersion',''),nullif(p_analysis->'source'->'analysisPolicy'->>'version',''),'legacy-unversioned'),
   'structuredResult',p_analysis,'correction',coalesce(p_correction,jsonb_build_object('ownerOverrides',overrides,
    'intentOverride',to_jsonb(b)->'automation_config'->'intentOverrides'->p_message::text)),
   'completionEvents','[]'::jsonb);

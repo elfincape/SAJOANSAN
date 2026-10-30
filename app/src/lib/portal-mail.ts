@@ -48,6 +48,8 @@ export interface DailyMailSource {
   sender: string;
   receivedAt: string;
   sentAt?: string;
+  intent?: string;
+  analysisState?: string;
 }
 export interface DailyMailItem {
   ref: string;
