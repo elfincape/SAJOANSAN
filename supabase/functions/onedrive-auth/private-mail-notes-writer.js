@@ -154,13 +154,95 @@ function canonical(node, contentOnly = false) {
     node.children.map((child) => canonical(child, contentOnly)),
   ];
 }
+function contentSignature(node) {
+  const blocks = [];
+  let value = '',
+    links = [],
+    images = [];
+  const flush = (tag = 'p') => {
+    const text = value.replace(/\s+/g, ' ').trim();
+    if (text || links.length || images.length)
+      blocks.push({ tag, text, links, images });
+    value = '';
+    links = [];
+    images = [];
+  };
+  const plain = (node) =>
+    typeof node === 'string' ? node : (node.children ?? []).map(plain).join('');
+  const visit = (node) => {
+    if (typeof node === 'string') {
+      value += node;
+      return;
+    }
+    if (Object.hasOwn(node, 'comment')) {
+      value += '[comment:' + node.comment + ']';
+      return;
+    }
+    if (node.attrs['data-id']?.startsWith('sajo-mail-photos-')) return;
+    if (node.tag === 'img') {
+      images.push({ id: node.attrs['data-id'], alt: node.attrs.alt ?? '' });
+      return;
+    }
+    if (node.tag === 'br') {
+      value += ' ';
+      return;
+    }
+    if (node.tag === 'a') {
+      const href = node.attrs.href ?? '';
+      if (!(href.startsWith('mailto:') && href.slice(7) === plain(node)))
+        links.push(href);
+    }
+    const block = ['p', 'li', 'blockquote', 'h1', 'h2', 'h3'].includes(
+      node.tag,
+    );
+    if (block) flush();
+    for (const child of node.children ?? []) visit(child);
+    if (block) flush(/^h[1-3]$/.test(node.tag) ? node.tag : 'p');
+  };
+  visit(node);
+  flush();
+  return blocks;
+}
 async function snapshot({ html, marker, hash }) {
   const { nodes } = scanHtml(html);
   const bodies = nodes.filter((node) => node.tag === 'body');
   if (bodies.length !== 1) throw Error('PAGE_HTML_FORMAT');
   const matches = nodes.filter((node) => node.attrs['data-id'] === marker);
-  if (matches.length > 1) throw Error('PAGE_MANAGED_AMBIGUOUS');
-  const managed = matches[0] ?? null;
+  let managed = matches[0] ?? null;
+  let managedTargets = managed ? [managed] : [];
+  if (matches.length > 1) {
+    const parent = matches[0].parent;
+    const start = parent.children.indexOf(matches[0]);
+    const end = parent.children.findIndex(
+      (node, index) =>
+        index > start && node?.attrs?.['data-id'] === 'sajo-mail-manual',
+    );
+    const fragments = end > start ? parent.children.slice(start, end) : [];
+    if (
+      matches.some((node) => node.parent !== parent) ||
+      !fragments.length ||
+      fragments.some(
+        (node) =>
+          typeof node === 'string' ||
+          !node.attrs?.id ||
+          !(
+            node.attrs['data-id'] === marker || ['ul', 'ol'].includes(node.tag)
+          ),
+      ) ||
+      fragments.filter((node) => node.attrs['data-id'] === marker).length !==
+        matches.length
+    )
+      throw Error('PAGE_MANAGED_AMBIGUOUS');
+    managedTargets = fragments;
+    managed = {
+      tag: 'div',
+      attrs: { ...matches[0].attrs },
+      parent,
+      children: fragments.flatMap((node) =>
+        node.attrs['data-id'] === marker ? node.children : [node],
+      ),
+    };
+  }
   if (managed && (managed.tag !== 'div' || managed.parent.tag !== 'div'))
     throw Error('PAGE_MANAGED_TARGET');
   if (managed) {
@@ -185,7 +267,7 @@ async function snapshot({ html, marker, hash }) {
     : null;
   if (managedHash !== null && !hex.test(managedHash))
     throw Error('PAGE_CONTENT_HASH');
-  return { managedHash, managed, nodes };
+  return { managedHash, managed, managedTargets, nodes };
 }
 function normalizePage(page) {
   if (!page || typeof page.id !== 'string' || !page.id || page.id.length > 1000)
@@ -347,7 +429,14 @@ function imageHtml(image) {
   );
 }
 function photoReport(base, images, count) {
-  let managedHtml = base.managedHtml;
+  const sources = new Set(images.map((image) => image.sourceId));
+  let managedHtml = base.managedHtml.replace(
+    /<div data-id="sajo-mail-photos-([0-9a-f-]+)"><\/div>/g,
+    (_hook, sourceId) =>
+      sources.has(sourceId)
+        ? '<p data-id="sajo-mail-photos-' + sourceId + '">첨부사진</p>'
+        : '',
+  );
   const groups = new Map();
   for (const image of images.slice(0, count))
     groups.set(
@@ -355,15 +444,14 @@ function photoReport(base, images, count) {
       (groups.get(image.sourceId) ?? '') + imageHtml(image),
     );
   for (const [sourceId, content] of groups) {
-    const hook = '<div data-id="sajo-mail-photos-' + sourceId + '"></div>';
+    const hook = '<p data-id="sajo-mail-photos-' + sourceId + '">첨부사진</p>';
     const at = managedHtml.indexOf(hook);
     if (at < 0 || managedHtml.indexOf(hook, at + hook.length) !== -1)
       throw Error('NOTES_IMAGE_SOURCE');
     managedHtml =
       managedHtml.slice(0, at) +
-      hook.slice(0, -6) +
       content +
-      '</div>' +
+      hook +
       managedHtml.slice(at + hook.length);
   }
   return {
@@ -518,7 +606,8 @@ export async function writeDailyBriefing({
       return {
         report,
         desiredHash: await hash(JSON.stringify(canonical(node))),
-        content: JSON.stringify(canonical(node, true)),
+        content: JSON.stringify(contentSignature(node)),
+        contentHash: await hash(JSON.stringify(contentSignature(node))),
         fingerprint: await hash(report.managedHtml),
         imageProgress:
           count < photos.length
@@ -530,6 +619,7 @@ export async function writeDailyBriefing({
     const pending = (desired, previousHash) => ({
       fingerprint: desired.fingerprint,
       desiredHash: desired.desiredHash,
+      contentHash: desired.contentHash,
       previousHash,
       imageProgress: desired.imageProgress,
     });
@@ -598,7 +688,7 @@ export async function writeDailyBriefing({
     const verifyAndSave = async (desired) => {
       if (
         !current.managed ||
-        JSON.stringify(canonical(current.managed, true)) !== desired.content
+        JSON.stringify(contentSignature(current.managed)) !== desired.content
       )
         throw Error('PAGE_WRITE_UNCERTAIN');
       for (const node of current.nodes) {
@@ -636,18 +726,30 @@ export async function writeDailyBriefing({
     else {
       if (state.pendingWrite) {
         const intent = state.pendingWrite;
+        const contentHash = current.managed
+          ? await hash(JSON.stringify(contentSignature(current.managed)))
+          : null;
+        const legacyInitial =
+          current.managed &&
+          intent.previousHash === null &&
+          !state.managedHash &&
+          state.createAttempted === true &&
+          JSON.stringify(contentSignature(current.managed)) === initial.content;
         if (
           !hex.test(intent.fingerprint ?? '') ||
           !hex.test(intent.desiredHash ?? '') ||
           (intent.previousHash !== null &&
             !hex.test(intent.previousHash ?? '')) ||
-          current.managedHash !== intent.desiredHash
+          (current.managedHash !== intent.desiredHash &&
+            (!hex.test(intent.contentHash ?? '') ||
+              contentHash !== intent.contentHash) &&
+            !legacyInitial)
         )
           throw Error('PAGE_WRITE_UNCERTAIN');
         await save({
           pageId,
           managedHash: current.managedHash,
-          fingerprint: intent.fingerprint,
+          fingerprint: legacyInitial ? null : intent.fingerprint,
           imageProgress: intent.imageProgress ?? null,
           pendingWrite: null,
         });
@@ -677,7 +779,7 @@ export async function writeDailyBriefing({
       const expected = await stage(completed);
       if (
         !current.managed ||
-        JSON.stringify(canonical(current.managed, true)) !== expected.content
+        JSON.stringify(contentSignature(current.managed)) !== expected.content
       )
         throw Error('PAGE_WRITE_UNCERTAIN');
     } else if (!created) {
@@ -708,7 +810,12 @@ export async function writeDailyBriefing({
         await graph(contentPath, access, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify([change]),
+          body: JSON.stringify([
+            change,
+            ...(current.managedTargets ?? [])
+              .slice(1)
+              .map((node) => ({ target: node.attrs.id, action: 'delete' })),
+          ]),
         });
       } catch (error) {
         await rejectPatch(error);
@@ -761,14 +868,19 @@ export async function writeDailyBriefing({
         );
         if (
           hooks.length !== 1 ||
-          hooks[0].tag !== 'div' ||
+          hooks[0].tag !== 'p' ||
           !hooks[0].attrs.id ||
           current.nodes.filter((node) => node.attrs.id === hooks[0].attrs.id)
             .length !== 1 ||
           !isDescendant(hooks[0], current.managed)
         )
           throw Error('PAGE_MANAGED_TARGET');
-        commands.push({ target: hooks[0].attrs.id, action: 'append', content });
+        commands.push({
+          target: hooks[0].attrs.id,
+          action: 'insert',
+          position: 'before',
+          content,
+        });
       }
       await save({
         pageId,
