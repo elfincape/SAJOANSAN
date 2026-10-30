@@ -276,7 +276,44 @@ const fetcher = async (url, opts) => {
 };
 const bridge = ownerBridge('Bearer mock-owner', fetcher);
 await bridge.begin();
-await assert.rejects(() => bridge.ingest(message), /publish unavailable/);
+const finishLogs = [],
+  originalFinishWarn = console.warn;
+console.warn = (value) => finishLogs.push(JSON.parse(value));
+try {
+  await assert.rejects(() => bridge.ingest(message), /publish unavailable/);
+  assert.equal(finishLogs.at(-1).stage, 'database_publish');
+  assert.equal(finishLogs.at(-1).httpStatus, 503);
+  corrupt = true;
+  await assert.rejects(
+    () =>
+      handlePrivateMail(
+        'private-mail-sync',
+        new Request('https://db.test/finish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            operation: 'finish',
+            mailbox: id,
+            lease: box.lease,
+            message: {
+              ...message,
+              files: message.files.map(({ bytes, ...file }) => file),
+            },
+          }),
+        }),
+        { id: owner },
+        ctx,
+      ),
+    /MAIL_STREAM_HASH/,
+  );
+  assert.equal(finishLogs.at(-1).stage, 'file_verification');
+  assert.equal(published, false);
+  assert.ok(!JSON.stringify(finishLogs).includes('publish unavailable'));
+  assert.ok(!JSON.stringify(finishLogs).includes(message.uidl));
+} finally {
+  corrupt = false;
+  console.warn = originalFinishWarn;
+}
 assert.equal(published, false);
 assert.equal(puts, message.files.length);
 assert.equal(sessions.size, 2);
