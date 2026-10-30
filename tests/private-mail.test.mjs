@@ -546,7 +546,7 @@ assert.ok(!report.html.includes('<img'));
 assert.ok(report.html.includes('&lt;img'));
 assert.ok(
   report.html.includes('메일 요약') &&
-    report.html.includes('이슈') &&
+    !report.html.includes('정리된 이슈 없음') &&
     report.html.includes('할 일'),
 );
 assert.throws(
@@ -1037,7 +1037,6 @@ const approvedReport = briefing.renderDailyBriefing({
 for (const label of [
   '1. 메일 요약',
   '2. 주요 이슈',
-  '3. 할 일',
   '4. 회신·확인 대기',
   '5. 직접 메모',
   '최종 업데이트',
@@ -1047,6 +1046,21 @@ for (const label of [
   '2026-10-30 15:22',
 ])
   assert.ok(approvedReport.html.includes(label), label);
+assert.ok(!approvedReport.html.includes('<blockquote>'));
+assert.ok(!approvedReport.html.includes('납품 지연으로 재확인 중입니다.'));
+assert.ok(
+  !approvedReport.html.includes('3. 할 일'),
+  'empty sections are omitted',
+);
+assert.equal(
+  (
+    approvedReport.html.match(
+      /href="https:\/\/sajoansan.vercel.app\/portal\//g,
+    ) ?? []
+  ).length,
+  1,
+  'mail source appears once',
+);
 assert.ok(
   !approvedReport.managedHtml.includes('5. 직접 메모'),
   'manual area must be outside replaceable managed region',
@@ -1824,7 +1838,10 @@ console.log(
       key: 'fixture-key',
       loadMail: async () => source,
       fetcher: async (_url, options) => {
-        assert.equal(JSON.parse(options.body).model, 'claude-haiku-4-5-20251001');
+        assert.equal(
+          JSON.parse(options.body).model,
+          'claude-haiku-4-5-20251001',
+        );
         return Response.json({ stop_reason, content });
       },
       store: {

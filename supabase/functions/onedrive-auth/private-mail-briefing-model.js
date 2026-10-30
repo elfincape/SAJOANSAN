@@ -597,43 +597,16 @@ const localTime = (value) =>
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(date(value));
-const imageLabel = (item) =>
-  '사진 판독 · ' +
-  (item.confidence === 'uncertain' ? '확인 필요' : '판독 가능 · 원본 확인');
 function evidenceHtml(item) {
-  return (
-    (item.sourceType === 'image'
-      ? '<p>' +
-        imageLabel(item) +
-        ' [' +
-        escape(item.imageId) +
-        ']: ' +
-        escape(item.evidence) +
-        '</p>'
-      : '<p>' + escape(item.evidence) + '</p>') +
-    '<p>출처: ' +
-    mailLink(item.source) +
-    '</p>'
-  );
+  return item.sourceType === 'image' && item.confidence === 'uncertain'
+    ? '<p>첨부사진의 불명확한 내용은 원본 확인이 필요합니다.</p>'
+    : '';
 }
 function resolutionHtml(resolution) {
   if (!resolution) return '';
-  if (resolution.manual)
-    return (
-      '<p>사용자 직접 ' +
-      (resolution.done ? '완료 표시' : '완료 해제') +
-      ' · ' +
-      escape(localTime(resolution.updatedAt)) +
-      '</p>' +
-      resolutionHtml(resolution.email)
-    );
-  return (
-    '<p>회신 갱신: ' +
-    mailLink(resolution.source) +
-    '</p><p>' +
-    escape(resolution.evidence) +
-    '</p>'
-  );
+  return resolution.manual
+    ? '<p>직접 ' + (resolution.done ? '완료 표시' : '완료 해제') + '</p>'
+    : '<p>회신 내용으로 상태 갱신</p>';
 }
 export function renderDailyBriefing({ now, analyses, overrides }) {
   const view = dailyBriefingView({ now, analyses, overrides });
@@ -668,7 +641,8 @@ export function renderDailyBriefing({ now, analyses, overrides }) {
   );
   if (!mails.length) append('<p>정리된 메일 없음</p>');
   for (const group of view.groups) {
-    append('<p><strong>' + escape(group.name) + '</strong></p>');
+    if (group.name !== '분류 미확정' && group.name !== '분류미확정')
+      append('<p><strong>' + escape(group.name) + '</strong></p>');
     for (const thread of group.threads) {
       append('<h3>' + escape(thread.subject) + '</h3>');
       for (const mail of thread.mails) {
@@ -681,34 +655,19 @@ export function renderDailyBriefing({ now, analyses, overrides }) {
             mailLink(mail.source) +
             '</p>',
         );
-        for (const item of mail.summary ?? [])
-          append(
-            '<p>' +
-              escape(item.text) +
-              '</p><p>' +
-              escape(item.evidence) +
-              '</p>',
-          );
-        for (const fact of mail.imageFacts ?? [])
-          append(
-            '<p>' +
-              imageLabel(fact) +
-              ' [' +
-              escape(fact.imageId) +
-              ']: ' +
-              escape(text(fact.text)) +
-              '</p>',
-          );
+        const seenSummary = new Set();
+        for (const item of mail.summary ?? []) {
+          if (seenSummary.has(item.text.trim())) continue;
+          seenSummary.add(item.text.trim());
+          append('<p>' + escape(item.text) + '</p>');
+        }
         append('<div data-id="sajo-mail-photos-' + mail.source.id + '"></div>');
       }
     }
   }
-  const section = (label, items, empty, render) => {
+  const section = (label, items, _empty, render) => {
+    if (!items.length) return;
     append('<h2>' + label + '</h2>');
-    if (!items.length) {
-      append('<p>' + empty + '</p>');
-      return;
-    }
     for (const item of items)
       append(
         render(item) + evidenceHtml(item) + resolutionHtml(item.resolution),
@@ -738,7 +697,7 @@ export function renderDailyBriefing({ now, analyses, overrides }) {
     (item) =>
       '<p>' +
       escape(item.text) +
-      (item.status === 'complete' ? ' · 완료' : ' · 진행 중') +
+      (item.status === 'complete' ? ' · 완료' : '') +
       '</p><p>담당: ' +
       escape(item.assignee ?? '미확정') +
       (item.assignee && !item.assigneeConfirmed ? ' (확인 필요)' : '') +

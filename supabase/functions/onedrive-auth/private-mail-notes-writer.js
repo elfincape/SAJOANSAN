@@ -211,8 +211,12 @@ async function snapshot({ html, marker, hash }) {
   const tagged = nodes.filter((node) =>
     node.attrs['data-id']?.startsWith(marker + '-block-'),
   );
+  const tables = matches.filter((node) => node.tag === 'table');
+  if (tables.length > 1) throw Error('PAGE_MANAGED_AMBIGUOUS');
   let regions = [];
-  if (tagged.length) {
+  if (tables.length) {
+    regions = tables;
+  } else if (tagged.length) {
     const start = nodes.indexOf(tagged[0]);
     const last = nodes.indexOf(tagged.at(-1));
     const manual = nodes.findIndex(
@@ -244,6 +248,9 @@ async function snapshot({ html, marker, hash }) {
     'h5',
     'h6',
     'img',
+    'table',
+    'ul',
+    'ol',
   ]);
   const regionSet = new Set(regions);
   const managedTargets = regions.filter((node) => {
@@ -489,6 +496,12 @@ function photoReport(base, images, count) {
       hook +
       managedHtml.slice(at + hook.length);
   }
+  managedHtml = managedHtml
+    .replace(
+      /^<div([^>]*)>/,
+      '<table$1 style="border:0;border-collapse:collapse"><tr><td style="border:0">',
+    )
+    .replace(/<\/div>$/, '</td></tr></table>');
   return {
     ...base,
     managedHtml,
@@ -574,6 +587,18 @@ function fragmentChanges(html, targets) {
   )
     throw Error('PAGE_MANAGED_TARGET');
   const root = scanHtml(html).nodes[0];
+  if (root.tag === 'table')
+    return targets.map((target, index) => ({
+      target: target.attrs.id,
+      action: 'replace',
+      content:
+        index === 0
+          ? html
+          : '<p data-id="sajo-mail-retired-' +
+            index +
+            '" style="font-size:1pt;margin-top:0;margin-bottom:0">&#8203;</p>',
+    }));
+
   const serialize = (node) =>
     typeof node === 'string'
       ? escape(node)
