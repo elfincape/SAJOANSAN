@@ -910,22 +910,22 @@ export async function handlePrivateMail(action, req, user, ctx) {
         }
         if (body.operation === 'upload-complete')
           throw fail('FILE_NOT_UPLOADED', 409);
+        // Match the existing consumer OneDrive storage path; optional item metadata is rejected by some accounts.
         const session = await (
           await graph(path + ':/createUploadSession', env.access, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              item: {
-                name: file.file_name,
-                '@microsoft.graph.conflictBehavior': 'fail',
-              },
-            }),
           })
         ).json();
         let url;
         try {
           url = new URL(session.uploadUrl);
         } catch {
+          console.warn(
+            JSON.stringify({
+              event: 'PRIVATE_MAIL_UPLOAD_SESSION_REJECTED',
+              reason: 'malformed_url',
+            }),
+          );
           throw fail('UPLOAD_SESSION_REJECTED', 502);
         }
         if (
@@ -940,8 +940,20 @@ export async function handlePrivateMail(action, req, user, ctx) {
             '.microsoftpersonalcontent.com',
             '.sharepoint.com',
           ].some((host) => url.hostname.endsWith(host))
-        )
+        ) {
+          console.warn(
+            JSON.stringify({
+              event: 'PRIVATE_MAIL_UPLOAD_SESSION_REJECTED',
+              reason: 'origin_policy',
+              hostSuffix: url.hostname
+                .split('.')
+                .slice(-2)
+                .join('.')
+                .slice(0, 100),
+            }),
+          );
           throw fail('UPLOAD_SESSION_REJECTED', 502);
+        }
         return json({
           uploadUrl: url.href,
           expiresAt: session.expirationDateTime,

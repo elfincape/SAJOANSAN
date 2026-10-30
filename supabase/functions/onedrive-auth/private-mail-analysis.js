@@ -385,22 +385,62 @@ imageItems.evidence는 같은 imageId의 imageFacts.text와 정확히 같아야 
 }
 
 function parseResponse(response) {
-  if (response?.stop_reason === 'max_tokens') throw Error('MODEL_TRUNCATED');
+  const blocks = Array.isArray(response?.content) ? response.content : [];
+  const value =
+    blocks.length === 1 &&
+    blocks[0]?.type === 'text' &&
+    typeof blocks[0].text === 'string'
+      ? blocks[0].text
+      : null;
+  const fence =
+    typeof value === 'string'
+      ? /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(value.trim())
+      : null;
+  const reject = (code) => {
+    const stopReasons = [
+      'end_turn',
+      'max_tokens',
+      'stop_sequence',
+      'tool_use',
+      'pause_turn',
+      'refusal',
+    ];
+    const types = [
+      'text',
+      'thinking',
+      'redacted_thinking',
+      'tool_use',
+      'server_tool_use',
+      'tool_result',
+    ];
+    console.warn('PRIVATE_MAIL_MODEL_RESPONSE', {
+      stopReason: stopReasons.includes(response?.stop_reason)
+        ? response.stop_reason
+        : 'other',
+      blockCount: blocks.length,
+      blockTypes: blocks
+        .slice(0, 16)
+        .map((block) => (types.includes(block?.type) ? block.type : 'other')),
+      fenced: !!fence,
+      textLength: value?.length ?? null,
+    });
+    throw Error(code);
+  };
+  if (response?.stop_reason === 'max_tokens') reject('MODEL_TRUNCATED');
   if (
     response?.stop_reason !== 'end_turn' ||
-    !Array.isArray(response.content) ||
-    response.content.length !== 1 ||
-    response.content[0]?.type !== 'text'
+    !Array.isArray(response?.content) ||
+    blocks.length !== 1 ||
+    blocks[0]?.type !== 'text'
   )
-    throw Error('MODEL_RESPONSE');
-  const value = response.content[0].text;
+    reject('MODEL_RESPONSE');
   if (typeof value !== 'string' || value.length > 60000)
-    throw Error('MODEL_RESPONSE');
+    reject('MODEL_RESPONSE');
   let parsed;
   try {
-    parsed = JSON.parse(value);
+    parsed = JSON.parse(fence ? fence[1] : value);
   } catch {
-    throw Error('MODEL_RESPONSE');
+    reject('MODEL_RESPONSE');
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
     throw Error('ANALYSIS_FORMAT');

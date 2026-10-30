@@ -147,9 +147,11 @@ const ctx = {
       if (opts.method === 'POST' && path.endsWith(':/createUploadSession')) {
         assert.equal(published, false);
         assert.equal(items.has(name), false);
-        const body = JSON.parse(opts.body);
-        assert.equal(body.item.name, name);
-        assert.equal(body.item['@microsoft.graph.conflictBehavior'], 'fail');
+        assert.equal(
+          opts.body,
+          undefined,
+          'consumer OneDrive session uses the path with no optional item metadata',
+        );
         const index = Number(/_(\d+)\.bin$/.exec(name)?.[1]);
         assert.ok(Number.isInteger(index));
         const url =

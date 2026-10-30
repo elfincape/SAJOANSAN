@@ -416,6 +416,27 @@ export function makeHandler(
       const reason = classifications.find(([pattern]) =>
         pattern.test(detail.error?.message ?? ''),
       )?.[1];
+      if (path.endsWith(':/createUploadSession'))
+        console.warn(
+          JSON.stringify({
+            event: 'ONEDRIVE_UPLOAD_SESSION_FAILURE',
+            status: res.status,
+            providerCode: [
+              'invalidRequest',
+              'accessDenied',
+              'invalidAuthenticationToken',
+              'itemNotFound',
+              'nameAlreadyExists',
+              'notSupported',
+              'quotaLimitReached',
+              'generalException',
+              'serviceNotAvailable',
+            ].includes(code)
+              ? code
+              : 'other',
+            classification: reason ?? 'other',
+          }),
+        );
       throw Object.assign(
         fail(
           'OneDrive 처리 실패 (HTTP ' +

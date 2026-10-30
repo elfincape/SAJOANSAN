@@ -1679,3 +1679,138 @@ console.log(
     'PASS approved automation pause/resume needs no extra consent checkbox or fabricated read verification',
   );
 }
+{
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const source = {
+    id: '11111111-1111-4111-8111-111111111111',
+    uidl_hash: 'a'.repeat(64),
+    subject: '일정 확인',
+    sender: 'fixture@example.test',
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+    text: '보고서 제출을 확인해 주세요.',
+  };
+  const value = {
+    summary: [{ text: '제출 확인 요청', evidence: source.text }],
+    issues: [],
+    tasks: [],
+    waiting: [],
+  };
+  const json = JSON.stringify(value),
+    warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  const run = (content, stop_reason = 'end_turn') =>
+    analyzePrivateMail({
+      messageId: source.id,
+      key: 'fixture-key',
+      loadMail: async () => source,
+      fetcher: async () => Response.json({ stop_reason, content }),
+      store: {
+        claim: async () => ({ row: source, lease: 'fixture-lease' }),
+        finish: async () => true,
+        fail: async () => true,
+      },
+    });
+  try {
+    assert.equal((await run([{ type: 'text', text: json }])).status, 'done');
+    assert.equal(
+      (await run([{ type: 'text', text: '```json\n' + json + '\n```' }]))
+        .status,
+      'done',
+    );
+    assert.equal(
+      (await run([{ type: 'text', text: '```\n' + json + '\n```' }])).status,
+      'done',
+    );
+    const rejected = [
+      [
+        {
+          type: 'text',
+          text: 'PRIVATE_RESPONSE_SENTINEL\n```json\n' + json + '\n```',
+        },
+      ],
+      [
+        {
+          type: 'text',
+          text: '```json\n' + json + '\n```\nPRIVATE_RESPONSE_SENTINEL',
+        },
+      ],
+      [
+        {
+          type: 'text',
+          text: '```json\n{"summary": [PRIVATE_RESPONSE_SENTINEL}\n```',
+        },
+      ],
+      [
+        { type: 'text', text: json },
+        { type: 'tool_use', name: 'PRIVATE_RESPONSE_SENTINEL', input: {} },
+      ],
+      [
+        { type: 'thinking', thinking: 'PRIVATE_RESPONSE_SENTINEL' },
+        { type: 'text', text: json },
+      ],
+      [
+        { type: 'text', text: json },
+        { type: 'text', text: json },
+      ],
+      [
+        {
+          type: 'PRIVATE_RESPONSE_SENTINEL',
+          text: 'PRIVATE_RESPONSE_SENTINEL',
+        },
+      ],
+    ];
+    for (const content of rejected) {
+      const count = warnings.length;
+      assert.equal((await run(content)).code, 'MODEL_RESPONSE');
+      assert.equal(
+        warnings.length,
+        count + 1,
+        'each rejected shape emits one metadata warning',
+      );
+    }
+    assert.equal(
+      (await run([{ type: 'text', text: json }], 'PRIVATE_RESPONSE_SENTINEL'))
+        .code,
+      'MODEL_RESPONSE',
+    );
+    assert.equal(
+      (await run([{ type: 'text', text: json }], 'max_tokens')).code,
+      'MODEL_TRUNCATED',
+    );
+    const fabricated = {
+      ...value,
+      summary: [{ text: '확인', evidence: '없는 근거' }],
+    };
+    assert.equal(
+      (
+        await run([
+          {
+            type: 'text',
+            text: '```json\n' + JSON.stringify(fabricated) + '\n```',
+          },
+        ])
+      ).code,
+      'ANALYSIS_EVIDENCE',
+    );
+    assert.ok(!JSON.stringify(warnings).includes('PRIVATE_RESPONSE_SENTINEL'));
+    assert.ok(!JSON.stringify(warnings).includes(source.subject));
+    assert.ok(!JSON.stringify(warnings).includes(source.text));
+    assert.ok(
+      warnings.every(
+        ([label, metadata]) =>
+          label === 'PRIVATE_MAIL_MODEL_RESPONSE' &&
+          typeof metadata.blockCount === 'number' &&
+          Array.isArray(metadata.blockTypes) &&
+          typeof metadata.fenced === 'boolean',
+      ),
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+  console.log(
+    'PASS mail model response: anchored JSON fences, rejected prose/tools/multiple blocks/truncation, exact evidence and metadata-only diagnostics',
+  );
+}
