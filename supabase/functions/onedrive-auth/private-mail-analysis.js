@@ -487,6 +487,7 @@ export async function analyzePrivateMail({
   if (!claim) return { status: 'skipped' };
   const { row, lease } = claim;
   let phase = 'MAIL_LOAD_FAILED';
+  let evidenceContext = null;
   try {
     if (!lease || row?.id !== messageId) throw Error('ANALYSIS_SOURCE');
     const loaded = await loadMail(row);
@@ -550,6 +551,7 @@ export async function analyzePrivateMail({
       ),
     });
     const parsed = parseResponse(response);
+    evidenceContext = { parsed, mail };
     const analysis = normalizeMailAnalysis(parsed, mail);
     analysis.source.thread = thread;
     analysis.source.images = images.map((image) => image.source);
@@ -561,6 +563,45 @@ export async function analyzePrivateMail({
   } catch (error) {
     const candidate = error?.code ?? error?.message;
     const code = codes.has(candidate) ? candidate : phase;
+    if (code === 'ANALYSIS_EVIDENCE' && evidenceContext) {
+      const { parsed, mail } = evidenceContext;
+      const compact = (value) => value.replace(/\s+/g, ' ').trim();
+      const mismatches = [];
+      for (const kind of [
+        'group',
+        'summary',
+        'issues',
+        'tasks',
+        'waiting',
+        'updates',
+      ]) {
+        const items = kind === 'group' ? [parsed.group] : parsed[kind];
+        if (!Array.isArray(items)) continue;
+        for (const [index, item] of items.slice(0, 50).entries()) {
+          const evidence = item?.evidence;
+          if (typeof evidence !== 'string' || !evidence.trim()) continue;
+          const quote = evidence.trim();
+          if (
+            mail.text.includes(quote) ||
+            (kind !== 'updates' && mail.subject.includes(quote))
+          )
+            continue;
+          mismatches.push({
+            kind,
+            index,
+            length: evidence.length,
+            whitespaceMatch:
+              compact(mail.text).includes(compact(quote)) ||
+              (kind !== 'updates' &&
+                compact(mail.subject).includes(compact(quote))),
+            containsEllipsis: /…|\.\.\./.test(evidence),
+          });
+          if (mismatches.length === 20) break;
+        }
+        if (mismatches.length === 20) break;
+      }
+      console.warn('PRIVATE_MAIL_EVIDENCE_REJECTED', { mismatches });
+    }
     try {
       const saved = await store.fail({ messageId, lease, code });
       return saved ? { status: 'failed', code } : { status: 'stale' };

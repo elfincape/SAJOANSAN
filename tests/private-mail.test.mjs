@@ -1795,17 +1795,33 @@ console.log(
       ).code,
       'ANALYSIS_EVIDENCE',
     );
+    const evidenceWarnings = warnings.filter(
+      ([label]) => label === 'PRIVATE_MAIL_EVIDENCE_REJECTED',
+    );
+    assert.equal(evidenceWarnings.length, 1);
+    assert.deepEqual(evidenceWarnings[0][1].mismatches, [
+      {
+        kind: 'summary',
+        index: 0,
+        length: 5,
+        whitespaceMatch: false,
+        containsEllipsis: false,
+      },
+    ]);
+    assert.ok(!JSON.stringify(warnings).includes('없는 근거'));
     assert.ok(!JSON.stringify(warnings).includes('PRIVATE_RESPONSE_SENTINEL'));
     assert.ok(!JSON.stringify(warnings).includes(source.subject));
     assert.ok(!JSON.stringify(warnings).includes(source.text));
     assert.ok(
-      warnings.every(
-        ([label, metadata]) =>
-          label === 'PRIVATE_MAIL_MODEL_RESPONSE' &&
-          typeof metadata.blockCount === 'number' &&
-          Array.isArray(metadata.blockTypes) &&
-          typeof metadata.fenced === 'boolean',
-      ),
+      warnings
+        .filter(([label]) => label === 'PRIVATE_MAIL_MODEL_RESPONSE')
+        .every(
+          ([label, metadata]) =>
+            label === 'PRIVATE_MAIL_MODEL_RESPONSE' &&
+            typeof metadata.blockCount === 'number' &&
+            Array.isArray(metadata.blockTypes) &&
+            typeof metadata.fenced === 'boolean',
+        ),
     );
   } finally {
     console.warn = originalWarn;
