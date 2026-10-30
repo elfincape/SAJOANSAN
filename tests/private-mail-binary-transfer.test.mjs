@@ -833,3 +833,226 @@ console.log(
     globalThis.fetch = fetchBeforeEmptyRecovery;
   }
 }
+{
+  const { uploadMailFile } = await import('../server/private-mail-upload.mjs');
+  const bytes = Buffer.alloc(MAIL_UPLOAD_CHUNK_BYTES * 2 + 5, 0x62),
+    digest = createHash('sha256').update(bytes).digest('hex');
+  const file = {
+    kind: 'eml',
+    name: 'PRIVATE_FILENAME_SENTINEL',
+    byte_size: bytes.length,
+    content_hash: digest,
+    bytes,
+  };
+  const logs = [],
+    originalWarn = console.warn;
+  console.warn = (value) => logs.push(JSON.parse(value));
+  async function run({
+    range = 'finite',
+    status = 202,
+    jsonFailure = false,
+    requestFailure = false,
+    causeCode = null,
+    redirect = false,
+    finalBad = false,
+    completionFailure = false,
+  } = {}) {
+    let offset = 0,
+      calls = 0,
+      completed = 0;
+    const promise = uploadMailFile({
+      file,
+      begin: async () => ({
+        uploadUrl:
+          'https://fixture.up.1drv.com/PRIVATE_SESSION_SENTINEL?cap=PRIVATE_CAPABILITY_SENTINEL',
+      }),
+      complete: async () => {
+        completed++;
+        if (completionFailure) throw Error('PRIVATE_COMPLETE_SENTINEL');
+        return { file: { item_id: 'verified' } };
+      },
+      fetcher: async (url, options) => {
+        calls++;
+        assert.ok(url.includes('PRIVATE_SESSION_SENTINEL'));
+        assert.equal(options.headers.Authorization, undefined);
+        assert.equal(
+          options.headers['Content-Range'],
+          `bytes ${offset}-${offset + options.body.length - 1}/${bytes.length}`,
+        );
+        assert.deepEqual(
+          options.body,
+          bytes.subarray(offset, offset + options.body.length),
+        );
+        const end = offset + options.body.length;
+        offset = end;
+        if (requestFailure)
+          throw new DOMException('PRIVATE_NETWORK_SENTINEL', 'TimeoutError');
+        if (causeCode || redirect)
+          throw new TypeError('PRIVATE_NETWORK_SENTINEL', {
+            cause: Object.assign(
+              Error(
+                redirect
+                  ? 'unexpected redirect'
+                  : 'PRIVATE_CAUSE_MESSAGE_SENTINEL',
+              ),
+              { code: causeCode },
+            ),
+          });
+        if (end === bytes.length)
+          return Response.json(finalBad ? {} : { id: 'committed' }, {
+            status: 201,
+          });
+        if (jsonFailure)
+          return new Response('PRIVATE_JSON_SENTINEL', { status });
+        const value =
+          typeof range === 'function'
+            ? range(end, bytes.length)
+            : range === 'finite'
+              ? `${end}-${bytes.length - 1}`
+              : `${end}-`;
+        return Response.json(
+          { nextExpectedRanges: Array.isArray(value) ? value : [value] },
+          { status },
+        );
+      },
+    });
+    return { promise, counters: () => ({ calls, completed }) };
+  }
+  try {
+    const finite = await run();
+    assert.equal((await finite.promise).file.item_id, 'verified');
+    assert.equal(finite.counters().completed, 1);
+    assert.equal(finite.counters().calls, 3);
+    const progress = logs.filter(
+      (value) => value.event === 'PRIVATE_MAIL_UPLOAD_RANGE',
+    );
+    assert.equal(
+      progress.length,
+      1,
+      'finite progress is reported once per file attempt',
+    );
+    assert.equal(progress[0].rangeKind, 'finite');
+    assert.equal(progress[0].rangeStartMatches, true);
+    assert.equal(progress[0].rangeEndMatches, true);
+    const cases = [
+      { range: (end, total) => `${end + 1}-${total - 1}` },
+      { range: (end, total) => `${end - 1}-${total - 1}` },
+      { range: (end, total) => `${end}-${total - 2}` },
+      { range: (end, total) => `${end}-${total}` },
+      { range: (end, total) => [`${end}-`, `${end}-${total - 1}`] },
+      { range: () => [] },
+      { range: () => 'PRIVATE_RANGE_SENTINEL' },
+      { status: 409 },
+      { jsonFailure: true },
+      { requestFailure: true },
+      { causeCode: 'ENOTFOUND' },
+      { causeCode: 'UND_ERR_CONNECT_TIMEOUT' },
+      { causeCode: 'UND_ERR_REQ_CONTENT_LENGTH_MISMATCH' },
+      { causeCode: 'PRIVATE_CAUSE_CODE_SENTINEL' },
+      { redirect: true },
+      { finalBad: true },
+      { completionFailure: true },
+    ];
+    for (const scenario of cases) {
+      const before = logs.length,
+        check = await run(scenario);
+      await assert.rejects(check.promise);
+      const failures = logs
+        .slice(before)
+        .filter((value) => value.event === 'PRIVATE_MAIL_UPLOAD_FAILURE');
+      assert.equal(failures.length, 1);
+      assert.ok(
+        [
+          'request',
+          'http',
+          'response_json',
+          'range',
+          'final',
+          'complete',
+        ].includes(failures[0].stage),
+      );
+      if (scenario.requestFailure) {
+        assert.equal(failures[0].timeout, true);
+        assert.equal(failures[0].reason, 'request_timeout');
+      }
+      if (scenario.causeCode) {
+        assert.equal(
+          failures[0].networkCode,
+          scenario.causeCode.startsWith('PRIVATE_')
+            ? 'other'
+            : scenario.causeCode,
+        );
+        assert.equal(
+          failures[0].reason,
+          scenario.causeCode === 'UND_ERR_CONNECT_TIMEOUT'
+            ? 'request_timeout'
+            : 'network',
+        );
+      }
+      if (scenario.redirect)
+        assert.equal(failures[0].reason, 'redirect_rejected');
+      if (scenario.status === 409) {
+        assert.equal(failures[0].httpStatus, 409);
+        assert.equal(failures[0].stage, 'http');
+      }
+      if (scenario.jsonFailure)
+        assert.equal(failures[0].stage, 'response_json');
+      if (!scenario.finalBad && !scenario.completionFailure)
+        assert.equal(
+          check.counters().completed,
+          0,
+          'invalid offsets/ranges never finalize',
+        );
+    }
+    const serialized = JSON.stringify(logs);
+    for (const secret of [
+      'PRIVATE_FILENAME_SENTINEL',
+      'PRIVATE_SESSION_SENTINEL',
+      'PRIVATE_CAPABILITY_SENTINEL',
+      'PRIVATE_NETWORK_SENTINEL',
+      'PRIVATE_JSON_SENTINEL',
+      'PRIVATE_COMPLETE_SENTINEL',
+      'PRIVATE_RANGE_SENTINEL',
+      'PRIVATE_CAUSE_MESSAGE_SENTINEL',
+      'PRIVATE_CAUSE_CODE_SENTINEL',
+      digest,
+      'https:',
+    ])
+      assert.ok(!serialized.includes(secret));
+    for (const log of logs)
+      for (const [key, value] of Object.entries(log)) {
+        assert.ok(
+          [
+            'event',
+            'stage',
+            'reason',
+            'httpStatus',
+            'chunkIndex',
+            'final',
+            'timeout',
+            'aborted',
+            'networkCode',
+            'rangeCount',
+            'rangeKind',
+            'rangeStartMatches',
+            'rangeEndMatches',
+            'verificationAttempted',
+            'verificationFailed',
+            'recoveryFrom',
+          ].includes(key),
+        );
+        assert.ok(
+          value === null ||
+            typeof value === 'boolean' ||
+            typeof value === 'number' ||
+            typeof value === 'string',
+        );
+      }
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), digest);
+    console.log(
+      'PASS upload finite remainder: exact contiguous start/end only, wrong/skip/truncated/multiple ranges denied, failure stages and first-finite metadata without private values',
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+}
