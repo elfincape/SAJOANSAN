@@ -24,7 +24,7 @@ import {
 } from '../lib/center';
 import type { Center } from '../lib/center';
 import { permissionAllowed, resourceForPath } from '../lib/permissions';
-import { FEATURE_CATALOG, FEATURE_CATEGORIES } from '../domain/feature-catalog';
+import { FEATURE_CATALOG, FEATURE_CATEGORIES, featureForPath } from '../domain/feature-catalog';
 import {
   loadPrivateFeatures,
   subscribePrivateFeatures,
@@ -103,6 +103,7 @@ function Shell({
   const manager = ['editor', 'admin'].includes(profile.role);
   const canManage =
     manager ||
+    FEATURE_CATALOG.some(f => f.href?.startsWith('/admin/') && f.resource && featureAccessible(f, profile, permissions, center.code, features)) ||
     Object.keys(permissions.access || {}).some(
       (resource) =>
         !portalResources.has(resource) &&
@@ -140,6 +141,13 @@ function Shell({
     group: FEATURE_CATEGORIES[f.category],
     run: () => navigateTo(f.href!),
   }));
+  if (permissionAllowed(permissions, 'search', 'read'))
+    commands.unshift({
+      id: 'workspace-search',
+      title: '업무 검색',
+      group: '주요 화면',
+      run: () => navigateTo('/portal/?view=search'),
+    });
   if (canManage)
     commands.unshift({
       id: 'adminHub',
@@ -404,6 +412,7 @@ export function AdminPage({
         </div>
       </div>
     );
+  const pageFeature = featureForPath(location.href);
   const resource = resourceForPath(location.pathname);
   const rank = { viewer: 1, editor: 2, admin: 3 };
   const allowedHub =
@@ -412,7 +421,9 @@ export function AdminPage({
       ([key, value]) => value.read && !portalResources.has(key),
     );
   const denied = resource
-    ? !permissionAllowed(auth.permissions, resource, 'read', center.code)
+    ? pageFeature
+      ? !featureAccessible(pageFeature, auth.profile, auth.permissions, center.code, loadPrivateFeatures(auth.profile))
+      : !permissionAllowed(auth.permissions, resource, 'read', center.code)
     : !allowedHub && rank[auth.profile.role] < rank[minRole];
   if (denied)
     return (

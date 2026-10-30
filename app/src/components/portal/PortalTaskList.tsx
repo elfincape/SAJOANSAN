@@ -231,7 +231,7 @@ export function PortalCalendar({
     <div
       className={`task-calendar calendar-spans calendar-${unit}${tasks.length ? '' : ' is-empty'}`}
       role="region"
-      aria-label="업무 달력 · 좁은 화면에서는 좌우로 이동해 날짜를 확인하세요."
+      aria-label="업무 달력"
       tabIndex={0}
     >
       {weeks.map((days) => (
@@ -247,6 +247,7 @@ export function PortalCalendar({
                 'calendar-cell' + (day === koreaDate() ? ' calendar-today' : '')
               }
               style={{ gridColumn: i + 1 }}
+              aria-current={day === koreaDate() ? 'date' : undefined}
             >
               <h4>
                 <MentionText>{day.slice(5)}</MentionText> ·

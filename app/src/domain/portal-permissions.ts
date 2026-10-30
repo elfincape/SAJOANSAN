@@ -19,12 +19,39 @@ export const centerEditResources = [
 ];
 export function effectivePermission(
   config: PermissionConfig,
-  person: Pick<PortalMember, 'active' | 'role' | 'centers'>,
+  person: Pick<PortalMember, 'active' | 'role' | 'centers'> &
+    Partial<Pick<PortalMember, 'id'>>,
   center?: string,
 ) {
   if (!person?.active || !config) return { read: false, edit: false };
   if (person.role === 'admin') return { read: true, edit: true };
   if (config.admin_only) return { read: false, edit: false };
+  if (
+    person.id &&
+    config.member_overrides &&
+    Object.prototype.hasOwnProperty.call(config.member_overrides, person.id)
+  ) {
+    const override = config.member_overrides[person.id];
+    if (
+      !override ||
+      !['none', 'read', 'edit'].includes(override.level) ||
+      !['own', 'all'].includes(override.scope)
+    )
+      return { read: false, edit: false };
+    const inScope =
+      override.scope === 'all' ||
+      (override.scope === 'own' &&
+        (center ? person.centers.includes(center) : person.centers.length > 0));
+    const read = override.level !== 'none' && inScope;
+    const edit =
+      read &&
+      override.level === 'edit' &&
+      (person.role === 'editor' ||
+        ['incidents', 'notifications'].includes(config.resource)) &&
+      (!centerEditResources.includes(config.resource) ||
+        (center ? person.centers.includes(center) : person.centers.length > 0));
+    return { read, edit };
+  }
   const memberships = person.centers ?? [],
     matches = (rule: PermissionRule) =>
       !!rule &&

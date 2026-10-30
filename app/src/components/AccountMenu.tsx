@@ -40,7 +40,7 @@ export function AccountMenu({
         transition={
           reducedMotion
             ? { duration: 0 }
-            : { type: 'spring', stiffness: 540, damping: 42 }
+            : { duration: 0.18, ease: [0.22, 1, 0.36, 1] }
         }
       />
     ) : null;
@@ -67,13 +67,11 @@ export function AccountMenu({
             aria-label="사용자 메뉴"
             title="사용자 메뉴"
           >
-            {!open ? (
-              <motion.span
-                className="account-glass"
-                layoutId="account-surface"
-                style={{ borderRadius: 12 }}
-              />
-            ) : null}
+            <span
+              aria-hidden="true"
+              className="account-glass"
+              style={{ borderRadius: 12 }}
+            />
             <span id="app-profile-label">{name}</span>
             <ChevronDown aria-hidden="true" size={18} strokeWidth={1.5} />
           </button>
@@ -105,19 +103,26 @@ export function AccountMenu({
                 id="app-account-menu"
                 aria-labelledby="app-account-toggle"
                 className="ean-account-menu account-interactive"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: reducedMotion ? 0 : 0.14 }}
+                initial={{
+                  opacity: reducedMotion ? 1 : 0,
+                  y: reducedMotion ? 0 : 4,
+                  scale: reducedMotion ? 1 : 0.98,
+                }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                style={{ transformOrigin: 'top right' }}
+                transition={{
+                  duration: reducedMotion ? 0 : 0.16,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 onBlurCapture={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget))
                     setActiveItem(null);
                 }}
               >
-                <motion.div
+                <div
+                  aria-hidden="true"
                   className="account-glass"
-                  layoutId="account-surface"
                   style={{ borderRadius: 16 }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 36 }}
                 />
                 {Children.map(actions, (child, index) =>
                   isValidElement<{ children?: ReactNode }>(child) ? (

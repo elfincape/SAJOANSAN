@@ -270,7 +270,7 @@ function Work({ profile }: { profile: Profile }) {
         portalApi.surveys(s.view === 'hq' ? undefined : s.center),
         portalApi.notifications(),
         s.view === 'access' ? portalApi.staffAccess() : [],
-        s.view === 'members' ? portalApi.members() : [],
+        ['members', 'permissions'].includes(s.view) ? portalApi.members() : [],
         portalApi.participantOptions(s.center),
         s.view === 'briefing' ? portalBriefing.cached() : null,
       ]),
@@ -668,7 +668,7 @@ function Work({ profile }: { profile: Profile }) {
               : (
                   {
                     members: '사용자 권한·센터',
-                    permissions: '페이지별 권한',
+                    permissions: '직원별 권한',
                     notifications: '알림함',
                     trash: '휴지통',
                     history: '처리 기록',
@@ -723,34 +723,7 @@ function Work({ profile }: { profile: Profile }) {
                 <h1 id="portal-title" tabIndex={-1}>
                   {title}
                 </h1>
-                {state.view !== 'permissions' || denied ? <p id="portal-description">
-                  {denied
-                    ? '관리자에게 이 목록의 열람 권한을 요청하세요.'
-                    : hq
-                      ? '확인 필요한 업무와 특이사항을 센터 속성으로 확인하고 여기에서 처리하세요.'
-                      : state.view === 'surveys'
-                        ? state.registrationTab === 'surveys'
-                          ? '조사한 업무 내용과 검토 진행 상태를 확인하세요.'
-                          : '센터 업무 양식을 등록·수정하고 실행 주기를 관리하세요.'
-                        : ((
-                            {
-                              incidents:
-                                '센터 업무에서 발생한 특이사항을 처리중·처리완료로 확인하세요.',
-                              members:
-                                '역할·담당 센터를 설정하고 페이지별 적용 권한을 확인하세요.',
-                              connections:
-                                '업무자료 저장 폴더와 연결 상태를 관리합니다.',
-                              backups:
-                                '월말 전체 원본과 OneDrive 저장 상태를 확인하세요.',
-                              mail: '본인 전용 받은 메일과 첨부파일을 확인하세요.',
-                              history:
-                                '센터 업무와 특이사항의 실제 처리 내역을 확인하세요.',
-                              search:
-                                '업무와 운영 마스터, 과거 특이사항을 유형별로 찾으세요.',
-                            } as Record<string, string>
-                          )[state.view] ??
-                          '진행 중 업무는 날짜가 지나도 계속 표시됩니다.')}
-                </p> : null}
+                {denied ? <p id="portal-description">관리자에게 이 목록의 열람 권한을 요청하세요.</p> : null}
               </div>
               <div className="heading-actions">
                 <button
@@ -1119,13 +1092,9 @@ function Work({ profile }: { profile: Profile }) {
                           ))
                         )}
                         {!count && !state.busy ? (
-                          <div className="portal-empty">
-                            <strong>조회 조건에 맞는 업무가 없습니다.</strong>
-                            <p>
-                              기간이나 상태를 변경해 확인하세요. 새 업무는
-                              상단에서 등록할 수 있습니다.
-                            </p>
-                          </div>
+                          <p className="calendar-empty-status" role="status">
+                            조회 조건에 맞는 업무가 없습니다.
+                          </p>
                         ) : null}
                       </>
                     ) : null}

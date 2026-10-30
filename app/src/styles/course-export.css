@@ -1,0 +1,19 @@
+html[data-theme] body.workspace-ui #work-main.course-export > :is(details, #export-preview) {
+  background: var(--ean-surface);
+  border: 1px solid var(--ean-rim);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 var(--ean-edge);
+}
+html[data-theme] body.workspace-ui #work-main.course-export > details:not([open]) {
+  background: transparent;
+  border-color: transparent;
+  border-bottom-color: var(--theme-border-soft);
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-theme] body.workspace-ui #work-main.course-export #preview {
+  border-radius: 12px;
+}
+html[data-theme] body.workspace-ui #work-main.course-export > details > summary {
+  color: var(--theme-text);
+}

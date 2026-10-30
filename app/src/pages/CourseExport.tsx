@@ -1,3 +1,4 @@
+import '../styles/course-export.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import Sortable from 'sortablejs';
@@ -495,7 +496,7 @@ function CourseExportContent() {
   return (
     <>
       <main
-        className="app-main max-w-6xl mx-auto px-4 py-6 space-y-4"
+        className="app-main course-export max-w-6xl mx-auto px-4 py-6 space-y-4"
         id="work-main"
         tabIndex={-1}
       >
@@ -731,6 +732,7 @@ function CourseExportContent() {
             id="btn-download"
             className="btn btn-primary"
             onClick={download}
+            disabled={!rows.length}
           >
             다운로드
           </button>

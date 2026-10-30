@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { LayoutGroup, motion } from 'motion/react';
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import {
   CalendarDays,
   ChevronRight,
   Files,
-  LayoutGrid,
-  Settings2,
-  Truck,
+  ListTree,
+  SlidersHorizontal,
+  Route,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
@@ -21,14 +21,14 @@ import { withCenterParam } from '../lib/center';
 import '../styles/hub-directory.css';
 
 const categoryIcons: Record<string, LucideIcon> = {
-  dispatch: Truck,
-  transport: LayoutGrid,
+  dispatch: Route,
+  transport: ListTree,
   daily: CalendarDays,
   documents: Files,
-  system: Settings2,
+  administration: SlidersHorizontal,
 };
 function CategoryIcon({ category }: { category: string }) {
-  const Icon = categoryIcons[category] ?? Settings2;
+  const Icon = categoryIcons[category] ?? SlidersHorizontal;
   return <Icon aria-hidden="true" size={22} strokeWidth={1.5} />;
 }
 
@@ -36,9 +36,15 @@ function HubContent() {
   const { profile, permissions, center } = useAdminPage();
   const [features, setFeatures] = useState(() => loadPrivateFeatures(profile));
   const [search, setSearch] = useState('');
+  const [pointerTabs, setPointerTabs] = useState(false);
   const [category, setCategory] = useState('dispatch');
   const input = useRef<HTMLInputElement>(null);
   const groupId = useId();
+  const reducedMotion = useReducedMotion();
+  const surfaceTransition = {
+    duration: reducedMotion ? 0 : 0.22,
+    ease: [0.22, 1, 0.36, 1] as const,
+  };
   useEffect(
     () =>
       subscribePrivateFeatures(() => setFeatures(loadPrivateFeatures(profile))),
@@ -122,6 +128,13 @@ function HubContent() {
             id="hub-categories"
             className="hub-categories"
             aria-label="업무 분류"
+            data-pointer-focus={pointerTabs || undefined}
+            onPointerDownCapture={() => setPointerTabs(true)}
+            onKeyDownCapture={() => setPointerTabs(false)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget))
+                setPointerTabs(false);
+            }}
           >
             {categories.map(([key, title]) => (
               <Tabs.Trigger
@@ -133,9 +146,11 @@ function HubContent() {
                 {selected === key && !term ? (
                   <motion.span
                     layoutId="category-selection"
-                    className="workspace-selection"
+                    className="hub-category-surface"
+                    aria-hidden="true"
+                    initial={false}
                     style={{ borderRadius: 18 }}
-                    transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+                    transition={surfaceTransition}
                   />
                 ) : null}
                 <span className="hub-category-meta">
@@ -152,7 +167,7 @@ function HubContent() {
             layout
             className="hub-results"
             style={{ borderRadius: 20 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 36 }}
+            transition={surfaceTransition}
           >
             <motion.div layout="position" className="hub-results-heading">
               <h3>

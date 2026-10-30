@@ -136,15 +136,15 @@ export function makeHandler(env, fetcher = fetch) {
             method: 'POST',
             headers,
             body: JSON.stringify({
-              p_resource: 'dispatch_parser',
+              p_resource: 'gimhae_dispatch',
               p_action: action,
-              p_center: body.center,
+              p_center: null,
             }),
             signal: AbortSignal.timeout(15000),
           },
         );
         if (!allowed.ok || (await allowed.json()) !== true)
-          throw fail('현재 센터의 배차정보 수정 권한이 없습니다.', 403);
+          throw fail('김해 배차 분석 사용 권한이 없습니다.', 403);
       }
       const content = [];
       if (body.mode === 'request') {

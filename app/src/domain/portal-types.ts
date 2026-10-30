@@ -142,6 +142,16 @@ export interface PermissionConfig {
   admin_only?: boolean;
   read_rule: PermissionRule;
   write_rule: PermissionRule;
+  member_overrides?: Record<string, MemberPermission>;
+}
+export interface MemberPermission {
+  level: 'none' | 'read' | 'edit';
+  scope: 'own' | 'all';
+}
+export interface MemberPermissionChange {
+  resource: string;
+  version: number;
+  permission: MemberPermission | null;
 }
 export interface PortalPermissions extends PermissionContext {
   rules: PermissionConfig[];

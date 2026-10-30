@@ -64,25 +64,14 @@ export function Modal({
   }, []);
   const origin = useRef({
     x: 0,
-    y: 12,
-    scaleX: 0.96,
-    scaleY: 0.96,
+    y: 6,
+    scaleX: 0.985,
+    scaleY: 0.985,
     borderRadius: 20,
   });
 
   function enter(event: Event) {
     event.preventDefault();
-    const target = scope.current?.getBoundingClientRect();
-    const source = previous.current?.getBoundingClientRect();
-    if (source?.width && source.height && target?.width && target.height) {
-      origin.current = {
-        x: source.x + source.width / 2 - target.x - target.width / 2,
-        y: source.y + source.height / 2 - target.y - target.height / 2,
-        scaleX: source.width / target.width,
-        scaleY: source.height / target.height,
-        borderRadius: 20,
-      };
-    }
     if (surface.current && content.current && !reduced) {
       const layer = surface.current;
       const opening = animate(
@@ -104,17 +93,10 @@ export function Modal({
                 borderRadius: 20,
                 opacity: 1,
               },
-              { type: 'spring', stiffness: 400, damping: 38 },
+              { duration: 0.18, ease: [0.22, 1, 0.36, 1] },
             ),
           );
       });
-      openingAnimations.current.push(
-        animate(
-          content.current,
-          { opacity: 1, filter: 'blur(0px)' },
-          { duration: 0.16, ease: [0.2, 0.8, 0.2, 1] },
-        ),
-      );
     }
     scope.current?.focus({ preventScroll: true });
   }
@@ -133,15 +115,11 @@ export function Modal({
     scope.current?.focus({ preventScroll: true });
     if (!reduced && surface.current && content.current) {
       await Promise.all([
-        animate(
-          content.current,
-          { opacity: 0, filter: 'blur(3px)' },
-          { duration: 0.12 },
-        ),
+        animate(content.current, { opacity: 0 }, { duration: 0.12 }),
         animate(
           surface.current,
           { ...origin.current, opacity: 0 },
-          { duration: 0.24, ease: [0.4, 0, 0.2, 1] },
+          { duration: 0.16, ease: [0.4, 0, 0.2, 1] },
         ),
       ]);
     }
@@ -154,6 +132,13 @@ export function Modal({
     lg: 'max-w-lg',
     xl: 'max-w-2xl',
     '5xl': 'max-w-5xl',
+  };
+  const maxWidths = {
+    sm: '24rem',
+    md: '28rem',
+    lg: '32rem',
+    xl: '42rem',
+    '5xl': '64rem',
   };
   return (
     <CloseContext.Provider
@@ -208,6 +193,8 @@ export function Modal({
                   boxShadow: 'none',
                   overflow: 'visible',
                   maxHeight: 'none',
+                  width: '100%',
+                  maxWidth: maxWidths[width],
                 }}
               >
                 <motion.div
@@ -236,8 +223,7 @@ export function Modal({
                     pointerEvents: closing ? 'none' : 'auto',
                   }}
                   initial={{
-                    opacity: reduced ? 1 : 0,
-                    filter: reduced ? 'none' : 'blur(3px)',
+                    opacity: 1,
                   }}
                 >
                   <Dialog.Title className="sr-only">{label}</Dialog.Title>
