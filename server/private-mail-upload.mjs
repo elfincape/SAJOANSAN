@@ -220,7 +220,8 @@ async function upload(
         referrerPolicy: 'no-referrer',
       });
     } catch (error) {
-      Object.assign(diagnostic, requestFailure(error, signal));
+      const failure = requestFailure(error, signal);
+      Object.assign(diagnostic, failure, { requestReason: failure.reason });
       signal?.throwIfAborted();
       if (final) {
         diagnostic.recoveryFrom = 'request';
@@ -318,6 +319,7 @@ export async function uploadMailFile(options = {}) {
     verificationAttempted: false,
     verificationFailed: false,
     recoveryFrom: 'none',
+    requestReason: 'none',
   };
   try {
     return await upload(options, diagnostic);

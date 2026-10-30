@@ -1039,6 +1039,7 @@ console.log(
             'verificationAttempted',
             'verificationFailed',
             'recoveryFrom',
+            'requestReason',
           ].includes(key),
         );
         assert.ok(
