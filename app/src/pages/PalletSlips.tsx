@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/pallet-slips.css';
 import { useState } from 'react';
 import * as XLSX from 'xlsx';

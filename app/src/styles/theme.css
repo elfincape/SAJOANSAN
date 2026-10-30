@@ -428,14 +428,14 @@ html[data-theme='dark']
     .bg-emerald-500,
     .document-upload-label
   ) {
-  background: #087f5b;
+  background: var(--theme-primary);
   color: #fff;
-  border-color: #2f9c74;
+  border-color: var(--theme-primary);
 }
 html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)
   :is(.btn-primary, .primary):hover:not(:disabled) {
-  background: #106e4e;
+  background: var(--theme-control-hover);
 }
 html[data-theme='dark']
   body.workspace-ui:is(.work-shell, .portal-shell, .bg-zinc-900)

@@ -1,3 +1,4 @@
+import { WorkflowNavigation } from '../components/WorkflowNavigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Papa from 'papaparse';
@@ -39,28 +40,13 @@ function CourseImportContent(){
   finally{lock.current=false;setRunning(false);}
  }
  return <>
-<main className="app-main max-w-7xl mx-auto px-4 py-6 space-y-6" id="work-main" tabIndex={-1}><nav className="work-section-navigation" aria-label="작업 단계">{[["work-section-1","1단계 · CSV 파일 선택"],["step-mapping","2단계 · 컬럼 매핑 확인"],["step-preview","3단계 · 정규화 미리보기"],["step-execute","4단계 · DB에 저장"]].map(([id,label])=><a key={id} href={"#"+id}>{label}</a>)}</nav>
-
-  
-  <section className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-4 text-sm leading-relaxed">
-    <details className="readability-guide">
-    <summary>가져오기 방법 · 처음 사용하는 경우</summary>
-    <ol className="list-decimal list-inside space-y-1 text-zinc-300">
-      <li>엑셀 시트를 <strong>UTF-8 CSV</strong>로 저장합니다 (엑셀 → 다른 이름으로 저장 → "CSV UTF-8").</li>
-      <li>아래 <strong>1단계</strong>에서 CSV 파일을 선택하면 자동으로 컬럼이 인식되고 미리보기가 표시됩니다.</li>
-      <li><strong>2단계</strong>에서 컬럼 매핑을 확인/수정합니다 (헤더가 다를 경우).</li>
-      <li><strong>3단계</strong>에서 정규화 결과를 검토합니다 (회사/기사/차량/납품처/코스/납품처 항목).</li>
-      <li><strong>4단계</strong>에서 "DB에 저장" 버튼을 눌러 일괄 upsert를 실행합니다.</li>
-    </ol>
-    </details>
-    <p className="mt-2 text-amber-300/90 text-xs">⚠️ 같은 데이터를 여러 번 올려도 선택 센터의 회사명·차량번호·납품처 코드 등을 먼저 조회한 뒤 갱신하므로 중복 생성을 방지합니다. 단, 납품처 항목은 (route_id, stop_order) 기준 upsert되므로 기존 코스의 납품처 항목이 덮어써질 수 있습니다.</p>
-  </section>
+<main className="app-main max-w-7xl mx-auto px-4 py-6 space-y-6" id="work-main" tabIndex={-1}><WorkflowNavigation steps={[["work-section-1", "CSV 파일 선택"], ["step-mapping", "컬럼 확인·수정"], ["step-preview", "미리보기 확인"], ["step-execute", "DB에 저장"]]} />
 
   
   <FileArea as="section" id="work-section-1" accept=".csv,text/csv" disabled={running || !editable} onFiles={files=>{if(files[0])readCsv(files[0]);}} className="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
     <h2 className="font-semibold mb-3">1단계 · CSV 파일 선택</h2>
     <div className="flex flex-wrap items-center gap-3">
-      <input onChange={event => { const file=event.target.files?.[0];if(file)readCsv(file); }} type="file" id="csv-file" accept=".csv,text/csv" className="text-sm file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
+      <input onChange={event => { const file=event.target.files?.[0];if(file)readCsv(file); }} aria-label="CSV 파일 선택" type="file" id="csv-file" accept=".csv,text/csv" className="text-sm file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
       <span id="file-info" className="text-xs text-zinc-400">{fileInfo}</span>
     </div>
     <details className="mt-3 text-xs text-zinc-400">
@@ -118,7 +104,7 @@ function CourseImportContent(){
 
   
   <section id="step-execute" className={`bg-zinc-800/40 border border-zinc-700 rounded-lg p-4${ready ? "" : " hidden"}`}>
-    <h2 className="font-semibold mb-3">4단계 · DB에 저장</h2>
+    <h2 className="font-semibold mb-3">4단계 · DB에 저장</h2><p className="text-sm mb-3">같은 코스의 납품 순서가 있으면 기존 납품처 항목을 덮어씁니다.</p>
     <div className="flex flex-wrap items-center gap-2 mb-3">
       <label className="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" id="opt-replace-stops" checked={replaceStops} onChange={event=>setReplaceStops(event.target.checked)} className="accent-emerald-500" />

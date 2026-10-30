@@ -5,9 +5,6 @@ import { loginDestination, loginProfile, mapAuthError, signInWithUsername } from
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Toasts } from '../components/Toasts';
 import type { Notice } from '../components/Toasts';
-import '../styles/common.css';
-import '../styles/workspace-ui.css';
-import '../styles/theme.css';
 
 let initialSession: Promise<boolean> | undefined;
 function checkSession() {
@@ -40,7 +37,7 @@ export default function Login() {
   const destination = () => loginDestination(location.search, location.origin);
 
   useEffect(() => {
-    document.title = '로그인 · 코스표 관리 시스템';
+    document.title = '로그인 · EAN';
     document.body.className = 'workspace-ui workspace-login bg-zinc-900 text-zinc-100 min-h-screen flex items-center justify-center px-4';
     let active = true;
     void checkSession().then(loggedIn => {
@@ -97,7 +94,7 @@ export default function Login() {
         <div className="login-mark inline-flex items-center justify-center w-12 h-12 rounded-lg bg-emerald-600/20 border border-emerald-600/40 mb-3">
           <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
         </div>
-        <h1 className="text-lg font-semibold tracking-tight">코스표 관리 시스템</h1>
+        <h1 className="text-lg font-semibold tracking-tight">EAN</h1>
         <p className="text-xs text-zinc-500 mt-1">내부 관리자 전용</p>
       </div>
       <form id="login-form" className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-5 shadow-xl space-y-4" autoComplete="on" noValidate onSubmit={submit}>

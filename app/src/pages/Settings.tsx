@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/settings.css';
 import { useEffect, useState } from 'react';
 import { permissionAllowed } from '../lib/permissions';

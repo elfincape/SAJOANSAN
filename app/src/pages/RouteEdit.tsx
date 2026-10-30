@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/route-edit.css';
 import { useEffect, useRef, useState } from 'react';
 import Sortable from 'sortablejs';

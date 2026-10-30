@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import '../styles/common.css';
 import '../styles/driver-documents.css';
 import '../styles/dashboard.css';
 import { AdminPage, useAdminPage } from '../components/AdminPage';

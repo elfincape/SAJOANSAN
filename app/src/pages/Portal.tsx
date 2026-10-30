@@ -1,8 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import '../styles/portal.css';
-import '../styles/workspace-ui.css';
-import '../styles/portal-theme.css';
-import '../styles/theme.css';
 import '../styles/portal-task-ui.css';
 import '../styles/portal-workflow.css';
 import { getLoadedAuthContext, loadAuthContext } from '../lib/auth';
@@ -590,7 +587,7 @@ function Work({ profile }: { profile: Profile }) {
         ? ' permissions-workspace'
         : '');
     document.body.dataset.appArea = 'portal';
-    document.title = `${portalViewTitle(state.view)} · 업무 포털 · 이안물류`;
+    document.title = `${portalViewTitle(state.view)} · 업무 포털 · EAN`;
   }, [state.view, state.layout, state.registrationTab]);
   function navigate(view: string, center?: string) {
     if (current.current.busy) return;

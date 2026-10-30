@@ -1,3 +1,4 @@
+import { WorkflowNavigation } from '../components/WorkflowNavigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -58,19 +59,10 @@ function CourseExportContent() {
 <main className="app-main max-w-6xl mx-auto px-4 py-6 space-y-4" id="work-main" tabIndex={-1}>
 
   
-  <section className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
-    <h2 className="text-sm font-semibold text-zinc-200 mb-2">사용 안내</h2>
-    <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
-      <li>필터로 원하는 데이터를 좁힌 뒤(여러 항목 선택 시 교집합), 정렬·포함 컬럼을 조정합니다.</li>
-      <li>미리보기로 확인 후 "다운로드" 버튼을 누르세요. 엑셀에서 사용할 때는 데이터 형식이 유지되는 XLSX를 권장합니다.</li>
-      <li>모든 컬럼을 포함해 받으면 <code>/admin/import.html</code> 으로 그대로 다시 업로드할 수 있습니다.</li>
-    </ol>
-  </section>
-
-  
-  <details className="bg-zinc-800/50 border border-zinc-700 rounded-lg" open>
+  <WorkflowNavigation steps={[["export-options", "파일·조회 조건"], ["export-preview", "미리보기 확인"], ["export-download", "다운로드"]]} />
+  <details id="export-options" className="bg-zinc-800/50 border border-zinc-700 rounded-lg" open>
     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-zinc-200 flex items-center justify-between">
-      <span>⚙️ 기본 옵션</span>
+      <span>파일 옵션</span>
       <span className="text-xs text-zinc-500">파일 형식 · 파일명 · 활성 코스</span>
     </summary>
     <div className="px-4 pb-4 pt-1 space-y-3">
@@ -160,23 +152,23 @@ function CourseExportContent() {
   </details>
 
   
-  <section className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+  <section id="export-preview" className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
     <div className="flex items-center justify-between mb-3">
       <h2 className="text-sm font-semibold text-zinc-200">미리보기</h2>
       <div className="flex items-center gap-3">
         <span id="summary" className="text-xs text-zinc-400">{`총 ${rows.length}건 / 전체 ${flat.length}건 · 컬럼 ${outputCols.length}/${HEADERS.length}`}</span>
-        <button id="btn-refresh" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => void load()}>🔄 새로고침</button>
+        <button id="btn-refresh" className="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" onClick={() => void load()}>새로고침</button>
       </div>
     </div>
     <div id="preview" className="overflow-auto max-h-[480px] border border-zinc-700 rounded">{preview}</div>
   </section>
 
   
-  <section className="flex justify-end sticky bottom-3 z-10">
-    <button id="btn-download" className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium shadow-lg" onClick={download}>
-      ⬇ 다운로드
+  <section id="export-download" className="flex justify-end sticky bottom-3 z-10">
+    <button id="btn-download" className="btn btn-primary" onClick={download}>
+      다운로드
     </button>
   </section>
 </main><a ref={downloadRef} hidden href={downloadUrl?.url} download={downloadUrl?.name}/>{feedback}</>;
 }
-export default function CourseExport(){return <AdminPage title="📤 코스표 내려받기"><CourseExportContent/></AdminPage>;}
+export default function CourseExport(){return <AdminPage title="코스표 내려받기"><CourseExportContent/></AdminPage>;}

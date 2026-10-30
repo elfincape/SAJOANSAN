@@ -1,4 +1,3 @@
-import '../styles/common.css';
 import '../styles/daily-temperature.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';

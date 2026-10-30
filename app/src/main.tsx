@@ -1,3 +1,4 @@
+import { WorkspaceProvider } from './components/WorkspaceProvider';
 import { lazy, StrictMode, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -146,4 +147,4 @@ function Workspace() {
   </>;
 }
 document.title = pageTitle(location.pathname) ?? document.title;
-if (InitialPage) createRoot(document.body).render(<StrictMode><FileTransfers><Workspace /></FileTransfers></StrictMode>);
+if (InitialPage) createRoot(document.body).render(<StrictMode><WorkspaceProvider><FileTransfers><Workspace /></FileTransfers></WorkspaceProvider></StrictMode>);
