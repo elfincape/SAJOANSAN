@@ -142,8 +142,7 @@ function RoutesContent() {
       <div className="route-filter-summary"><span id="filter-summary" role="status" aria-live="polite">{filterCount ? `필터 ${filterCount}개 적용 중` : '전체 코스'}</span></div>
       <SelectionActions count={selectedRows.length} clear={() => api.current?.deselectAll()}>{canExport ? <button type="button" disabled={loading} onClick={exportRows}>선택 목록 CSV 내보내기</button> : <span>선택 목록 내보내기 권한이 없습니다.</span>}</SelectionActions>
       {downloadLink}
-      <p id="route-grid-help" className="table-interaction-help">열 제목으로 정렬 · 상세 필터로 조건 검색 · 표 안에서 방향키로 셀 이동 · 체크박스로 여러 코스 선택</p>
-      <div ref={grid} id="route-grid" aria-label="코스 목록" aria-describedby="route-grid-help" />
+      <div ref={grid} id="route-grid" aria-label="코스 목록" />
       <div className="px-1 py-2 text-xs text-zinc-400 flex items-center justify-between"><span id="result-count" role="status" aria-live="polite">{!data.routes.length ? '코스 없음' : stats.shown === data.routes.length ? `총 ${stats.shown}건` : `${stats.shown}건 표시 · 전체 ${data.routes.length}건`}</span><span id="loading-indicator" role="status" className={loading ? '' : 'hidden'}>불러오는 중...</span></div>
     </main>
     {editing !== undefined ? <RouteForm route={editing} masters={masters} toast={toast} close={() => setEditing(undefined)} saved={reload} /> : null}

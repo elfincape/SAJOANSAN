@@ -1,63 +1,47 @@
-html[data-theme] body.portal-shell #portal-main .permission-workspace {
+.employee-permission-workspace {
   display: grid;
-  grid-template-columns: minmax(350px, 0.9fr) minmax(440px, 1.2fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   align-items: start;
   gap: 28px;
 }
-.permission-directory,
-.permission-editor {
+.employee-permission-directory,
+.employee-permission-editor {
   min-width: 0;
 }
-.permission-list-heading {
+.employee-permission-list-heading {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
-.permission-list-heading h2,
-.permission-editor-heading h2 {
+.employee-permission-list-heading h2,
+.employee-permission-heading h2 {
   margin: 0;
   font-size: 18px;
 }
-.permission-list-heading > span,
-.permission-save-state {
+.employee-permission-list-heading > span {
   color: var(--theme-muted);
   font-size: 12px;
 }
-.permission-search {
+.employee-permission-search {
   display: block;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
-html[data-theme] body.portal-shell .permission-search input {
+html[data-theme] body.portal-shell .employee-permission-search input {
   width: 100%;
   border-radius: 12px;
 }
-.permission-mobile-select {
+.employee-permission-mobile-select {
   display: none;
 }
-.permission-row-head,
-.permission-choice {
+html[data-theme] body.portal-shell .employee-permission-people > button {
   display: grid;
-  grid-template-columns: minmax(100px, 1.1fr) repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  align-items: center;
-}
-.permission-row-head {
-  padding: 0 10px 8px;
-  color: var(--theme-muted);
-  font-size: 12px;
-}
-.permission-directory-rows h3 {
-  margin: 20px 10px 8px;
-  color: var(--theme-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-html[data-theme] body.portal-shell button.permission-choice {
+  gap: 5px;
+  justify-items: start;
+  align-items: start;
   width: 100%;
-  min-height: 56px;
-  padding: 10px;
+  padding: 13px 10px;
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--theme-border-soft);
@@ -67,225 +51,270 @@ html[data-theme] body.portal-shell button.permission-choice {
   text-align: left;
   box-shadow: none;
 }
-.permission-choice strong {
-  font-size: 13px;
+.employee-permission-people strong {
+  font-size: 14px;
   font-weight: 550;
 }
-.permission-choice > span {
-  font-size: 12px;
+.employee-permission-people span {
   color: var(--theme-muted);
+  font-size: 12px;
   line-height: 1.5;
-  overflow-wrap: anywhere;
 }
-html[data-theme] body.portal-shell button.permission-choice:hover {
+html[data-theme] body.portal-shell .employee-permission-people > button:hover {
   background: var(--theme-hover);
 }
 html[data-theme]
   body.portal-shell
-  button.permission-choice[aria-pressed='true'] {
+  .employee-permission-people
+  > button[aria-pressed='true'] {
   background: var(--theme-selected);
-  border-radius: 8px;
+  border-radius: 10px;
 }
-html[data-theme] body.portal-shell .permission-editor {
+.employee-permission-heading {
   position: sticky;
-  top: calc(var(--app-header-height) + 20px);
-  padding: 0 0 0 28px;
-  border: 0;
-  border-left: 1px solid var(--theme-border-soft);
-  background: transparent;
-  box-shadow: none;
-}
-.permission-editor-heading {
+  top: calc(var(--app-header-height) + 8px);
+  z-index: 3;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  padding: 14px 0 18px;
+  margin-top: -14px;
+  border-bottom: 1px solid var(--theme-border-soft);
+  background: var(--theme-page);
 }
-.permission-editor-heading > div {
-  display: grid;
-  gap: 5px;
-}
-.permission-editor-heading button {
-  min-width: 72px;
-  flex: none;
-}
-.permission-applies {
+.employee-permission-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-bottom: 16px;
+  gap: 5px 12px;
+  margin: 8px 0;
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.employee-permission-heading a {
+  font-size: 12px;
+}
+.employee-permission-save {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  flex: none;
+}
+.employee-permission-save > span {
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.employee-permission-notice {
+  color: var(--theme-muted);
+  font-size: 13px;
+  margin: 14px 0;
+}
+.employee-permission-preview {
+  display: flex;
+  justify-content: flex-end;
+  margin: 18px 0 14px;
+}
+.employee-permission-preview label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
   color: var(--theme-muted);
 }
-.permission-applies > span:first-child {
-  flex: none;
+html[data-theme] body.portal-shell .employee-permission-preview select {
+  min-width: 120px;
 }
-html[data-theme] body.portal-shell .permission-form {
-  display: block;
-  padding: 0;
+.employee-permission-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
 }
-html[data-theme] body.portal-shell .permission-matrix {
+html[data-theme] body.portal-shell .employee-permission-category {
+  position: relative;
+  isolation: isolate;
+  padding: 10px 12px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-muted);
+  font-size: 13px;
+  box-shadow: none;
+}
+html[data-theme]
+  body.portal-shell
+  .employee-permission-category[data-state='active'] {
+  color: var(--theme-selected-text);
+  background: transparent;
+}
+.employee-permission-table {
+  min-width: 0;
+  overflow-x: auto;
+}
+html[data-theme]
+  body.portal-shell
+  #portal-main
+  .employee-permission-table
+  table {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   background: transparent;
 }
-html[data-theme] body.portal-shell .permission-matrix :is(th, td) {
-  padding: 11px 8px;
+html[data-theme]
+  body.portal-shell
+  #portal-main
+  .employee-permission-table
+  :is(th, td) {
+  padding: 14px 8px;
   border: 0;
   border-bottom: 1px solid var(--theme-border-soft);
   background: transparent;
-  vertical-align: middle;
-}
-.permission-matrix th {
-  font-size: 13px;
-  font-weight: 500;
+  vertical-align: top;
   text-align: left;
 }
-.permission-matrix thead th:first-child {
-  width: 44%;
+.employee-permission-table thead th {
+  color: var(--theme-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
-.permission-matrix thead th:not(:first-child),
-.permission-matrix td {
-  text-align: center;
+.employee-permission-table thead th:first-child {
+  width: 34%;
 }
-html[data-theme] body.portal-shell .permission-matrix input[type='checkbox'] {
-  width: 17px;
-  height: 17px;
-  padding: 0;
-  margin: 0;
-  vertical-align: middle;
-  accent-color: var(--theme-accent);
+.employee-permission-table thead th:nth-child(2) {
+  width: 22%;
 }
-.permission-fixed-label {
+.employee-permission-table thead th:nth-child(3) {
+  width: 22%;
+}
+.employee-permission-table thead th:nth-child(4) {
+  width: 22%;
+}
+.employee-permission-table tbody th strong {
   display: block;
-  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.6;
+}
+.employee-permission-table small {
+  display: block;
+  margin-top: 5px;
+  color: var(--theme-muted);
   font-size: 11px;
-  color: var(--theme-muted);
-}
-.permission-restricted {
-  display: block;
-  margin-top: 3px;
-  color: var(--theme-muted);
-  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
 }
 html[data-theme]
   body.portal-shell
-  .permission-matrix
-  .permission-section-row
-  th {
-  padding-top: 24px;
-  padding-bottom: 9px;
-  font-weight: 600;
-}
-.permission-section-row span {
-  display: block;
-  margin-top: 4px;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--theme-muted);
-}
-html[data-theme] body.portal-shell #portal-main .permission-matrix select {
+  #portal-main
+  .employee-permission-table
+  select {
   width: 100%;
   min-width: 0;
   min-height: 36px;
-  padding: 5px 4px;
+  padding: 5px 7px;
   font-size: 12px;
 }
-.permission-policy {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 14px;
-  margin-top: 12px;
-  font-size: 11px;
+.employee-permission-effective {
+  display: inline-block;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--theme-text);
+}
+.employee-permission-effective[data-level='none'] {
   color: var(--theme-muted);
 }
-.permission-fixed-state,
-.permission-empty {
-  color: var(--theme-muted);
-  font-size: 13px;
+html[data-theme]
+  body.portal-shell
+  #portal-main
+  .employee-permission-table
+  tr[data-changed='true']
+  > th {
+  color: var(--theme-accent);
 }
-html[data-theme] body.portal-shell .permission-simulation {
-  margin-top: 24px;
-  padding: 18px 0 0;
-  border: 0;
-  border-top: 1px solid var(--theme-border-soft);
-  background: transparent;
-  border-radius: 0;
-}
-.permission-simulation > summary {
-  cursor: pointer;
-  font-weight: 550;
-  font-size: 13px;
-}
-.permission-preview-controls {
-  display: grid;
-  grid-template-columns: minmax(130px, 1fr) 1.5fr;
-  gap: 20px;
-  padding-top: 16px;
-}
-.permission-preview-controls > label {
-  display: grid;
-  gap: 8px;
-  font-size: 12px;
-}
-html[data-theme] body.portal-shell .permission-preview-controls fieldset {
-  padding: 0;
-  margin: 0;
-  border: 0;
-}
-.permission-preview-controls legend {
-  font-size: 12px;
-}
-.permission-preview-controls fieldset label {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  margin: 6px 10px 0 0;
-  font-size: 12px;
-}
-.permission-preview-status {
-  font-size: 11px;
-  color: var(--theme-muted);
+@media (max-width: 1100px) {
+  .employee-permission-workspace {
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 20px;
+  }
 }
 @media (max-width: 1000px) {
-  html[data-theme] body.portal-shell #portal-main .permission-workspace {
+  .employee-permission-workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
-  .permission-directory-rows {
+  .employee-permission-people,
+  .employee-permission-list-heading {
     display: none;
   }
-  .permission-mobile-select {
+  .employee-permission-mobile-select {
     display: grid;
     gap: 8px;
     font-size: 12px;
   }
-  html[data-theme] body.portal-shell .permission-mobile-select select {
+  html[data-theme] body.portal-shell .employee-permission-mobile-select select {
     width: 100%;
   }
-  .permission-list-heading {
+  .employee-permission-heading {
+    position: static;
+  }
+}
+@media (max-width: 640px) {
+  .employee-permission-heading {
+    flex-direction: column;
+  }
+  .employee-permission-save {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .employee-permission-preview {
+    justify-content: flex-start;
+  }
+  .employee-permission-table thead {
     display: none;
   }
-  .permission-search {
-    margin-bottom: 12px;
+  html[data-theme]
+    body.portal-shell
+    #portal-main
+    .employee-permission-table
+    :is(table, tbody) {
+    display: block;
   }
-  html[data-theme] body.portal-shell .permission-editor {
-    position: static;
+  html[data-theme]
+    body.portal-shell
+    #portal-main
+    .employee-permission-table
+    tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--theme-border-soft);
+  }
+  html[data-theme]
+    body.portal-shell
+    #portal-main
+    .employee-permission-table
+    :is(th, td) {
+    display: block;
     padding: 0;
     border: 0;
   }
-}
-@media (max-width: 480px) {
-  .permission-matrix thead th:first-child {
-    width: 38%;
+  .employee-permission-table tbody th {
+    grid-column: 1 / -1;
   }
-  html[data-theme] body.portal-shell .permission-matrix :is(th, td) {
-    padding-inline: 5px;
+  .employee-permission-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: var(--theme-muted);
+    font-size: 11px;
   }
-  .permission-preview-controls {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .employee-permission-table td:last-child {
+    grid-column: 1 / -1;
   }
 }

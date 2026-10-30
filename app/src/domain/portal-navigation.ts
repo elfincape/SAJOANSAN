@@ -15,11 +15,11 @@ export const PORTAL_VIEWS = [
   { id: 'search', title: '통합 검색', group: '조회·알림' },
   { id: 'notifications', title: '알림함', group: '조회·알림' },
   { id: 'history', title: '처리 기록', group: '포털 관리' },
-  { id: 'permissions', title: '페이지별 권한', group: '포털 관리' },
+  { id: 'permissions', title: '직원별 권한', group: '포털 관리' },
   { id: 'connections', title: 'OneDrive 관리', group: '포털 관리' },
-  { id: 'members', title: '사용자 권한·센터', group: '포털 관리' },
+  { id: 'members', title: '직원 역할·센터', group: '포털 관리' },
   { id: 'trash', title: '휴지통', group: '포털 관리' },
   { id: 'backups', title: '운영 원본 보관', group: '포털 관리' },
 ] as const;
 export const portalViewTitle = (view: string) =>
-  PORTAL_VIEWS.find(item => item.id === view)?.title ?? (view === 'access' ? '사용자 권한·센터' : '센터 업무');
+  PORTAL_VIEWS.find(item => item.id === view)?.title ?? (view === 'access' ? '직원 역할·센터' : '센터 업무');

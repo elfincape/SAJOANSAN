@@ -1,3 +1,4 @@
+import { permissionAllowed } from '../lib/permissions';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FileArea } from '../components/FileArea';
@@ -73,7 +74,10 @@ function syncRegisteredFixed(draft: DispatchDraft, rows: FixedDriver[]) {
   applyFixedDrivers(draft);
 }
 function Work() {
-  const { center, profile, editable, setCenterChangeGuard } = useAdminPage();
+  const { center, profile, permissions, setCenterChangeGuard } = useAdminPage();
+  const editable = permissionAllowed(permissions, 'gimhae_dispatch', 'edit');
+  const dataReadable = permissionAllowed(permissions, 'dispatch_parser', 'read', center.code);
+  const dataEditable = permissionAllowed(permissions, 'dispatch_parser', 'edit', center.code);
   const { confirm, feedback } = useFeedback();
   const [view, setView] = useState<View>(() => ({
     draft: newDraft(),
@@ -146,6 +150,7 @@ function Work() {
     }
   }
   async function refreshDefaults(apply = false) {
+    if (!dataReadable) return null;
     let result: FixedDefaults | null;
     try {
       result = await loadFixedDefaults(center.code);
@@ -180,6 +185,10 @@ function Work() {
   }
   useEffect(() => {
     let active = true;
+    if (!dataReadable) {
+      update(s => { s.defaults = null; s.defaultsLoaded = true; s.draft.fixedDrivers = []; });
+      return;
+    }
     void loadFixedDefaults(center.code)
       .then((result) => {
         if (!active) return;
@@ -203,7 +212,7 @@ function Work() {
     return () => {
       active = false;
     };
-  }, [center.code]);
+  }, [center.code, dataReadable]);
   useEffect(() => {
     setCenterChangeGuard(
       async () =>
@@ -457,7 +466,7 @@ function Work() {
     }
   }
   function openFixed(id: string | null = null) {
-    if (editDisabled || !view.defaultsLoaded) return;
+    if (editDisabled || !dataEditable || !view.defaultsLoaded) return;
     const row = id ? d.fixedDrivers.find((f) => f.id === id) : newFixedDriver();
     if (!row) return;
     setEditingId(id);
@@ -467,6 +476,7 @@ function Work() {
     setDeleteConfirmed(false);
   }
   async function commitFixed(rows: FixedDriver[]) {
+    if (!dataEditable) throw Error('센터 고정기사 수정 권한이 없습니다.');
     const s = current.current,
       result = await saveFixedDefaults(
         center.code,
@@ -741,7 +751,7 @@ function Work() {
             {center.name} · 김해 출발 배차{editable ? '' : ' · 열람 전용'}
           </span>
         </div>
-        <section className="gm-fixed-strip" aria-labelledby="gm-fixed-title">
+        <section className="gm-fixed-strip" aria-labelledby="gm-fixed-title" hidden={!dataReadable}>
           <h3 id="gm-fixed-title">고정기사</h3>
           <div
             id="gm-fixed-today"
@@ -803,7 +813,7 @@ function Work() {
           <button
             id="gm-add-fixed"
             className={`btn ${d.fixedDrivers.length ? 'btn-ghost' : 'btn-primary'}`}
-            disabled={editDisabled || !view.defaultsLoaded}
+            disabled={editDisabled || !dataEditable || !view.defaultsLoaded}
             onClick={() => openFixed()}
           >
             고정기사 등록

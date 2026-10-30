@@ -63,18 +63,42 @@ html[data-theme] body.workspace-ui .hub-directory .hub-category {
   width: 100%;
   padding: 18px 16px;
   text-align: left;
-  border: 1px solid var(--ean-rim);
+  border: 1px solid transparent;
   border-radius: 18px;
-  background: var(--ean-surface);
-  color: var(--theme-text);
+  background: transparent;
+  color: var(--theme-muted);
   font-size: 14px;
   font-weight: 550;
   cursor: pointer;
   box-shadow: none;
+  transition: color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hub-category::before,
+.hub-category-surface {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.hub-category::before {
+  content: '';
+  background: var(--ean-surface);
+  border: 1px solid var(--ean-rim);
+}
+.hub-category-surface {
+  background: var(--theme-selected);
+  border: 1px solid var(--theme-selected-border);
+  box-shadow:
+    inset 0 1px var(--ean-edge),
+    0 4px 12px -8px rgb(0 0 0 / 0.2);
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-category:hover {
   color: var(--theme-text);
-  background: var(--theme-hover);
+  background: transparent;
+}
+html[data-theme] body.workspace-ui .hub-directory .hub-category:active {
+  scale: 1;
 }
 html[data-theme]
   body.workspace-ui
@@ -124,11 +148,18 @@ html[data-theme] body.workspace-ui .hub-directory .hub-results {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  color: var(--theme-muted);
+  color: inherit;
+  transition: color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .hub-category-meta > span {
   font-size: 11px;
   font-weight: 400;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] body.workspace-ui .hub-directory .hub-category,
+  .hub-category-meta {
+    transition: none;
+  }
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-tool {
   display: flex;
@@ -201,4 +232,11 @@ html[data-theme] body.workspace-ui .hub-directory .hub-empty {
   html[data-theme] body.workspace-ui .hub-directory .hub-results {
     padding: 6px 16px 12px;
   }
+}
+
+html[data-theme]
+  body.workspace-ui
+  .hub-categories[data-pointer-focus]
+  .hub-category:focus-visible {
+  outline: none;
 }

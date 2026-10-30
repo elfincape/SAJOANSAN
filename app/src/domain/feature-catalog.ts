@@ -4,8 +4,9 @@ export interface Feature {
   aliases: readonly string[]; centers: readonly string[]; defaultEnabled: boolean;
   adminOnly?: boolean; ownerOnly?: boolean; fixed?: boolean; hub?: boolean;
   parent?: string; legacyFeature?: string;
+  navigationScope: 'center' | 'shared';
 }
-type FeatureEntry = Omit<Feature, 'aliases' | 'centers' | 'defaultEnabled'> & Partial<Pick<Feature, 'aliases' | 'centers' | 'defaultEnabled'>>;
+type FeatureEntry = Omit<Feature, 'aliases' | 'centers' | 'defaultEnabled' | 'navigationScope'> & Partial<Pick<Feature, 'aliases' | 'centers' | 'defaultEnabled' | 'navigationScope'>>;
 // Register each feature once. Settings, menus, categories and route guards share this catalog.
 export const FEATURE_CATEGORIES = Object.freeze({
   dispatch: '배차·운행',
@@ -51,6 +52,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'pdfConverter',
+      navigationScope: 'shared',
       href: '/admin/pdf-image-converter.html',
       title: 'PDF IMG 변환기',
       desc: 'PDF 페이지를 기사 서류 사진으로 등록',
@@ -76,15 +78,17 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'gimhaeDispatch',
+      navigationScope: 'shared',
       href: '/admin/gimhae-dispatch.html',
       title: '김해 배차 요청',
       desc: 'CJ 요청 사진·운수사 회신·전달문 복사',
       category: 'dispatch',
-      resource: 'dispatch_parser',
+      resource: 'gimhae_dispatch',
       legacyFeature: 'dispatchParser',
     },
     {
       id: 'dispatchParser',
+      navigationScope: 'shared',
       href: '/admin/dispatch-parser.html',
       title: '배차정보 파서',
       desc: '배차 문자 자동 파싱',
@@ -93,6 +97,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'pyeongtaekCharterParser',
+      navigationScope: 'shared',
       href: '/admin/pyeongtaek-charter-parser.html',
       title: '평택 용차내역 파서',
       desc: '엑셀·정산·DB 조회/수정·월 보관',
@@ -110,18 +115,20 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'charterFuelEstimator',
+      navigationScope: 'shared',
       href: '/admin/charter-fuel-estimator.html',
       title: '착지별 주행거리 계산',
       category: 'dispatch',
-      resource: 'delivery_points',
+      resource: 'distance_tools',
     },
     {
       id: 'naverDistance',
+      navigationScope: 'shared',
       href: '/admin/naver-shortest-distance.html',
       title: '네이버 최단거리 계산',
       desc: '납품처 거리·엑셀 코스별 실제 지도 캡처·일괄 출력',
       category: 'dispatch',
-      resource: 'delivery_points',
+      resource: 'distance_tools',
     },
     {
       id: 'transfers',
@@ -132,6 +139,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'excelCompare',
+      navigationScope: 'shared',
       href: '/admin/excel-compare.html',
       title: '엑셀 시트 비교',
       desc: '행 매칭·값 가져오기·TRUE/FALSE 확인',
@@ -140,6 +148,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'palletSlips',
+      navigationScope: 'shared',
       href: '/admin/pallet-slips.html',
       title: '파레트 전표관리',
       desc: '엑셀 전표 매칭 후 결과 내려받기',
@@ -148,6 +157,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'oneTopWork',
+      navigationScope: 'shared',
       href: '/admin/one-top-two-room-work.html',
       title: '1탑2실 작업',
       desc: '영수증·온도 분석·차량번호별 Excel 반영',
@@ -156,6 +166,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'dailyTemperature',
+      navigationScope: 'shared',
       href: '/admin/daily-temperature.html',
       title: '1탑2실 템플릿 생성',
       category: 'daily',
@@ -163,6 +174,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'coupangEntry',
+      navigationScope: 'shared',
       href: '/admin/coupang-entry.html',
       title: '쿠팡 입문확인',
       category: 'daily',
@@ -179,6 +191,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'imageStraightener',
+      navigationScope: 'shared',
       href: '/admin/image-straightener.html',
       title: '기울기 보정',
       category: 'documents',
@@ -188,6 +201,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'haulCalculator',
+      navigationScope: 'shared',
       href: '/admin/haul-dispatch-calculator.html',
       title: '하불 배차 계산',
       desc: '실제 구간단가 기준 차량 조합 계산',
@@ -260,8 +274,8 @@ export const FEATURE_CATALOG = Object.freeze(
     {
       id: 'permissions',
       href: '/portal/?view=permissions',
-      title: '페이지별 권한',
-      desc: '페이지·업무별 열람·수정 조건과 적용 범위',
+      title: '직원별 권한',
+      desc: '직원별 업무 권한과 자료 범위',
       category: 'administration',
       resource: 'permissions',
       adminOnly: true,
@@ -290,6 +304,7 @@ export const FEATURE_CATALOG = Object.freeze(
   ] as FeatureEntry[]).map((entry) =>
     Object.freeze({
       defaultEnabled: true,
+      navigationScope: 'center' as const,
       ...entry,
       aliases: Object.freeze(entry.aliases ?? []),
       centers: Object.freeze(entry.centers ?? []),

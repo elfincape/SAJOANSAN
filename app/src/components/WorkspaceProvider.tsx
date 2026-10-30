@@ -7,6 +7,7 @@ import '../styles/admin-workspace.css';
 import '../styles/portal-theme.css';
 import '../styles/theme.css';
 import '../styles/ean.css';
+import '../styles/workspace-tables.css';
 
 const storageKey = 'sajo.appearance.v1';
 type Theme = 'light' | 'dark';

@@ -8,7 +8,13 @@ import {
   useState,
 } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { BriefcaseBusiness, House, LayoutGrid, Menu, X } from 'lucide-react';
+import {
+  BriefcaseBusiness,
+  ChartNoAxesCombined,
+  LayoutGrid,
+  Menu,
+  X,
+} from 'lucide-react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { AccountMenu } from './AccountMenu';
 import { ThemeToggle } from './ThemeToggle';
@@ -35,7 +41,7 @@ function RailIcon({ href = '' }: { href?: string }) {
   const path = href.split('?')[0];
   const Icon =
     path === '/'
-      ? House
+      ? ChartNoAxesCombined
       : path.startsWith('/admin')
         ? LayoutGrid
         : BriefcaseBusiness;
@@ -257,9 +263,8 @@ export function WorkspaceFrame({
                               reducedMotion
                                 ? { duration: 0 }
                                 : {
-                                    type: 'spring',
-                                    stiffness: 540,
-                                    damping: 42,
+                                    duration: 0.22,
+                                    ease: [0.22, 1, 0.36, 1],
                                   }
                             }
                           />

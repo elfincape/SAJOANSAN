@@ -16,5 +16,5 @@ export function featureAccessible(
   return featureAvailable(feature, profile, center)
     && (!feature.ownerOnly || isPrivateFeatureOwner(profile))
     && (feature.fixed || enabled[feature.id] === true)
-    && (!feature.resource || permissionAllowed(permissions, feature.resource, 'read', center));
+    && (!feature.resource || permissionAllowed(permissions, feature.resource, 'read', feature.navigationScope === 'shared' ? undefined : center));
 }

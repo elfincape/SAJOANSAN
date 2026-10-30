@@ -7,7 +7,8 @@ export function PortalPermissionPreview({
   person,
 }: {
   rules: PermissionConfig[];
-  person: Pick<PortalMember, 'active' | 'role' | 'centers'>;
+  person: Pick<PortalMember, 'active' | 'role' | 'centers'> &
+    Partial<Pick<PortalMember, 'id'>>;
 }) {
   const { state, centerName } = usePortal(),
     centers = state.context?.centers ?? [];
@@ -15,9 +16,8 @@ export function PortalPermissionPreview({
     <>
       <h3>적용 권한 미리보기</h3>
       <p>
-        현재 입력한 역할·담당 센터와 페이지 조건을 함께 적용한 결과입니다. 저장
-        전에는 실제 권한이 바뀌지 않습니다. 개별 기록의 담당자·소유자·처리
-        상태에 따른 제한은 추가로 적용됩니다.
+        역할·담당 센터와 직원별 업무 설정을 적용한 결과 · 저장 전 미반영 · 개별
+        기록 제한 별도
       </p>
       <div className="permission-preview-table">
         <table>

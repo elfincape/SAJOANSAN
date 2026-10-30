@@ -20,6 +20,7 @@ import type {
   PortalPermissions,
   PermissionConfig,
   PermissionRule,
+  MemberPermissionChange,
   PortalInputs,
 } from '../domain/portal-types';
 export const portalApi = {
@@ -45,6 +46,16 @@ export const portalApi = {
       p_write: write,
     }),
   members: () => operationsRpc<PortalMember[]>('operations_members'),
+  updateMemberPermissions: ({ requestId, person, changes }: {
+    requestId: string;
+    person: PortalMember;
+    changes: MemberPermissionChange[];
+  }) => operationsRpc<{ user_id: string; rules: PermissionConfig[] }>('operations_update_member_permissions', {
+    p_request_id: requestId,
+    p_user_id: person.id,
+    p_expected_member: { display_name: person.display_name, role: person.role, centers: [...person.centers].sort() },
+    p_changes: changes,
+  }),
   updateMember: ({
     requestId,
     person,

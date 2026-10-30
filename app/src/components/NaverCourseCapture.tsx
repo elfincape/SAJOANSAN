@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useAdminPage } from './AdminPage';
+import { permissionAllowed } from '../lib/permissions';
 import { NaverCourseMapping } from './NaverCourseMapping';
 import { NaverAddressValidation } from './NaverAddressValidation';
 import { sameRoutingCourse, validatedCourseIds } from '../domain/naver-address-validation';
@@ -78,7 +79,8 @@ export function NaverCourseCapture({
 }: {
   onBusy: (busy: boolean) => void;
 }) {
-  const { setControlsDisabled, center: selectedCenter, profile, editable } = useAdminPage();
+  const { setControlsDisabled, center: selectedCenter, profile, permissions } = useAdminPage();
+  const editable = permissionAllowed(permissions, 'delivery_points', 'edit', selectedCenter.code);
   const [input, setInput] = useState<CourseImport>({ courses: [], issues: [] }),
     [filename, setFilename] = useState(''),
     [job, setJob] = useState<CaptureJob | null>(null),

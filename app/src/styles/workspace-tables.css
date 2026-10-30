@@ -1,0 +1,77 @@
+/* Workspace data lists only: document previews and exported sheet layouts keep their own styles. */
+html[data-theme] body.workspace-ui.app-shell {
+  --workspace-table-line: color-mix(in srgb, var(--theme-text) 11%, transparent);
+  --workspace-table-head: var(--theme-soft);
+}
+html[data-theme] body.workspace-ui.app-shell :is(#flat-view, #route-grid, .work-list, .employee-permission-table) {
+  border: 1px solid var(--workspace-table-line);
+  border-radius: 18px;
+  background: var(--theme-panel);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
+}
+html[data-theme] body.workspace-ui.app-shell #table-area {
+  background: transparent;
+  padding: 12px 16px 16px;
+}
+html[data-theme] body.workspace-ui.app-shell #flat-view {
+  scrollbar-gutter: stable;
+}
+html[data-theme] body.workspace-ui.app-shell :is(#table-area .data-table, .work-list .app-table) {
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  background: var(--theme-panel);
+}
+html[data-theme] body.workspace-ui.app-shell :is(#table-area .data-table, .work-list .app-table) :is(th, td) {
+  height: 42px;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--workspace-table-line);
+  border-right: 0;
+}
+html[data-theme] body.workspace-ui.app-shell :is(#table-area .data-table, .work-list .app-table) thead th {
+  height: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-muted);
+  background: var(--workspace-table-head);
+  box-shadow: inset 0 -1px 0 var(--workspace-table-line);
+}
+html[data-theme] body.workspace-ui.app-shell #table-area .data-table tbody tr:hover td {
+  border-right: 0;
+}
+html[data-theme] body.workspace-ui.app-shell :is(#table-area .data-table, .work-list .app-table) tbody tr:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: -2px;
+}
+/* AG Grid remains virtualized; row sizing, sorting, filters, and semantic cell colors stay with the grid. */
+html[data-theme] body.workspace-ui.app-shell #route-grid {
+  --ag-background-color: var(--theme-panel);
+  --ag-header-background-color: var(--workspace-table-head);
+  --ag-border-color: var(--workspace-table-line);
+  --ag-row-border-color: var(--workspace-table-line);
+  --ag-foreground-color: var(--theme-text);
+  --ag-row-hover-color: var(--theme-hover);
+  --ag-wrapper-border-radius: 18px;
+  --ag-font-size: 13px;
+}
+html[data-theme] body.workspace-ui.app-shell #route-grid .ag-root-wrapper {
+  border-radius: 17px;
+  border: 0;
+}
+@media (min-width: 1001px) {
+  html[data-theme] body.workspace-ui.app-shell .employee-permission-table {
+    padding: 4px 16px;
+  }
+}
+@media (max-width: 760px) {
+  html[data-theme] body.workspace-ui.app-shell #table-area { padding: 8px; }
+  html[data-theme] body.workspace-ui.app-shell .employee-permission-table { border: 0; border-radius: 0; box-shadow: none; }
+}
+
+/* Keep list searches usable when action/filter controls wrap beside them. */
+html[data-theme] body.workspace-ui.app-shell .work-list input[type='search'] {
+  flex: 1 1 220px;
+  min-width: min(220px, 100%);
+  max-width: 100%;
+}

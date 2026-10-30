@@ -24,6 +24,9 @@ function MemberEditor({ person }: { person: PortalMember }) {
       <h2>
         <MentionText>{person.name}</MentionText> · 역할·센터 설정
       </h2>
+      <a href={`/portal/?view=permissions&user=${encodeURIComponent(person.id)}`}>
+        업무 권한 설정
+      </a>
       <p>
         <MentionText>
           {person.active
@@ -136,16 +139,12 @@ export function PortalMembers() {
       <div className="workspace">
         <section className="list">
           <div className="list-heading">
-            <strong id="list-title">사용자 권한·센터</strong>
+            <strong id="list-title">직원 역할·센터</strong>
             <span id="count">
               <MentionText>{state.members.length}</MentionText>명
             </span>
           </div>
           <div id="items" className="portal-items">
-            <p>
-              역할은 가능한 업무 수준, 담당 센터는 자료 수정 범위를 정합니다.
-              페이지 권한 조건을 만족해야 해당 업무에 접근할 수 있습니다.
-            </p>
             <label>
               사용자 검색
               <input
@@ -194,8 +193,7 @@ export function PortalMembers() {
             />
           ) : (
             <p>
-              사용자를 선택하면 역할·담당 센터와 적용될 페이지 권한을 함께
-              확인할 수 있습니다.
+              직원을 선택하세요.
             </p>
           )}
         </aside>
