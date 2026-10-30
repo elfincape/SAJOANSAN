@@ -1397,3 +1397,54 @@ console.log(
     'PASS bounded mail selection pagination and invalid offset rejection',
   );
 }
+{
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const calls = [];
+  const response = await handleMailAutomation(
+    'private-mail-automation-status',
+    {},
+    { id: target.owner_id },
+    {
+      fail: (code, status) => Object.assign(Error(code), { status }),
+      json: (value) => Response.json(value),
+      db: async (path) => {
+        calls.push(path);
+        if (path.startsWith('private_mailboxes?'))
+          return [
+            {
+              id: target.mailbox_id,
+              owner_id: target.owner_id,
+              last_counts: {},
+            },
+          ];
+        if (
+          path ===
+          'onedrive_connection?select=id&encrypted_notes_tokens=not.is.null'
+        )
+          return [{ id: true }];
+        throw Error('Unexpected status query: ' + path);
+      },
+    },
+  );
+  const value = await response.json();
+  assert.equal(value.schemaReady, false);
+  assert.equal(
+    value.notesConnected,
+    true,
+    'saved Notes consent must be reported even before automation schema is installed',
+  );
+  assert.equal(value.config.enabled, false);
+  assert.equal(value.schedulerReady, false);
+  assert.equal(value.workerReady, false);
+  assert.equal(
+    calls.length,
+    2,
+    'connection status reads metadata only and does not activate or query missing automation objects',
+  );
+  console.log(
+    'PASS Notes connection status is independent from automation schema readiness',
+  );
+}

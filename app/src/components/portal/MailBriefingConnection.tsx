@@ -184,7 +184,7 @@ export function MailBriefingConnection() {
       ? '상태 확인 필요'
       : '상태 확인 중…'
     : !data.schemaReady
-      ? '저장 설정 준비 필요'
+      ? '자동 정리 준비 필요'
       : !data.workerReady
         ? '서버 작업 실행 준비 필요'
         : !data.schedulerReady
@@ -197,11 +197,24 @@ export function MailBriefingConnection() {
   return (
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
       <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
-        <strong>자동 수집·일일정리 설정</strong> · <span>{setup}</span>
+        <strong>자동 수집·일일정리 설정</strong> ·{' '}
+        {data?.notesConnected ? (
+          <>
+            <span>OneNote 연결됨</span> ·{' '}
+          </>
+        ) : null}
+        <span>{setup}</span>
       </summary>
       <div style={{ display: 'grid', gap: 14, padding: '12px 0', minWidth: 0 }}>
         <div>
-          <strong>OneNote 연결</strong>
+          <strong>OneNote 연결</strong>{' '}
+          <span role="status">
+            {!data
+              ? '연결 확인 중…'
+              : data.notesConnected
+                ? '권한 연결됨'
+                : '권한 연결 필요'}
+          </span>
           <p>
             대상: 할 일 목록 → 일일정리. Microsoft 계정의 OneNote 읽기·쓰기와
             연결 유지 권한을 사용합니다.

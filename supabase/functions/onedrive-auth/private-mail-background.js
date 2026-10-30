@@ -56,13 +56,12 @@ export async function handleMailAutomation(action, body, user, ctx) {
   if (action === 'private-mail-automation-status') {
     const config = current.automation_config ?? {},
       job = current.automation_job;
-    const notes = ready
-      ? (
-          await db(
-            'onedrive_connection?select=id&encrypted_notes_tokens=not.is.null',
-          )
-        ).length > 0
-      : false;
+    const notes =
+      (
+        await db(
+          'onedrive_connection?select=id&encrypted_notes_tokens=not.is.null',
+        )
+      ).length > 0;
     const schedulerReady = ready
       ? await rpc('private_mail_scheduler_ready', {})
       : false;

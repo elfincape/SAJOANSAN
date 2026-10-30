@@ -95,10 +95,13 @@ function DailyOverview() {
       setData(result);
       setFeedback('');
       return true;
-    } catch {
+    } catch (error) {
       if (mounted.current && id === request.current)
         setFeedback(
-          '일일정리를 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 조회해 주세요.',
+          error instanceof Error &&
+            error.message === 'AUTOMATION_SCHEMA_REQUIRED'
+            ? '일일정리 준비가 아직 완료되지 않았습니다. OneNote 권한 연결은 아래 설정에서 확인해 주세요.'
+            : '일일정리를 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 조회해 주세요.',
         );
       return false;
     } finally {
