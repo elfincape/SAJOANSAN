@@ -1824,7 +1824,7 @@ console.log(
       key: 'fixture-key',
       loadMail: async () => source,
       fetcher: async (_url, options) => {
-        assert.equal(JSON.parse(options.body).model, 'claude-haiku-5-5');
+        assert.equal(JSON.parse(options.body).model, 'claude-haiku-4-5-20251001');
         return Response.json({ stop_reason, content });
       },
       store: {

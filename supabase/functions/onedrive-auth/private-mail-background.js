@@ -1,8 +1,5 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
-import {
-  analyzePrivateMail,
-  MAIL_ANALYSIS_MODEL,
-} from './private-mail-analysis.js';
+import { analyzePrivateMail } from './private-mail-analysis.js';
 import { callHaiku } from '../_shared/haiku.js';
 import { writeDailyBriefing } from './private-mail-notes-writer.js';
 import {
@@ -383,7 +380,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           let result;
           try {
             const response = await callHaiku({
-              model: MAIL_ANALYSIS_MODEL,
+              model: 'claude-haiku-5-5',
               key: ctx.aiKey,
               fetcher,
               prompt: '연결 확인 테스트입니다. 다른 설명 없이 OK만 응답하세요.',

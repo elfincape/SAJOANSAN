@@ -4,7 +4,7 @@ import { normalizeMailAnalysis } from './private-mail-briefing-model.js';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hex = /^[0-9a-f]{64}$/;
 const BODY_LIMIT = 48000;
-export const MAIL_ANALYSIS_MODEL = 'claude-haiku-5-5';
+export const MAIL_ANALYSIS_MODEL = 'claude-haiku-4-5-20251001';
 const codes = new Set([
   'AI_NOT_CONFIGURED',
   'RATE_LIMITED',

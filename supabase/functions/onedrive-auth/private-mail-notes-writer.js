@@ -208,51 +208,67 @@ async function snapshot({ html, marker, hash }) {
   const bodies = nodes.filter((node) => node.tag === 'body');
   if (bodies.length !== 1) throw Error('PAGE_HTML_FORMAT');
   const matches = nodes.filter((node) => node.attrs['data-id'] === marker);
-  let managed = matches[0] ?? null;
-  let managedTargets = managed ? [managed] : [];
-  if (matches.length > 1) {
-    const parent = matches[0].parent;
-    const start = parent.children.indexOf(matches[0]);
-    const end = parent.children.findIndex(
+  const tagged = nodes.filter((node) =>
+    node.attrs['data-id']?.startsWith(marker + '-block-'),
+  );
+  let regions = [];
+  if (tagged.length) {
+    const start = nodes.indexOf(tagged[0]);
+    const last = nodes.indexOf(tagged.at(-1));
+    const manual = nodes.findIndex(
       (node, index) =>
-        index > start && node?.attrs?.['data-id'] === 'sajo-mail-manual',
+        index > start && node.attrs['data-id'] === 'sajo-mail-manual',
     );
-    const fragments = end > start ? parent.children.slice(start, end) : [];
-    if (
-      matches.some((node) => node.parent !== parent) ||
-      !fragments.length ||
-      fragments.some(
-        (node) =>
-          typeof node === 'string' ||
-          !node.attrs?.id ||
-          !(
-            node.attrs['data-id'] === marker || ['ul', 'ol'].includes(node.tag)
-          ),
-      ) ||
-      fragments.filter((node) => node.attrs['data-id'] === marker).length !==
-        matches.length
-    )
+    regions = nodes.slice(start, manual > start ? manual : last + 1);
+  } else if (matches.length === 1) {
+    if (matches[0].parent.tag !== 'div') throw Error('PAGE_MANAGED_TARGET');
+    regions = nodes.filter((node) => isDescendant(node, matches[0]));
+  } else if (matches.length > 1) {
+    const parent = matches[0].parent;
+    const start = nodes.indexOf(matches[0]);
+    const end = nodes.findIndex(
+      (node, index) =>
+        index > start && node.attrs['data-id'] === 'sajo-mail-manual',
+    );
+    if (matches.some((node) => node.parent !== parent) || end < start)
       throw Error('PAGE_MANAGED_AMBIGUOUS');
-    managedTargets = fragments;
-    managed = {
-      tag: 'div',
-      regions: matches,
-      attrs: { ...matches[0].attrs },
-      parent,
-      children: fragments.flatMap((node) =>
-        node.attrs['data-id'] === marker ? node.children : [node],
-      ),
-    };
+    regions = nodes.slice(start, end);
   }
-  if (managed && (managed.tag !== 'div' || managed.parent.tag !== 'div'))
-    throw Error('PAGE_MANAGED_TARGET');
+  const native = new Set([
+    'p',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'img',
+  ]);
+  const regionSet = new Set(regions);
+  const managedTargets = regions.filter((node) => {
+    if (!native.has(node.tag)) return false;
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (parent.attrs?.['data-id'] === 'sajo-mail-manual') return false;
+      if (regionSet.has(parent) && native.has(parent.tag)) return false;
+    }
+    return true;
+  });
+  const managed = managedTargets.length
+    ? {
+        tag: 'div',
+        attrs: { 'data-id': marker, id: managedTargets[0].attrs.id },
+        parent: managedTargets[0].parent,
+        regions: managedTargets,
+        children: managedTargets,
+      }
+    : null;
   if (managed) {
     let inBody = false;
     for (let parent = managed.parent; parent; parent = parent.parent)
       if (parent === bodies[0]) inBody = true;
-    if (!inBody || /position\s*:\s*absolute/i.test(managed.attrs.style ?? ''))
-      throw Error('PAGE_MANAGED_TARGET');
     if (
+      !inBody ||
       managedTargets.some(
         (target) =>
           target.attrs.id &&
@@ -261,10 +277,9 @@ async function snapshot({ html, marker, hash }) {
       )
     )
       throw Error('PAGE_MANAGED_TARGET');
-    for (const node of nodes) {
-      if (node.attrs['data-id'] !== 'sajo-mail-manual') continue;
-      if (isDescendant(node, managed)) throw Error('PAGE_MANAGED_TARGET');
-    }
+    for (const node of regions)
+      if (node.attrs['data-id'] === 'sajo-mail-manual')
+        throw Error('PAGE_MANAGED_TARGET');
   }
   const managedHash = managed
     ? await hash(JSON.stringify(canonical(managed)))
@@ -441,6 +456,22 @@ function photoReport(base, images, count) {
         ? '<p data-id="sajo-mail-photos-' + sourceId + '">첨부사진</p>'
         : '',
   );
+  let blockIndex = 0;
+  managedHtml = managedHtml.replace(
+    /<(p|h[1-6])(\s[^>]*?)?>/g,
+    (open, tag, attrs = '') =>
+      /\sdata-id=/.test(attrs)
+        ? open
+        : '<' +
+          tag +
+          ' data-id="sajo-mail-daily-' +
+          base.day +
+          '-block-' +
+          blockIndex++ +
+          '"' +
+          attrs +
+          '>',
+  );
   const groups = new Map();
   for (const image of images.slice(0, count))
     groups.set(
@@ -530,11 +561,18 @@ function multipartCommands(commands, images) {
   return body;
 }
 function isDescendant(node, ancestor) {
+  if (ancestor.regions?.includes(node)) return true;
   for (let parent = node.parent; parent; parent = parent.parent)
     if (parent === ancestor || ancestor.regions?.includes(parent)) return true;
   return false;
 }
 function fragmentChanges(html, targets) {
+  if (
+    targets.some(
+      (target) => typeof target.attrs.id !== 'string' || !target.attrs.id,
+    )
+  )
+    throw Error('PAGE_MANAGED_TARGET');
   const root = scanHtml(html).nodes[0];
   const serialize = (node) =>
     typeof node === 'string'
@@ -550,7 +588,6 @@ function fragmentChanges(html, targets) {
   const children = root.children.filter(
     (node) => typeof node !== 'string' || node.trim(),
   );
-  if (children.length < targets.length) throw Error('PAGE_MANAGED_TARGET');
   return targets.map((target, index) => {
     const start = Math.floor((index * children.length) / targets.length);
     const end = Math.floor(((index + 1) * children.length) / targets.length);
@@ -558,11 +595,12 @@ function fragmentChanges(html, targets) {
       target: target.attrs.id,
       action: 'replace',
       content:
-        '<div data-id="' +
-        escape(root.attrs['data-id']) +
-        '">' +
-        children.slice(start, end).map(serialize).join('') +
-        '</div>',
+        children.slice(start, end).map(serialize).join('') ||
+        '<p data-id="' +
+          escape(root.attrs['data-id']) +
+          '-block-empty-' +
+          index +
+          '"></p>',
     };
   });
 }
