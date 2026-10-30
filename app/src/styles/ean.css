@@ -1,4 +1,7 @@
 html[data-theme] {
+  --ean-control-radius: 10px;
+  --ean-badge-radius: 6px;
+  --ean-panel-radius: 16px;
   scrollbar-gutter: stable;
   background: var(--theme-page);
   --theme-primary: #29292d;
@@ -132,8 +135,15 @@ html[data-theme]
 }
 html[data-theme]
   body.workspace-ui
-  :is(.btn, button.btn, .app-input, .app-select, .app-textarea) {
-  border-radius: 10px;
+  :is(
+    .btn,
+    button.btn,
+    button.rounded,
+    .app-input,
+    .app-select,
+    .app-textarea
+  ) {
+  border-radius: var(--ean-control-radius);
   box-shadow: none;
   background-image: none;
   transform: none;
@@ -146,8 +156,8 @@ html[data-theme] body.workspace-ui :is(.btn-primary, .btn-green, .primary) {
   background: var(--theme-primary);
   color: #fff;
 }
-html[data-theme] body.workspace-ui.portal-shell button {
-  border-radius: 10px;
+html[data-theme] body.workspace-ui.portal-shell button:not(.task-row) {
+  border-radius: var(--ean-control-radius);
   box-shadow: none;
 }
 html[data-theme] body.workspace-ui.portal-shell .primary:hover:not(:disabled) {
@@ -241,6 +251,8 @@ html[data-theme]
   :is(
     .work-panel,
     .work-editor,
+    .list,
+    #detail,
     .panel,
     .step-card,
     .work-surface,
@@ -249,7 +261,7 @@ html[data-theme]
   ) {
   background: var(--ean-surface);
   border-color: var(--ean-rim);
-  border-radius: 16px;
+  border-radius: var(--ean-panel-radius);
   -webkit-backdrop-filter: blur(24px) saturate(115%);
   backdrop-filter: blur(24px) saturate(115%);
   box-shadow:
@@ -258,6 +270,9 @@ html[data-theme]
 }
 html[data-theme] body.workspace-ui :is(table, .ag-root-wrapper) {
   background: var(--theme-panel);
+}
+html[data-theme] body.workspace-ui.portal-shell #portal-main .list-heading {
+  background: transparent;
 }
 html[data-theme]
   body.workspace-ui.portal-shell

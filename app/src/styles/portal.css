@@ -497,7 +497,7 @@
   font-size: 14px;
   line-height: 1.6;
 }
-.portal-shell .task-row:hover:not(:disabled) {
+.portal-shell .task-row:hover:not(:disabled):not(.selected) {
   background: var(--theme-hover);
   border-color: transparent;
   border-bottom-color: #dce8e2;
@@ -1354,8 +1354,8 @@
   width: 5px;
   height: 5px;
   margin: 0 10px 2px 1px;
-  border-top: 1.5px solid #78909e;
-  border-right: 1.5px solid #78909e;
+  border-top: 1.5px solid var(--theme-muted);
+  border-right: 1.5px solid var(--theme-muted);
   transform: rotate(45deg);
 }
 :where(.portal-shell) .history-task[open] > summary > strong::before {

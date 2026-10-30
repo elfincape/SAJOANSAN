@@ -31,7 +31,7 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--theme-border);
-  border-radius: 4px;
+  border-radius: var(--ean-control-radius);
   background: var(--theme-panel);
   color: var(--theme-text);
   padding: 7px 8px;
@@ -53,7 +53,7 @@
 #gm-app button {
   min-height: 32px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--ean-control-radius);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -89,7 +89,7 @@
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  border-top: 1px solid var(--theme-border);
+  border-top: 1px solid var(--theme-border-soft);
   padding: 3px 0;
 }
 #gm-fixed-title {
@@ -153,7 +153,15 @@
   height: calc(100dvh - 200px);
   min-height: 380px;
   max-height: 660px;
-  border-block: 1px solid var(--theme-border);
+  padding: 16px;
+  border: 1px solid var(--ean-rim);
+  border-radius: var(--ean-panel-radius);
+  background: var(--ean-surface);
+  box-shadow:
+    inset 0 1px 0 var(--ean-edge),
+    var(--ean-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(110%);
+  backdrop-filter: blur(24px) saturate(110%);
 }
 .gm-stage {
   min-width: 0;
@@ -162,7 +170,7 @@
   padding: 8px 0;
 }
 .gm-stage + .gm-stage {
-  border-left: 1px solid var(--theme-border);
+  border-left: 1px solid var(--theme-border-soft);
   padding-left: 12px;
 }
 .gm-section-head {
@@ -180,12 +188,6 @@
 }
 #gm-app .gm-stage h3::before {
   display: none;
-}
-.gm-step {
-  color: var(--theme-accent);
-  font-size: 12px;
-  margin-right: 5px;
-  font-weight: 600;
 }
 #gm-app .gm-paste {
   display: grid;
@@ -265,7 +267,7 @@
   min-width: 0;
   padding: 6px;
   border: 1px solid var(--theme-border);
-  border-radius: 4px;
+  border-radius: var(--ean-control-radius);
   background: var(--theme-panel);
 }
 #gm-app .gm-message h3 {
@@ -345,7 +347,15 @@
 .gm-scroll {
   width: 100%;
   overflow-x: auto;
-  border-block: 1px solid var(--theme-border);
+  padding: 16px;
+  border: 1px solid var(--ean-rim);
+  border-radius: var(--ean-panel-radius);
+  background: var(--ean-surface);
+  box-shadow:
+    inset 0 1px 0 var(--ean-edge),
+    var(--ean-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(110%);
+  backdrop-filter: blur(24px) saturate(110%);
 }
 #gm-app table {
   width: 100%;
@@ -496,7 +506,7 @@
     padding-left: 0;
   }
   .gm-stage:nth-child(n + 3) {
-    border-top: 1px solid var(--theme-border);
+    border-top: 1px solid var(--theme-border-soft);
   }
   #gm-center {
     display: none;
@@ -514,7 +524,7 @@
   .gm-stage + .gm-stage {
     border-left: 0;
     padding: 12px 0;
-    border-top: 1px solid var(--theme-border);
+    border-top: 1px solid var(--theme-border-soft);
   }
   .gm-fixed-strip {
     flex-wrap: wrap;
@@ -561,5 +571,13 @@
   }
   #gm-app dialog {
     padding: 18px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .gm-flow {
+    background: var(--theme-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

@@ -42,7 +42,8 @@
   margin: 0 0 18px;
   padding: 12px 14px;
   background: var(--theme-soft);
-  border-radius: 8px;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: var(--ean-control-radius);
 }
 .task-change-review summary {
   cursor: pointer;
