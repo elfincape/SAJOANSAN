@@ -72,6 +72,10 @@ export async function finishOneDrive() {
   if (!saved || saved.state !== state) throw new Error('연결을 시작한 브라우저에서 다시 로그인해 주세요.');
   await oneDriveCall(saved.purpose === 'mail-briefing' ? 'notes-finish' : 'finish', { state, proof: saved.proof }); sessionStorage.removeItem('onedrive-proof');
   const path = String(saved.returnPath || '/admin/drivers.html');
-  history.replaceState(null, '', path.startsWith('/portal/') || path.startsWith('/admin/drivers.html') ? path : '/admin/drivers.html');
+  if (saved.purpose === 'mail-briefing' && (path === '/admin/mail-daily-briefing.html' || path.startsWith('/admin/mail-daily-briefing.html?'))) {
+    location.replace(path);
+    return true;
+  }
+  history.replaceState(null, '', path.startsWith('/portal/') || path.startsWith('/admin/drivers.html') ? path : saved.purpose === 'mail-briefing' ? '/portal/?view=mail' : '/admin/drivers.html');
   return true;
 }
