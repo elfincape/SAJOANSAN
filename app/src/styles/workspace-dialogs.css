@@ -1,0 +1,109 @@
+/* Shared material for native work dialogs; their form layout and sizing stay local. */
+html[data-theme]
+  body.workspace-ui
+  dialog:is(
+    #edit-dialog,
+    #dispatch-edit-dialog,
+    #gm-preview-dialog,
+    #gm-fixed-dialog,
+    [data-portal-motion]
+  ) {
+  border: 1px solid var(--ean-rim);
+  border-radius: 20px;
+  background: var(--ean-surface);
+  color: var(--theme-text);
+  box-shadow:
+    inset 0 1px 0 var(--ean-edge),
+    var(--ean-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(110%);
+  backdrop-filter: blur(24px) saturate(110%);
+}
+html[data-theme]
+  body.workspace-ui
+  dialog:is(
+    #edit-dialog,
+    #dispatch-edit-dialog,
+    #gm-preview-dialog,
+    #gm-fixed-dialog,
+    [data-portal-motion]
+  )::backdrop {
+  background: rgb(0 0 0 / 0.24);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+html[data-theme]
+  body.workspace-ui
+  dialog:is(
+    #edit-dialog,
+    #dispatch-edit-dialog,
+    #gm-preview-dialog,
+    #gm-fixed-dialog
+  )[open] {
+  animation: ean-work-dialog-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+html[data-theme]
+  body.workspace-ui
+  dialog.parent-task-dialog[data-portal-motion] {
+  border-radius: 20px 0 0 20px;
+}
+html[data-theme]
+  body.workspace-ui
+  dialog[data-portal-motion]
+  .parent-dialog-heading {
+  background: var(--ean-surface);
+  -webkit-backdrop-filter: blur(24px) saturate(110%);
+  backdrop-filter: blur(24px) saturate(110%);
+}
+@keyframes ean-work-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme]
+    body.workspace-ui
+    dialog:is(
+      #edit-dialog,
+      #dispatch-edit-dialog,
+      #gm-preview-dialog,
+      #gm-fixed-dialog
+    )[open] {
+    animation: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-theme]
+    body.workspace-ui
+    dialog:is(
+      #edit-dialog,
+      #dispatch-edit-dialog,
+      #gm-preview-dialog,
+      #gm-fixed-dialog,
+      [data-portal-motion]
+    ),
+  html[data-theme]
+    body.workspace-ui
+    dialog[data-portal-motion]
+    .parent-dialog-heading {
+    background: var(--theme-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-theme]
+    body.workspace-ui
+    dialog:is(
+      #edit-dialog,
+      #dispatch-edit-dialog,
+      #gm-preview-dialog,
+      #gm-fixed-dialog,
+      [data-portal-motion]
+    )::backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

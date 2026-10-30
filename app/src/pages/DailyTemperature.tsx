@@ -134,10 +134,9 @@ function DailyTemperatureContent() {
                 const response = await fetch(`${url}?v=${Date.now()}`, {
                   cache: 'no-store',
                 });
-                if (!response.ok)
-                  throw new Error(
-                    `기본 템플릿 파일을 찾을 수 없습니다. (${response.status})`,
-                  );
+                const contentType = response.headers.get('content-type') || '';
+                if (!response.ok || /text\/html|application\/json/i.test(contentType))
+                  throw new Error('기본 템플릿 응답이 올바르지 않습니다.');
                 return readTemperatureTemplate(await response.arrayBuffer());
               })();
         initial.current = request;
@@ -146,24 +145,19 @@ function DailyTemperatureContent() {
         applyTemplate(next, sourceName, url, 'default');
         if (showToast)
           toast('저장된 기본 템플릿을 다시 불러왔습니다.', 'success');
-      } catch (error) {
+      } catch {
         if (token !== generation.current) return;
-        const message = error instanceof Error ? error.message : String(error);
+        const message = `${sourceName.replace('저장된 ', '')}을 불러올 수 없습니다. 파일을 선택해 주세요.`;
         setTemplate(null);
         setTemplateInfo(
           <>
             <div className="font-medium text-amber-200">
-              저장된 기본 템플릿을 불러오지 못했습니다.
-            </div>
-            <div>{message}</div>
-            <div className="mt-1">
-              기본 파일을 <code>{url}</code>에 올리거나, 위 입력으로 임시
-              업로드하세요.
+              {message}
             </div>
           </>,
         );
         if (showToast)
-          toast(`기본 템플릿을 불러오지 못했습니다: ${message}`, 'error');
+          toast(message, 'error');
       }
     },
     [sourceName, url, applyTemplate, toast],

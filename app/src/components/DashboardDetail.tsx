@@ -234,17 +234,14 @@ export function DashboardDetail({
             >
               {busy ? '저장 중...' : '납품처 저장'}
             </button>
-            <ModalClose
-              id="detail-close"
-              className="btn btn-ghost text-xs"
-            >
+            <ModalClose id="detail-close" className="btn btn-ghost text-xs">
               닫기
             </ModalClose>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">
           <div className="space-y-4">
-            <section className="rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+            <section className="ean-detail-section p-3">
               <h3 className="text-sm font-semibold mb-2">코스 정보</h3>
               <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {[
@@ -268,7 +265,7 @@ export function DashboardDetail({
                 ))}
               </dl>
             </section>
-            <section className="rounded-lg border border-zinc-700 bg-zinc-950/30 p-3">
+            <section className="ean-detail-section p-3">
               <h3 className="text-sm font-semibold mb-2">납품처 정보</h3>
               <dl className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {(
@@ -292,7 +289,7 @@ export function DashboardDetail({
           </div>
           <FileArea
             as="aside"
-            className="space-y-3 rounded-lg border border-zinc-700 bg-zinc-950/30 p-3"
+            className="ean-detail-section space-y-3 p-3"
             accept="image/*"
             multiple
             disabled={!loaded}

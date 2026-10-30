@@ -7,7 +7,7 @@ import type { Feature } from '../domain/feature-catalog';
 import { PRIVATE_FEATURE_DEFAULTS, isPrivateFeatureOwner, loadPrivateFeatures, savePrivateFeatures, subscribePrivateFeatures } from '../lib/private-features';
 
 function description(feature: Feature) {
-  return [feature.desc, feature.centers.length ? '적용 센터: ' + feature.centers.map(code => code === '002' ? '평택' : code === '001' ? '안산' : code).join(', ') : '모든 지원 센터', feature.adminOnly ? '관리자 전용' : feature.ownerOnly ? '소유자 전용' : '페이지 권한 조건 적용'].filter(Boolean).join(' · ');
+  return [feature.centers.length ? '적용 센터: ' + feature.centers.map(code => code === '002' ? '평택' : code === '001' ? '안산' : code).join(', ') : '', feature.adminOnly ? '관리자 전용' : feature.ownerOnly ? '소유자 전용' : ''].filter(Boolean).join(' · ');
 }
 function SettingsContent() {
   const { profile, permissions, center, editable } = useAdminPage();
@@ -28,7 +28,7 @@ function SettingsContent() {
   }
   return <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-3xl w-full mx-auto px-4 py-8">
     <div className="flex flex-wrap items-center gap-2 mb-6"><h2 className="app-function-title text-lg font-semibold mr-auto" style={{ fontSize: 20 }}>관리 허브 기능 표시</h2><button id="enable-all" className="btn btn-ghost" disabled={!editable || !visible.length} onClick={() => persist({ ...features, ...Object.fromEntries(visible.map(feature => [feature.id, true])) })}>검색 결과 켜기</button><button id="disable-all" className="btn btn-ghost" disabled={!editable || !visible.length} onClick={() => persist({ ...features, ...Object.fromEntries(visible.map(feature => [feature.id, false])) })}>검색 결과 끄기</button></div>
-    <p className="feature-help">현재 브라우저의 메뉴 표시 설정입니다. 사용자 권한과는 별개이며, 기능을 켜도 접근 권한은 추가되지 않습니다. 기능이 등록되면 이 목록에도 함께 반영됩니다.</p>
+    <p className="feature-help">현재 브라우저의 메뉴 표시 설정입니다. 사용자 권한과는 별개이며, 기능을 켜도 접근 권한은 추가되지 않습니다.</p>
     <div className="feature-toolbar"><label htmlFor="feature-search">기능 검색<input id="feature-search" type="search" className="app-input" placeholder="기능 이름·센터·설명 검색" value={search} onChange={event => setSearch(event.target.value)} /></label><span id="feature-count" role="status" aria-live="polite">{visible.length}개 기능 · 켜짐 {visible.filter(feature => features[feature.id]).length}개</span><button id="reset-defaults" disabled={!editable} className="btn btn-ghost" onClick={() => persist({ ...PRIVATE_FEATURE_DEFAULTS })}>기본값 복원</button></div>
     <div id="feature-groups" className="space-y-6">{Object.entries(FEATURE_CATEGORIES).map(([key, title]) => {
       const items = CONFIGURABLE_FEATURES.filter(feature => feature.category === key);

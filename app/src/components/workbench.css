@@ -16,6 +16,12 @@ html[data-theme] body.workspace-ui .saved-view button:first-child { border-radiu
 .saved-view-status:not(:empty) { margin-top: 8px; }
 .workspace-ui .workspace-split { display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(320px, var(--editor-width, 480px)); align-items: start; gap: 0; min-width: 0; }
 .workspace-split > :is(.work-list, .work-editor) { min-width: 0; }
+/* An empty list should not reserve the populated table's viewport height. */
+html[data-theme] body.workspace-ui .work-list:has(#empty-msg:not(.hidden)),
+html[data-theme] body.workspace-ui .work-list:has(tbody:empty) {
+  min-height: 240px !important;
+  align-self: start;
+}
 .workspace-split-controls { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--theme-muted); font-size: 12px; }
 html[data-theme] body.workspace-ui .workspace-split-controls button { padding: 5px 10px; min-height: 34px; color: var(--theme-text); background: var(--theme-panel); border: 1px solid var(--theme-border); border-radius: 8px; font-size: 12px; }
 .workspace-split-handle { display: grid; place-items: center; align-self: stretch; min-height: 160px; cursor: col-resize; touch-action: none; }

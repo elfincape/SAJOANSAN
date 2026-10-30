@@ -1,4 +1,5 @@
 import { pageTitle } from '../page-paths';
+import { CenterSwitcher } from './CenterSwitcher';
 import { useWorkspaceScroll } from './useWorkspaceScroll';
 import {
   createContext,
@@ -24,7 +25,11 @@ import {
 } from '../lib/center';
 import type { Center } from '../lib/center';
 import { permissionAllowed, resourceForPath } from '../lib/permissions';
-import { FEATURE_CATALOG, FEATURE_CATEGORIES, featureForPath } from '../domain/feature-catalog';
+import {
+  FEATURE_CATALOG,
+  FEATURE_CATEGORIES,
+  featureForPath,
+} from '../domain/feature-catalog';
 import {
   loadPrivateFeatures,
   subscribePrivateFeatures,
@@ -103,7 +108,12 @@ function Shell({
   const manager = ['editor', 'admin'].includes(profile.role);
   const canManage =
     manager ||
-    FEATURE_CATALOG.some(f => f.href?.startsWith('/admin/') && f.resource && featureAccessible(f, profile, permissions, center.code, features)) ||
+    FEATURE_CATALOG.some(
+      (f) =>
+        f.href?.startsWith('/admin/') &&
+        f.resource &&
+        featureAccessible(f, profile, permissions, center.code, features),
+    ) ||
     Object.keys(permissions.access || {}).some(
       (resource) =>
         !portalResources.has(resource) &&
@@ -266,41 +276,30 @@ function Shell({
         </div>
       }
       centerControl={
-        <label id="center-switcher" data-app-center="true">
-          <span>센터</span>
-          <select
-            disabled={controlsDisabled}
-            id="app-center-select"
-            aria-label="작업 센터"
-            value={center.code}
-            onChange={async (event) => {
-              const code = event.target.value;
-              if (
-                centerChangeGuard.current &&
-                !(await centerChangeGuard.current())
-              )
-                return;
-              const next = setSelectedCenterCode(code);
-              if (next)
-                location.replace(
-                  withCenterParam(
-                    centerTarget ||
-                      location.pathname + location.search + location.hash,
-                    next,
-                  ),
-                );
-            }}
-          >
-            <option value="" disabled>
-              센터 선택
-            </option>
-            {CENTERS.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.shortName}
-              </option>
-            ))}
-          </select>
-        </label>
+        <CenterSwitcher
+          disabled={controlsDisabled}
+          value={center.code}
+          options={CENTERS.map((item) => ({
+            value: item.code,
+            label: item.shortName,
+          }))}
+          onChange={async (code) => {
+            if (
+              centerChangeGuard.current &&
+              !(await centerChangeGuard.current())
+            )
+              return;
+            const next = setSelectedCenterCode(code);
+            if (next)
+              location.replace(
+                withCenterParam(
+                  centerTarget ||
+                    location.pathname + location.search + location.hash,
+                  next,
+                ),
+              );
+          }}
+        />
       }
     >
       {children}
@@ -422,7 +421,13 @@ export function AdminPage({
     );
   const denied = resource
     ? pageFeature
-      ? !featureAccessible(pageFeature, auth.profile, auth.permissions, center.code, loadPrivateFeatures(auth.profile))
+      ? !featureAccessible(
+          pageFeature,
+          auth.profile,
+          auth.permissions,
+          center.code,
+          loadPrivateFeatures(auth.profile),
+        )
       : !permissionAllowed(auth.permissions, resource, 'read', center.code)
     : !allowedHub && rank[auth.profile.role] < rank[minRole];
   if (denied)

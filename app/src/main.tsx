@@ -33,6 +33,37 @@ function Workspace() {
   useEffect(() => {
     let index = Number(history.state?.[indexKey] ?? 0);
     let sequence = 0;
+    const previousScrollRestoration = history.scrollRestoration;
+    history.scrollRestoration = 'manual';
+    const storedScroll = history.state?.__workspaceScroll;
+    const initialScroll: [number, number] = Array.isArray(storedScroll) && storedScroll.length === 2 && storedScroll.every(Number.isFinite) ? [storedScroll[0], storedScroll[1]] : [window.scrollX, window.scrollY];
+    const scrollPositions = new Map<number, [number, number]>([[index, initialScroll]]);
+    const saveScroll = () => {
+      const position: [number, number] = [window.scrollX, window.scrollY];
+      scrollPositions.set(index, position);
+      history.replaceState({ ...history.state, __workspaceScroll: position }, '', location.href);
+    };
+    let cancelScrollRestore = () => {};
+    function restoreScroll(position: readonly number[]) {
+      cancelScrollRestore();
+      const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+      const observer = new ResizeObserver(attempt);
+      const timer = window.setTimeout(cancel, 1800);
+      function cancel() {
+        observer.disconnect();
+        clearTimeout(timer);
+        events.forEach(event => removeEventListener(event, cancel));
+      }
+      function attempt() {
+        window.scrollTo({ left: position[0], top: position[1], behavior: 'instant' });
+        if (Math.abs(window.scrollY - position[1]) < 2 && Math.abs(window.scrollX - position[0]) < 2) cancel();
+      }
+      cancelScrollRestore = cancel;
+      events.forEach(event => addEventListener(event, cancel, { passive: true }));
+      observer.observe(document.body);
+      observer.observe(document.documentElement);
+      attempt();
+    }
     let restoring: { index: number; complete: () => void } | undefined;
     let traversal: { index: number; commit: () => void } | undefined;
     const replaceState = history.replaceState;
@@ -68,9 +99,11 @@ function Workspace() {
             setStatus('');
             setCurrent({ Page: module.default, key: url.href });
           });
-          window.scrollTo(0, 0);
+          const position = delta === undefined ? [0, 0] : scrollPositions.get(index) ?? [0, 0];
+          restoreScroll(position);
           finish();
         };
+        saveScroll();
         if (delta !== undefined) {
           traversal = { index: index + delta, commit };
           history.go(delta);
@@ -127,12 +160,17 @@ function Workspace() {
     // Window bubbling runs after editor guards and React link handlers.
     addEventListener('click', click);
     addEventListener('popstate', pop);
+    addEventListener('pagehide', saveScroll);
+    restoreScroll(initialScroll);
     return () => {
       sequence++;
       uninstall();
       history.replaceState = replaceState;
+      history.scrollRestoration = previousScrollRestoration;
+      cancelScrollRestore();
       removeEventListener('click', click);
       removeEventListener('popstate', pop);
+      removeEventListener('pagehide', saveScroll);
     };
   }, []);
   const Page = current.Page;

@@ -4,9 +4,9 @@ import type { ReactNode } from 'react';
 import '../../styles/portal-dialog-motion.css';
 
 export function closePortalDialog(event: React.MouseEvent<HTMLButtonElement>) {
-  event.currentTarget.closest('dialog')?.dispatchEvent(
-    new Event('cancel', { cancelable: true }),
-  );
+  event.currentTarget
+    .closest('dialog')
+    ?.dispatchEvent(new Event('cancel', { cancelable: true }));
 }
 export function PortalDialog({
   id,
@@ -44,7 +44,7 @@ export function PortalDialog({
         closingRef.current = false;
         setClosing(false);
       } else latest.current.onClose();
-    }, 220);
+    }, 180);
   }
   useEffect(() => {
     const element = dialog.current;

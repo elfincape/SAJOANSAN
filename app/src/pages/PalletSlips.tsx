@@ -70,7 +70,7 @@ export default function PalletSlips() {
                 key={kind}
                 accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
                 onFiles={(files) => void handleFile(kind, files[0])}
-                className="drop-card rounded-lg p-4"
+                className="work-surface drop-card rounded-lg p-4"
                 data-drop={kind}
               >
                 <div className="flex items-center gap-2 mb-3">
@@ -113,7 +113,7 @@ export default function PalletSlips() {
             );
           })}
         </section>
-        <section className="border border-zinc-700 rounded-lg overflow-hidden">
+        <section className="work-surface border border-zinc-700 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">매칭 실행</span>

@@ -9,6 +9,7 @@ import {
 } from '../../lib/private-features';
 import type { WorkspaceCommand } from '../WorkspaceCommands';
 import { WorkspaceFrame } from '../WorkspaceFrame';
+import { CenterSwitcher } from '../CenterSwitcher';
 import {
   PORTAL_VIEWS,
   PORTAL_NAV_GROUPS,
@@ -339,22 +340,15 @@ export function PortalShell({
         </div>
       }
       centerControl={
-        <label id="center-switcher" data-app-center="true">
-          <span>센터</span>
-          <select
-            id="app-center-select"
-            aria-label="작업 센터"
-            value={center}
-            disabled={busy}
-            onChange={(e) => onCenter(e.target.value)}
-          >
-            {context.centers.map((c) => (
-              <option key={c.code} value={c.code}>
-                {getCenterByCode(c.code)?.shortName || c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <CenterSwitcher
+          value={center}
+          disabled={busy}
+          options={context.centers.map((c) => ({
+            value: c.code,
+            label: getCenterByCode(c.code)?.shortName || c.name,
+          }))}
+          onChange={onCenter}
+        />
       }
     >
       {children}{' '}

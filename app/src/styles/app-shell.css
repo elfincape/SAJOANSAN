@@ -449,7 +449,7 @@ html[data-theme]
   body.workspace-ui.app-shell
   #app-sidebar
   :is(a, button[data-view]):hover {
-  color: #fff;
+  color: var(--theme-sidebar-text);
   background: var(--theme-sidebar-hover);
 }
 html[data-theme]
