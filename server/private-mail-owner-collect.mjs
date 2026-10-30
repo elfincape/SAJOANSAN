@@ -441,6 +441,8 @@ export async function handleOwnerCollect(
           login: 'POP_LOGIN_FAILED',
           collect: 'COLLECTION_FAILED',
         }[stage];
+    if (processing.signal.aborted || Date.now() >= deadline)
+      code = 'BATCH_TIMEOUT';
   } finally {
     clearTimeout(budgetTimer);
     pop?.close();

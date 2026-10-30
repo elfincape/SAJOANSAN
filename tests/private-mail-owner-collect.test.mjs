@@ -1158,3 +1158,174 @@ assert.ok(
 console.log(
   'PASS TTL job capability forwarding: Edge validates before POP, expired/random/mismatched claims denied, one-shot analysis/report, exact unauthenticated probe has no side effects',
 );
+
+async function interruptedCollection(scenario) {
+  const nativeTimer = globalThis.setTimeout,
+    nativeNow = Date.now;
+  let budgetCallback,
+    elapsed = 0,
+    checkpoint,
+    completed = 0,
+    abortedFetch = false;
+  const uidls =
+    scenario === 'empty-abort'
+      ? [[1, 'inflight-mail']]
+      : [
+          [1, 'inflight-mail'],
+          [2, 'completed-mail'],
+        ];
+  const digest = (value) => createHash('sha256').update(value).digest('hex');
+  globalThis.setTimeout = (callback, milliseconds, ...args) => {
+    if (milliseconds === 180000 && !budgetCallback)
+      budgetCallback = () => callback(...args);
+    return nativeTimer(callback, milliseconds, ...args);
+  };
+  Date.now = () => nativeNow() + elapsed;
+  try {
+    const response = await handleOwnerCollect(
+      new Request('https://sajoansan.vercel.app/api/private-mail-collect', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer mock-owner' },
+        body: JSON.stringify({
+          continuous: true,
+          requestId: '00000000-0000-4000-8000-000000000109',
+        }),
+      }),
+      {
+        env,
+        logger: () => {},
+        packager: async (_raw, uidl) => ({ ...packaged, uidl: digest(uidl) }),
+        connect: async () => ({
+          greeting: async () => {},
+          login: async () => {},
+          close() {},
+          uidl: async () => uidls.map((entry) => [...entry]),
+          list: async () =>
+            new Map(uidls.map(([number]) => [number, raw.length])),
+          top: async () => raw,
+          retr: async () => raw,
+        }),
+        fetcher: async (_url, options) => {
+          if (options.headers['Content-Type'] === 'application/octet-stream') {
+            const metadata = JSON.parse(
+              decodeURIComponent(options.headers['X-Mail-Metadata']),
+            );
+            if (metadata.uidl === digest('inflight-mail')) {
+              assert.equal(completed, scenario === 'empty-abort' ? 0 : 1);
+              assert.equal(typeof budgetCallback, 'function');
+              if (scenario === 'elapsed') {
+                elapsed = 180000;
+                throw new DOMException(
+                  'fixture transport aborted',
+                  'AbortError',
+                );
+              }
+              if (scenario === 'failure')
+                throw new DOMException(
+                  'fixture transport aborted',
+                  'AbortError',
+                );
+              return new Promise((_, reject) => {
+                options.signal.addEventListener(
+                  'abort',
+                  () => {
+                    abortedFetch = true;
+                    reject(options.signal.reason);
+                  },
+                  { once: true },
+                );
+                budgetCallback();
+                assert.equal(
+                  options.signal.aborted,
+                  true,
+                  'The real processing AbortController must reach the active fetch',
+                );
+              });
+            }
+            return Response.json({ file: { item_id: 'fixture-file' } });
+          }
+          const body = JSON.parse(options.body);
+          if (body.operation === 'begin')
+            return Response.json({
+              mailbox: '00000000-0000-4000-8000-000000000003',
+              lease: '00000000-0000-4000-8000-000000000004',
+              cutoff: '2026-08-18T00:00:00Z',
+              cursor: null,
+            });
+          if (body.operation === 'start-cycle')
+            return Response.json({
+              cycle: startCollection(
+                body.uidls,
+                '00000000-0000-4000-8000-000000000110',
+                new Date().toISOString(),
+                body.requestId,
+              ),
+            });
+          if (body.operation === 'seen-many')
+            return Response.json({ seen: [], publishedSince: [] });
+          if (body.operation === 'finish') {
+            assert.equal(body.message.uidl, digest('completed-mail'));
+            completed++;
+            return Response.json({ id: 'fixture-published' });
+          }
+          if (body.operation === 'end') {
+            checkpoint = body;
+            assert.equal(
+              options.signal.aborted,
+              false,
+              'Checkpoint finalization must outlive the processing deadline',
+            );
+            return Response.json({ ok: true });
+          }
+          assert.fail('Unexpected interrupted collection operation');
+        },
+      },
+    );
+    return {
+      status: response.status,
+      body: await response.json(),
+      checkpoint,
+      abortedFetch,
+    };
+  } finally {
+    globalThis.setTimeout = nativeTimer;
+    Date.now = nativeNow;
+  }
+}
+for (const scenario of ['abort', 'elapsed']) {
+  const result = await interruptedCollection(scenario);
+  assert.equal(
+    result.status,
+    200,
+    `${scenario}: a deadline interruption with completed mail must yield normally`,
+  );
+  assert.equal(result.body.progress.processed, 1);
+  assert.equal(result.body.progress.remaining, 1);
+  assert.equal(result.body.progress.phase, 'collecting');
+  assert.equal(result.checkpoint.error, null);
+  assert.equal(result.checkpoint.counts.saved, 1);
+  assert.deepEqual(result.checkpoint.processedUidls, [
+    createHash('sha256').update('completed-mail').digest('hex'),
+  ]);
+  if (scenario === 'abort') assert.equal(result.abortedFetch, true);
+}
+const ordinaryFailure = await interruptedCollection('failure');
+assert.equal(
+  ordinaryFailure.status,
+  503,
+  'A non-deadline AbortError must remain a failure',
+);
+assert.equal(ordinaryFailure.body.code, 'COLLECTION_FAILED');
+assert.equal(ordinaryFailure.checkpoint.error, 'SYNC_FAILED');
+assert.equal(ordinaryFailure.checkpoint.counts.saved, 1);
+const emptyDeadline = await interruptedCollection('empty-abort');
+assert.equal(
+  emptyDeadline.status,
+  503,
+  'A deadline without completed work must not claim progress',
+);
+assert.equal(emptyDeadline.body.code, 'BATCH_TIMEOUT');
+assert.equal(emptyDeadline.checkpoint.processedUidls.length, 0);
+console.log(
+  'PASS real processing abort/deadline: completed prefix checkpoints and yields, unfinished mail stays pending, ordinary failures and zero-progress deadlines remain failures',
+);
