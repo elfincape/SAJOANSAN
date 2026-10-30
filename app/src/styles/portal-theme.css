@@ -20,20 +20,20 @@ body.workspace-ui.portal-shell {
   letter-spacing: 0;
 }
 .workspace-ui.portal-shell :is(button, input, select, textarea) {
-  border-radius: 6px;
+  border-radius: var(--ean-control-radius);
 }
 .workspace-ui.portal-shell button:hover:not(:disabled) {
   background: var(--theme-soft);
   border-color: var(--theme-border);
 }
 .workspace-ui.portal-shell .primary {
-  background: #087f5b;
-  border-color: #087f5b;
+  background: var(--theme-primary);
+  border-color: var(--theme-primary);
   color: #fff;
 }
 .workspace-ui.portal-shell .primary:hover:not(:disabled) {
-  background: #066448;
-  border-color: #066448;
+  background: var(--theme-control-hover);
+  border-color: var(--theme-control-hover);
 }
 .workspace-ui.portal-shell main {
   padding: 30px 32px 40px;
@@ -109,7 +109,7 @@ body.workspace-ui.portal-shell {
 .workspace-ui.portal-shell :is(.list, #detail) {
   background: var(--theme-panel);
   border-color: var(--border);
-  border-radius: 6px;
+  border-radius: var(--ean-panel-radius);
   box-shadow: none;
 }
 .workspace-ui.portal-shell .list-heading {
@@ -126,7 +126,7 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell .task-row {
   border: 0;
-  border-bottom: 1px solid #edf0f2;
+  border-bottom: 1px solid var(--theme-border-soft);
   border-radius: 0;
   background: transparent;
   margin: 0;
@@ -140,7 +140,7 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell .task-row.selected {
   background: var(--theme-selected);
-  box-shadow: inset 3px 0 #087f5b;
+  box-shadow: inset 2px 0 var(--theme-accent);
   border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .task-row small {
@@ -148,7 +148,7 @@ body.workspace-ui.portal-shell {
   font-size: 12px;
 }
 .workspace-ui.portal-shell .badge {
-  border-radius: 4px;
+  border-radius: var(--ean-badge-radius);
   font-size: 11px;
 }
 .workspace-ui.portal-shell
@@ -165,18 +165,32 @@ body.workspace-ui.portal-shell {
   background: var(--theme-danger-bg);
 }
 .workspace-ui.portal-shell .center-property {
-  color: var(--theme-selected-text);
-  border-color: #d1e2d7;
-  background: var(--theme-success-bg);
+  color: var(--theme-muted);
+  border-color: var(--theme-border-soft);
+  border-radius: var(--ean-badge-radius);
+  background: var(--theme-hover);
+  font-weight: 500;
 }
 .workspace-ui.portal-shell .hq-review {
   background: transparent;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: var(--ean-control-radius);
+}
+.workspace-ui.portal-shell .hq-review > summary {
+  min-height: 48px;
+  padding: 12px 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.workspace-ui.portal-shell .hq-review > summary:hover {
+  background: var(--theme-hover);
+}
+.workspace-ui.portal-shell .hq-review > summary::after {
+  transition: transform 180ms ease;
 }
 .workspace-ui.portal-shell .hq-review-list {
-  padding: 0;
-  border: 0;
+  padding: 0 14px;
+  border-top: 1px solid var(--theme-border-soft);
 }
 .workspace-ui.portal-shell .calendar-cell {
   background: var(--theme-panel);
@@ -185,13 +199,13 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell .calendar-cell.calendar-today {
   background: var(--theme-hover);
-  border-color: #258260;
+  border-color: var(--theme-selected-border);
 }
 .workspace-ui.portal-shell .calendar-task-bar.task-row {
   background: var(--theme-info-bg);
   color: var(--theme-info);
-  border: 1px solid #d2e2f7;
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--theme-info) 24%, transparent);
+  border-radius: var(--ean-badge-radius);
   padding: 8px 10px;
 }
 .workspace-ui.portal-shell .calendar-task-bar .task-row-name {
@@ -200,7 +214,7 @@ body.workspace-ui.portal-shell {
 .workspace-ui.portal-shell .calendar-task-bar.task-row:hover:not(:disabled),
 .workspace-ui.portal-shell .calendar-task-bar.task-row.selected {
   background: var(--theme-info-bg);
-  border-color: #98badc;
+  border-color: color-mix(in srgb, var(--theme-info) 40%, transparent);
 }
 .workspace-ui.portal-shell .calendar-task-bar:has(.status-delayed) {
   background: var(--theme-danger-bg);
@@ -208,12 +222,12 @@ body.workspace-ui.portal-shell {
 }
 .workspace-ui.portal-shell .calendar-task-bar:has(.status-completed) {
   background: var(--theme-success-bg);
-  border-color: #d2e6d7;
+  border-color: color-mix(in srgb, var(--theme-success) 24%, transparent);
 }
 .workspace-ui.portal-shell .calendar-daily-dropdown {
   border-color: var(--border);
-  border-radius: 6px;
-  box-shadow: 0 8px 28px #15282420;
+  border-radius: var(--ean-panel-radius);
+  box-shadow: var(--ean-shadow);
 }
 .workspace-ui.portal-shell .parent-task-dialog {
   background: var(--theme-panel);
@@ -287,6 +301,21 @@ body.workspace-ui.portal-shell {
     padding: 8px 10px;
   }
 }
-.private-mail-body { width: 100%; min-height: 420px; border: 1px solid var(--theme-border, #ccd3cf); background: #fff; color-scheme: light; }
-.private-mail-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
-.private-mail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.private-mail-body {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--theme-border, #ccd3cf);
+  background: #fff;
+  color-scheme: light;
+}
+.private-mail-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.private-mail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}

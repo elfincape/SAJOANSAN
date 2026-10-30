@@ -76,8 +76,18 @@ function syncRegisteredFixed(draft: DispatchDraft, rows: FixedDriver[]) {
 function Work() {
   const { center, profile, permissions, setCenterChangeGuard } = useAdminPage();
   const editable = permissionAllowed(permissions, 'gimhae_dispatch', 'edit');
-  const dataReadable = permissionAllowed(permissions, 'dispatch_parser', 'read', center.code);
-  const dataEditable = permissionAllowed(permissions, 'dispatch_parser', 'edit', center.code);
+  const dataReadable = permissionAllowed(
+    permissions,
+    'dispatch_parser',
+    'read',
+    center.code,
+  );
+  const dataEditable = permissionAllowed(
+    permissions,
+    'dispatch_parser',
+    'edit',
+    center.code,
+  );
   const { confirm, feedback } = useFeedback();
   const [view, setView] = useState<View>(() => ({
     draft: newDraft(),
@@ -186,7 +196,11 @@ function Work() {
   useEffect(() => {
     let active = true;
     if (!dataReadable) {
-      update(s => { s.defaults = null; s.defaultsLoaded = true; s.draft.fixedDrivers = []; });
+      update((s) => {
+        s.defaults = null;
+        s.defaultsLoaded = true;
+        s.draft.fixedDrivers = [];
+      });
       return;
     }
     void loadFixedDefaults(center.code)
@@ -751,7 +765,11 @@ function Work() {
             {center.name} · 김해 출발 배차{editable ? '' : ' · 열람 전용'}
           </span>
         </div>
-        <section className="gm-fixed-strip" aria-labelledby="gm-fixed-title" hidden={!dataReadable}>
+        <section
+          className="gm-fixed-strip"
+          aria-labelledby="gm-fixed-title"
+          hidden={!dataReadable}
+        >
           <h3 id="gm-fixed-title">고정기사</h3>
           <div
             id="gm-fixed-today"
@@ -838,9 +856,7 @@ function Work() {
           >
             <div className="gm-source">
               <div className="gm-section-head">
-                <h3 id="gm-source-title">
-                  <span className="gm-step">1</span> CJ 요청
-                </h3>
+                <h3 id="gm-source-title">CJ 요청</h3>
                 <button
                   id="gm-undo"
                   className="btn btn-ghost gm-icon"
@@ -1043,9 +1059,7 @@ function Work() {
           </section>
           <section className="gm-stage" aria-labelledby="gm-carrier-title">
             <div className="gm-section-head">
-              <h3 id="gm-carrier-title">
-                <span className="gm-step">2</span> 운수사 요청
-              </h3>
+              <h3 id="gm-carrier-title">운수사 요청</h3>
             </div>
             <div id="gm-request-issues" className="gm-issues" role="status">
               {requestIssues}
@@ -1065,9 +1079,7 @@ function Work() {
             aria-labelledby="gm-reply-title"
           >
             <div className="gm-section-head">
-              <h3 id="gm-reply-title">
-                <span className="gm-step">3</span> 운수사 회신
-              </h3>
+              <h3 id="gm-reply-title">운수사 회신</h3>
               <span id="gm-reply-count" className="gm-muted">
                 {d.requestPending ? '' : `${filled} / ${total}대`}
               </span>
@@ -1163,9 +1175,7 @@ function Work() {
             aria-labelledby="gm-cj-title"
           >
             <div className="gm-section-head">
-              <h3 id="gm-cj-title">
-                <span className="gm-step">4</span> CJ 전달
-              </h3>
+              <h3 id="gm-cj-title">CJ 전달</h3>
             </div>
             <div id="gm-issues" className="gm-issues" role="status">
               {completeIssues}

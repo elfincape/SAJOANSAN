@@ -33,11 +33,11 @@ body.workspace-ui.work-shell:has(#app) {
 }
 
 .workspace-ui.work-shell:not(.portal-shell)
-  :is(.sample, .empty, .column-choices) {
+  :is(.sample, .empty:not(td):not(tr), .column-choices) {
   background: var(--theme-soft);
   color: var(--theme-muted);
   border-color: var(--theme-border);
-  border-radius: 6px;
+  border-radius: var(--ean-panel-radius, 16px);
 }
 .workspace-ui.work-shell:not(.portal-shell) :is(.number, .step-badge) {
   background: var(--theme-selected);
@@ -47,6 +47,7 @@ body.workspace-ui.work-shell:has(#app) {
 .workspace-ui.work-shell:not(.portal-shell) .drop-card {
   background: var(--theme-panel);
   border-color: var(--theme-border);
+  border-radius: var(--ean-panel-radius, 16px);
   box-shadow: none;
 }
 .workspace-ui.work-shell:not(.portal-shell) .drop-card.dragover {
@@ -99,7 +100,7 @@ body.workspace-ui.work-shell:has(#app) {
   :where(input, select, textarea):not([type='checkbox']):not(
     [type='radio']
   ):not([type='hidden']) {
-  border-radius: 6px;
+  border-radius: var(--ean-control-radius, 10px);
   background: var(--theme-panel);
   color: var(--fg);
   border-color: var(--border);
@@ -113,7 +114,7 @@ body.workspace-ui.work-shell:has(#app) {
   accent-color: var(--accent);
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn {
-  border-radius: 6px;
+  border-radius: var(--ean-control-radius, 10px);
   min-height: 36px;
   font-size: 13px;
   font-weight: 550;
@@ -125,8 +126,8 @@ body.workspace-ui.work-shell:has(#app) {
   color: #fff;
 }
 .workspace-ui.work-shell:not(.portal-shell) :is(.btn-primary, .primary):hover {
-  background: #076b4d;
-  border-color: #076b4d;
+  background: var(--theme-control-hover);
+  border-color: var(--theme-control-hover);
   color: #fff;
 }
 .workspace-ui.work-shell:not(.portal-shell) .btn-ghost {
@@ -277,7 +278,7 @@ body.workspace-ui.work-shell:has(#app) {
 .workspace-ui.work-shell:not(.portal-shell) .work-editor {
   background: var(--theme-panel);
   border-color: var(--border);
-  border-radius: 6px;
+  border-radius: var(--ean-panel-radius, 16px);
 }
 .workspace-ui.work-shell:not(.portal-shell) .work-editor {
   align-self: start;
@@ -365,7 +366,7 @@ body.workspace-ui.work-shell:has(#app) {
   min-height: 30px;
   min-width: 46px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--ean-control-radius, 10px);
   color: var(--theme-muted);
 }
 .workspace-ui.work-shell:not(.portal-shell)
@@ -400,7 +401,7 @@ body.workspace-ui.work-shell:has(#app) {
   gap: 4px;
 }
 .workspace-ui.work-shell:not(.portal-shell) .hub-categories button {
-  border-radius: 6px;
+  border-radius: var(--ean-control-radius, 10px);
   min-height: 34px;
   padding: 6px 12px;
   background: var(--theme-panel);
@@ -481,7 +482,7 @@ body.workspace-ui.work-shell:has(#app) {
   max-width: calc(100vw - 32px);
   box-shadow: 0 8px 24px #20252b15;
   border-color: var(--border);
-  border-radius: 6px;
+  border-radius: var(--ean-panel-radius, 16px);
   background: var(--theme-panel);
 }
 .workspace-ui.work-shell:not(.portal-shell) #table-area {

@@ -78,11 +78,15 @@ export function PortalTaskRow({
     >
       <span className="task-row-copy">
         {type === 'incident' || hq ? (
-          <span className="center-property">{centerName(row.center_code)}</span>
-        ) : null}
-        {hq ? (
-          <span className="record-property">
-            {type === 'incident' ? '특이사항' : '업무'}
+          <span className="task-row-properties">
+            <span className="center-property">
+              {centerName(row.center_code)}
+            </span>
+            {hq ? (
+              <span className="record-property">
+                {type === 'incident' ? '특이사항' : '업무'}
+              </span>
+            ) : null}
           </span>
         ) : null}
         <strong className="task-row-name">
