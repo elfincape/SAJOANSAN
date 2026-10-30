@@ -583,35 +583,6 @@ function CoupangEntryContent() {
         id="work-main"
         tabIndex={-1}
       >
-        <section
-          hidden={isPortal}
-          className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4"
-        >
-          <h2 className="text-sm font-semibold mb-2">작업 방식</h2>
-          <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
-            <li>
-              저장된 엑셀 템플릿을 불러옵니다. 기본 위치는{' '}
-              <code>/templates/coupang-entry-template.xlsx</code>입니다.
-            </li>
-            <li>
-              쿠팡 시간표 이미지를 Claude Vision API로 분석해
-              센터·예약시간·물량·냉장·냉동을 JSON으로 추출합니다.
-            </li>
-            <li>
-              배차정보 텍스트는 기존 배차정보 파서 규칙에 맞춰
-              기사명·차량번호·연락처를 파싱합니다.
-            </li>
-            <li>
-              센터명 기준으로 시간표와 배차정보를 매칭하고, 확인 후 G6:G23 시간
-              행의 I/J, K/L... U/V 영역에 입력합니다.
-            </li>
-          </ol>
-          <p className="mt-3 text-xs text-amber-300">
-            AIAPIFlow 호출은 브라우저가 아니라 Supabase Edge Function을 통해서만
-            실행됩니다.
-          </p>
-        </section>
-
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <FileArea
             hidden={isPortal}
@@ -623,7 +594,6 @@ function CoupangEntryContent() {
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">1</span>
               <div>
                 <div className="text-sm font-semibold">엑셀 템플릿</div>
                 <div className="text-xs text-zinc-500">
@@ -678,7 +648,6 @@ function CoupangEntryContent() {
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">2</span>
               <div>
                 <div className="text-sm font-semibold">쿠팡 시간표 이미지</div>
                 <div className="text-xs text-zinc-500">
@@ -770,7 +739,6 @@ function CoupangEntryContent() {
             className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3"
           >
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">3</span>
               <div>
                 <div className="text-sm font-semibold">배차정보 텍스트</div>
                 <div className="text-xs text-zinc-500">
@@ -807,7 +775,6 @@ function CoupangEntryContent() {
           </div>
           <div className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-3">
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">4</span>
               <div>
                 <div className="text-sm font-semibold">
                   추출 JSON 직접 붙여넣기
@@ -850,7 +817,6 @@ function CoupangEntryContent() {
 
         <section className="border border-zinc-700 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
-            <span className="step-badge">5</span>
             <span className="text-sm font-semibold">매칭 확인</span>
             <span id="match-count" className="text-xs text-zinc-400">
               {view.matches.length

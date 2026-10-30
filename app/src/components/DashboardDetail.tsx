@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from './Modal';
+import { Modal, ModalClose } from './Modal';
 import { FileArea } from './FileArea';
 import { useAdminPage } from './AdminPage';
 import { dashboardDetail, saveDashboardDetail } from '../lib/dashboard';
@@ -234,13 +234,12 @@ export function DashboardDetail({
             >
               {busy ? '저장 중...' : '납품처 저장'}
             </button>
-            <button
+            <ModalClose
               id="detail-close"
               className="btn btn-ghost text-xs"
-              onClick={onClose}
             >
               닫기
-            </button>
+            </ModalClose>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">

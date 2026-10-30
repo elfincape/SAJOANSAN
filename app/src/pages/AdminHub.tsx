@@ -1,6 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { LayoutGroup, motion } from 'motion/react';
+import {
+  CalendarDays,
+  ChevronRight,
+  Files,
+  LayoutGrid,
+  Settings2,
+  Truck,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FEATURE_CATALOG, FEATURE_CATEGORIES } from '../domain/feature-catalog';
 import {
@@ -10,6 +19,18 @@ import {
 import { featureAccessible } from '../lib/feature-access';
 import { withCenterParam } from '../lib/center';
 import '../styles/hub-directory.css';
+
+const categoryIcons: Record<string, LucideIcon> = {
+  dispatch: Truck,
+  transport: LayoutGrid,
+  daily: CalendarDays,
+  documents: Files,
+  system: Settings2,
+};
+function CategoryIcon({ category }: { category: string }) {
+  const Icon = categoryIcons[category] ?? Settings2;
+  return <Icon aria-hidden="true" size={22} strokeWidth={1.5} />;
+}
 
 function HubContent() {
   const { profile, permissions, center } = useAdminPage();
@@ -56,17 +77,7 @@ function HubContent() {
         className="hub-tool"
       >
         <span>{menu.title}</span>
-        <svg
-          aria-hidden="true"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path d="m9 5 7 7-7 7" />
-        </svg>
+        <ChevronRight aria-hidden="true" size={18} strokeWidth={1.5} />
       </motion.a>
     ));
   }
@@ -77,9 +88,11 @@ function HubContent() {
       className="hub-workspace hub-directory app-main"
     >
       <div className="hub-heading">
-        <h2>{center.shortName} 관리 허브</h2>
+        <h2>관리 허브</h2>
         <div className="hub-search">
-          <label htmlFor="menu-search">기능 검색</label>
+          <label className="sr-only" htmlFor="menu-search">
+            기능 검색
+          </label>
           <input
             ref={input}
             id="menu-search"
@@ -102,7 +115,7 @@ function HubContent() {
             setCategory(value);
             setSearch('');
           }}
-          orientation="vertical"
+          orientation="horizontal"
           className="hub-browser"
         >
           <Tabs.List
@@ -121,10 +134,16 @@ function HubContent() {
                   <motion.span
                     layoutId="category-selection"
                     className="workspace-selection"
-                    style={{ borderRadius: 12 }}
+                    style={{ borderRadius: 18 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 38 }}
                   />
                 ) : null}
+                <span className="hub-category-meta">
+                  <CategoryIcon category={key} />
+                  <span>
+                    {allowed.filter((item) => item.category === key).length}개
+                  </span>
+                </span>
                 <span>{title}</span>
               </Tabs.Trigger>
             ))}

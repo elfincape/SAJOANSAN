@@ -1,10 +1,44 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import type { ReactElement, ReactNode } from 'react';
+import { BriefcaseBusiness, House, LayoutGrid, Menu, X } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
 import { ThemeToggle } from './ThemeToggle';
 import { WorkspaceCommands } from './WorkspaceCommands';
 import type { WorkspaceCommand } from './WorkspaceCommands';
 import { signOut } from '../lib/auth';
+
+type NavigationLink = {
+  children?: ReactNode;
+  className?: string;
+  href?: string;
+  title?: string;
+  'aria-label'?: string;
+};
+function primaryLinks(node: ReactNode): ReactElement<NavigationLink>[] {
+  return Children.toArray(node).flatMap((child) => {
+    if (!isValidElement<NavigationLink>(child)) return [];
+    return child.props.className === 'workspace-link'
+      ? [child]
+      : primaryLinks(child.props.children);
+  });
+}
+function RailIcon({ href = '' }: { href?: string }) {
+  const path = href.split('?')[0];
+  const Icon =
+    path === '/'
+      ? House
+      : path.startsWith('/admin')
+        ? LayoutGrid
+        : BriefcaseBusiness;
+  return <Icon aria-hidden="true" size={22} strokeWidth={1.5} />;
+}
 
 export function WorkspaceFrame({
   mainId,
@@ -37,6 +71,8 @@ export function WorkspaceFrame({
     () => matchMedia('(max-width: 1000px)').matches,
   );
   const [drawer, setDrawer] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const showNavigation = mobile || expanded;
   const sidebar = useRef<HTMLDialogElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const close = useRef<HTMLButtonElement>(null);
@@ -46,6 +82,7 @@ export function WorkspaceFrame({
     const sync = () => {
       setMobile(query.matches);
       setDrawer(false);
+      setExpanded(false);
     };
     query.addEventListener('change', sync);
     return () => query.removeEventListener('change', sync);
@@ -54,12 +91,32 @@ export function WorkspaceFrame({
     const dialog = sidebar.current;
     if (!dialog) return;
     if (dialog.open) dialog.close();
-    if (!mobile) dialog.show();
-    else if (drawer) {
+    if (!mobile) {
+      const active = document.activeElement;
+      dialog.show();
+      if (active instanceof HTMLElement) {
+        const bodyFocused = active === document.body;
+        if (bodyFocused) active.setAttribute('tabindex', '-1');
+        active.focus({ preventScroll: true });
+        if (bodyFocused) active.removeAttribute('tabindex');
+      }
+    } else if (drawer) {
       dialog.showModal();
       close.current?.focus();
     }
   }, [mobile, drawer]);
+  useEffect(() => {
+    if (mobile || !expanded) return;
+    const dismiss = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !sidebar.current?.contains(event.target)
+      )
+        setExpanded(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [mobile, expanded]);
   useEffect(() => {
     const observer = new ResizeObserver(() => {
       if (header.current)
@@ -72,9 +129,9 @@ export function WorkspaceFrame({
     return () => observer.disconnect();
   }, []);
   function closeDrawer(focus = true) {
-    if (!mobile) return;
-    setDrawer(false);
-    if (focus) toggle.current?.focus();
+    if (mobile) setDrawer(false);
+    else setExpanded(false);
+    if (focus) (mobile ? toggle.current : close.current)?.focus();
   }
   return (
     <>
@@ -85,6 +142,8 @@ export function WorkspaceFrame({
         ref={sidebar}
         tabIndex={-1}
         id="app-sidebar"
+        data-rail="true"
+        data-expanded={showNavigation}
         aria-label="EAN 업무 탐색"
         onCancel={(event) => {
           event.preventDefault();
@@ -93,34 +152,68 @@ export function WorkspaceFrame({
         onClick={(event) => {
           if (event.target === event.currentTarget) closeDrawer();
         }}
+        onKeyDown={(event) => {
+          if (!mobile && event.key === 'Escape') closeDrawer();
+        }}
       >
-        <div className="app-brand">
-          <a href={brandHref}>
-            <span translate="no">EAN</span>
-          </a>
+        <div className="app-rail-heading">
           <button
             ref={close}
             disabled={disabled}
             type="button"
             data-navigation-toggle
-            aria-label="메뉴 닫기"
-            title="메뉴 닫기"
-            onClick={() => closeDrawer()}
+            aria-label={
+              mobile
+                ? '메뉴 닫기'
+                : showNavigation
+                  ? '메뉴 접기'
+                  : '업무 메뉴 펼치기'
+            }
+            title={
+              mobile
+                ? '메뉴 닫기'
+                : showNavigation
+                  ? '메뉴 접기'
+                  : '업무 메뉴 펼치기'
+            }
+            aria-controls="workspace-navigation-panel"
+            aria-expanded={showNavigation}
+            onClick={() =>
+              mobile ? closeDrawer() : setExpanded((value) => !value)
+            }
           >
-            <svg
-              aria-hidden="true"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="m6 6 12 12M6 18 18 6" />
-            </svg>
+            {showNavigation ? (
+              <X aria-hidden="true" size={18} strokeWidth={1.5} />
+            ) : (
+              <Menu aria-hidden="true" size={18} strokeWidth={1.5} />
+            )}
           </button>
         </div>
+        {!showNavigation ? (
+          <nav className="app-rail-links" aria-label="주요 화면">
+            {primaryLinks(navigation)
+              .sort((a, b) => {
+                const rank = (href = '') =>
+                  href.split('?')[0] === '/'
+                    ? 0
+                    : href.startsWith('/admin')
+                      ? 1
+                      : 2;
+                return rank(a.props.href) - rank(b.props.href);
+              })
+              .map((link) =>
+                cloneElement(link, {
+                  className: 'app-rail-link',
+                  title: String(link.props.children),
+                  'aria-label': String(link.props.children),
+                  children: <RailIcon href={link.props.href} />,
+                }),
+              )}
+          </nav>
+        ) : null}
         <div
+          id="workspace-navigation-panel"
+          hidden={!showNavigation}
           className="workspace-navigation-content"
           onClick={(event) => {
             if (
@@ -128,15 +221,18 @@ export function WorkspaceFrame({
               event.target.closest('a,button') &&
               !disabled
             )
-              closeDrawer(false);
+              closeDrawer();
           }}
         >
           {navigation}
+          {currentLocation}
         </div>
-        {currentLocation}
       </dialog>
       <header ref={header} id="app-header">
         <div className="app-header-row">
+          <a className="app-brand" href={brandHref}>
+            <span translate="no">EAN</span>
+          </a>
           <button
             ref={toggle}
             disabled={disabled}
@@ -149,25 +245,18 @@ export function WorkspaceFrame({
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
           >
-            <svg
-              aria-hidden="true"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <Menu aria-hidden="true" size={18} strokeWidth={1.5} />
           </button>
-          <nav className="app-location" aria-label="현재 위치">
-            {location}
-          </nav>
+          <div className="app-context-pill">
+            {centerControl}
+            <nav className="app-location" aria-label="현재 위치">
+              {location}
+            </nav>
+          </div>
           <div className="app-page-actions">{actions}</div>
           <div className="app-header-controls">
             <WorkspaceCommands commands={commands} disabled={disabled} />
-            {centerControl}
+            <ThemeToggle disabled={disabled} />
             <AccountMenu
               name={userName}
               disabled={disabled}
@@ -176,7 +265,6 @@ export function WorkspaceFrame({
                 void signOut();
               }}
             />
-            <ThemeToggle disabled={disabled} />
           </div>
         </div>
       </header>

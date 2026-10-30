@@ -1,133 +1,1146 @@
 import '../styles/one-top.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties,ReactNode } from 'react';
-import { AdminPage,useAdminPage } from '../components/AdminPage';
+import type { CSSProperties, ReactNode } from 'react';
+import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FileArea } from '../components/FileArea';
 import { AnalysisRow } from '../components/OneTopAnalysisRow';
-import { DEFAULT_MODEL,API_INTERVAL_MS,DEFAULT_TEMPLATE_PATHS } from '../domain/one-top-config';
-import { defaultKoreanDate,newUuid } from '../domain/one-top';
-import type { Capture,MatchIssue } from '../domain/one-top';
-import { readImageWithoutCrop,compressSupplementToHd,cropSourceToFourThree } from '../domain/one-top-images';
-import { captureCount,saveCapture,loadCaptures,removeCaptures,removeCapture,clearCloudCaptures,cloudErrorMessage } from '../lib/one-top-cloud';
-import { inspectOneTopTemplate,matchOneTopWorkbook,oneTopOutputBlob } from '../lib/one-top-workbook';
-import { analyzeReceiptWithFallback,waitForApiSlot } from '../lib/one-top-vision';
-const message=(error:unknown)=>String(error&&typeof error==='object'&&'message'in error?error.message:error);
-function OneTopWorkContent(){
- const {center,profile,editable}=useAdminPage();
- const [captures,setCaptures]=useState<Capture[]>([]),capturesRef=useRef(captures);capturesRef.current=captures;
- const [template,setTemplate]=useState<{buffer:ArrayBuffer;name:string}|null>(null),[templateInfo,setTemplateInfo]=useState<ReactNode>('선택된 템플릿 없음');
- const [outcome,setOutcome]=useState<Awaited<ReturnType<typeof matchOneTopWorkbook>>|null>(null),[matchLog,setMatchLog]=useState<string[]>([]),[issues,setIssues]=useState<MatchIssue[]>([]),[matching,setMatching]=useState(false),[outputName,setOutputName]=useState('');
- const [selectedCaptures,setSelectedCaptures]=useState<string[]>([]),[selectedAnalysis,setSelectedAnalysis]=useState<string[]>([]);
- const [cloudCount,setCloudCount]=useState(0),[cloudStatus,setCloudStatus]=useState('로그인 정보를 확인하는 중...'),[cloudSaving,setCloudSaving]=useState(false),[cloudSaveLabel,setCloudSaveLabel]=useState('');
- const [stream,setStream]=useState<MediaStream|null>(null),streamRef=useRef<MediaStream|null>(null),videoRef=useRef<HTMLVideoElement>(null),[zoom,setZoom]=useState(1.6),[flash,setFlash]=useState(false);
- const [defaultDate,setDefaultDate]=useState(defaultKoreanDate),[model,setModel]=useState<string>(DEFAULT_MODEL),[analysisProgress,setAnalysisProgress]=useState(''),[analysisButtonLabel,setAnalysisButtonLabel]=useState(''),[analyzing,setAnalyzing]=useState(false),[analyzingSelected,setAnalyzingSelected]=useState(false);
- const [hoverImage,setHoverImage]=useState(''),hoverTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),flashTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
- const [notice,setNotice]=useState({text:'',type:'info',shown:false}),toastTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),mounted=useRef(true);
- const toast=useCallback((text:string,type='info')=>{clearTimeout(toastTimer.current);setNotice({text,type,shown:true});toastTimer.current=setTimeout(()=>setNotice(previous=>({...previous,shown:false})),3500);},[]);
- const refreshCloud=useCallback(async()=>{try{const {count,error}=await captureCount(center.code,profile.id);if(error)throw error;if(!mounted.current)return;setCloudCount(count||0);setCloudStatus(`DB 임시저장 ${count||0}장`);}catch(error){if(mounted.current){setCloudCount(0);setCloudStatus(cloudErrorMessage(error));}}},[center.code,profile.id]);
- const templateGeneration=useRef(0),initialTemplate=useRef<Promise<{buffer:ArrayBuffer;name:string;info:Awaited<ReturnType<typeof inspectOneTopTemplate>>}>|null>(null);
- useEffect(()=>{mounted.current=true;const token=++templateGeneration.current;void refreshCloud();setTemplateInfo('센터 템플릿을 불러오는 중...');const path=DEFAULT_TEMPLATE_PATHS[center.code as keyof typeof DEFAULT_TEMPLATE_PATHS]||DEFAULT_TEMPLATE_PATHS['001'];const request=initialTemplate.current ??= (async()=>{const response=await fetch(path,{cache:'no-store'});if(!response.ok)throw new Error(`센터 템플릿을 찾지 못했습니다. (${response.status})`);const buffer=await response.arrayBuffer();return {buffer,name:path.split('/').pop()!,info:await inspectOneTopTemplate(buffer)};})();void request.then(data=>{if(token!==templateGeneration.current)return;applyTemplate(data.buffer,data.name,data.info);}).catch(error=>{if(token===templateGeneration.current)templateError(error);});return()=>{mounted.current=false;templateGeneration.current++;streamRef.current?.getTracks().forEach(track=>track.stop());clearTimeout(toastTimer.current);clearTimeout(hoverTimer.current);clearTimeout(flashTimer.current);};},[center.code,refreshCloud]);
- useEffect(()=>{const stop=()=>streamRef.current?.getTracks().forEach(track=>track.stop());window.addEventListener('beforeunload',stop);return()=>window.removeEventListener('beforeunload',stop);},[]);
- useEffect(()=>{const video=videoRef.current;if(!video)return;video.srcObject=stream;if(stream)void video.play().catch(error=>toast(`카메라를 시작하지 못했습니다: ${message(error)}`,'error'));},[stream,toast]);
- const captureAllRef=useRef<HTMLInputElement>(null),analysisAllRef=useRef<HTMLInputElement>(null);
- useEffect(()=>{if(captureAllRef.current)captureAllRef.current.indeterminate=selectedCaptures.length>0&&selectedCaptures.length<captures.length;if(analysisAllRef.current)analysisAllRef.current.indeterminate=selectedAnalysis.length>0&&selectedAnalysis.length<captures.length;},[selectedCaptures,selectedAnalysis,captures.length]);
- function applyTemplate(buffer:ArrayBuffer,name:string,info:Awaited<ReturnType<typeof inspectOneTopTemplate>>){setTemplate({buffer:buffer.slice(0),name});setOutcome(null);setTemplateInfo(<><span className="text-emerald-300 font-medium">{name}</span> · {info.sheetName} · 차량 행 {info.vehicleCount}개 · Q열 사진표시 {info.photoCount}개</>);toast('템플릿을 불러왔습니다. 기존 삽입 사진을 유지합니다.','success');}
- function templateError(error:unknown){setTemplate(null);setTemplateInfo(`템플릿 로드 실패: ${message(error)}`);toast(`템플릿 로드 실패: ${message(error)}`,'error');}
- async function uploadTemplate(file:File){const token=++templateGeneration.current;try{const buffer=await file.arrayBuffer(),info=await inspectOneTopTemplate(buffer);if(token===templateGeneration.current)applyTemplate(buffer,file.name,info);}catch(error){if(token===templateGeneration.current)templateError(error);}}
- function stopCamera(){streamRef.current?.getTracks().forEach(track=>track.stop());streamRef.current=null;setStream(null);}
- async function startCamera(){try{stopCamera();const next=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1440}},audio:false});if(!mounted.current){next.getTracks().forEach(track=>track.stop());return;}streamRef.current=next;setStream(next);}catch(error){toast(`카메라를 시작하지 못했습니다: ${message(error)}`,'error');}}
- function addCapture(dataUrl:string,name:string){const item:Capture={id:newUuid(),dbId:null,savedAt:null,cloudDirty:true,name,dataUrl,supplementalDataUrl:null,status:'pending',result:null,error:''};setCaptures(previous=>[...previous,item]);setOutcome(null);}
- function captureCamera(){const video=videoRef.current;if(!video?.videoWidth||!video.videoHeight){toast('카메라 영상이 준비되지 않았습니다.','warn');return;}const count=capturesRef.current.length+1;addCapture(cropSourceToFourThree(video,video.videoWidth,video.videoHeight,zoom),`camera-${String(count).padStart(3,'0')}.jpg`);if(typeof navigator.vibrate==='function')navigator.vibrate(35);setFlash(false);requestAnimationFrame(()=>requestAnimationFrame(()=>{if(mounted.current)setFlash(true);}));clearTimeout(flashTimer.current);flashTimer.current=setTimeout(()=>setFlash(false),1200);toast(`사진 ${count}장 촬영됨`,'success');}
- async function addFiles(files:File[]){for(const file of files){if(!file.type.startsWith('image/'))continue;try{const data=await readImageWithoutCrop(file);if(mounted.current)addCapture(data,file.name);}catch(error){toast(`붙여넣기 실패: ${message(error)}`,'error');}}}
- function changeCapture(id:string,changes:Partial<Capture>){setCaptures(previous=>previous.map(item=>item.id===id?{...item,...changes}:item));hideHover();}
- function hideHover(){clearTimeout(hoverTimer.current);setHoverImage('');}
- function scheduleHover(image:string){hideHover();hoverTimer.current=setTimeout(()=>setHoverImage(image),1000);}
- async function attachSupplement(id:string,file:File){try{const data=await compressSupplementToHd(file);if(!mounted.current)return;changeCapture(id,{supplementalDataUrl:data,cloudDirty:true});setOutcome(null);toast('P열 사진을 HD 크기로 압축해 등록했습니다.','success');}catch(error){toast(`추가 사진 등록 실패: ${message(error)}`,'error');}}
- function removeLocal(ids:string[]){setCaptures(previous=>previous.filter(item=>!ids.includes(item.id)));setSelectedCaptures(previous=>previous.filter(id=>!ids.includes(id)));setSelectedAnalysis(previous=>previous.filter(id=>!ids.includes(id)));setOutcome(null);}
- async function deleteItems(items:Capture[]){if(!editable)return;try{const ids=items.map(item=>item.dbId).filter((id):id is string=>!!id);if(ids.length){const {error}=await removeCaptures(center.code,profile.id,ids);if(error)throw error;}removeLocal(items.map(item=>item.id));await refreshCloud();toast(`사진 ${items.length}장을 삭제했습니다.`,'success');}catch(error){toast(cloudErrorMessage(error),'error');}}
- async function clearCaptures(){if(captures.length&&window.confirm('촬영 목록의 사진을 기기와 DB에서 모두 삭제할까요?'))await deleteItems([...captures]);}
- async function deleteSelected(){const items=captures.filter(item=>selectedCaptures.includes(item.id));if(items.length&&window.confirm(`선택한 사진 ${items.length}장을 기기와 DB에서 삭제할까요?`))await deleteItems(items);}
- async function removeOne(id:string){if(!editable)return;const item=captures.find(item=>item.id===id);if(!item)return;if(item.dbId&&!window.confirm('이 사진을 기기와 DB 임시저장에서 모두 삭제할까요?'))return;try{if(item.dbId){const {error}=await removeCapture(center.code,profile.id,item.dbId);if(error)throw error;}removeLocal([id]);await refreshCloud();}catch(error){toast(cloudErrorMessage(error),'error');}}
- async function saveCloud(){if(!editable||cloudSaving)return;if(!captures.length){toast('임시저장할 사진이 없습니다.','warn');return;}setCloudSaving(true);try{for(let i=0;i<captures.length;i++){const item=captures[i];setCloudSaveLabel(`DB 저장 ${i+1}/${captures.length}`);const {data,error}=await saveCapture(center.code,profile.id,item);if(error)throw error;changeCapture(item.id,{dbId:data.id,savedAt:data.updated_at,cloudDirty:false});}await refreshCloud();toast(`사진 ${captures.length}장을 DB에 임시저장했습니다.`,'success');}catch(error){toast(cloudErrorMessage(error),'error');}finally{setCloudSaveLabel('');setCloudSaving(false);}}
- async function loadCloud(){try{const {data,error}=await loadCaptures(center.code,profile.id);if(error)throw error;setCaptures(previous=>[...(data||[]).map(row=>({id:row.id,dbId:row.id,savedAt:row.updated_at,cloudDirty:false,name:row.filename,dataUrl:row.image_data,supplementalDataUrl:row.analysis?.supplementalDataUrl||null,status:row.analysis?.status||'pending',result:row.analysis?.result||null,error:row.analysis?.error||''})),...previous.filter(item=>!item.dbId)]);setSelectedCaptures([]);setSelectedAnalysis([]);setOutcome(null);toast(`DB에서 사진 ${(data||[]).length}장을 불러왔습니다.`,'success');}catch(error){toast(cloudErrorMessage(error),'error');}}
- async function deleteCloud(){if(!editable||!window.confirm('현재 센터에 임시저장한 사진을 DB에서 모두 삭제할까요? 삭제 후 복구할 수 없습니다.'))return;try{const {error}=await clearCloudCaptures(center.code,profile.id);if(error)throw error;setCaptures(previous=>previous.filter(item=>!item.dbId));setSelectedCaptures([]);setSelectedAnalysis([]);setOutcome(null);await refreshCloud();toast('DB 임시 사진을 모두 삭제했습니다.','success');}catch(error){toast(cloudErrorMessage(error),'error');}}
- async function analyze(selected:boolean){if(analyzing)return;const items=selected?captures.filter(item=>selectedAnalysis.includes(item.id)):[...captures];if(!items.length){if(selected)toast('재분석할 결과를 선택하세요.','warn');return;}setAnalyzing(true);setAnalyzingSelected(selected);setOutcome(null);let failed=0;const failures=new Map<string,string>();try{for(let i=0;i<items.length;i++){const item=items[i];changeCapture(item.id,{status:'analyzing',error:''});if(i>0)await waitForApiSlot(API_INTERVAL_MS,i+1,items.length,setAnalysisProgress);setAnalysisButtonLabel(`분석 중 ${i+1}/${items.length}`);setAnalysisProgress(`${i+1}/${items.length}`);try{const result=await analyzeReceiptWithFallback(item.dataUrl,i+1,items.length,model,defaultDate,setAnalysisProgress);if(!mounted.current)return;changeCapture(item.id,{result:result.result,analysisModel:result.model,status:'done',cloudDirty:true});}catch(error){const reason=message(error);failed++;failures.set(item.id,reason);changeCapture(item.id,{status:'error',error:reason,result:null,cloudDirty:true});}}setAnalysisProgress('분석 완료');setIssues(captures.filter(item=>failures.has(item.id)||(item.status==='error'&&!items.some(selected=>selected.id===item.id))).map(item=>({item:item.name,message:`API 판독 실패: ${failures.get(item.id)||item.error||'응답 오류'}`})));toast(failed?`분석 완료 · 성공 ${items.length-failed}장 / 실패 ${failed}장`:`선택한 사진 ${items.length}장 분석 완료`,failed?'warn':'success');}finally{setAnalyzing(false);}}
- async function match(){if(!template){toast('템플릿을 먼저 업로드하세요.','warn');return;}if(!captures.some(item=>item.status==='done'&&item.result)){toast('분석 완료된 사진이 없습니다.','warn');return;}setMatching(true);setIssues([]);setMatchLog([]);try{const result=await matchOneTopWorkbook(template.buffer,captures,(issues,log)=>{setIssues(issues);setMatchLog(log);});setOutputName(`${String(template.name||'1탑2실').replace(/\.(xlsx|xlsm)$/i,'')}_작업완료.xlsx`);setOutcome(result);setIssues(result.issues);setMatchLog(result.matchLog);toast(`매칭 완료 · ${result.matchLog.length}건 반영 / 확인 ${result.issues.length}건`,result.issues.length?'warn':'success');}catch(error){setOutcome(null);toast(`엑셀 매칭 실패: ${message(error)}`,'error');}finally{setMatching(false);}}
- const downloadRef=useRef<HTMLAnchorElement>(null),[downloadUrl,setDownloadUrl]=useState<{url:string;name:string}|null>(null);
- useEffect(()=>{if(!downloadUrl)return;downloadRef.current?.click();const timer=setTimeout(()=>URL.revokeObjectURL(downloadUrl.url),1000);return()=>{clearTimeout(timer);URL.revokeObjectURL(downloadUrl.url);};},[downloadUrl]);
- async function download(){if(!outcome)return;try{const blob=await oneTopOutputBlob(outcome.workbook),name=outputName;setDownloadUrl({url:URL.createObjectURL(blob),name});toast('결과 Excel을 다운로드했습니다.','success');}catch(error){toast(`다운로드 실패: ${message(error)}`,'error');}}
- const captureTiles=<><FileArea hint={false} id="capture-paste" className="paste-tile" accept="image/*" multiple onFiles={files=>void addFiles(files)} tabIndex={0} role="button" aria-label="클립보드 사진 붙여넣기" title="클립보드 사진 붙여넣기 (Ctrl+V)"><span className="text-2xl" aria-hidden="true">📋</span><strong className="text-sm text-zinc-200">사진 붙여넣기</strong></FileArea>{captures.map((item,index)=><div key={item.id} className="thumb"><input data-select={item.id} className="capture-check" type="checkbox" aria-label={`${index+1}번 사진 선택`} checked={selectedCaptures.includes(item.id)} onChange={event=>setSelectedCaptures(previous=>event.target.checked?[...previous,item.id]:previous.filter(id=>id!==item.id))}/><img src={item.dataUrl} alt={`촬영 ${index+1}`}/><div className="p-2 text-[11px] flex gap-1"><span className="truncate flex-1">{item.name}</span>{item.dbId?<span className={item.cloudDirty?'text-amber-300':'text-emerald-300'}>{item.cloudDirty?'변경됨':'DB저장'}</span>:null}<button data-remove={item.id} className="text-rose-300" onClick={()=>void removeOne(item.id)}>삭제</button></div></div>)}</>;
- return <>
-<FileArea as="main" hint={false} accept="image/*" multiple onFiles={files=>void addFiles(files)} className="app-main max-w-[1500px] mx-auto px-4 py-5 space-y-4" id="work-main" tabIndex={-1}><nav className="work-section-navigation" aria-label="작업 단계">{["템플릿 엑셀","카메라 촬영","일괄 API 분석","엑셀 매칭 및 결과"].map((label,index)=><a key={label} href={`#work-section-${index+1}`}>{label}</a>)}</nav>
-    <FileArea as="section" id="work-section-1" accept=".xlsx,.xlsm" onFiles={files=>{if(files[0])void uploadTemplate(files[0]);}} className="step-card">
-      <div className="flex items-center gap-2 mb-2"><span className="step-badge">1</span><h2 className="font-semibold">템플릿 엑셀</h2></div>
-      <p className="text-xs text-zinc-400 mb-3">선택된 센터의 템플릿을 자동으로 불러옵니다. 다른 파일을 선택하면 해당 원본의 서식과 기존 삽입 사진을 유지합니다.</p>
-      <input id="template-file" onChange={event=>{const file=event.target.files?.[0];if(file)void uploadTemplate(file);}} type="file" accept=".xlsx,.xlsm" className="app-input text-sm" />
-      <div id="template-info" className="text-xs text-zinc-400 mt-2">{templateInfo}</div>
-    </FileArea>
-
-    <section id="work-section-2" className="grid grid-cols-1 xl:grid-cols-[minmax(360px,520px)_1fr] gap-4">
-      <div className="step-card">
-        <div className="flex items-center gap-2 mb-3"><span className="step-badge">2</span><h2 className="font-semibold">카메라 촬영</h2><span id="capture-count" className="text-xs text-zinc-400">{captures.length ? `${captures.length}장` : ""}</span></div>
-        <div id="camera-frame" className={`camera-frame${flash ? " capture-feedback" : ""}`} style={{"--capture-inset":`${(1-1/Math.max(1,zoom))*50}%`} as CSSProperties}><video id="camera-video" ref={videoRef} autoPlay playsInline muted></video><span id="camera-feedback-label" className={`camera-feedback-label${flash?" is-visible":""}`} role="status" aria-live="polite">{flash ? `촬영됨 · ${captures.length}장` : ""}</span></div>
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          <button id="camera-start" onClick={() => void startCamera()} disabled={!!stream} className="btn btn-ghost" type="button">카메라 시작</button>
-          <button id="camera-stop" onClick={stopCamera} disabled={!stream} className="btn btn-ghost" type="button">카메라 종료</button>
-          <button id="camera-capture" onClick={captureCamera} disabled={!stream} className={`btn btn-primary camera-capture-button${flash?" capture-feedback":""}`} type="button">{flash ? `✓ 촬영 완료 (${captures.length}장)` : "📷 촬영"}</button>
-          <label className="btn btn-ghost col-span-2 text-center cursor-pointer">사진 파일 추가<input id="capture-files" onChange={event=>{void addFiles([...(event.currentTarget.files||[])]);event.currentTarget.value="";}} type="file" accept="image/*" multiple className="hidden" /></label>
-          <label className="col-span-2 text-xs text-zinc-300 flex items-center gap-2">촬영 거리 보정<select id="camera-crop-zoom" value={zoom} onChange={event=>setZoom(Number(event.target.value)||1.6)} className="app-input flex-1"><option value="1">기본 거리 (1.0배)</option><option value="1.3">조금 멀리 (1.3배)</option><option value="1.6">멀리 촬영 (1.6배)</option><option value="2">더 멀리 (2.0배)</option></select></label>
-        </div>
-        <p className="text-[11px] text-zinc-500 mt-2">기본값은 1.6배 원거리 보정이며 촬영하면 화면 중앙의 점선 영역이 4:3 사진으로 저장됩니다. 파일 선택·붙여넣기 사진은 다시 자르지 않습니다.</p>
-      </div>
-      <div className="step-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2"><span className="step-badge">3</span><h2 className="font-semibold">촬영 목록</h2></div>
-          <div className="flex flex-wrap items-center gap-2"><label className="text-xs text-zinc-300"><input id="capture-select-all" ref={captureAllRef} checked={captures.length>0 && selectedCaptures.length===captures.length} onChange={event=>setSelectedCaptures(event.target.checked?captures.map(item=>item.id):[])} type="checkbox" className="mr-1 accent-emerald-500" />전체 선택</label><button id="capture-delete-selected" onClick={() => void deleteSelected()} disabled={!selectedCaptures.length} className="btn btn-ghost text-xs text-rose-300" type="button">{selectedCaptures.length ? `선택 삭제 (${selectedCaptures.length})` : "선택 삭제"}</button><button id="capture-clear" onClick={() => void clearCaptures()} disabled={false} className="btn btn-ghost text-xs text-rose-300" type="button">전체 삭제</button></div>
-        </div>
-        <div className="mb-3 rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button id="cloud-save" onClick={() => void saveCloud()} disabled={!captures.length || cloudSaving || !editable} className="btn btn-primary text-xs" type="button">{cloudSaveLabel || "DB 임시저장"}</button>
-            <button id="cloud-load" onClick={() => void loadCloud()} disabled={!cloudCount} className="btn btn-ghost text-xs" type="button">DB 사진 불러오기</button>
-            <button id="cloud-delete" onClick={() => void deleteCloud()} disabled={!cloudCount || !editable} className="btn btn-ghost text-xs text-rose-300" type="button">DB 사진 전체삭제</button>
-            <span id="cloud-status" className="text-xs text-zinc-400">{cloudStatus}</span>
+import {
+  DEFAULT_MODEL,
+  API_INTERVAL_MS,
+  DEFAULT_TEMPLATE_PATHS,
+} from '../domain/one-top-config';
+import { defaultKoreanDate, newUuid } from '../domain/one-top';
+import type { Capture, MatchIssue } from '../domain/one-top';
+import {
+  readImageWithoutCrop,
+  compressSupplementToHd,
+  cropSourceToFourThree,
+} from '../domain/one-top-images';
+import {
+  captureCount,
+  saveCapture,
+  loadCaptures,
+  removeCaptures,
+  removeCapture,
+  clearCloudCaptures,
+  cloudErrorMessage,
+} from '../lib/one-top-cloud';
+import {
+  inspectOneTopTemplate,
+  matchOneTopWorkbook,
+  oneTopOutputBlob,
+} from '../lib/one-top-workbook';
+import {
+  analyzeReceiptWithFallback,
+  waitForApiSlot,
+} from '../lib/one-top-vision';
+const message = (error: unknown) =>
+  String(
+    error && typeof error === 'object' && 'message' in error
+      ? error.message
+      : error,
+  );
+function OneTopWorkContent() {
+  const { center, profile, editable } = useAdminPage();
+  const [captures, setCaptures] = useState<Capture[]>([]),
+    capturesRef = useRef(captures);
+  capturesRef.current = captures;
+  const [template, setTemplate] = useState<{
+      buffer: ArrayBuffer;
+      name: string;
+    } | null>(null),
+    [templateInfo, setTemplateInfo] = useState<ReactNode>('선택된 템플릿 없음');
+  const [outcome, setOutcome] = useState<Awaited<
+      ReturnType<typeof matchOneTopWorkbook>
+    > | null>(null),
+    [matchLog, setMatchLog] = useState<string[]>([]),
+    [issues, setIssues] = useState<MatchIssue[]>([]),
+    [matching, setMatching] = useState(false),
+    [outputName, setOutputName] = useState('');
+  const [selectedCaptures, setSelectedCaptures] = useState<string[]>([]),
+    [selectedAnalysis, setSelectedAnalysis] = useState<string[]>([]);
+  const [cloudCount, setCloudCount] = useState(0),
+    [cloudStatus, setCloudStatus] = useState('로그인 정보를 확인하는 중...'),
+    [cloudSaving, setCloudSaving] = useState(false),
+    [cloudSaveLabel, setCloudSaveLabel] = useState('');
+  const [stream, setStream] = useState<MediaStream | null>(null),
+    streamRef = useRef<MediaStream | null>(null),
+    videoRef = useRef<HTMLVideoElement>(null),
+    [zoom, setZoom] = useState(1.6),
+    [flash, setFlash] = useState(false);
+  const [defaultDate, setDefaultDate] = useState(defaultKoreanDate),
+    [model, setModel] = useState<string>(DEFAULT_MODEL),
+    [analysisProgress, setAnalysisProgress] = useState(''),
+    [analysisButtonLabel, setAnalysisButtonLabel] = useState(''),
+    [analyzing, setAnalyzing] = useState(false),
+    [analyzingSelected, setAnalyzingSelected] = useState(false);
+  const [hoverImage, setHoverImage] = useState(''),
+    hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [notice, setNotice] = useState({
+      text: '',
+      type: 'info',
+      shown: false,
+    }),
+    toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    mounted = useRef(true);
+  const toast = useCallback((text: string, type = 'info') => {
+    clearTimeout(toastTimer.current);
+    setNotice({ text, type, shown: true });
+    toastTimer.current = setTimeout(
+      () => setNotice((previous) => ({ ...previous, shown: false })),
+      3500,
+    );
+  }, []);
+  const refreshCloud = useCallback(async () => {
+    try {
+      const { count, error } = await captureCount(center.code, profile.id);
+      if (error) throw error;
+      if (!mounted.current) return;
+      setCloudCount(count || 0);
+      setCloudStatus(`DB 임시저장 ${count || 0}장`);
+    } catch (error) {
+      if (mounted.current) {
+        setCloudCount(0);
+        setCloudStatus(cloudErrorMessage(error));
+      }
+    }
+  }, [center.code, profile.id]);
+  const templateGeneration = useRef(0),
+    initialTemplate = useRef<Promise<{
+      buffer: ArrayBuffer;
+      name: string;
+      info: Awaited<ReturnType<typeof inspectOneTopTemplate>>;
+    }> | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    const token = ++templateGeneration.current;
+    void refreshCloud();
+    setTemplateInfo('센터 템플릿을 불러오는 중...');
+    const path =
+      DEFAULT_TEMPLATE_PATHS[
+        center.code as keyof typeof DEFAULT_TEMPLATE_PATHS
+      ] || DEFAULT_TEMPLATE_PATHS['001'];
+    const request = (initialTemplate.current ??= (async () => {
+      const response = await fetch(path, { cache: 'no-store' });
+      if (!response.ok)
+        throw new Error(`센터 템플릿을 찾지 못했습니다. (${response.status})`);
+      const buffer = await response.arrayBuffer();
+      return {
+        buffer,
+        name: path.split('/').pop()!,
+        info: await inspectOneTopTemplate(buffer),
+      };
+    })());
+    void request
+      .then((data) => {
+        if (token !== templateGeneration.current) return;
+        applyTemplate(data.buffer, data.name, data.info);
+      })
+      .catch((error) => {
+        if (token === templateGeneration.current) templateError(error);
+      });
+    return () => {
+      mounted.current = false;
+      templateGeneration.current++;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      clearTimeout(toastTimer.current);
+      clearTimeout(hoverTimer.current);
+      clearTimeout(flashTimer.current);
+    };
+  }, [center.code, refreshCloud]);
+  useEffect(() => {
+    const stop = () =>
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    window.addEventListener('beforeunload', stop);
+    return () => window.removeEventListener('beforeunload', stop);
+  }, []);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    if (stream)
+      void video
+        .play()
+        .catch((error) =>
+          toast(`카메라를 시작하지 못했습니다: ${message(error)}`, 'error'),
+        );
+  }, [stream, toast]);
+  const captureAllRef = useRef<HTMLInputElement>(null),
+    analysisAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (captureAllRef.current)
+      captureAllRef.current.indeterminate =
+        selectedCaptures.length > 0 &&
+        selectedCaptures.length < captures.length;
+    if (analysisAllRef.current)
+      analysisAllRef.current.indeterminate =
+        selectedAnalysis.length > 0 &&
+        selectedAnalysis.length < captures.length;
+  }, [selectedCaptures, selectedAnalysis, captures.length]);
+  function applyTemplate(
+    buffer: ArrayBuffer,
+    name: string,
+    info: Awaited<ReturnType<typeof inspectOneTopTemplate>>,
+  ) {
+    setTemplate({ buffer: buffer.slice(0), name });
+    setOutcome(null);
+    setTemplateInfo(
+      <>
+        <span className="font-medium">{name}</span> · {info.sheetName} · 차량 행{' '}
+        {info.vehicleCount}개 · Q열 사진표시 {info.photoCount}개
+      </>,
+    );
+    toast('템플릿을 불러왔습니다.', 'success');
+  }
+  function templateError(error: unknown) {
+    setTemplate(null);
+    setTemplateInfo(`템플릿 로드 실패: ${message(error)}`);
+    toast(`템플릿 로드 실패: ${message(error)}`, 'error');
+  }
+  async function uploadTemplate(file: File) {
+    const token = ++templateGeneration.current;
+    try {
+      const buffer = await file.arrayBuffer(),
+        info = await inspectOneTopTemplate(buffer);
+      if (token === templateGeneration.current)
+        applyTemplate(buffer, file.name, info);
+    } catch (error) {
+      if (token === templateGeneration.current) templateError(error);
+    }
+  }
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setStream(null);
+  }
+  async function startCamera() {
+    try {
+      stopCamera();
+      const next = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1440 },
+        },
+        audio: false,
+      });
+      if (!mounted.current) {
+        next.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = next;
+      setStream(next);
+    } catch (error) {
+      toast(`카메라를 시작하지 못했습니다: ${message(error)}`, 'error');
+    }
+  }
+  function addCapture(dataUrl: string, name: string) {
+    const item: Capture = {
+      id: newUuid(),
+      dbId: null,
+      savedAt: null,
+      cloudDirty: true,
+      name,
+      dataUrl,
+      supplementalDataUrl: null,
+      status: 'pending',
+      result: null,
+      error: '',
+    };
+    setCaptures((previous) => [...previous, item]);
+    setOutcome(null);
+  }
+  function captureCamera() {
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      toast('카메라 영상이 준비되지 않았습니다.', 'warn');
+      return;
+    }
+    const count = capturesRef.current.length + 1;
+    addCapture(
+      cropSourceToFourThree(video, video.videoWidth, video.videoHeight, zoom),
+      `camera-${String(count).padStart(3, '0')}.jpg`,
+    );
+    if (typeof navigator.vibrate === 'function') navigator.vibrate(35);
+    setFlash(false);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (mounted.current) setFlash(true);
+      }),
+    );
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(false), 1200);
+    toast(`사진 ${count}장 촬영됨`, 'success');
+  }
+  async function addFiles(files: File[]) {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const data = await readImageWithoutCrop(file);
+        if (mounted.current) addCapture(data, file.name);
+      } catch (error) {
+        toast(`붙여넣기 실패: ${message(error)}`, 'error');
+      }
+    }
+  }
+  function changeCapture(id: string, changes: Partial<Capture>) {
+    setCaptures((previous) =>
+      previous.map((item) => (item.id === id ? { ...item, ...changes } : item)),
+    );
+    hideHover();
+  }
+  function hideHover() {
+    clearTimeout(hoverTimer.current);
+    setHoverImage('');
+  }
+  function scheduleHover(image: string) {
+    hideHover();
+    hoverTimer.current = setTimeout(() => setHoverImage(image), 1000);
+  }
+  async function attachSupplement(id: string, file: File) {
+    try {
+      const data = await compressSupplementToHd(file);
+      if (!mounted.current) return;
+      changeCapture(id, { supplementalDataUrl: data, cloudDirty: true });
+      setOutcome(null);
+      toast('P열 사진을 HD 크기로 압축해 등록했습니다.', 'success');
+    } catch (error) {
+      toast(`추가 사진 등록 실패: ${message(error)}`, 'error');
+    }
+  }
+  function removeLocal(ids: string[]) {
+    setCaptures((previous) =>
+      previous.filter((item) => !ids.includes(item.id)),
+    );
+    setSelectedCaptures((previous) =>
+      previous.filter((id) => !ids.includes(id)),
+    );
+    setSelectedAnalysis((previous) =>
+      previous.filter((id) => !ids.includes(id)),
+    );
+    setOutcome(null);
+  }
+  async function deleteItems(items: Capture[]) {
+    if (!editable) return;
+    try {
+      const ids = items
+        .map((item) => item.dbId)
+        .filter((id): id is string => !!id);
+      if (ids.length) {
+        const { error } = await removeCaptures(center.code, profile.id, ids);
+        if (error) throw error;
+      }
+      removeLocal(items.map((item) => item.id));
+      await refreshCloud();
+      toast(`사진 ${items.length}장을 삭제했습니다.`, 'success');
+    } catch (error) {
+      toast(cloudErrorMessage(error), 'error');
+    }
+  }
+  async function clearCaptures() {
+    if (
+      captures.length &&
+      window.confirm('촬영 목록의 사진을 기기와 DB에서 모두 삭제할까요?')
+    )
+      await deleteItems([...captures]);
+  }
+  async function deleteSelected() {
+    const items = captures.filter((item) => selectedCaptures.includes(item.id));
+    if (
+      items.length &&
+      window.confirm(
+        `선택한 사진 ${items.length}장을 기기와 DB에서 삭제할까요?`,
+      )
+    )
+      await deleteItems(items);
+  }
+  async function removeOne(id: string) {
+    if (!editable) return;
+    const item = captures.find((item) => item.id === id);
+    if (!item) return;
+    if (
+      item.dbId &&
+      !window.confirm('이 사진을 기기와 DB 임시저장에서 모두 삭제할까요?')
+    )
+      return;
+    try {
+      if (item.dbId) {
+        const { error } = await removeCapture(
+          center.code,
+          profile.id,
+          item.dbId,
+        );
+        if (error) throw error;
+      }
+      removeLocal([id]);
+      await refreshCloud();
+    } catch (error) {
+      toast(cloudErrorMessage(error), 'error');
+    }
+  }
+  async function saveCloud() {
+    if (!editable || cloudSaving) return;
+    if (!captures.length) {
+      toast('임시저장할 사진이 없습니다.', 'warn');
+      return;
+    }
+    setCloudSaving(true);
+    try {
+      for (let i = 0; i < captures.length; i++) {
+        const item = captures[i];
+        setCloudSaveLabel(`DB 저장 ${i + 1}/${captures.length}`);
+        const { data, error } = await saveCapture(
+          center.code,
+          profile.id,
+          item,
+        );
+        if (error) throw error;
+        changeCapture(item.id, {
+          dbId: data.id,
+          savedAt: data.updated_at,
+          cloudDirty: false,
+        });
+      }
+      await refreshCloud();
+      toast(`사진 ${captures.length}장을 DB에 임시저장했습니다.`, 'success');
+    } catch (error) {
+      toast(cloudErrorMessage(error), 'error');
+    } finally {
+      setCloudSaveLabel('');
+      setCloudSaving(false);
+    }
+  }
+  async function loadCloud() {
+    try {
+      const { data, error } = await loadCaptures(center.code, profile.id);
+      if (error) throw error;
+      setCaptures((previous) => [
+        ...(data || []).map((row) => ({
+          id: row.id,
+          dbId: row.id,
+          savedAt: row.updated_at,
+          cloudDirty: false,
+          name: row.filename,
+          dataUrl: row.image_data,
+          supplementalDataUrl: row.analysis?.supplementalDataUrl || null,
+          status: row.analysis?.status || 'pending',
+          result: row.analysis?.result || null,
+          error: row.analysis?.error || '',
+        })),
+        ...previous.filter((item) => !item.dbId),
+      ]);
+      setSelectedCaptures([]);
+      setSelectedAnalysis([]);
+      setOutcome(null);
+      toast(`DB에서 사진 ${(data || []).length}장을 불러왔습니다.`, 'success');
+    } catch (error) {
+      toast(cloudErrorMessage(error), 'error');
+    }
+  }
+  async function deleteCloud() {
+    if (
+      !editable ||
+      !window.confirm(
+        '현재 센터에 임시저장한 사진을 DB에서 모두 삭제할까요? 삭제 후 복구할 수 없습니다.',
+      )
+    )
+      return;
+    try {
+      const { error } = await clearCloudCaptures(center.code, profile.id);
+      if (error) throw error;
+      setCaptures((previous) => previous.filter((item) => !item.dbId));
+      setSelectedCaptures([]);
+      setSelectedAnalysis([]);
+      setOutcome(null);
+      await refreshCloud();
+      toast('DB 임시 사진을 모두 삭제했습니다.', 'success');
+    } catch (error) {
+      toast(cloudErrorMessage(error), 'error');
+    }
+  }
+  async function analyze(selected: boolean) {
+    if (analyzing) return;
+    const items = selected
+      ? captures.filter((item) => selectedAnalysis.includes(item.id))
+      : [...captures];
+    if (!items.length) {
+      if (selected) toast('재분석할 결과를 선택하세요.', 'warn');
+      return;
+    }
+    setAnalyzing(true);
+    setAnalyzingSelected(selected);
+    setOutcome(null);
+    let failed = 0;
+    const failures = new Map<string, string>();
+    try {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        changeCapture(item.id, { status: 'analyzing', error: '' });
+        if (i > 0)
+          await waitForApiSlot(
+            API_INTERVAL_MS,
+            i + 1,
+            items.length,
+            setAnalysisProgress,
+          );
+        setAnalysisButtonLabel(`분석 중 ${i + 1}/${items.length}`);
+        setAnalysisProgress(`${i + 1}/${items.length}`);
+        try {
+          const result = await analyzeReceiptWithFallback(
+            item.dataUrl,
+            i + 1,
+            items.length,
+            model,
+            defaultDate,
+            setAnalysisProgress,
+          );
+          if (!mounted.current) return;
+          changeCapture(item.id, {
+            result: result.result,
+            analysisModel: result.model,
+            status: 'done',
+            cloudDirty: true,
+          });
+        } catch (error) {
+          const reason = message(error);
+          failed++;
+          failures.set(item.id, reason);
+          changeCapture(item.id, {
+            status: 'error',
+            error: reason,
+            result: null,
+            cloudDirty: true,
+          });
+        }
+      }
+      setAnalysisProgress('분석 완료');
+      setIssues(
+        captures
+          .filter(
+            (item) =>
+              failures.has(item.id) ||
+              (item.status === 'error' &&
+                !items.some((selected) => selected.id === item.id)),
+          )
+          .map((item) => ({
+            item: item.name,
+            message: `API 판독 실패: ${failures.get(item.id) || item.error || '응답 오류'}`,
+          })),
+      );
+      toast(
+        failed
+          ? `분석 완료 · 성공 ${items.length - failed}장 / 실패 ${failed}장`
+          : `선택한 사진 ${items.length}장 분석 완료`,
+        failed ? 'warn' : 'success',
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+  async function match() {
+    if (!template) {
+      toast('템플릿을 먼저 업로드하세요.', 'warn');
+      return;
+    }
+    if (!captures.some((item) => item.status === 'done' && item.result)) {
+      toast('분석 완료된 사진이 없습니다.', 'warn');
+      return;
+    }
+    setMatching(true);
+    setIssues([]);
+    setMatchLog([]);
+    try {
+      const result = await matchOneTopWorkbook(
+        template.buffer,
+        captures,
+        (issues, log) => {
+          setIssues(issues);
+          setMatchLog(log);
+        },
+      );
+      setOutputName(
+        `${String(template.name || '1탑2실').replace(/\.(xlsx|xlsm)$/i, '')}_작업완료.xlsx`,
+      );
+      setOutcome(result);
+      setIssues(result.issues);
+      setMatchLog(result.matchLog);
+      toast(
+        `매칭 완료 · ${result.matchLog.length}건 반영 / 확인 ${result.issues.length}건`,
+        result.issues.length ? 'warn' : 'success',
+      );
+    } catch (error) {
+      setOutcome(null);
+      toast(`엑셀 매칭 실패: ${message(error)}`, 'error');
+    } finally {
+      setMatching(false);
+    }
+  }
+  const downloadRef = useRef<HTMLAnchorElement>(null),
+    [downloadUrl, setDownloadUrl] = useState<{
+      url: string;
+      name: string;
+    } | null>(null);
+  useEffect(() => {
+    if (!downloadUrl) return;
+    downloadRef.current?.click();
+    const timer = setTimeout(() => URL.revokeObjectURL(downloadUrl.url), 1000);
+    return () => {
+      clearTimeout(timer);
+      URL.revokeObjectURL(downloadUrl.url);
+    };
+  }, [downloadUrl]);
+  async function download() {
+    if (!outcome) return;
+    try {
+      const blob = await oneTopOutputBlob(outcome.workbook),
+        name = outputName;
+      setDownloadUrl({ url: URL.createObjectURL(blob), name });
+      toast('결과 Excel을 다운로드했습니다.', 'success');
+    } catch (error) {
+      toast(`다운로드 실패: ${message(error)}`, 'error');
+    }
+  }
+  const captureTiles = (
+    <>
+      <FileArea
+        hint={false}
+        id="capture-paste"
+        className="paste-tile"
+        accept="image/*"
+        multiple
+        onFiles={(files) => void addFiles(files)}
+        tabIndex={0}
+        role="group"
+        aria-label="클립보드 사진 붙여넣기"
+        title="클립보드 사진 붙여넣기 (Ctrl+V)"
+      >
+        <strong className="text-sm text-zinc-200">사진 붙여넣기</strong>
+      </FileArea>
+      {captures.map((item, index) => (
+        <div key={item.id} className="thumb">
+          <input
+            data-select={item.id}
+            className="capture-check"
+            type="checkbox"
+            aria-label={`${index + 1}번 사진 선택`}
+            checked={selectedCaptures.includes(item.id)}
+            onChange={(event) =>
+              setSelectedCaptures((previous) =>
+                event.target.checked
+                  ? [...previous, item.id]
+                  : previous.filter((id) => id !== item.id),
+              )
+            }
+          />
+          <img src={item.dataUrl} alt={`촬영 ${index + 1}`} />
+          <div className="p-2 text-[11px] flex gap-1">
+            <span className="truncate flex-1">{item.name}</span>
+            {item.dbId ? (
+              <span
+                className={
+                  item.cloudDirty ? 'text-amber-300' : 'text-emerald-300'
+                }
+              >
+                {item.cloudDirty ? '변경됨' : 'DB저장'}
+              </span>
+            ) : null}
+            <button
+              data-remove={item.id}
+              className="text-rose-300"
+              onClick={() => void removeOne(item.id)}
+            >
+              삭제
+            </button>
           </div>
-          <p className="mt-2 text-[11px] text-zinc-500">휴대폰에서 촬영 후 <b className="text-zinc-300">DB 임시저장</b>을 누르면 같은 계정·센터로 로그인한 PC에서 불러올 수 있습니다. 작업을 마치면 DB 사진 전체삭제로 임시 자료를 지워 주세요.</p>
         </div>
-        <div id="capture-grid" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">{captureTiles}</div>
-        <div id="capture-empty" className={`text-center text-sm text-zinc-500 py-12${captures.length ? " hidden" : ""}`}>촬영된 사진이 없습니다.</div>
-      </div>
-    </section>
+      ))}
+    </>
+  );
+  return (
+    <>
+      <FileArea
+        as="main"
+        hint={false}
+        accept="image/*"
+        multiple
+        onFiles={(files) => void addFiles(files)}
+        className="app-main one-top-work max-w-[1500px] mx-auto px-4 py-5 space-y-4"
+        id="work-main"
+        tabIndex={-1}
+      >
+        <FileArea
+          as="section"
+          id="work-section-1"
+          hint={false}
+          accept=".xlsx,.xlsm"
+          onFiles={(files) => {
+            if (files[0]) void uploadTemplate(files[0]);
+          }}
+          className="one-top-template"
+        >
+          <div>
+            <h2 className="font-semibold">템플릿 엑셀</h2>
+            <div
+              id="template-info"
+              className="one-top-template-info"
+              role="status"
+            >
+              {templateInfo}
+            </div>
+          </div>
+          <label className="btn btn-ghost one-top-file-button">
+            템플릿 변경
+            <input
+              id="template-file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadTemplate(file);
+              }}
+              type="file"
+              accept=".xlsx,.xlsm"
+              className="sr-only"
+            />
+          </label>
+        </FileArea>
 
-    <section id="work-section-3" className="step-card">
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <span className="step-badge">4</span><h2 className="font-semibold">일괄 API 분석</h2>
-        <span id="analysis-progress" className="text-xs text-zinc-400">{analysisProgress}</span><div className="flex-1"></div>
-        <label className="text-xs text-zinc-300 flex items-center gap-2">기본 날짜<input id="analysis-default-date" value={defaultDate} onChange={event=>setDefaultDate(event.target.value)} type="date" className="app-input" /></label>
-        <label className="text-xs text-zinc-300 flex items-center gap-2">API 모델<select id="temperature-vision-model" value={model} onChange={event=>setModel(event.target.value)} className="app-input min-w-60"><option value="claude-haiku-4-5-20251001">기존 모델 · Claude Haiku 4.5</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
-        <button id="analyze-selected" onClick={() => void analyze(true)} disabled={!selectedAnalysis.length || analyzing} className="btn btn-ghost" type="button">{analyzing && analyzingSelected ? analysisButtonLabel : selectedAnalysis.length ? `선택 항목 재분석 (${selectedAnalysis.length})` : "선택 항목 재분석"}</button>
-        <button id="analyze-all" onClick={() => void analyze(false)} disabled={!captures.length || analyzing} className="btn btn-primary" type="button">{analyzing && !analyzingSelected ? analysisButtonLabel : "전체 사진 API 분석"}</button>
-      </div>
-      <p className="text-xs text-zinc-400 mb-3">쿠팡 입문확인과 같은 Supabase Edge Function을 사용합니다. 차량번호 옆의 +칸에 붙여넣은 사진은 식별 가능한 화질(장당 약 300~500KB 목표)로 압축되어 온도영수증 왼쪽 P열의 같은 행에 삽입됩니다.</p>
-      <div className="overflow-auto max-h-[52vh] border border-zinc-700 rounded-lg">
-        <table className="result-table min-w-[1000px] w-full text-xs">
-          <thead className="bg-zinc-900 sticky top-0"><tr><th className="p-2"><input id="analysis-select-all" ref={analysisAllRef} checked={captures.length>0 && selectedAnalysis.length===captures.length} onChange={event=>setSelectedAnalysis(event.target.checked?captures.map(item=>item.id):[])} type="checkbox" className="accent-emerald-500" aria-label="분석 결과 전체 선택" /></th><th className="p-2">사진</th><th className="p-2 text-left">차량번호</th><th className="p-2">P열 사진 (HD)</th><th className="p-2 text-left">날짜</th><th className="p-2 text-left">시간</th><th className="p-2 text-left">A</th><th className="p-2 text-left">B</th><th className="p-2 text-left">판정</th><th className="p-2 text-left">상태</th></tr></thead>
-          <tbody id="analysis-body">{captures.length ? captures.map((item,index)=><AnalysisRow key={item.id} item={item} index={index} checked={selectedAnalysis.includes(item.id)} select={checked=>setSelectedAnalysis(previous=>checked?[...previous,item.id]:previous.filter(id=>id!==item.id))} update={result=>{changeCapture(item.id,{result,status:"done",cloudDirty:true});setOutcome(null);}} supplement={file=>void attachSupplement(item.id,file)} clearSupplement={()=>{changeCapture(item.id,{supplementalDataUrl:null,cloudDirty:true});setOutcome(null);}} hover={()=>scheduleHover(item.dataUrl)} leave={hideHover}/>) : <tr><td colSpan={10} className="p-8 text-center text-zinc-500">촬영 사진을 추가하세요.</td></tr>}</tbody>
-        </table>
-      </div>
-    </section>
+        <section id="work-section-2" className="one-top-photo-workspace">
+          <div className="one-top-section">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="font-semibold">사진 추가</h2>
+              <span id="capture-count" className="text-xs text-zinc-400">
+                {captures.length ? `${captures.length}장` : ''}
+              </span>
+            </div>
+            {stream && (
+              <div
+                id="camera-frame"
+                className={`camera-frame${flash ? ' capture-feedback' : ''}`}
+                style={
+                  {
+                    '--capture-inset': `${(1 - 1 / Math.max(1, zoom)) * 50}%`,
+                  } as CSSProperties
+                }
+              >
+                <video
+                  id="camera-video"
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                ></video>
+                <span
+                  id="camera-feedback-label"
+                  className={`camera-feedback-label${flash ? ' is-visible' : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {flash ? `촬영됨 · ${captures.length}장` : ''}
+                </span>
+              </div>
+            )}
+            <div className="one-top-capture-actions">
+              <button
+                id="camera-start"
+                onClick={() => void startCamera()}
+                hidden={!!stream}
+                className="btn btn-ghost"
+                type="button"
+              >
+                카메라 시작
+              </button>
+              <button
+                id="camera-stop"
+                onClick={stopCamera}
+                hidden={!stream}
+                className="btn btn-ghost"
+                type="button"
+              >
+                카메라 종료
+              </button>
+              <button
+                id="camera-capture"
+                onClick={captureCamera}
+                hidden={!stream}
+                className={`btn btn-primary camera-capture-button${flash ? ' capture-feedback' : ''}`}
+                type="button"
+              >
+                {flash ? `✓ 촬영 완료 (${captures.length}장)` : '사진 촬영'}
+              </button>
+              <label className="btn btn-ghost one-top-file-button">
+                사진 파일 추가
+                <input
+                  id="capture-files"
+                  onChange={(event) => {
+                    void addFiles([...(event.currentTarget.files || [])]);
+                    event.currentTarget.value = '';
+                  }}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                />
+              </label>
+              <label
+                hidden={!stream}
+                className="col-span-2 text-xs text-zinc-300 flex items-center gap-2"
+              >
+                촬영 거리 보정
+                <select
+                  id="camera-crop-zoom"
+                  value={zoom}
+                  onChange={(event) =>
+                    setZoom(Number(event.target.value) || 1.6)
+                  }
+                  className="app-input flex-1"
+                >
+                  <option value="1">기본 거리 (1.0배)</option>
+                  <option value="1.3">조금 멀리 (1.3배)</option>
+                  <option value="1.6">멀리 촬영 (1.6배)</option>
+                  <option value="2">더 멀리 (2.0배)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="one-top-section">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold">촬영 목록</h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-zinc-300">
+                  <input
+                    id="capture-select-all"
+                    ref={captureAllRef}
+                    checked={
+                      captures.length > 0 &&
+                      selectedCaptures.length === captures.length
+                    }
+                    onChange={(event) =>
+                      setSelectedCaptures(
+                        event.target.checked
+                          ? captures.map((item) => item.id)
+                          : [],
+                      )
+                    }
+                    type="checkbox"
+                    className="mr-1 accent-emerald-500"
+                  />
+                  전체 선택
+                </label>
+                <button
+                  id="capture-delete-selected"
+                  onClick={() => void deleteSelected()}
+                  disabled={!selectedCaptures.length}
+                  className="btn btn-ghost text-xs text-rose-300"
+                  type="button"
+                >
+                  {selectedCaptures.length
+                    ? `선택 삭제 (${selectedCaptures.length})`
+                    : '선택 삭제'}
+                </button>
+                <button
+                  id="capture-clear"
+                  onClick={() => void clearCaptures()}
+                  disabled={false}
+                  className="btn btn-ghost text-xs text-rose-300"
+                  type="button"
+                >
+                  전체 삭제
+                </button>
+              </div>
+            </div>
+            <div className="one-top-cloud-actions">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  id="cloud-save"
+                  onClick={() => void saveCloud()}
+                  disabled={!captures.length || cloudSaving || !editable}
+                  className="btn btn-primary text-xs"
+                  type="button"
+                >
+                  {cloudSaveLabel || 'DB 임시저장'}
+                </button>
+                <button
+                  id="cloud-load"
+                  onClick={() => void loadCloud()}
+                  disabled={!cloudCount}
+                  className="btn btn-ghost text-xs"
+                  type="button"
+                >
+                  DB 사진 불러오기
+                </button>
+                <button
+                  id="cloud-delete"
+                  onClick={() => void deleteCloud()}
+                  disabled={!cloudCount || !editable}
+                  className="btn btn-ghost text-xs text-rose-300"
+                  type="button"
+                >
+                  DB 사진 전체삭제
+                </button>
+                <span id="cloud-status" className="text-xs text-zinc-400">
+                  {cloudStatus}
+                </span>
+              </div>
+            </div>
+            <div
+              id="capture-grid"
+              className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2"
+            >
+              {captureTiles}
+            </div>
+            <div
+              id="capture-empty"
+              className={`text-sm text-zinc-500 py-4${captures.length ? ' hidden' : ''}`}
+            >
+              촬영된 사진이 없습니다.
+            </div>
+          </div>
+        </section>
 
-    <section id="work-section-4" className="step-card">
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <span className="step-badge">5</span><h2 className="font-semibold">엑셀 매칭 및 결과</h2>
-        <span id="match-summary" className="text-xs text-zinc-400">{outcome ? `반영 ${matchLog.length}건 · 확인 ${issues.length}건` : ""}</span><div className="flex-1"></div>
-        <button id="match-workbook" onClick={() => void match()} disabled={!template || !captures.some(item=>item.status==="done"&&item.result) || matching} className="btn btn-ghost" type="button">{matching ? "매칭 중..." : "차량번호 매칭 실행"}</button>
-        <button id="download-workbook" onClick={() => void download()} disabled={!outcome} className="btn btn-primary" type="button">결과 Excel 다운로드</button>
+        <section id="work-section-3" className="one-top-section">
+          <div className="one-top-analysis-actions">
+            <h2 className="font-semibold">사진 분석·수정</h2>
+            <span id="analysis-progress" className="text-xs text-zinc-400">
+              {analysisProgress}
+            </span>
+            <label className="text-xs text-zinc-300 flex items-center gap-2">
+              기본 날짜
+              <input
+                id="analysis-default-date"
+                value={defaultDate}
+                onChange={(event) => setDefaultDate(event.target.value)}
+                type="date"
+                className="app-input"
+              />
+            </label>
+            <label className="text-xs text-zinc-300 flex items-center gap-2">
+              분석 모델
+              <select
+                id="temperature-vision-model"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className="app-input"
+              >
+                <option value="claude-haiku-4-5-20251001">
+                  Claude Haiku 4.5
+                </option>
+                <option value="claude-opus-5">Claude Opus 5</option>
+              </select>
+            </label>
+            <button
+              id="analyze-selected"
+              onClick={() => void analyze(true)}
+              disabled={!selectedAnalysis.length || analyzing}
+              className="btn btn-ghost"
+              type="button"
+            >
+              {analyzing && analyzingSelected
+                ? analysisButtonLabel
+                : selectedAnalysis.length
+                  ? `선택 항목 재분석 (${selectedAnalysis.length})`
+                  : '선택 항목 재분석'}
+            </button>
+            <button
+              id="analyze-all"
+              onClick={() => void analyze(false)}
+              disabled={!captures.length || analyzing}
+              className="btn btn-primary"
+              type="button"
+            >
+              {analyzing && !analyzingSelected
+                ? analysisButtonLabel
+                : '사진 분석'}
+            </button>
+          </div>
+          <div className="overflow-auto max-h-[52vh] border border-zinc-700 rounded-lg">
+            <table className="result-table min-w-[1000px] w-full text-xs">
+              <thead className="bg-zinc-900 sticky top-0">
+                <tr>
+                  <th className="p-2">
+                    <input
+                      id="analysis-select-all"
+                      ref={analysisAllRef}
+                      checked={
+                        captures.length > 0 &&
+                        selectedAnalysis.length === captures.length
+                      }
+                      onChange={(event) =>
+                        setSelectedAnalysis(
+                          event.target.checked
+                            ? captures.map((item) => item.id)
+                            : [],
+                        )
+                      }
+                      type="checkbox"
+                      className="accent-emerald-500"
+                      aria-label="분석 결과 전체 선택"
+                    />
+                  </th>
+                  <th className="p-2">사진</th>
+                  <th className="p-2 text-left">차량번호</th>
+                  <th className="p-2">P열 사진 (HD)</th>
+                  <th className="p-2 text-left">날짜</th>
+                  <th className="p-2 text-left">시간</th>
+                  <th className="p-2 text-left">A</th>
+                  <th className="p-2 text-left">B</th>
+                  <th className="p-2 text-left">판정</th>
+                  <th className="p-2 text-left">상태</th>
+                </tr>
+              </thead>
+              <tbody id="analysis-body">
+                {captures.length ? (
+                  captures.map((item, index) => (
+                    <AnalysisRow
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      checked={selectedAnalysis.includes(item.id)}
+                      select={(checked) =>
+                        setSelectedAnalysis((previous) =>
+                          checked
+                            ? [...previous, item.id]
+                            : previous.filter((id) => id !== item.id),
+                        )
+                      }
+                      update={(result) => {
+                        changeCapture(item.id, {
+                          result,
+                          status: 'done',
+                          cloudDirty: true,
+                        });
+                        setOutcome(null);
+                      }}
+                      supplement={(file) =>
+                        void attachSupplement(item.id, file)
+                      }
+                      clearSupplement={() => {
+                        changeCapture(item.id, {
+                          supplementalDataUrl: null,
+                          cloudDirty: true,
+                        });
+                        setOutcome(null);
+                      }}
+                      hover={() => scheduleHover(item.dataUrl)}
+                      leave={hideHover}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={10} className="p-8 text-center text-zinc-500">
+                      촬영 사진을 추가하세요.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="work-section-4" className="one-top-section">
+          <div className="one-top-analysis-actions">
+            <h2 className="font-semibold">엑셀 매칭 및 결과</h2>
+            <span id="match-summary" className="text-xs text-zinc-400">
+              {outcome
+                ? `반영 ${matchLog.length}건 · 확인 ${issues.length}건`
+                : ''}
+            </span>
+            <button
+              id="match-workbook"
+              onClick={() => void match()}
+              disabled={
+                !template ||
+                !captures.some(
+                  (item) => item.status === 'done' && item.result,
+                ) ||
+                matching
+              }
+              className="btn btn-ghost"
+              type="button"
+            >
+              {matching ? '매칭 중...' : '차량번호 매칭 실행'}
+            </button>
+            <button
+              id="download-workbook"
+              onClick={() => void download()}
+              disabled={!outcome}
+              className="btn btn-primary"
+              type="button"
+            >
+              결과 Excel 다운로드
+            </button>
+          </div>
+          {(outcome || issues.length > 0 || matching) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <h3 className="text-sm font-semibold mb-2">처리 결과</h3>
+                <div
+                  id="match-results"
+                  className="text-xs text-zinc-400 space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3"
+                >
+                  {matchLog.length
+                    ? matchLog.map((line, index) => (
+                        <div key={index} className="status-ok">
+                          ✓ {line}
+                        </div>
+                      ))
+                    : '아직 매칭을 실행하지 않았습니다.'}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold mb-2">확인 필요 목록</h3>
+                <div
+                  id="issue-list"
+                  className="text-xs space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3"
+                >
+                  {issues.length ? (
+                    issues.map((issue, index) => (
+                      <div key={index} className="status-warn">
+                        ⚠ {issue.item} · {issue.message}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="status-ok">확인 필요 항목 없음</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      </FileArea>
+      <div
+        id="analysis-hover-preview"
+        className={`analysis-hover-preview${hoverImage ? ' is-visible' : ''}`}
+        aria-hidden={!hoverImage}
+      >
+        <img
+          id="analysis-hover-preview-image"
+          src={hoverImage || undefined}
+          alt="분석 사진 미리보기"
+        />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div><h3 className="text-sm font-semibold mb-2">처리 결과</h3><div id="match-results" className="text-xs text-zinc-400 space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3">{matchLog.length ? matchLog.map((line,index)=><div key={index} className="status-ok">✓ {line}</div>) : "아직 매칭을 실행하지 않았습니다."}</div></div>
-        <div><h3 className="text-sm font-semibold mb-2">확인 필요 목록</h3><div id="issue-list" className="text-xs space-y-1 min-h-20 rounded border border-zinc-700 bg-zinc-950/30 p-3">{issues.length ? issues.map((issue,index)=><div key={index} className="status-warn">⚠ {issue.item} · {issue.message}</div>) : <span className="status-ok">확인 필요 항목 없음</span>}</div></div>
+      <div
+        id="toast"
+        role="status"
+        aria-live="polite"
+        className={`fixed left-1/2 bottom-6 z-50 -translate-x-1/2 border rounded-lg px-4 py-2 text-sm shadow-xl${notice.shown ? '' : ' opacity-0'} ${notice.type === 'error' ? 'bg-rose-950 border-rose-700' : notice.type === 'warn' ? 'bg-amber-950 border-amber-700' : 'bg-zinc-800 border-zinc-700'}`}
+      >
+        {notice.text}
       </div>
-    </section>
-  </FileArea><div id="analysis-hover-preview" className={`analysis-hover-preview${hoverImage?' is-visible':''}`} aria-hidden={!hoverImage}><img id="analysis-hover-preview-image" src={hoverImage||undefined} alt="분석 사진 미리보기"/></div><div id="toast" className={`fixed left-1/2 bottom-6 z-50 -translate-x-1/2 border rounded-lg px-4 py-2 text-sm shadow-xl${notice.shown?'':' opacity-0'} ${notice.type==='error'?'bg-rose-950 border-rose-700':notice.type==='warn'?'bg-amber-950 border-amber-700':'bg-zinc-800 border-zinc-700'}`}>{notice.text}</div><a ref={downloadRef} hidden href={downloadUrl?.url} download={downloadUrl?.name}/></>;
+      <a
+        ref={downloadRef}
+        hidden
+        href={downloadUrl?.url}
+        download={downloadUrl?.name}
+      />
+    </>
+  );
 }
-export default function OneTopWork(){return <AdminPage title="1탑2실 작업"><OneTopWorkContent/></AdminPage>;}
+export default function OneTopWork() {
+  return (
+    <AdminPage title="1탑2실 작업">
+      <OneTopWorkContent />
+    </AdminPage>
+  );
+}

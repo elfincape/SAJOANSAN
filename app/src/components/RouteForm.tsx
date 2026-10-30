@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Modal } from './Modal';
+import { Modal, ModalClose } from './Modal';
 import { useAdminPage } from './AdminPage';
 import { saveRoute } from '../lib/routes';
 import type { Route, RouteMasters } from '../lib/routes';
@@ -12,7 +12,7 @@ export function RouteForm({ route, masters, close, saved, toast }: { route: Rout
   const [draft, setDraft] = useState({ name: route?.name || '', car: route?.car_number || '', company, driver: drivers.find(row => row.id === route?.primary_driver_id)?.id || drivers[0]?.id || '', driver2: drivers.find(row => row.id === route?.secondary_driver_id)?.id || '', vehicle: vehicles.find(row => row.id === route?.primary_vehicle_id)?.id || vehicles[0]?.id || '', vehicle2: vehicles.find(row => row.id === route?.secondary_vehicle_id)?.id || '', active: route?.active !== false, days: [...(route?.closed_days || [])] });
   const submitting = useRef(false);
   const currentDrivers = masters.drivers.filter(row => !draft.company || row.company_id === draft.company), currentVehicles = masters.vehicles.filter(row => !draft.company || row.company_id === draft.company);
-  return <Modal width="lg" label={route ? '코스 편집' : '새 코스'} onClose={close}><div className="p-5"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{route ? '코스 편집' : '새 코스'}</h2><button data-x className="btn btn-ghost text-xs" onClick={close}>닫기</button></div>
+  return <Modal width="lg" label={route ? '코스 편집' : '새 코스'} onClose={close}><div className="p-5"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{route ? '코스 편집' : '새 코스'}</h2><ModalClose data-x className="btn btn-ghost text-xs">닫기</ModalClose></div>
     <form id="route-form" className="space-y-3" noValidate onSubmit={async event => {
       event.preventDefault(); if (!editable || submitting.current) return;
       const name = draft.name.trim(); if (!name) { toast('코스명은 필수입니다.', 'warn'); return; }
@@ -30,7 +30,7 @@ export function RouteForm({ route, masters, close, saved, toast }: { route: Rout
       <div className="grid grid-cols-2 gap-3">{([['driver', 'r-driver', '주기사'], ['vehicle', 'r-vehicle', '주차량'], ['driver2', 'r-driver2', '보조기사'], ['vehicle2', 'r-vehicle2', '보조차량']] as const).map(([key, id, title]) => <div key={key}><label className="app-label" htmlFor={id}>{title}</label><select id={id} className="app-select" value={draft[key]} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))}>{key.endsWith('2') ? <option value="">없음</option> : null}{key.startsWith('driver') ? currentDrivers.map(row => <option key={row.id} value={row.id}>{row.name}{row.phone ? ' · ' + row.phone : ''}</option>) : currentVehicles.map(row => <option key={row.id} value={row.id}>{row.plate_number}{row.tonnage ? ' · ' + row.tonnage + 't' : ''}</option>)}</select></div>)}</div>
       <label className="cb"><input type="checkbox" id="r-active" checked={draft.active} onChange={event => setDraft(previous => ({ ...previous, active: event.target.checked }))} /> 활성</label>
       <div><label className="app-label">휴무일</label><div className="flex gap-3 flex-wrap mt-1">{['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <label key={day} className="cb text-xs"><input type="checkbox" className="cd-check" value={index} checked={draft.days.includes(index)} onChange={event => { const checked = event.target.checked; setDraft(previous => ({ ...previous, days: checked ? [...previous.days, index] : previous.days.filter(day => day !== index) })); }} /> {day}</label>)}</div><p className="text-[10px] text-zinc-500 mt-1">체크한 요일에는 이 코스가 운행하지 않습니다.</p></div>
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!editable}>저장</button><button type="button" data-x className="btn btn-ghost" onClick={close}>취소</button></div>
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!editable}>저장</button><ModalClose data-x className="btn btn-ghost">취소</ModalClose></div>
     </form>
   </div></Modal>;
 }

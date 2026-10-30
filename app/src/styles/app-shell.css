@@ -1,6 +1,6 @@
 /* Application chrome is owned here, not by individual workspace themes. */
 html[data-theme] body.workspace-ui.app-shell {
-  --app-sidebar-width: 236px;
+  --app-sidebar-width: 103px;
   --app-header-height: 64px;
   --work-nav-width: var(--app-sidebar-width);
   --sidebar-width: var(--app-sidebar-width);
@@ -9,7 +9,9 @@ html[data-theme] body.workspace-ui.app-shell {
   display: block;
   margin: 0;
   padding: 0;
-  background: var(--theme-page);
+  background: var(--ean-floor) var(--theme-page);
+  background-attachment: fixed;
+  background-size: 100vw 100vh;
   color: var(--theme-text);
   letter-spacing: 0;
 }
@@ -25,7 +27,7 @@ html[data-theme] body.workspace-ui.app-shell .workspace-content .app-main {
   margin: 0;
   padding: 24px;
   scroll-margin-top: calc(var(--app-header-height) + 12px);
-  background: var(--theme-page);
+  background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -34,6 +36,7 @@ html[data-theme]
   body.workspace-ui.app-shell
   .workspace-content
   > #portal-content {
+  background: transparent;
   padding: 0;
   margin: 0;
 }
@@ -42,7 +45,7 @@ html[data-theme] body.workspace-ui.app-shell #portal-main {
 }
 html[data-theme] body.workspace-ui.app-shell .workspace-content > #app {
   height: calc(100dvh - var(--app-header-height));
-  background: var(--theme-page);
+  background: transparent;
   padding: 0;
   overflow: hidden;
 }
@@ -51,11 +54,11 @@ html[data-theme] body.workspace-ui.app-shell #app-header {
   position: sticky;
   top: 0;
   z-index: 30;
-  width: calc(100% - var(--app-sidebar-width));
-  margin: 0 0 0 var(--app-sidebar-width);
+  width: 100%;
+  margin: 0;
   padding: 0;
-  min-height: 64px;
-  height: 64px;
+  min-height: 72px;
+  height: 72px;
   color: var(--theme-text);
   background: var(--theme-panel);
   border: 0;
@@ -66,17 +69,17 @@ html[data-theme] body.workspace-ui.app-shell #app-header > .app-header-row {
   display: flex;
   align-items: center;
   gap: 16px;
-  min-height: 63px;
-  height: 63px;
+  min-height: 71px;
+  height: 71px;
   max-width: none;
-  padding: 12px 24px;
+  padding: 14px 32px;
   flex-wrap: nowrap;
 }
 html[data-theme] body.workspace-ui.app-shell #app-header .app-location {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
 }
@@ -158,19 +161,135 @@ html[data-theme] body.workspace-ui.app-shell #app-header .theme-toggle {
 }
 html[data-theme] body.workspace-ui.app-shell #app-sidebar {
   position: fixed;
-  inset: 0 auto 0 0;
+  inset: calc(var(--app-header-height) + 22px) auto auto 24px;
   z-index: 50;
-  width: var(--app-sidebar-width);
+  width: 74px;
   max-width: none;
-  height: 100dvh;
-  max-height: none;
+  height: 258px;
+  max-height: calc(100dvh - var(--app-header-height) - 46px);
   margin: 0;
   padding: 0;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--ean-rim, var(--theme-border));
+  border-radius: 24px;
   background: var(--theme-sidebar);
   color: var(--theme-sidebar-text);
   overflow: hidden;
+  transition:
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-radius 280ms;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar[data-expanded='true'] {
+  width: 236px;
+  height: calc(100dvh - var(--app-header-height) - 46px);
+}
+html[data-theme] body.workspace-ui.app-shell #app-header .app-brand {
+  display: inline-flex;
+  flex: none;
+  width: 90px;
+  color: var(--theme-text);
+  font-size: 25px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+#app-header .app-context-pill {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 5px 16px 5px 8px;
+  border: 1px solid var(--ean-rim, var(--theme-border-soft));
+  border-radius: 24px;
+  background: var(--ean-surface, var(--theme-panel));
+}
+#app-header .app-context-pill #center-switcher > span {
+  display: none;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-header
+  .app-context-pill
+  #app-center-select {
+  border: 0;
+  background: transparent;
+  width: 108px;
+  border-radius: 16px;
+}
+#app-header .app-header-controls {
+  margin-left: auto;
+}
+#app-header .app-page-actions {
+  margin-left: auto;
+}
+#app-sidebar .app-rail-heading {
+  flex: none;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 13px 12px;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  .app-rail-heading
+  button,
+html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-rail-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--theme-muted);
+  cursor: pointer;
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  .app-rail-link:is([aria-current='page'], [aria-current='location']) {
+  background: var(--theme-selected);
+  color: var(--theme-selected-text);
+}
+html[data-theme]
+  body.workspace-ui.app-shell
+  #app-sidebar
+  :is(.app-rail-heading button, .app-rail-link):hover {
+  background: var(--theme-hover);
+  color: var(--theme-text);
+}
+#app-sidebar .app-rail-links {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding-bottom: 16px;
+}
+#app-sidebar .workspace-navigation-content[hidden] {
+  display: none;
+}
+#app-sidebar .workspace-navigation-content:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  width: 234px;
+  flex: 1;
+  min-height: 0;
+  animation: navigation-reveal 220ms ease-out;
+}
+@keyframes navigation-reveal {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 #app-sidebar:not([open]) {
   display: none;
@@ -398,6 +517,32 @@ html[data-theme] body.workspace-ui.app-shell #app-account-menu > button:hover {
     width: 252px;
     max-width: calc(100vw - 32px);
   }
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar[data-rail] {
+    inset: calc(var(--app-header-height) + 12px) auto auto 12px;
+    width: 252px;
+    height: calc(100dvh - var(--app-header-height) - 24px);
+    max-height: calc(100dvh - var(--app-header-height) - 24px);
+    border-radius: 24px;
+    transform: translateX(0);
+    transition:
+      transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 200ms,
+      display 280ms allow-discrete,
+      overlay 280ms allow-discrete;
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    #app-sidebar[data-rail]:not([open]) {
+    transform: translateX(-24px);
+    opacity: 0;
+    border-radius: 24px;
+  }
+  @starting-style {
+    html[data-theme] body.workspace-ui.app-shell #app-sidebar[data-rail][open] {
+      transform: translateX(-24px);
+      opacity: 0;
+    }
+  }
   html[data-theme] body.workspace-ui.app-shell #app-sidebar .app-brand button,
   html[data-theme] body.workspace-ui.app-shell #app-header .app-menu-toggle {
     display: inline-flex;
@@ -433,11 +578,24 @@ html[data-theme] body.workspace-ui.app-shell #app-account-menu > button:hover {
     height: auto;
   }
   #app-header .app-location {
-    flex-basis: calc(100% - 50px);
+    flex: 1;
+  }
+  html[data-theme] body.workspace-ui.app-shell #app-header .app-brand {
+    width: auto;
+    margin-right: auto;
+  }
+  #app-header .app-context-pill {
+    order: 4;
+    width: 100%;
+    padding: 3px 10px;
+  }
+  #app-header .app-context-pill .app-location :is(h1, a) {
+    font-size: 13px;
   }
   #app-header .app-header-controls {
     justify-content: flex-end;
-    width: 100%;
+    width: auto;
+    gap: 6px;
   }
   html[data-theme] body.workspace-ui.app-shell #app-header .app-page-actions {
     flex-wrap: wrap;
@@ -464,6 +622,13 @@ html[data-theme] body.workspace-ui.app-shell #app-account-menu > button:hover {
   html[data-theme] body.workspace-ui.app-shell .workspace-content > #app {
     height: calc(100dvh - var(--app-header-height));
     padding: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] body.workspace-ui.app-shell #app-sidebar[data-rail],
+  #app-sidebar .workspace-navigation-content:not([hidden]) {
+    transition: none;
+    animation: none;
   }
 }
 @media print {

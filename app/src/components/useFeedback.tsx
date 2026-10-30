@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal } from './Modal';
+import { Modal, ModalClose } from './Modal';
 import { Toasts } from './Toasts';
 import type { Notice } from './Toasts';
 
@@ -21,6 +21,6 @@ export function useFeedback() {
     return new Promise<boolean>(done => { resolve.current = done; });
   }
   function finish(value: boolean) { resolve.current?.(value); resolve.current = undefined; setConfirmation(null); }
-  const feedback = <><Toasts notices={notices} dismiss={dismiss} />{confirmation ? <Modal label={confirmation.danger ? '삭제 확인' : '작업 확인'} width="sm" onClose={() => finish(false)}><div className="p-5"><div className="text-sm whitespace-pre-line leading-relaxed text-zinc-100 mb-5">{confirmation.message}</div><div className="flex justify-end gap-2"><button data-act="cancel" className="px-3 py-1.5 rounded-md text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-100" onClick={() => finish(false)}>{confirmation.cancelText}</button><button data-act="ok" className={`px-3 py-1.5 rounded-md text-sm ${confirmation.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`} onClick={() => finish(true)}>{confirmation.okText}</button></div></div></Modal> : null}</>;
+  const feedback = <><Toasts notices={notices} dismiss={dismiss} />{confirmation ? <Modal label={confirmation.danger ? '삭제 확인' : '작업 확인'} width="sm" onClose={() => finish(false)}><div className="p-5"><div className="text-sm whitespace-pre-line leading-relaxed text-zinc-100 mb-5">{confirmation.message}</div><div className="flex justify-end gap-2"><ModalClose data-act="cancel" className="px-3 py-1.5 rounded-md text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-100">{confirmation.cancelText}</ModalClose><ModalClose data-act="ok" className={`px-3 py-1.5 rounded-md text-sm ${confirmation.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`} afterClose={() => finish(true)}>{confirmation.okText}</ModalClose></div></div></Modal> : null}</>;
   return { toast, confirm, feedback };
 }

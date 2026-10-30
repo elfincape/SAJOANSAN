@@ -1,4 +1,3 @@
-import { WorkflowNavigation } from '../components/WorkflowNavigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Papa from 'papaparse';
@@ -40,19 +39,19 @@ function CourseImportContent(){
   finally{lock.current=false;setRunning(false);}
  }
  return <>
-<main className="app-main max-w-7xl mx-auto px-4 py-6 space-y-6" id="work-main" tabIndex={-1}><WorkflowNavigation steps={[["work-section-1", "CSV 파일 선택"], ["step-mapping", "컬럼 확인·수정"], ["step-preview", "미리보기 확인"], ["step-execute", "DB에 저장"]]} />
+<main className="app-main max-w-7xl mx-auto px-4 py-6 space-y-6" id="work-main" tabIndex={-1}>
 
   
   <FileArea as="section" id="work-section-1" accept=".csv,text/csv" disabled={running || !editable} onFiles={files=>{if(files[0])readCsv(files[0]);}} className="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
-    <h2 className="font-semibold mb-3">1단계 · CSV 파일 선택</h2>
+    <h2 className="font-semibold mb-3">CSV 파일 선택</h2>
     <div className="flex flex-wrap items-center gap-3">
       <input onChange={event => { const file=event.target.files?.[0];if(file)readCsv(file); }} aria-label="CSV 파일 선택" type="file" id="csv-file" accept=".csv,text/csv" className="text-sm file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
       <span id="file-info" className="text-xs text-zinc-400">{fileInfo}</span>
     </div>
     <details className="mt-3 text-xs text-zinc-400">
-      <summary className="cursor-pointer hover:text-zinc-200">엑셀에서 헤더를 어떻게 정리해야 하나요?</summary>
+      <summary className="cursor-pointer hover:text-zinc-200">CSV 헤더 형식</summary>
       <div className="mt-2 pl-3 border-l border-zinc-700">
-        <p>1행에 다음 헤더(또는 유사 이름)가 있어야 합니다. 정확히 일치하지 않아도 2단계에서 수동 매핑 가능:</p>
+        <p>1행: 컬럼명</p>
         <code className="block bg-zinc-900 rounded p-2 mt-1 text-zinc-300 whitespace-pre">호차, 운수사, 코스명, 톤수, 차량번호, 운전자명, 연락처, 입차시간, 하차시작, 하차종료, 납품마감, 코드, 납품처명, 1톤이하, 3.5톤이하, 5톤이상, 무인야적납, 대면, 검수, 무인, 보안키, 열쇠, 없음, 창고, 탑차, 야적, 주소, 열쇠보관장소, 비밀번호, 비고</code>
       </div>
     </details>
@@ -60,38 +59,37 @@ function CourseImportContent(){
 
   
   <section id="step-mapping" className={`bg-zinc-800/40 border border-zinc-700 rounded-lg p-4${ready ? "" : " hidden"}`}>
-    <h2 className="font-semibold mb-3">2단계 · 컬럼 매핑 확인</h2>
-    <p className="text-xs text-zinc-400 mb-3">CSV의 컬럼명을 시스템 필드에 연결합니다. 자동 인식되지 않은 항목은 직접 선택하세요.</p>
+    <h2 className="font-semibold mb-3">컬럼 연결</h2>
     <div id="mapping-grid" className="grid grid-cols-1 md:grid-cols-2 gap-2">{FIELDS.map(([key,label])=><label key={key} className="flex items-center gap-2 text-sm bg-zinc-900/60 rounded px-2 py-1.5"><span className="w-28 text-zinc-400 shrink-0">{label}</span><select data-field={key} className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-zinc-100" value={mapping[key]||""} onChange={event=>setMapping(previous=>({...previous,[key]:event.target.value}))}><option value="">— 사용 안 함 —</option>{headers.map(header=><option key={header} value={header}>{header}</option>)}</select></label>)}</div>
   </section>
 
   
   <section id="step-preview" className={`bg-zinc-800/40 border border-zinc-700 rounded-lg p-4${ready ? "" : " hidden"}`}>
-    <h2 className="font-semibold mb-3">3단계 · 정규화 미리보기</h2>
+    <h2 className="font-semibold mb-3">저장할 데이터 확인</h2>
     <div id="summary-cards" className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">{cards.map(([label,count])=><div key={label} className="bg-zinc-900 rounded p-2 text-center"><div className="text-xs text-zinc-400">{label}</div><div className="text-xl font-bold text-emerald-400">{count}</div></div>)}</div>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
       <div>
-        <h3 className="text-sm font-semibold mb-1">회사 (companies)</h3>
+        <h3 className="text-sm font-semibold mb-1">회사</h3>
         <div id="preview-companies" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.companies}</div>
       </div>
       <div>
-        <h3 className="text-sm font-semibold mb-1">기사 (drivers)</h3>
+        <h3 className="text-sm font-semibold mb-1">기사</h3>
         <div id="preview-drivers" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.drivers}</div>
       </div>
       <div>
-        <h3 className="text-sm font-semibold mb-1">차량 (vehicles)</h3>
+        <h3 className="text-sm font-semibold mb-1">차량</h3>
         <div id="preview-vehicles" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.vehicles}</div>
       </div>
       <div>
-        <h3 className="text-sm font-semibold mb-1">납품처 (delivery_points)</h3>
+        <h3 className="text-sm font-semibold mb-1">납품처</h3>
         <div id="preview-points" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.points}</div>
       </div>
       <div>
-        <h3 className="text-sm font-semibold mb-1">코스 (routes)</h3>
+        <h3 className="text-sm font-semibold mb-1">코스</h3>
         <div id="preview-routes" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.routes}</div>
       </div>
       <div>
-        <h3 className="text-sm font-semibold mb-1">납품처 항목 (route_stops)</h3>
+        <h3 className="text-sm font-semibold mb-1">납품처 항목</h3>
         <div id="preview-stops" className="bg-zinc-900 rounded p-2 max-h-40 overflow-auto text-xs">{previews.stops}</div>
       </div>
     </div>
@@ -104,23 +102,23 @@ function CourseImportContent(){
 
   
   <section id="step-execute" className={`bg-zinc-800/40 border border-zinc-700 rounded-lg p-4${ready ? "" : " hidden"}`}>
-    <h2 className="font-semibold mb-3">4단계 · DB에 저장</h2><p className="text-sm mb-3">같은 코스의 납품 순서가 있으면 기존 납품처 항목을 덮어씁니다.</p>
+    <h2 className="font-semibold mb-3">저장</h2><p className="text-sm mb-3">같은 코스의 납품 순서가 있으면 기존 납품처 항목을 덮어씁니다.</p>
     <div className="flex flex-wrap items-center gap-2 mb-3">
       <label className="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" id="opt-replace-stops" checked={replaceStops} onChange={event=>setReplaceStops(event.target.checked)} className="accent-emerald-500" />
-        기존 코스의 납품처 항목을 모두 삭제하고 다시 입력 (권장)
+        기존 납품처 항목 삭제 후 다시 입력
       </label>
       <label className="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" id="opt-dry-run" checked={dryRun} onChange={event=>setDryRun(event.target.checked)} className="accent-amber-500" />
-        Dry-run (실제 저장 없이 SQL 카운트만 확인)
+        실제 저장 없이 건수만 확인
       </label>
     </div>
     <button id="btn-execute" disabled={running || !editable} onClick={() => void execute()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded font-semibold">
-      🚀 DB에 저장 시작
+      저장 실행
     </button>
     <div id="exec-log" className="mt-3 bg-zinc-900 rounded p-3 text-xs font-mono space-y-1 max-h-96 overflow-auto">{logs.map((entry,index)=><div key={index} className={entry.cls}>{entry.text}</div>)}<span ref={logEnd}/></div>
   </section>
 
 </main>{feedback}</>;
 }
-export default function CourseImport(){return <AdminPage title="📥 코스표 일괄 가져오기" minRole="admin"><CourseImportContent/></AdminPage>;}
+export default function CourseImport(){return <AdminPage title="코스표 일괄 가져오기" minRole="admin"><CourseImportContent/></AdminPage>;}

@@ -57,7 +57,7 @@ function CharterParserContent(){
  async function purgeMonth(){if(profile.role!=='admin'||!editable)return;const archive=current.current.archives.find(row=>row.id===current.current.archiveId);if(!archive)return;if(current.current.dirty)throw new Error('화면의 미저장 수정을 먼저 저장해 주세요.');if(!await confirm(archive.month+'월 '+archive.record_count+'운행을 Supabase에서 삭제합니다. 검증된 OneDrive JSON은 유지됩니다.',{danger:true,okText:'DB 정리'}))return;const removed=await purgeCharterMonth(archive.id);update({trips:current.current.trips.filter(trip=>!trip.date?.startsWith(archive.month))});await refreshArchives();message('OneDrive 보관본을 유지하고 DB '+removed+'운행을 정리했습니다.');}
  function openDrive(){try{const url=new URL(current.current.driveUrl);if(url.protocol!=='https:'||!['1drv.ms','onedrive.live.com'].includes(url.hostname))throw new Error('OneDrive 공유 링크를 입력해 주세요.');window.open(url.href,'_blank','noopener,noreferrer');}catch(error){message(errorMessage(error),true);}}
  return <>
-<main className="app-main max-w-[1400px] mx-auto px-4 py-6 space-y-5" id="work-main" tabIndex={-1}><nav className="work-section-navigation" aria-label="작업 단계">{["엑셀 업로드","DB 확인 · 조회","운행 · 거래처 통계","가로형 정산 파일","OneDrive 월별 보관"].map((label,index)=><a key={label} href={`#work-section-${index+1}`}>{label}</a>)}</nav>
+<main className="app-main max-w-[1400px] mx-auto px-4 py-6 space-y-5" id="work-main" tabIndex={-1}>
   <p id="status" role="status" aria-live="polite" className={view.statusError?"text-sm text-red-300":"text-sm text-zinc-300"}>{view.status}</p>
   <FileArea as="section" id="work-section-1" accept=".xlsx,.xls" multiple onFiles={files=>void loadFiles(files)} className="panel space-y-4">
    <h2 className="font-semibold">엑셀 업로드</h2>

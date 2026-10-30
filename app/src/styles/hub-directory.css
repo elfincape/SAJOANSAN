@@ -1,5 +1,5 @@
 html[data-theme] body.workspace-ui .hub-directory {
-  max-width: 1180px;
+  max-width: 1440px;
   width: 100%;
   margin-inline: auto;
   padding: 40px 36px;
@@ -9,11 +9,11 @@ html[data-theme] body.workspace-ui .hub-directory .hub-heading {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-heading h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 28px;
   letter-spacing: -0.025em;
   font-weight: 650;
   color: var(--theme-text);
@@ -27,41 +27,46 @@ html[data-theme] body.workspace-ui .hub-directory .hub-search label {
   font-size: 13px;
   color: var(--theme-muted);
 }
-html[data-theme] body.workspace-ui .hub-directory .hub-search input {
+html[data-theme]
+  body.workspace-ui.app-shell
+  .workspace-content
+  .hub-directory
+  .hub-search
+  input {
   width: 100%;
   min-height: 42px;
   padding: 10px 13px;
-  border: 1px solid var(--theme-control-border);
-  border-radius: 12px;
+  border: 1px solid var(--ean-rim);
+  border-radius: 24px;
   background: var(--ean-glass);
   color: var(--theme-text);
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-browser {
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-categories {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: stretch;
-  gap: 6px;
-  padding: 8px 0;
+  gap: 10px;
+  padding: 0;
   border: 0;
   background: transparent;
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-category {
   position: relative;
   isolation: isolate;
-  min-height: 48px;
+  min-height: 100px;
   width: 100%;
-  padding: 12px 16px;
+  padding: 18px 16px;
   text-align: left;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--theme-muted);
+  border: 1px solid var(--ean-rim);
+  border-radius: 18px;
+  background: var(--ean-surface);
+  color: var(--theme-text);
   font-size: 14px;
   font-weight: 550;
   cursor: pointer;
@@ -79,9 +84,11 @@ html[data-theme]
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-results {
   min-width: 0;
-  padding: 12px 24px 20px;
-  background: var(--ean-glass);
-  border: 1px solid var(--theme-border-soft);
+  padding: 12px 28px 28px;
+  background: var(--ean-surface);
+  border: 1px solid var(--ean-rim);
+  backdrop-filter: blur(28px) saturate(115%);
+  -webkit-backdrop-filter: blur(28px) saturate(115%);
   box-shadow:
     inset 0 1px var(--ean-edge),
     var(--ean-shadow);
@@ -105,13 +112,30 @@ html[data-theme] body.workspace-ui .hub-directory .hub-results {
 }
 .hub-tool-list {
   position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 36px;
+}
+.hub-tool-list[hidden] {
+  display: none;
+}
+.hub-category-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--theme-muted);
+}
+.hub-category-meta > span {
+  font-size: 11px;
+  font-weight: 400;
 }
 html[data-theme] body.workspace-ui .hub-directory .hub-tool {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 58px;
+  min-height: 66px;
   padding: 14px 4px;
   color: var(--theme-text);
   text-decoration: none;
@@ -143,6 +167,9 @@ html[data-theme] body.workspace-ui .hub-directory .hub-empty {
   background: transparent;
 }
 @media (max-width: 700px) {
+  .hub-tool-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
   html[data-theme] body.workspace-ui .hub-directory {
     padding: 24px 16px;
   }

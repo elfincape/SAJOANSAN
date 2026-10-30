@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { RefObject } from 'react';
 import { KBarProvider, KBarSearch, KBarResults, useKBar, useMatches, useRegisterActions, VisualState } from 'kbar';
 import type { Action } from 'kbar';
+import { Search } from 'lucide-react';
 import { useContextualActions } from '../lib/workspace-actions';
 
 export interface WorkspaceCommand {
@@ -51,7 +52,7 @@ function Palette({ disabled, pending }: { disabled: boolean; pending: RefObject<
   }, [showing]);
   return <>
     <button ref={trigger} type="button" className="workspace-command-trigger" aria-label="화면 빠른 이동" aria-keyshortcuts="Control+k Meta+k" title="화면 빠른 이동 (Ctrl/⌘ K)" disabled={disabled} onClick={() => query.toggle()}>
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
+      <Search aria-hidden="true" size={18} strokeWidth={1.5} />
       <span>빠른 이동</span><kbd>Ctrl / ⌘ K</kbd>
     </button>
     {showing ? <dialog ref={dialog} className="workspace-command-dialog" aria-label="화면 빠른 이동" onCancel={event => { event.preventDefault(); query.setVisualState(VisualState.hidden); }} onPointerDown={event => { backdropPointer.current = event.target === event.currentTarget; }} onClick={event => { if (backdropPointer.current && event.target === event.currentTarget) query.setVisualState(VisualState.hidden); backdropPointer.current = false; }}>

@@ -413,36 +413,6 @@ function DailyTemperatureContent() {
         id="work-main"
         tabIndex={-1}
       >
-        <section className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
-          <details className="readability-guide">
-            <summary>작업 방법 · 처음 사용하는 경우</summary>
-            <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside leading-relaxed">
-              <li>
-                저장된 기본 템플릿을 먼저 자동으로 불러오고, 필요할 때만 업로드
-                파일로 임시 교체합니다.
-              </li>
-              <li>
-                템플릿은 Sheet1, <code>5행</code>부터 <code>B~R열</code>을 편집
-                대상으로 불러옵니다.
-              </li>
-              <li>
-                <code>I열</code> 차량 구분은 <strong>고정 → 광역 → 임시</strong>{' '}
-                순서를 유지합니다.
-              </li>
-              <li>
-                추가 기사 정보는 <code>G열 담당자</code>,{' '}
-                <code>H열 차량번호</code>에 들어가며 선택한 구분의 마지막 행
-                아래에 삽입됩니다.
-              </li>
-              <li>
-                삽입 행은 지사/센터/날짜/운송사/기본값을 자동으로 채우고,{' '}
-                <code>J~M</code>, <code>P~R</code>은 공란으로 둡니다.
-              </li>
-              <li>결과는 DB 저장 없이 Excel 파일로만 다운로드합니다.</li>
-            </ol>
-          </details>
-        </section>
-
         <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <FileArea
             className="drop-card rounded-lg p-4 xl:col-span-1"
@@ -453,7 +423,6 @@ function DailyTemperatureContent() {
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">1</span>
               <div>
                 <div className="text-sm font-semibold">기준 템플릿</div>
                 <div className="text-xs text-zinc-500">
@@ -499,7 +468,6 @@ function DailyTemperatureContent() {
 
           <div className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4 xl:col-span-2">
             <div className="flex items-center gap-2 mb-3">
-              <span className="step-badge">2</span>
               <div>
                 <div className="text-sm font-semibold">공통 자동 입력값</div>
                 <div className="text-xs text-zinc-500">
@@ -617,7 +585,6 @@ function DailyTemperatureContent() {
 
         <section className="border border-zinc-700 rounded-lg bg-zinc-800/40 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="step-badge">3</span>
             <div>
               <div className="text-sm font-semibold">기사/차량 추가</div>
               <div className="text-xs text-zinc-500">
@@ -683,7 +650,6 @@ function DailyTemperatureContent() {
 
         <section className="border border-zinc-700 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2">
-            <span className="step-badge">4</span>
             <span className="text-sm font-semibold">웹 편집 미리보기</span>
             <span id="row-count" className="text-xs text-zinc-400">
               {template?.rows.length ? `총 ${template.rows.length}행` : ''}
@@ -771,10 +737,6 @@ function DailyTemperatureContent() {
             </div>
             <div>
               <h2 className="text-sm font-semibold">배차정보 파서</h2>
-              <p className="text-xs text-zinc-400">
-                배차 문자를 붙여넣고 파싱한 뒤, 결과를 추가차량 입력칸으로
-                가져옵니다.
-              </p>
             </div>
             <div className="flex-1"></div>
             <button
