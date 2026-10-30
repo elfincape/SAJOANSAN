@@ -22,7 +22,7 @@ body.workspace-ui.portal-shell {
 .workspace-ui.portal-shell :is(button, input, select, textarea) {
   border-radius: var(--ean-control-radius);
 }
-.workspace-ui.portal-shell button:hover:not(:disabled) {
+.workspace-ui.portal-shell button:not(.task-row):hover:not(:disabled) {
   background: var(--theme-soft);
   border-color: var(--theme-border);
 }
@@ -134,7 +134,7 @@ body.workspace-ui.portal-shell {
   color: var(--text);
   box-shadow: none;
 }
-.workspace-ui.portal-shell .task-row:hover:not(:disabled) {
+.workspace-ui.portal-shell .task-row:hover:not(:disabled):not(.selected) {
   background: var(--theme-hover);
   border-color: var(--theme-border-soft);
 }

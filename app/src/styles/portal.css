@@ -497,7 +497,7 @@
   font-size: 14px;
   line-height: 1.6;
 }
-.portal-shell .task-row:hover:not(:disabled) {
+.portal-shell .task-row:hover:not(:disabled):not(.selected) {
   background: var(--theme-hover);
   border-color: transparent;
   border-bottom-color: #dce8e2;
