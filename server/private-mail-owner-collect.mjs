@@ -1,4 +1,10 @@
 import tls from 'node:tls';
+import { createHash } from 'node:crypto';
+import {
+  advanceCollection,
+  validateCollection,
+  collectionProgress,
+} from '../supabase/functions/onedrive-auth/private-mail-collection-state.js';
 import { ReadOnlyPop, syncBatch } from './private-mail-collector.mjs';
 import {
   packageMessage,
@@ -35,6 +41,7 @@ const SAFE_CODES = new Set([
   'MAILBOX_BUSY',
   'FOLDER_CHECK_FAILED',
   'BEGIN_FAILED',
+  'COLLECTION_CHANGED',
 ]);
 export async function openPop() {
   const socket = tls.connect({
@@ -92,11 +99,14 @@ export async function openPop() {
     { maxBytes: RAW_LIMIT },
   );
 }
-export function ownerBridge(authorization, fetcher = fetch) {
+export function ownerBridge(authorization, fetcher = fetch, processingSignal) {
   let lease, mailbox;
   async function call(operation, values = {}, signal) {
     const body = JSON.stringify({ operation, mailbox, lease, ...values });
-    if (Buffer.byteLength(body) > PACKAGE_LIMIT + 4096)
+    if (
+      Buffer.byteLength(body) >
+      (operation === 'start-cycle' ? 4 * 1024 * 1024 : PACKAGE_LIMIT + 4096)
+    )
       throw Error('LIMIT_REACHED');
     // Only the fixed Edge endpoint receives the user session; no redirects/retries.
     const response = await fetcher(BRIDGE, {
@@ -108,9 +118,14 @@ export function ownerBridge(authorization, fetcher = fetch) {
       body,
       signal: AbortSignal.any([
         AbortSignal.timeout(
-          operation === 'begin' ? 15000 : operation === 'finish' ? 60000 : 8000,
+          ['begin', 'start-cycle'].includes(operation)
+            ? 15000
+            : operation === 'finish'
+              ? 60000
+              : 8000,
         ),
         ...(signal ? [signal] : []),
+        ...(operation !== 'end' && processingSignal ? [processingSignal] : []),
       ]),
       redirect: 'error',
     });
@@ -138,6 +153,33 @@ export function ownerBridge(authorization, fetcher = fetch) {
     },
     async seen(uidl, { signal } = {}) {
       return (await call('seen', { uidl }, signal)).seen === true;
+    },
+    async seenMany(uidls, since) {
+      const result = await call('seen-many', { uidls, since });
+      if (
+        !Array.isArray(result.seen) ||
+        result.seen.some((id) => !uidls.includes(id))
+      )
+        throw Error('BRIDGE_REJECTED');
+      if (
+        !Array.isArray(result.publishedSince ?? []) ||
+        (result.publishedSince ?? []).some((id) => !result.seen.includes(id))
+      )
+        throw Error('BRIDGE_REJECTED');
+      return {
+        seen: new Set(result.seen),
+        recovered: new Set(result.publishedSince ?? []),
+      };
+    },
+    async startCycle(uidls, requestId) {
+      return validateCollection(
+        (await call('start-cycle', { uidls, requestId })).cycle,
+      );
+    },
+    async attachCycle(cycleId, requestId) {
+      return validateCollection(
+        (await call('attach-cycle', { cycleId, requestId })).cycle,
+      );
     },
     async ingest(message, { signal } = {}) {
       for (const [index, file] of message.files.entries()) {
@@ -184,10 +226,18 @@ export function ownerBridge(authorization, fetcher = fetch) {
     async end(counts, error) {
       const payload = {
         counts: Object.fromEntries(
-          Object.entries(counts || {}).filter(([k]) => k !== 'cursor'),
+          Object.entries(counts || {}).filter(
+            ([k]) => !['cursor', 'processedUidls', 'cycleId'].includes(k),
+          ),
         ),
         cursor: counts?.cursor ?? null,
         error: error ? 'SYNC_FAILED' : null,
+        ...(counts?.cycleId
+          ? {
+              cycleId: counts.cycleId,
+              processedUidls: counts.processedUidls ?? [],
+            }
+          : {}),
       };
       const signal = AbortSignal.timeout(20000);
       for (;;) {
@@ -222,6 +272,14 @@ export async function handleOwnerCollect(
     return json({ error: 'AUTH_REQUIRED' }, 401);
   const input = await request.json().catch(() => ({}));
   const mode = input?.mode ?? 'collect';
+  if (input?.continuous !== undefined && typeof input.continuous !== 'boolean')
+    return json({ error: 'MODE_REJECTED' }, 400);
+  if (
+    input.continuous &&
+    (!/^[0-9a-f-]{36}$/i.test(input.requestId ?? '') ||
+      (input.cycleId !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cycleId)))
+  )
+    return json({ error: 'MODE_REJECTED' }, 400);
   if (!['login', 'collect'].includes(mode))
     return json({ error: 'MODE_REJECTED' }, 400);
   // No network, credential use or mailbox mutation until all explicit gates pass.
@@ -248,40 +306,93 @@ export async function handleOwnerCollect(
       503,
     );
   }
-  const bridge = ownerBridge(authorization, fetcher);
+  const processing = new AbortController(),
+    deadline = Date.now() + 180000;
+  const bridge = ownerBridge(authorization, fetcher, processing.signal);
   let pop,
     info,
     counts,
+    cycle,
+    progress,
     error,
     code,
     stage = 'begin';
+  const budgetTimer = setTimeout(() => {
+    processing.abort();
+    pop?.close();
+  }, 180000);
   try {
     info = await bridge.begin();
-    stage = 'connect';
-    pop = await connect();
-    await pop.greeting();
-    stage = 'login';
-    await pop.login('jhs96@eangroup.kr', env.MAIL_POP_PASSWORD);
-    if (mode === 'login')
-      counts = {
-        saved: 0,
-        skipped: 0,
-        undated: 0,
-        oversized: 0,
-        deferred: 0,
-        cursor: info.cursor,
-      };
-    else {
-      stage = 'collect';
-      counts = await syncBatch({
-        pop,
-        bridge,
-        cutoff: new Date(info.cutoff),
-        cursor: info.cursor,
-        packageMessage: packager,
-        batch: 1,
-        seconds: 180,
-      });
+    if (input.continuous) {
+      if (input.cycleId && info.cycle?.id !== input.cycleId)
+        throw Object.assign(Error('COLLECTION_CHANGED'), {
+          code: 'COLLECTION_CHANGED',
+        });
+      if (
+        info.cycle?.phase === 'complete' &&
+        (info.cycle.id === input.cycleId ||
+          info.cycle.requestId === input.requestId)
+      ) {
+        cycle = validateCollection(info.cycle);
+        counts = { saved: 0, processedUidls: [], cursor: info.cursor };
+      } else if (info.cycle?.phase === 'collecting')
+        cycle = await bridge.attachCycle(info.cycle.id, input.requestId);
+    }
+    if (!cycle || cycle.phase !== 'complete') {
+      stage = 'connect';
+      pop = await connect();
+      processing.signal.throwIfAborted();
+      await pop.greeting();
+      stage = 'login';
+      await pop.login('jhs96@eangroup.kr', env.MAIL_POP_PASSWORD);
+      if (mode === 'login')
+        counts = {
+          saved: 0,
+          skipped: 0,
+          undated: 0,
+          oversized: 0,
+          deferred: 0,
+          cursor: info.cursor,
+        };
+      else {
+        stage = 'collect';
+        if (input.continuous && !cycle) {
+          const snapshot = (await pop.uidl())
+            .reverse()
+            .map(([, uidl]) => createHash('sha256').update(uidl).digest('hex'));
+          if (Date.now() >= deadline)
+            throw Object.assign(Error('BATCH_TIMEOUT'), {
+              code: 'BATCH_TIMEOUT',
+            });
+          if (snapshot.length > 50000) throw Error('LIMIT_REACHED');
+          cycle = await bridge.startCycle(snapshot, input.requestId);
+        }
+        const selected = cycle?.pending.slice(0, 50),
+          known = selected
+            ? await bridge.seenMany(selected, cycle.startedAt)
+            : null;
+        const seconds = (deadline - Date.now()) / 1000;
+        if (seconds <= 0)
+          throw Object.assign(Error('BATCH_TIMEOUT'), {
+            code: 'BATCH_TIMEOUT',
+          });
+        counts = await syncBatch({
+          pop,
+          bridge: known
+            ? {
+                seen: async (id) => known.seen.has(id),
+                recovered: async (id) => known.recovered.has(id),
+                ingest: bridge.ingest,
+              }
+            : bridge,
+          cutoff: new Date(info.cutoff),
+          cursor: info.cursor,
+          packageMessage: packager,
+          batch: 20,
+          seconds: Math.min(seconds, 180),
+          uidls: selected ?? null,
+        });
+      }
     }
   } catch (failure) {
     if (failure?.counts) counts = failure.counts;
@@ -295,7 +406,25 @@ export async function handleOwnerCollect(
           collect: 'COLLECTION_FAILED',
         }[stage];
   } finally {
+    clearTimeout(budgetTimer);
     pop?.close();
+    if (cycle) {
+      try {
+        counts ??= { saved: 0, processedUidls: [], cursor: info.cursor };
+        counts.processedUidls ??= [];
+        counts.cycleId = cycle.id;
+        progress = collectionProgress(advanceCollection(cycle, counts));
+        counts.deferred = progress.remaining;
+        if (code === 'BATCH_TIMEOUT' && counts.processedUidls.length) {
+          error = false;
+          code = undefined;
+        }
+      } catch {
+        error = true;
+        code = 'FINALIZE_FAILED';
+        stage = 'finalize';
+      }
+    }
     if (info)
       try {
         await bridge.end(counts || { cursor: info.cursor }, error);
@@ -315,7 +444,10 @@ export async function handleOwnerCollect(
         mode,
         region: env.VERCEL_REGION,
         counts: Object.fromEntries(
-          Object.entries(counts).filter(([key]) => key !== 'cursor'),
+          Object.entries(counts).filter(
+            ([key]) => !['cursor', 'processedUidls', 'cycleId'].includes(key),
+          ),
         ),
+        ...(progress ? { progress } : {}),
       });
 }

@@ -1,5 +1,11 @@
 import { createOneDriveStorage } from './storage.js';
 import {
+  startCollection,
+  advanceCollection,
+  validateCollection,
+  collectionProgress,
+} from './private-mail-collection-state.js';
+import {
   APPROVED_MAIL_TARGET,
   createAnonymousDestinationCheck,
   isMailDestinationItem,
@@ -561,6 +567,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
         ...(ctx.ownerSync ? { mailbox: box.id } : {}),
         cutoff: rows[0].cutoff_at,
         cursor: rows[0].scan_cursor,
+        ...(ctx.ownerSync ? { cycle: rows[0].last_counts?.cycle ?? null } : {}),
       });
     }
     if (
@@ -570,6 +577,93 @@ export async function handlePrivateMail(action, req, user, ctx) {
       Date.parse(box.lease_until) <= Date.now()
     )
       throw fail('수집 잠금이 만료되었습니다.', 409);
+    if (body.operation === 'seen-many') {
+      if (
+        !ctx.ownerSync ||
+        !Array.isArray(body.uidls) ||
+        body.uidls.length > 75 ||
+        body.uidls.some((id) => !hex(id))
+      )
+        throw fail('UIDL_LIST_REJECTED');
+      if (body.since !== undefined && !Number.isFinite(Date.parse(body.since)))
+        throw fail('UIDL_LIST_REJECTED');
+      if (!body.uidls.length) return json({ seen: [], publishedSince: [] });
+      const rows = await db(
+        'private_mail_messages?select=uidl_hash,created_at&mailbox_id=eq.' +
+          box.id +
+          '&uidl_hash=in.(' +
+          body.uidls.join(',') +
+          ')&limit=75',
+      );
+      return json({
+        seen: rows.map((row) => row.uidl_hash),
+        publishedSince: body.since
+          ? rows
+              .filter(
+                (row) => Date.parse(row.created_at) >= Date.parse(body.since),
+              )
+              .map((row) => row.uidl_hash)
+          : [],
+      });
+    }
+    if (body.operation === 'attach-cycle') {
+      if (!ctx.ownerSync || !uuid(body.requestId) || !uuid(body.cycleId))
+        throw fail('COLLECTION_STATE');
+      return withLock(async () => {
+        await fenceMailbox(box, body.lease);
+        const current = (
+          await db('private_mailboxes?select=last_counts&id=eq.' + box.id)
+        )[0];
+        const previous = current?.last_counts?.cycle;
+        if (previous?.id !== body.cycleId || previous.phase !== 'collecting')
+          throw fail('COLLECTION_CHANGED', 409);
+        const cycle = validateCollection({
+          ...previous,
+          requestId: body.requestId,
+        });
+        await db(
+          'private_mailboxes?id=eq.' + box.id + '&lease=eq.' + body.lease,
+          {
+            method: 'PATCH',
+            body: { last_counts: { ...current.last_counts, cycle } },
+          },
+        );
+        return json({ cycle });
+      });
+    }
+    if (body.operation === 'start-cycle') {
+      if (!ctx.ownerSync || user.id !== APPROVED_MAIL_TARGET.owner_id)
+        throw fail('OWNER_REQUIRED', 403);
+      if (box.last_counts?.cycle?.phase === 'collecting')
+        throw fail('COLLECTION_ACTIVE', 409);
+      let cycle;
+      try {
+        cycle = startCollection(
+          body.uidls,
+          crypto.randomUUID(),
+          new Date().toISOString(),
+          body.requestId,
+        );
+      } catch {
+        throw fail('COLLECTION_STATE');
+      }
+      await withLock(async () => {
+        await fenceMailbox(box, body.lease);
+        const current = (
+          await db('private_mailboxes?select=last_counts&id=eq.' + box.id)
+        )[0];
+        if (current?.last_counts?.cycle?.phase === 'collecting')
+          throw fail('COLLECTION_ACTIVE', 409);
+        await db(
+          'private_mailboxes?id=eq.' + box.id + '&lease=eq.' + body.lease,
+          {
+            method: 'PATCH',
+            body: { last_counts: { ...current?.last_counts, cycle } },
+          },
+        );
+      });
+      return json({ cycle });
+    }
     if (body.operation === 'end') {
       if (body.cursor != null && !hex(body.cursor))
         throw fail('수집 위치가 올바르지 않습니다.');
@@ -580,12 +674,30 @@ export async function handlePrivateMail(action, req, user, ctx) {
         'undated',
         'oversized',
         'deferred',
+        'missing',
+        'recovered',
       ]) {
         const n = body.counts?.[key] ?? 0;
         if (!Number.isInteger(n) || n < 0 || n > 100000)
           throw fail('수집 집계가 올바르지 않습니다.');
         counts[key] = n;
       }
+      let cycle = box.last_counts?.cycle;
+      if (body.cycleId !== undefined) {
+        if (!ctx.ownerSync || cycle?.id !== body.cycleId)
+          throw fail('COLLECTION_CHECKPOINT', 409);
+        try {
+          validateCollection(cycle);
+          cycle = advanceCollection(cycle, {
+            ...counts,
+            processedUidls: body.processedUidls,
+          });
+        } catch {
+          throw fail('COLLECTION_CHECKPOINT', 409);
+        }
+        counts.deferred = cycle.pending.length;
+      }
+      if (cycle) counts.cycle = cycle;
       await withLock(async () => {
         await fenceMailbox(box, body.lease);
         return db(
@@ -870,7 +982,19 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'private_mailboxes?select=id,account,enabled,status,last_started_at,last_success_at,last_error,last_counts,lease_until,initial_days',
       { token: user.token },
     );
-    return json({ mailboxes: boxes });
+    return json({
+      mailboxes: boxes.map((box) => {
+        if (!box.last_counts?.cycle) return box;
+        const { cycle, ...counts } = box.last_counts;
+        let progress;
+        try {
+          progress = collectionProgress(cycle);
+        } catch {
+          progress = undefined;
+        }
+        return { ...box, last_counts: { ...counts, progress } };
+      }),
+    });
   }
   if (action === 'private-mail-list') {
     const query = String(body.query || '')

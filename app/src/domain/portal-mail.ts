@@ -32,7 +32,98 @@ export interface Mailbox {
   lease_until: string;
   last_success_at: string;
   last_error?: string;
-  last_counts?: { oversized?: number; undated?: number; deferred?: number };
+  last_counts?: {
+    oversized?: number;
+    undated?: number;
+    deferred?: number;
+    progress?: MailCollectionProgress;
+  };
+}
+export interface MailCollectionProgress {
+  cycleId: string;
+  total: number;
+  processed: number;
+  saved: number;
+  remaining: number;
+  phase: 'collecting' | 'complete';
+  skipped?: number;
+  undated?: number;
+  oversized?: number;
+  missing?: number;
+}
+export async function collectAllMail({
+  collect,
+  onProgress,
+  shouldStop,
+  pause = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+}: {
+  collect: () => Promise<{ progress?: MailCollectionProgress }>;
+  onProgress: (progress: MailCollectionProgress) => void;
+  shouldStop: () => boolean;
+  pause?: (ms: number) => Promise<void>;
+}): Promise<MailCollectionProgress | null> {
+  let latest: MailCollectionProgress | null = null,
+    retries = 0,
+    stalled = 0;
+  while (!shouldStop()) {
+    let result;
+    try {
+      result = await collect();
+      retries = 0;
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code)
+          : '';
+      if (shouldStop()) return latest;
+      if (
+        ![
+          'BATCH_TIMEOUT',
+          'FILE_UPLOAD_FAILED',
+          'COLLECTION_FAILED',
+          'FINALIZE_FAILED',
+          'MAILBOX_BUSY',
+          'POP_MAILBOX_BUSY',
+          'NETWORK_ERROR',
+        ].includes(code) ||
+        retries >= 2
+      )
+        throw error;
+      await pause(1000 * ++retries);
+      continue;
+    }
+    const next = result.progress;
+    if (
+      !next ||
+      typeof next.cycleId !== 'string' ||
+      !next.cycleId ||
+      ![next.total, next.processed, next.saved, next.remaining].every(
+        (value) => Number.isInteger(value) && value >= 0,
+      ) ||
+      next.total > 50000 ||
+      next.processed + next.remaining !== next.total ||
+      next.saved > next.processed ||
+      next.phase !== (next.remaining ? 'collecting' : 'complete') ||
+      (latest &&
+        (next.cycleId !== latest.cycleId ||
+          next.total !== latest.total ||
+          next.processed < latest.processed ||
+          next.saved < latest.saved))
+    )
+      throw Error(
+        '수집 진행 정보를 확인하지 못했습니다. 다시 시작하면 저장 위치에서 이어받습니다.',
+      );
+    stalled = latest && next.processed === latest.processed ? stalled + 1 : 0;
+    if (stalled >= 2)
+      throw Error(
+        '수집 진행이 멈췄습니다. 다시 시작하면 저장 위치에서 이어받습니다.',
+      );
+    latest = next;
+    onProgress(next);
+    if (next.phase === 'complete') return next;
+  }
+  return latest;
 }
 export const MAIL_DIAGNOSTIC_OWNER_ID = '2a828c2d-9a6f-40d4-8e13-336b591811cc';
 export function mailboxState(box: Mailbox, now = Date.now()) {

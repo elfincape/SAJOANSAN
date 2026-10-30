@@ -476,3 +476,287 @@ assert.equal(uploadError.stage, 'collect');
 assert.equal(uploadError.code, 'FILE_UPLOAD_FAILED');
 assert.ok(!JSON.stringify(uploadError).includes('sender@'));
 console.log('PASS file upload failure retains its safe error category');
+
+const { advanceCollection, startCollection } =
+  await import('../supabase/functions/onedrive-auth/private-mail-collection-state.js');
+let persistedCollection = null,
+  bulkSeen = 0,
+  continuousRequests = 0;
+const collectedUids = new Set(),
+  originalUids = Array.from({ length: 587 }, (_, i) => 'cycle-mail-' + i);
+const continuousFetch = async (url, options) => {
+  if (options.headers['Content-Type'] === 'application/octet-stream')
+    return Response.json({ file: { item_id: 'mock' } });
+  const body = JSON.parse(options.body);
+  if (body.operation === 'begin')
+    return Response.json({
+      mailbox: '00000000-0000-4000-8000-000000000003',
+      lease: '00000000-0000-4000-8000-000000000004',
+      cutoff: '2026-09-01T00:00:00Z',
+      cursor: null,
+      cycle: persistedCollection,
+    });
+  if (body.operation === 'seen-many') {
+    bulkSeen++;
+    assert.ok(
+      body.uidls.length <= 75,
+      'REST lookup must stay under proxy URL limits',
+    );
+    return Response.json({
+      seen: body.uidls.filter((id) => collectedUids.has(id)),
+      publishedSince: body.uidls.filter((id) => collectedUids.has(id)),
+    });
+  }
+  if (body.operation === 'start-cycle') {
+    persistedCollection = startCollection(
+      body.uidls,
+      '00000000-0000-4000-8000-000000000090',
+      '2026-10-30T08:00:00Z',
+      body.requestId,
+    );
+    return Response.json({ cycle: persistedCollection });
+  }
+  if (body.operation === 'attach-cycle') {
+    persistedCollection = { ...persistedCollection, requestId: body.requestId };
+    return Response.json({ cycle: persistedCollection });
+  }
+  if (body.operation === 'seen')
+    return Response.json({ seen: collectedUids.has(body.uidl) });
+  if (body.operation === 'finish') {
+    assert.ok(!collectedUids.has(body.message.uidl));
+    collectedUids.add(body.message.uidl);
+    return Response.json({ id: 'mock' });
+  }
+  if (body.operation === 'end') {
+    persistedCollection = advanceCollection(persistedCollection, {
+      ...body.counts,
+      processedUidls: body.processedUidls,
+    });
+    return Response.json({ ok: true });
+  }
+  throw Error('Unexpected continuous operation ' + body.operation);
+};
+let lastProgress;
+do {
+  continuousRequests++;
+  const response = await handleOwnerCollect(
+    new Request('https://sajoansan.vercel.app/api/private-mail-collect', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer mock-owner' },
+      body: JSON.stringify({
+        continuous: true,
+        requestId: '00000000-0000-4000-8000-000000000091',
+        cycleId: lastProgress?.cycleId,
+      }),
+    }),
+    {
+      env,
+      fetcher: continuousFetch,
+      logger: () => {},
+      connect: async () => ({
+        ...(await connect()),
+        uidl: async () =>
+          [
+            ...originalUids,
+            ...(continuousRequests > 1 ? ['arrived-later'] : []),
+          ].map((uid, index) => [index + 1, uid]),
+        list: async () =>
+          new Map(
+            Array.from({ length: 588 }, (_, index) => [index + 1, raw.length]),
+          ),
+        top: async () => raw,
+        retr: async () => raw,
+      }),
+      packager: async (bytes, uidl) => ({
+        ...packaged,
+        uidl: createHash('sha256').update(uidl).digest('hex'),
+      }),
+    },
+  );
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  lastProgress = result.progress;
+  assert.ok(lastProgress, 'continuous response must expose durable progress');
+  assert.ok(result.counts.saved <= 20);
+  assert.ok(!JSON.stringify(result).includes('cycle-mail-'));
+  assert.equal(lastProgress.saved, collectedUids.size);
+  assert.equal(persistedCollection.processed, lastProgress.processed);
+  assert.ok(continuousRequests <= 30);
+} while (lastProgress.remaining);
+assert.equal(continuousRequests, 30);
+assert.equal(collectedUids.size, 587);
+assert.equal(lastProgress.phase, 'complete');
+assert.ok(bulkSeen > 0);
+assert.ok(
+  !collectedUids.has(
+    createHash('sha256').update('arrived-later').digest('hex'),
+  ),
+);
+console.log(
+  'PASS real collection handler: 587 messages/30 bounded requests, durable resume and frozen snapshot excludes later arrivals',
+);
+const { collectAllMail } = await import('../app/src/domain/portal-mail.ts');
+let automaticCalls = 0,
+  lastUiProgress;
+const automaticResult = await collectAllMail({
+  collect: async () => {
+    automaticCalls++;
+    const processed = Math.min(automaticCalls * 20, 587);
+    return {
+      progress: {
+        cycleId: 'frozen-cycle',
+        total: 587,
+        processed,
+        saved: processed,
+        remaining: 587 - processed,
+        phase: processed === 587 ? 'complete' : 'collecting',
+      },
+    };
+  },
+  onProgress: (value) => (lastUiProgress = value),
+  shouldStop: () => false,
+  pause: async () => {},
+});
+assert.equal(automaticCalls, 30);
+assert.equal(automaticResult.phase, 'complete');
+assert.equal(lastUiProgress.saved, 587);
+let stopRequested = false,
+  stopCalls = 0;
+const stoppedResult = await collectAllMail({
+  collect: async () => {
+    stopCalls++;
+    return {
+      progress: {
+        cycleId: 'stop-cycle',
+        total: 40,
+        processed: 20,
+        saved: 20,
+        remaining: 20,
+        phase: 'collecting',
+      },
+    };
+  },
+  onProgress: () => {
+    stopRequested = true;
+  },
+  shouldStop: () => stopRequested,
+  pause: async () => {},
+});
+assert.equal(stopCalls, 1);
+assert.equal(stoppedResult.phase, 'collecting');
+let transientAttempts = 0;
+await collectAllMail({
+  collect: async () => {
+    if (++transientAttempts === 1)
+      throw Object.assign(Error('transient'), { code: 'FILE_UPLOAD_FAILED' });
+    return {
+      progress: {
+        cycleId: 'retry-cycle',
+        total: 1,
+        processed: 1,
+        saved: 1,
+        remaining: 0,
+        phase: 'complete',
+      },
+    };
+  },
+  onProgress: () => {},
+  shouldStop: () => false,
+  pause: async () => {},
+});
+assert.equal(transientAttempts, 2);
+await assert.rejects(
+  () =>
+    collectAllMail({
+      collect: async () => ({
+        progress: {
+          cycleId: 'invalid',
+          total: 5,
+          processed: 3,
+          saved: 3,
+          remaining: 5,
+          phase: 'collecting',
+        },
+      }),
+      onProgress: () => {},
+      shouldStop: () => false,
+      pause: async () => {},
+    }),
+  /수집 진행/,
+);
+console.log(
+  'PASS UI coordinator: all 587 targets automatically continue, cooperative stop, bounded transient retries and invalid progress rejection',
+);
+const cachedFinal = await handleOwnerCollect(
+  new Request('https://sajoansan.vercel.app/api/private-mail-collect', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer mock-owner' },
+    body: JSON.stringify({
+      continuous: true,
+      requestId: '00000000-0000-4000-8000-000000000091',
+      cycleId: lastProgress.cycleId,
+    }),
+  }),
+  {
+    env,
+    fetcher: continuousFetch,
+    logger: () => {},
+    connect: async () => {
+      throw Error('must not reconnect POP after final response loss');
+    },
+  },
+);
+assert.equal(
+  cachedFinal.status,
+  200,
+  'a lost final response must return the completed cycle without starting another snapshot',
+);
+assert.equal((await cachedFinal.json()).progress.cycleId, lastProgress.cycleId);
+assert.equal(collectedUids.size, 587);
+console.log(
+  'PASS final response loss: same cycle result, no POP reconnection and no later arrivals',
+);
+const beforeBudgetNow = Date.now;
+let initialElapsed = 0,
+  afterDeadlineRetr = 0;
+persistedCollection = null;
+try {
+  Date.now = () => beforeBudgetNow() + initialElapsed;
+  const budgetResult = await handleOwnerCollect(
+    new Request('https://sajoansan.vercel.app/api/private-mail-collect', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer mock-owner' },
+      body: JSON.stringify({
+        continuous: true,
+        requestId: '00000000-0000-4000-8000-000000000092',
+      }),
+    }),
+    {
+      env,
+      logger: () => {},
+      fetcher: async (url, options) =>
+        JSON.parse(options.body).operation === 'end'
+          ? Response.json({ ok: true })
+          : continuousFetch(url, options),
+      connect: async () => ({
+        ...(await connect()),
+        uidl: async () => {
+          initialElapsed += 181000;
+          return [[1, 'slow-discovery']];
+        },
+        retr: async () => {
+          afterDeadlineRetr++;
+          return raw;
+        },
+      }),
+    },
+  );
+  assert.equal(budgetResult.status, 503);
+  assert.equal((await budgetResult.json()).code, 'BATCH_TIMEOUT');
+  assert.equal(afterDeadlineRetr, 0);
+} finally {
+  Date.now = beforeBudgetNow;
+}
+console.log(
+  'PASS whole-request budget: slow discovery cannot start another 180-second collection window',
+);

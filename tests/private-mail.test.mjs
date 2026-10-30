@@ -314,3 +314,92 @@ assert.equal(authCalls, 0);
 console.log(
   'PASS private mail: partial publish recovery, immutable verified files, UIDL duplicates, lease expiry, UUID denial, corrupt content, safe HTML/filenames, disabled collector authentication',
 );
+
+const collectionOwner = {
+  id: '2a828c2d-9a6f-40d4-8e13-336b591811cc',
+  token: 'owner',
+  role: 'admin',
+};
+let collectionBox = {
+  id,
+  owner_id: collectionOwner.id,
+  enabled: true,
+  lease,
+  lease_until: new Date(Date.now() + 600000).toISOString(),
+  last_counts: {},
+  cutoff_at: '2026-09-01T00:00:00Z',
+};
+const controlContext = {
+  ...ctx,
+  ownerSync: true,
+  collectorMailboxId: id,
+  db: async (path, options = {}) => {
+    if (path.startsWith('private_mailboxes?')) {
+      if (options.method === 'PATCH')
+        Object.assign(collectionBox, options.body);
+      return [structuredClone(collectionBox)];
+    }
+    if (path.startsWith('private_mail_messages?'))
+      return [{ uidl_hash: 'a'.repeat(64) }];
+    throw Error('Unexpected collection test DB');
+  },
+};
+const controlCall = (body) =>
+  handlePrivateMail(
+    'private-mail-sync',
+    request({ mailbox: id, lease, ...body }),
+    collectionOwner,
+    controlContext,
+  );
+const startedCollection = await (
+  await controlCall({
+    operation: 'start-cycle',
+    uidls: ['a'.repeat(64), 'b'.repeat(64)],
+  })
+).json();
+assert.equal(startedCollection.cycle.pending.length, 2);
+assert.equal(collectionBox.last_counts.cycle.id, startedCollection.cycle.id);
+assert.deepEqual(
+  await (
+    await controlCall({
+      operation: 'seen-many',
+      uidls: ['a'.repeat(64), 'b'.repeat(64)],
+    })
+  ).json(),
+  { seen: ['a'.repeat(64)], publishedSince: [] },
+);
+await assert.rejects(
+  () => controlCall({ operation: 'start-cycle', uidls: ['c'.repeat(64)] }),
+  (e) => e.status === 409,
+);
+const attached = await (
+  await controlCall({
+    operation: 'attach-cycle',
+    cycleId: startedCollection.cycle.id,
+    requestId: '00000000-0000-4000-8000-000000000095',
+  })
+).json();
+assert.equal(attached.cycle.requestId, '00000000-0000-4000-8000-000000000095');
+assert.deepEqual(attached.cycle.pending, startedCollection.cycle.pending);
+await assert.rejects(
+  () =>
+    controlCall({
+      operation: 'seen-many',
+      uidls: Array.from({ length: 76 }, (_, i) =>
+        i.toString(16).padStart(64, '0'),
+      ),
+    }),
+  (e) => e.status === 400,
+);
+await controlCall({
+  operation: 'end',
+  counts: { saved: 1 },
+  processedUidls: ['a'.repeat(64)],
+  cycleId: startedCollection.cycle.id,
+});
+assert.deepEqual(collectionBox.last_counts.cycle.pending, ['b'.repeat(64)]);
+assert.equal(collectionBox.last_counts.cycle.saved, 1);
+assert.equal(collectionBox.lease_until, null);
+console.log(
+  'PASS owner collection: frozen targets persisted in existing mailbox JSON, no overwrite of active cycle, bulk UIDL lookup and fenced checkpoint/release',
+);

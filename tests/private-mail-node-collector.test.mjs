@@ -308,3 +308,100 @@ console.log(
     rssDelta: process.memoryUsage().rss - initialRSS,
   }),
 );
+
+// A frozen collection set must finish without re-scanning or taking new arrivals.
+const frozenIds = Array.from({ length: 587 }, (_, i) =>
+  createHash('sha256')
+    .update('backlog-' + i)
+    .digest('hex'),
+);
+let frozenStored = 0;
+const frozenCounts = await syncBatch({
+  pop: {
+    uidl: async () => frozenIds.map((_, i) => [i + 1, 'backlog-' + i]),
+    list: async () => new Map(frozenIds.map((_, i) => [i + 1, 100])),
+    top: async () => Buffer.from('Date: Fri, 30 Oct 2026 00:00:00 GMT\r\n\r\n'),
+    retr: async () =>
+      Buffer.from('Date: Fri, 30 Oct 2026 00:00:00 GMT\r\n\r\nbody'),
+    close() {},
+  },
+  bridge: {
+    seen: async () => false,
+    ingest: async () => {
+      frozenStored++;
+    },
+  },
+  cutoff: new Date('2026-09-01Z'),
+  packageMessage: async () => ({}),
+  batch: 20,
+  seconds: 180,
+  uidls: frozenIds.slice(0, 50),
+});
+assert.deepEqual(
+  frozenCounts.processedUidls,
+  frozenIds.slice(0, 20),
+  'checkpoint must advance the frozen prefix only',
+);
+assert.equal(frozenStored, 20);
+const collectionState =
+  await import('../supabase/functions/onedrive-auth/private-mail-collection-state.js');
+let collection = collectionState.startCollection(
+  frozenIds,
+  '00000000-0000-4000-8000-000000000081',
+  '2026-10-30T08:00:00Z',
+);
+let chunks = 0;
+while (collection.pending.length) {
+  const ids = collection.pending.slice(0, 20);
+  collection = collectionState.advanceCollection(collection, {
+    processedUidls: ids,
+    saved: ids.length,
+    skipped: 0,
+    undated: 0,
+    oversized: 0,
+    missing: 0,
+  });
+  chunks++;
+}
+assert.equal(chunks, 30);
+assert.equal(collection.saved, 587);
+assert.equal(collection.processed, 587);
+assert.equal(collection.phase, 'complete');
+const initialCollection = collectionState.startCollection(
+  frozenIds.slice(0, 4),
+  '00000000-0000-4000-8000-000000000082',
+  '2026-10-30T08:00:00Z',
+);
+assert.throws(
+  () =>
+    collectionState.advanceCollection(initialCollection, {
+      processedUidls: [frozenIds[1]],
+      saved: 1,
+    }),
+  /COLLECTION_CHECKPOINT/,
+);
+assert.throws(
+  () =>
+    collectionState.advanceCollection(initialCollection, {
+      processedUidls: [frozenIds[0]],
+      saved: 2,
+    }),
+  /COLLECTION_COUNTS/,
+);
+const resumedCollection = collectionState.advanceCollection(
+  JSON.parse(JSON.stringify(initialCollection)),
+  { processedUidls: frozenIds.slice(0, 2), saved: 2 },
+);
+assert.deepEqual(resumedCollection.pending, frozenIds.slice(2, 4));
+console.log(
+  'PASS collection snapshot: 587 messages/30 chunks, exact checkpoint prefix, count integrity and serialized resume',
+);
+const recoveredCollection = collectionState.advanceCollection(
+  initialCollection,
+  { processedUidls: frozenIds.slice(0, 2), saved: 1, recovered: 1 },
+);
+assert.equal(
+  recoveredCollection.saved,
+  2,
+  'lost publish acknowledgement is reconciled by persisted UIDL rather than counted as missing',
+);

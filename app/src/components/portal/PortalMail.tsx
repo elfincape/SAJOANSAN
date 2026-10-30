@@ -4,52 +4,142 @@ import { usePortal } from './PortalStore';
 import { privateMail, runMailCollection } from '../../lib/portal-mail';
 import {
   mailboxState,
+  collectAllMail,
   mailHtmlText,
   MAIL_DIAGNOSTIC_OWNER_ID,
 } from '../../domain/portal-mail';
-import type { Mailbox, MailMessage, MailFile } from '../../domain/portal-mail';
+import type {
+  Mailbox,
+  MailMessage,
+  MailFile,
+  MailCollectionProgress,
+} from '../../domain/portal-mail';
 import { portalStamp } from '../../domain/portal-types';
 import { useDownload } from '../useDownload';
-function MailReceipt() {
+function MailReceipt({
+  onCollected,
+  initialProgress,
+}: {
+  onCollected: () => void;
+  initialProgress?: MailCollectionProgress;
+}) {
   const [busy, setBusy] = useState(false),
     [status, setStatus] = useState(''),
-    active = useRef(true);
+    [progress, setProgress] = useState<MailCollectionProgress | null>(null),
+    active = useRef(true),
+    running = useRef(false),
+    stop = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
+      stop.current = true;
     };
   }, []);
+  const shown = progress ?? initialProgress;
+  async function start() {
+    if (running.current) return;
+    running.current = true;
+    stop.current = false;
+    setBusy(true);
+    setStatus('수집 대상을 확인하고 있습니다…');
+    const requestId = crypto.randomUUID();
+    let cycleId = shown?.remaining ? shown.cycleId : undefined;
+    const collect = () =>
+      collectAllMail({
+        collect: () =>
+          runMailCollection('collect', true, { requestId, cycleId }),
+        shouldStop: () => stop.current || !active.current,
+        onProgress: (next) => {
+          if (!active.current) return;
+          cycleId = next.cycleId;
+          setProgress(next);
+          setStatus('메일 수집 중…');
+          onCollected();
+        },
+      });
+    try {
+      const result = navigator.locks
+        ? await navigator.locks.request(
+            'sajoansan-private-mail-collection',
+            { ifAvailable: true },
+            async (lock) => {
+              if (!lock)
+                throw Error(
+                  '다른 탭에서 메일을 수집 중입니다. 해당 탭의 진행 상태를 확인해 주세요.',
+                );
+              return collect();
+            },
+          )
+        : await collect();
+      if (active.current && result)
+        setStatus(
+          (result.phase === 'complete' ? '수집 완료' : '수집 중단') +
+            ' · ' +
+            result.saved +
+            '건 저장' +
+            (result.remaining
+              ? ' · ' + result.remaining + '건은 다시 시작하면 이어받습니다.'
+              : ''),
+        );
+    } catch (error) {
+      if (active.current) {
+        setStatus(
+          error instanceof Error
+            ? error.message
+            : '메일 수집에 실패했습니다. 다시 시작하면 이어받습니다.',
+        );
+        onCollected();
+      }
+    } finally {
+      running.current = false;
+      if (active.current) setBusy(false);
+    }
+  }
   return (
     <>
-      <button
-        disabled={busy}
-        onClick={async () => {
-          if (busy) return;
-          setBusy(true);
-          setStatus('메일을 가져오는 중…');
-          try {
-            const result = await runMailCollection();
-            if (active.current)
-              setStatus(
-                Number(result.counts?.saved || 0) +
-                  '건 저장' +
-                  (result.counts?.deferred
-                    ? ' · 대기 ' + Number(result.counts.deferred) + '건'
-                    : ''),
-              );
-          } catch (error) {
-            if (active.current)
-              setStatus(error instanceof Error ? error.message : String(error));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        메일 가져오기
+      <button type="button" disabled={busy} onClick={() => void start()}>
+        {shown?.remaining ? '메일 이어받기' : '메일 가져오기'}
       </button>
+      {busy ? (
+        <button
+          type="button"
+          disabled={stop.current}
+          onClick={() => {
+            stop.current = true;
+            setStatus('현재 처리 중인 메일까지 저장한 뒤 중단합니다…');
+          }}
+        >
+          수집 중단
+        </button>
+      ) : null}
       <p role="status" aria-live="polite">
         <MentionText>{status}</MentionText>
+      </p>
+      {shown ? (
+        <>
+          <progress
+            aria-label="메일 수집 진행률"
+            max={Math.max(shown.total, 1)}
+            value={shown.processed}
+          />
+          <p>
+            확인 {shown.processed} / {shown.total}건 · 저장 {shown.saved}건 ·
+            대기 {shown.remaining}건
+          </p>
+        </>
+      ) : null}
+      {shown &&
+      (shown.undated ?? 0) + (shown.oversized ?? 0) + (shown.missing ?? 0) >
+        0 ? (
+        <p>
+          미수집: 날짜 확인 {shown.undated ?? 0}건 · 크기 초과{' '}
+          {shown.oversized ?? 0}건 · 원본 없음 {shown.missing ?? 0}건
+        </p>
+      ) : null}
+      <p>
+        화면을 떠나면 현재 수집 요청이 끝난 뒤 중단됩니다. 다시 시작하면 저장
+        위치에서 이어받습니다.
       </p>
     </>
   );
@@ -299,10 +389,12 @@ export function PortalMail() {
     } | null>(null),
     generation = useRef(0),
     selection = useRef(0),
+    mailboxRequest = useRef(0),
     [listVersion, setListVersion] = useState(0);
   const requested = useRef<string | null>(null);
   useEffect(() => {
-    const run = ++generation.current;
+    const run = ++generation.current,
+      request = ++mailboxRequest.current;
     setStatus('loading');
     setSelected(null);
     setRows(null);
@@ -314,14 +406,15 @@ export function PortalMail() {
     void privateMail
       .status()
       .then((result) => {
-        if (run !== generation.current) return;
+        if (run !== generation.current || request !== mailboxRequest.current)
+          return;
         const box = result.mailboxes[0];
         setBox(box ?? null);
         setStatus(box ? 'ready' : 'empty');
         if (box) setListVersion((s) => s + 1);
       })
       .catch((error) => {
-        if (run === generation.current) {
+        if (run === generation.current && request === mailboxRequest.current) {
           setStatus('error');
           message(error instanceof Error ? error.message : String(error), true);
         }
@@ -371,11 +464,40 @@ export function PortalMail() {
   }, [status, query, offset, listVersion]);
   const collected = box ? mailboxState(box) : null,
     counts = box?.last_counts ?? {};
+  function refreshAfterReceipt() {
+    const run = generation.current,
+      request = ++mailboxRequest.current;
+    void privateMail
+      .status()
+      .then((result) => {
+        if (run !== generation.current || request !== mailboxRequest.current)
+          return;
+        const nextBox = result.mailboxes[0];
+        setBox(nextBox ?? null);
+        setStatus(nextBox ? 'ready' : 'empty');
+        setOffset(0);
+        setListVersion((version) => version + 1);
+      })
+      .catch((error) => {
+        if (run === generation.current && request === mailboxRequest.current)
+          message(
+            '메일은 수신했지만 목록을 갱신하지 못했습니다. ' +
+              (error instanceof Error ? error.message : String(error)),
+            true,
+          );
+      });
+  }
   return (
     <>
       <section id="quick-actions" className="quick-actions">
         {profile.id === MAIL_DIAGNOSTIC_OWNER_ID ? (
-          <MailReceipt key={state.refreshVersion} />
+          <>
+            <MailReceipt
+              key={state.refreshVersion}
+              onCollected={refreshAfterReceipt}
+              initialProgress={box?.last_counts?.progress}
+            />
+          </>
         ) : null}
       </section>
       <div className="workspace">

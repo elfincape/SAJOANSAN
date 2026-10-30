@@ -246,6 +246,7 @@ export async function syncBatch({
   seconds = 20,
   cursor = null,
   maxMessageBytes = 10 * 1024 * 1024,
+  uidls = null,
 }) {
   if (
     !(cutoff instanceof Date) ||
@@ -262,6 +263,14 @@ export async function syncBatch({
     maxMessageBytes > LIMIT
   )
     throw Error('CONFIG_REQUIRED');
+  if (
+    uidls !== null &&
+    (!Array.isArray(uidls) ||
+      uidls.length > 50 ||
+      uidls.some((id) => !/^[a-f0-9]{64}$/.test(id)) ||
+      new Set(uidls).size !== uidls.length)
+  )
+    throw Error('CONFIG_REQUIRED');
   const counts = {
     saved: 0,
     skipped: 0,
@@ -269,6 +278,7 @@ export async function syncBatch({
     oversized: 0,
     deferred: 0,
     cursor,
+    ...(uidls !== null ? { processedUidls: [], missing: 0, recovered: 0 } : {}),
   };
   const start = Date.now();
   const controller = new AbortController();
@@ -293,9 +303,12 @@ export async function syncBatch({
     }
   }
   try {
-    const entries = (await remaining(() => pop.uidl())).reverse(),
-      sizes = await remaining(() => pop.list());
-    if (cursor) {
+    let entries = (await remaining(() => pop.uidl())).reverse();
+    const sizes = await remaining(() => pop.list());
+    if (uidls !== null) {
+      const map = new Map(entries.map((entry) => [hash(entry[1]), entry]));
+      entries = uidls.map((id) => map.get(id) ?? [null, null, id]);
+    } else if (cursor) {
       const index = entries.findIndex(([, uidl]) => hash(uidl) === cursor);
       if (index >= 0) entries.push(...entries.splice(0, index + 1));
     }
@@ -304,20 +317,32 @@ export async function syncBatch({
         counts.deferred = entries.length - index;
         return counts;
       }
-      const [number, uidl] = entries[index],
-        id = hash(uidl);
-      if (await remaining(() => bridge.seen(id, options))) {
+      const [number, uidl, missingId] = entries[index],
+        id = missingId ?? hash(uidl);
+      const processed = () => {
         counts.cursor = id;
+        if (uidls !== null) counts.processedUidls.push(id);
+      };
+      if (number === null) {
+        counts.missing++;
+        counts.skipped++;
+        processed();
+        continue;
+      }
+      if (await remaining(() => bridge.seen(id, options))) {
+        if (uidls !== null && (await bridge.recovered?.(id)))
+          counts.recovered++;
+        processed();
         continue;
       }
       if ((sizes.get(number) ?? maxMessageBytes + 1) > maxMessageBytes) {
         counts.oversized++;
-        counts.cursor = id;
+        processed();
         continue;
       }
       const stopOversized = () => {
         counts.oversized++;
-        counts.cursor = id;
+        processed();
         counts.deferred = entries.length - index - 1;
         return counts;
       };
@@ -331,7 +356,7 @@ export async function syncBatch({
       const date = header ? sentDate(header) : null;
       if (date !== null && date < cutoff.getTime()) {
         counts.skipped++;
-        counts.cursor = id;
+        processed();
         continue;
       }
       let raw;
@@ -344,12 +369,12 @@ export async function syncBatch({
       const sent = sentDate(raw);
       if (sent === null) {
         counts.undated++;
-        counts.cursor = id;
+        processed();
         continue;
       }
       if (sent < cutoff.getTime()) {
         counts.skipped++;
-        counts.cursor = id;
+        processed();
         continue;
       }
       let message;
@@ -366,12 +391,12 @@ export async function syncBatch({
           throw error;
         if (error.message === 'LIMIT_REACHED') counts.oversized++;
         else counts.undated++;
-        counts.cursor = id;
+        processed();
         continue;
       }
       await remaining(() => bridge.ingest(message, options));
       counts.saved++;
-      counts.cursor = id;
+      processed();
     }
     counts.cursor = null;
     return counts;
