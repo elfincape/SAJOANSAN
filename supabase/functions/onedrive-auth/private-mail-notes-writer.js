@@ -465,7 +465,7 @@ function photoReport(base, images, count) {
   );
   let blockIndex = 0;
   managedHtml = managedHtml.replace(
-    /<(p|h[1-6])(\s[^>]*?)?>/g,
+    /<(p|h[1-6]|ol|ul|li)(\s[^>]*?)?>/g,
     (open, tag, attrs = '') =>
       /\sdata-id=/.test(attrs)
         ? open

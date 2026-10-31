@@ -7007,10 +7007,10 @@ console.log(
  const item={category:'task',title:'가상센터4P 배차 준비',status:'pending',summary:['하차13:15'],serviceDate:'2026-11-02',sourceRefs:[]};
  const html=renderBriefingWorkNote([item,{...item,title:'두 번째 업무'}, {...item,category:'reference',title:'참고자료',summary:['품의 사례 참고']}, {...item,category:'reference',reportKind:'routine',title:'정기보고',summary:['온도점검 자료 수신']}]);
  assert.ok(html.includes('1. To Do') && html.includes('2. 참고사항'));
- assert.ok(html.includes('① 가상센터4P 배차 준비') && html.includes('② 두 번째 업무'));
- assert.ok(html.includes('① 품의 사례 참고') && html.includes('② 온도점검 자료 수신'));
- assert.match(html,/<ul style="list-style-type:none"><li style="[^"]*">- 2026\.11\.2\(월\) 13:15 하차/);
- assert.match(html,/<li style="[^"]*">① 가상센터4P 배차 준비<ul/);
+ assert.ok(html.includes('>가상센터4P 배차 준비<ul') && html.includes('>두 번째 업무<ul'));
+ assert.ok(html.includes('>품의 사례 참고</li>') && html.includes('>온도점검 자료 수신</li>'));
+ assert.match(html,/<ul style="list-style-type:disc"><li style="[^"]*">2026\.11\.2\(월\) 13:15 하차/);
+ assert.match(html,/<ol style="list-style-type:decimal"><li style="[^"]*">가상센터4P 배차 준비<ul/);
  assert.ok(!html.includes('<strong>가상센터4P 배차 준비'));
  assert.ok(html.includes('font-family:Malgun Gothic,Arial,sans-serif'));
  console.log('PASS uniform report hierarchy: consecutive sections, circled items, indented hyphen detail, plain consistent body font');
