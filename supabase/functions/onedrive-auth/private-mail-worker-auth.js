@@ -31,6 +31,36 @@ export async function authorizeMailWork(
     return;
   if (typeof token !== 'string' || !/^pmjob_[a-f0-9]{64}$/.test(token))
     denied();
+  if (action === 'private-mail-background-work') {
+    let imageRequest;
+    try {
+      const text = await request.clone().text();
+      if (text.length > 4096) denied();
+      imageRequest = JSON.parse(text);
+    } catch {
+      denied();
+    }
+    if (imageRequest?.operation === 'image-authorize') {
+      if (
+        imageRequest.mailbox !== TARGET.mailbox_id ||
+        !UUID.test(imageRequest.id ?? '') ||
+        typeof imageRequest.url !== 'string' ||
+        imageRequest.url.length > 2000
+      )
+        denied();
+      const allowed = await db('rpc/private_mail_image_transport_auth', {
+        method: 'POST',
+        body: {
+          p_box: TARGET.mailbox_id,
+          p_hash: await hash(token),
+          p_message: imageRequest.id,
+          p_url: imageRequest.url,
+        },
+      });
+      if (allowed !== true) denied();
+      return;
+    }
+  }
   const session = await db('rpc/private_mail_dispatch_auth', {
     method: 'POST',
     body: { p_hash: await hash(token) },

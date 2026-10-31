@@ -38,31 +38,57 @@ export async function handleMailAutomation(action, body, user, ctx) {
   const current = await box();
   const ready = Object.hasOwn(current, 'automation_config');
   if (action === 'private-mail-remote-verify') {
-    if (typeof ctx.remoteFetcher !== 'function')
-      throw fail('REMOTE_IMAGE_REVIEW', 503);
-    const response = await ctx.remoteFetcher(
-      'https://placehold.co/480x160.png',
-      {
-        sourceId: '11111111-1111-4111-8111-111111111111',
-        signal: AbortSignal.timeout(8000),
-      },
-    );
-    if (!response.ok)
+    try {
+      if (typeof ctx.remoteFetcher !== 'function')
+        throw Error('REMOTE_IMAGE_REVIEW');
+      const response = await ctx.remoteFetcher(
+        'https://placehold.co/480x160.png',
+        {
+          sourceId: '11111111-1111-4111-8111-111111111111',
+          signal: AbortSignal.timeout(20000),
+        },
+      );
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        return json({
+          status: 'failed',
+          code: 'REMOTE_IMAGE_SOURCE',
+          httpStatus: response.status,
+          stage: [
+            'transport_auth',
+            'dns',
+            'request',
+            'headers',
+            'body',
+            'image',
+            'download',
+          ].includes(result.stage)
+            ? result.stage
+            : 'transport_response',
+        });
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return json({
+        status: 'done',
+        httpStatus: response.status,
+        mediaType: response.headers.get('content-type'),
+        byteLength: bytes.length,
+        fixture: 'synthetic-480x160',
+        transport: 'scoped-capability',
+        stored: false,
+        modelCalled: false,
+      });
+    } catch (error) {
       return json({
         status: 'failed',
         code: 'REMOTE_IMAGE_SOURCE',
-        httpStatus: response.status,
+        stage: ['transport_grant', 'transport_request'].includes(
+          error.remoteStage,
+        )
+          ? error.remoteStage
+          : 'verification',
       });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return json({
-      status: 'done',
-      httpStatus: response.status,
-      mediaType: response.headers.get('content-type'),
-      byteLength: bytes.length,
-      fixture: 'synthetic-480x160',
-      stored: false,
-      modelCalled: false,
-    });
+    }
   }
   if (action === 'private-mail-intent-correction') {
     if (!uuid(body.id) || typeof body.reference !== 'boolean')
@@ -313,6 +339,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
   if (action !== 'private-mail-background-work' || !ctx.background)
     throw fail('WORKER_AUTH_REQUIRED', 403);
   if (body.mailbox !== current.id) throw fail('MAILBOX_TARGET_REJECTED', 403);
+  if (body.operation === 'image-authorize') return json({ authorized: true });
   if (body.operation === 'history') {
     if (!uuid(body.id)) throw fail('HISTORY_SOURCE');
     const lease = crypto.randomUUID();

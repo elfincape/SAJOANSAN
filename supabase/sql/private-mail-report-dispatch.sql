@@ -3,12 +3,21 @@
 begin;
 create or replace function public.private_mail_dispatch_target_allowed(p_box uuid,p_kind text,p_target text)
 returns boolean language plpgsql stable security invoker set search_path='' as $$
-declare b public.private_mailboxes; d date;
+declare b public.private_mailboxes; d date; image_target text;
 begin
  select * into b from public.private_mailboxes where id=p_box;
  if b.id is distinct from '39045005-313e-42e1-b50c-2394b3b6ff26'::uuid
  or b.owner_id is distinct from '2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid or not b.enabled
  or not exists(select 1 from public.user_profiles p where p.id=b.owner_id and p.active) then return false; end if;
+ if p_kind='remote-image' then
+  image_target=split_part(p_target,':',1);
+  if image_target is null or (p_target<>image_target and substring(p_target from 38) !~ '^[a-f0-9]{64}$') then return false; end if;
+  if image_target='11111111-1111-4111-8111-111111111111' then return true; end if;
+  if image_target !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return false; end if;
+  return coalesce(b.automation_config->'analysisScopes'->>image_target is distinct from 'body_headers'
+   and jsonb_typeof(b.automation_config->'remoteImages'->image_target->'approvedUrls')='array'
+   and jsonb_array_length(b.automation_config->'remoteImages'->image_target->'approvedUrls') between 1 and 5,false);
+ end if;
  if p_kind='history' then
   if coalesce(p_target,'') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return false; end if;
   return exists(select 1 from public.private_mail_analysis_history h where h.id=p_target::uuid

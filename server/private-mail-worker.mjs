@@ -86,7 +86,6 @@ export async function handlePrivateMailWorker(
     });
   if (!authorizedCandidate) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
   if (body?.kind === 'remote-image') {
-    if (!staticKey) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
     if (
       body.mailboxId !== BOX ||
       !UUID.test(body.messageId ?? '') ||
@@ -95,9 +94,28 @@ export async function handlePrivateMailWorker(
     )
       return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
     try {
+      const approval = await edge(
+        { operation: 'image-authorize', id: body.messageId, url: body.url },
+        10000,
+      );
+      if (approval.authorized !== true)
+        return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
       return await downloadImage(body.url);
-    } catch {
-      return json({ error: 'REMOTE_IMAGE_SOURCE' }, 422);
+    } catch (error) {
+      const stage =
+        error.status === 403
+          ? 'transport_auth'
+          : (error.remoteStage ?? 'download');
+      return json(
+        {
+          error:
+            error.status === 403
+              ? 'WORKER_AUTH_REQUIRED'
+              : 'REMOTE_IMAGE_SOURCE',
+          stage,
+        },
+        error.status === 403 ? 403 : 422,
+      );
     }
   }
 

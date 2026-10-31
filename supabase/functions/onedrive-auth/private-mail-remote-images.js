@@ -95,7 +95,7 @@ export async function loadApprovedRemoteMailImages({
   let total = 0;
   for (const [index, item] of manifest.content.entries()) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetcher(item.url, {
         sourceId,

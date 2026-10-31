@@ -60,6 +60,7 @@ export async function downloadPublicMailImage(
 ) {
   const url = approvedUrl(value),
     controller = new AbortController();
+  let stage = 'dns';
   let rejectDeadline;
   const deadline = new Promise((_, reject) => {
     rejectDeadline = reject;
@@ -80,6 +81,7 @@ export async function downloadPublicMailImage(
     )
       throw Error('REMOTE_IMAGE_SOURCE');
     const pin = addresses[0];
+    stage = 'request';
     const result = await Promise.race([
       new Promise((resolve, reject) => {
         const request = requester(
@@ -101,6 +103,7 @@ export async function downloadPublicMailImage(
           },
           async (response) => {
             try {
+              stage = 'headers';
               if (
                 response.statusCode !== 200 ||
                 !response.socket?.authorized ||
@@ -114,6 +117,7 @@ export async function downloadPublicMailImage(
                   response.headers['content-encoding'] !== 'identity')
               )
                 throw Error('REMOTE_IMAGE_SOURCE');
+              stage = 'body';
               const parts = [];
               let length = 0;
               for await (const chunk of response) {
@@ -121,6 +125,7 @@ export async function downloadPublicMailImage(
                 if (length > maxBytes) throw Error('IMAGE_LIMIT');
                 parts.push(chunk);
               }
+              stage = 'image';
               const bytes = Buffer.concat(parts, length),
                 info = inspectMailImage(bytes);
               if (
@@ -154,6 +159,9 @@ export async function downloadPublicMailImage(
       deadline,
     ]);
     return result;
+  } catch (error) {
+    error.remoteStage = stage;
+    throw error;
   } finally {
     clearTimeout(timer);
     controller.abort();

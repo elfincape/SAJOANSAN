@@ -5632,3 +5632,66 @@ console.log(
     'PASS remote verification is fixed synthetic fixture, strict owner-only, ignores caller URLs, no model or storage effects',
   );
 }
+{
+  const { authorizeMailWork } =
+    await import('../supabase/functions/onedrive-auth/private-mail-worker-auth.js');
+  const box = '39045005-313e-42e1-b50c-2394b3b6ff26',
+    id = '11111111-1111-4111-8111-111111111111',
+    url = 'https://placehold.co/480x160.png';
+  let accepted = true,
+    calls = 0;
+  const context = {
+    token: 'pmjob_' + 'a'.repeat(64),
+    hash: async () => 'hash-only-fixture',
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    db: async (path, options) => {
+      calls++;
+      assert.equal(path, 'rpc/private_mail_image_transport_auth');
+      assert.deepEqual(options.body, {
+        p_box: box,
+        p_hash: 'hash-only-fixture',
+        p_message: id,
+        p_url: url,
+      });
+      return accepted;
+    },
+  };
+  const request = () =>
+    new Request('https://first-party.test', {
+      method: 'POST',
+      body: JSON.stringify({
+        mailbox: box,
+        operation: 'image-authorize',
+        id,
+        url,
+      }),
+    });
+  await authorizeMailWork('private-mail-background-work', request(), context);
+  assert.equal(calls, 1);
+  accepted = false;
+  await assert.rejects(
+    () => authorizeMailWork('private-mail-background-work', request(), context),
+    (error) => error.status === 403,
+  );
+  await assert.rejects(
+    () =>
+      authorizeMailWork(
+        'private-mail-background-work',
+        new Request('https://first-party.test', {
+          method: 'POST',
+          body: JSON.stringify({
+            mailbox: 'wrong',
+            operation: 'image-authorize',
+            id,
+            url,
+          }),
+        }),
+        context,
+      ),
+    (error) => error.status === 403,
+  );
+  assert.equal(calls, 2);
+  console.log(
+    'PASS image relay authorization works without legacy key, binds mailbox/message/URL to one-use SQL capability and fails closed before download',
+  );
+}

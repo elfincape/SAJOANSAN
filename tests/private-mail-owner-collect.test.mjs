@@ -1599,8 +1599,16 @@ console.log(
       downloads++;
       return new Response(image, { headers: { 'content-type': 'image/png' } });
     },
-    fetcher: async () =>
-      assert.fail('remote binary relay must not call model or collection'),
+    fetcher: async (url, options) => {
+      assert.equal(
+        url,
+        'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-background-work',
+      );
+      assert.equal(JSON.parse(options.body).operation, 'image-authorize');
+      return options.headers.Authorization === 'Bearer ' + workerKey
+        ? Response.json({ authorized: true })
+        : new Response('', { status: 403 });
+    },
     collect: () => assert.fail('no collection'),
   };
   assert.equal(
@@ -1618,6 +1626,16 @@ console.log(
     403,
   );
   assert.equal(downloads, 1);
+  const noLegacy = await handlePrivateMailWorker(
+    request('pmjob_' + 'b'.repeat(64)),
+    {
+      ...remoteOptions,
+      env: {},
+      fetcher: async () => Response.json({ authorized: true }),
+    },
+  );
+  assert.equal(noLegacy.status, 200);
+  assert.equal(downloads, 2);
   console.log(
     'PASS public image downloader: DNS all-address checks and pinned lookup/TLS/socket verification; private/mixed DNS, metadata, rebinding, redirect, MIME, bytes and timeout rejected; server-only existing key relay, no model or POP calls',
   );
