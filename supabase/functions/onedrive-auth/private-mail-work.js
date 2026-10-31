@@ -103,7 +103,13 @@ export function normalizeDailyWork(input) {
       ...new Set(
         (input.summary ?? [])
           .map((item) => clean(item))
-          .filter((item) => item && item !== input.title),
+          .filter(
+            (item) =>
+              item &&
+              item !== input.title &&
+              (input.category === 'reference' ||
+                !repeatsWorkTitle(item, input.title)),
+          ),
       ),
     ].slice(0, 6),
     nextAction: clean(input.nextAction),

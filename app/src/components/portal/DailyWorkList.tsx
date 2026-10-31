@@ -87,13 +87,18 @@ export function DailyWorkList({
                         <span>{item.title}</span>
                       </label>
                     ) : (
-                      <strong>{item.title}</strong>
+                      <strong>
+                        {item.category === 'reference'
+                          ? item.summary[0] || item.title
+                          : item.title}
+                      </strong>
                     )}
-                    <span className="daily-item-status">
-                      {item.category === 'reference'
-                        ? '참고'
-                        : labels[item.status] || '확인 필요'}
-                    </span>
+                    {item.category !== 'reference' &&
+                    item.status !== 'pending' ? (
+                      <span className="daily-item-status">
+                        {labels[item.status] || '확인 필요'}
+                      </span>
+                    ) : null}
                   </div>
                   {item.status === 'cancelled' && item.controlRef ? (
                     <button
@@ -105,7 +110,10 @@ export function DailyWorkList({
                       다시 진행
                     </button>
                   ) : null}
-                  {item.summary.map((text, index) => (
+                  {(item.category === 'reference'
+                    ? item.summary.slice(1)
+                    : item.summary
+                  ).map((text, index) => (
                     <p key={index}>{text}</p>
                   ))}
                   {[

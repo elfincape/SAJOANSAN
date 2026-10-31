@@ -37,7 +37,7 @@
   font-size: 20px;
 }
 .mail-daily-briefing .daily-section {
-  margin-top: 26px;
+  margin-top: 16px;
 }
 .mail-daily-briefing .daily-section > h2 {
   margin: 0 0 8px;
@@ -55,18 +55,33 @@
   border-top: 1px solid var(--theme-border-soft);
 }
 .mail-daily-briefing .daily-items > li {
-  padding: 14px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--theme-border-soft);
   overflow-wrap: anywhere;
+}
+.mail-daily-briefing .daily-items > li > p {
+  margin: 4px 0;
+  line-height: 1.5;
+}
+.mail-daily-briefing .daily-evidence {
+  margin: 4px 0 0;
+  padding: 0;
+  min-height: 0;
+}
+.mail-daily-briefing .daily-evidence > summary {
+  padding: 2px 0;
+  min-height: 24px;
 }
 .mail-daily-briefing .daily-item-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 .mail-daily-briefing .daily-task-check {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 9px;
