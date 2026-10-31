@@ -20,6 +20,7 @@ function catalogModel(provider, id, available) {
     id,
     available,
     capabilities,
+    diagnosticCapabilities: diagnosticCapabilities(provider, id),
     support: capabilities
       ? 'supported'
       : /embedding|tts|whisper|dall-e|sora|moderation|audio|realtime|transcrib|image/i.test(
@@ -59,6 +60,19 @@ export function modelCapabilities(provider, id) {
       structured: 'prompt_and_validation',
       verification: 'protocol_only',
     };
+  return null;
+}
+// Protocol candidates may be tested without becoming selectable production defaults.
+export function diagnosticCapabilities(provider, id) {
+  const known = modelCapabilities(provider, id);
+  if (known) return known;
+  if (!Object.hasOwn(AI_PROVIDERS, provider) || typeof id !== 'string' ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(id) ||
+      /embedding|tts|whisper|dall-e|sora|moderation|audio|realtime|transcrib|image/i.test(id)) return null;
+  if (provider === 'aiapiflow' && /^claude-/i.test(id))
+    return {protocol:'anthropic',images:true,structured:'prompt_and_validation',verification:'unverified'};
+  if (/^(?:gpt-|o[1-9](?:-|$)|chatgpt-)/i.test(id))
+    return {protocol:'responses',images:true,structured:'json_object',verification:'unverified'};
   return null;
 }
 export async function providerModels(provider, env, fetcher = fetch) {
@@ -198,13 +212,14 @@ export async function verifyApiCompatibility(body, env, fetcher = fetch) {
           stopReason: result.status,
           usage: result.usage,
           providerStatus,
+          diagnosticCode: result.code ?? null,
           unsupportedProbability: probability,
           reviewRequired,
         },
       ],
     };
   }
-  const capabilities = modelCapabilities(body.provider, body.model);
+  const capabilities = diagnosticCapabilities(body.provider, body.model);
   if (!capabilities) throw coded('AI_MODEL_UNSUPPORTED');
   const key = env[AI_PROVIDERS[body.provider].secret];
   if (!key) throw coded('AI_NOT_CONFIGURED', 409);
@@ -219,6 +234,7 @@ export async function verifyApiCompatibility(body, env, fetcher = fetch) {
       const response = await callLuna({
         provider: body.provider,
         model: body.model,
+        diagnostic: true,
         key,
         fetcher: async (...args) => {
           const response = await fetcher(...args);
@@ -278,6 +294,9 @@ export async function verifyApiCompatibility(body, env, fetcher = fetch) {
       checks.push({
         kind,
         providerStatus: status ?? providerStatus,
+        diagnosticCode: error?.code ?? 'REQUEST_FAILED',
+        responseReason: error?.reason ?? null,
+        responseShape: error?.modelResponseShape ?? null,
         status:
           status === 401 || status === 403
             ? 'auth'

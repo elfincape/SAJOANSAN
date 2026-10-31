@@ -1,4 +1,4 @@
-import { modelCapabilities } from './ai-providers.js';
+import { modelCapabilities, diagnosticCapabilities } from './ai-providers.js';
 import { callHaiku } from './haiku.js';
 export const LUNA_MODEL = 'gpt-5.6-luna';
 export const OPENAI_LUNA_MODEL = 'gpt-6-luna';
@@ -190,6 +190,7 @@ export async function callLuna({
   key,
   provider = 'aiapiflow',
   model: requestedModel,
+  diagnostic = false,
   prompt,
   images = [],
   schema,
@@ -202,7 +203,7 @@ export async function callLuna({
     throw failure('AI_NOT_CONFIGURED', 503, 'configuration');
   const model =
     requestedModel ?? (provider === 'openai' ? OPENAI_LUNA_MODEL : LUNA_MODEL);
-  const capabilities = modelCapabilities(provider, model);
+  const capabilities = diagnostic ? diagnosticCapabilities(provider, model) : modelCapabilities(provider, model);
   if (!capabilities)
     throw failure('AI_MODEL_UNSUPPORTED', 400, 'configuration');
   if (!key) throw failure('AI_NOT_CONFIGURED', 503, 'configuration');
@@ -263,12 +264,23 @@ export async function callLuna({
       typeof value.model !== 'string' ||
       !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value.model)
     )
-      throw failure('MODEL_RESPONSE', 502, 'anthropic_response');
+      throw failure('MODEL_RESPONSE', 502, 'anthropic_response', {stopReason:value?.stop_reason === 'max_tokens' ? 'max_tokens' : 'other', blockCount:Array.isArray(value?.content) ? value.content.length : 0});
+    let text = value.content[0].text;
+    if (structured) {
+      // A single complete Markdown fence is presentation, never repair incomplete JSON.
+      const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(text.trim());
+      if (fence) text = fence[1];
+      let parsed;
+      try { parsed = JSON.parse(text); }
+      catch { throw failure('MODEL_RESPONSE',502,'json_contract'); }
+      const invalid = outputContractFailure(parsed,schema);
+      if (invalid) throw failure('MODEL_RESPONSE',502,'json_contract',{contractFailure:invalid});
+    }
     return {
       stop_reason: 'end_turn',
       provider,
       model: value.model,
-      content: value.content,
+      content: [{type:'text',text}],
       usage: tokenUsage(value.usage),
     };
   }

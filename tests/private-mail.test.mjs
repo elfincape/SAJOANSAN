@@ -6948,3 +6948,18 @@ console.log(
     'PASS owner corrections precede mail/manual carry filters; owner reopen survives AI completion and reference-to-task carry; prior-day state retained',
   );
 }
+
+{
+ const { diagnosticCapabilities, verifyApiCompatibility } = await import('../supabase/functions/_shared/ai-providers.js');
+ assert.equal(diagnosticCapabilities('aiapiflow','claude-haiku-5-5').protocol,'anthropic');
+ assert.equal(diagnosticCapabilities('openai','gpt-5-mini').protocol,'responses');
+ assert.equal(diagnosticCapabilities('openai','text-embedding-3-small'),null);
+ let n=0;
+ const checked=await verifyApiCompatibility({provider:'aiapiflow',model:'claude-haiku-5-5',confirmation:'synthetic-compatibility'}, {AIAPIFLOW_API_KEY:'mock'}, async()=>Response.json({model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:++n===3?'```json\n{"ok":true}\n```':n===2?'4':'OK'}]}));
+ assert.equal(checked.passed,true);
+ const jev=await verifyApiCompatibility({provider:'typesafe',model:'jev-1.14.0',confirmation:'synthetic-compatibility'}, {TYPESAFE_API_KEY:'mock'}, async()=>new Response('{}',{status:529}));
+ assert.equal(jev.checks[0].providerStatus,529);
+ assert.equal(jev.checks[0].diagnosticCode,'RATE_LIMIT');
+ assert.equal(jev.checks[0].status,'transient');
+ console.log('PASS independently test unverified model protocols, exact fenced JSON validation and JEV HTTP diagnostics');
+}
