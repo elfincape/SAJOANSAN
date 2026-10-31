@@ -190,7 +190,12 @@ export function dateFrom(original, referenceDate) {
       day = full ? full[3] : short[2];
     const value =
       year + '-' + month.padStart(2, '0') + '-' + day.padStart(2, '0');
-    return validDay(value) ? value : null;
+    if (!validDay(value)) return null;
+    const matched = full ?? short;
+    const suffix = original.slice(matched.index + matched[0].length);
+    const weekday = /^\s*(?:\(([월화수목금토일])(?:요일)?\)|([월화수목금토일])(?:요일)?(?=\s|$|[.,。]|까지))/.exec(suffix);
+    if (weekday && '일월화수목금토'[new Date(value + 'T00:00:00Z').getUTCDay()] !== (weekday[1] ?? weekday[2])) return null;
+    return value;
   }
   const relative = /(오늘|내일|모레|글피|어제)/.exec(original);
   if (!relative) return null;
@@ -394,6 +399,67 @@ export function resolveDispatchAssignment(
     ],
   };
 }
+function explicitLoadingPlaces(text) {
+  const places = [...String(text ?? '').matchAll(/(?:^|[.。\n]\s*)(?:상차지|출발지|상차\s*장소)\s*[:：]\s*([^.,。\n]{1,100})|(?:출발|상차)(?:지)?(?:은|는)\s*([^.,。\s]+?)(?=이며|이고|입니다|\s|$)/g)].map(match => match[1] ?? match[2]);
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const place = /^([^()\n]{1,100}?)\s+상차\s*(?:[01]?\d|2[0-3]):[0-5]\d/.exec(line.trim())?.[1]
+      ?? /^([^()\n]{1,100}?)\((?:[01]?\d|2[0-3]):[0-5]\d\s*상(?:차)?\)/.exec(line.trim())?.[1];
+    if (place) places.push(place);
+  }
+  return new Set(places.map(place => place.trim().replace(/\s/g,'')));
+}
+export function resolveExistingManualWork(text, entries, referenceDate, receivedAt = referenceDate + 'T12:00:00+09:00') {
+  if (typeof text !== 'string' || text.length > 2000 || /(?:둘째|별도\s*업무|두\s*가지\s*요청|문서|서류|계약|회신|검토|제출|정산)/.test(text)) return null;
+  const clauses = text.split(/(?<=[.!?。])\s+|\r?\n/).map(value => value.trim()).filter(Boolean);
+  const identity = value => {
+    const original = /(?:20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}\s*월\s*\d{1,2}\s*일|\d{1,2}\/\d{1,2})(?:\s*(?:\([월화수목금토일](?:요일)?\)|[월화수목금토일]요일))?/.exec(value)?.[0];
+    const quantity = /(\d+(?:\.\d+)?)\s*[pP](?:\b|(?=[^A-Za-z]))/.exec(value)?.[1];
+    const center = /([가-힣A-Za-z][가-힣A-Za-z0-9_-]*)\s+\d+(?:\.\d+)?\s*[pP]/.exec(value)?.[1]
+      ?? /([가-힣A-Za-z0-9_-]+(?:센터|쿠팡))/.exec(value)?.[1];
+    return { original, date: original ? dateFrom(original, referenceDate) : null, quantity: quantity ? Number(quantity) : null, center };
+  };
+  const separate = /(?:별개|별도|신규|새\s*요청)/.test(text) && /(?:부탁|요청.*(?:접수|드립니다|합니다))/.test(text);
+  const supplement = /(?:추가\s*정보|보충|정정)/.test(text);
+  const completed = value => /(?:차량\s*배정|배차\s*준비)(?:을|를)?\s*(?:완료(?:했|하였|됐|되었)|마쳤)/.test(value)
+    && !/(?:미완료|아직|대기|예정|않|못|[?？])/.test(value);
+  if (!separate && !supplement && !clauses.some(completed)) return null;
+  const targetClause = clauses.find(value => { const key = identity(value); return key.date && key.center; });
+  if (!targetClause) return null;
+  const target = identity(targetClause);
+  if ([...targetClause.matchAll(/20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}\s*월\s*\d{1,2}\s*일|\d{1,2}\/\d{1,2}/g)].length > 1) return null;
+  if (separate && new Set([...targetClause.matchAll(/(\d+(?:\.\d+)?)\s*[pP]/g)].map(match => Number(match[1]))).size > 1) return null;
+  const requests = clauses.filter(value => /(?:부탁|해주세요|요청드립니다|요청합니다)/.test(value)).map(identity).filter(key => key.date && key.center);
+  if (new Set(requests.map(key => [key.date,key.center,key.quantity].join(':'))).size > 1) return null;
+  const originals = Object.values(entries).filter(entry => entry.status === 'ready').flatMap(entry => (entry.items ?? []).filter(item => item.kind === 'dispatch').map(item => ({ entry, item })));
+  const projected = dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,kstDay(receivedAt)));
+  const incomingOrigins = explicitLoadingPlaces(text);
+  const candidates = projected.map(work => ({work,...originals.find(({item}) => item.ref === work.workId)})).filter(candidate => candidate.item);
+  const matching = candidates.filter(({entry,item,work}) => {
+    const key = identity(work.title + ' ' + item.evidence);
+    const knownOrigins = explicitLoadingPlaces((entry.items ?? []).filter(row => row.kind === 'dispatch').length === 1 ? entry.text : item.evidence);
+    if (knownOrigins.size && incomingOrigins.size && (knownOrigins.size!==1 || incomingOrigins.size!==1 || !knownOrigins.has([...incomingOrigins][0]))) return false;
+    return (work.serviceDate ?? item.serviceDate ?? key.date) === target.date && (key.center ?? item.dispatch?.destination) === target.center
+      && (target.quantity == null || (key.quantity ?? item.dispatch?.pallets) === target.quantity);
+  });
+  const details = [...new Set([
+    ...(incomingOrigins.size === 1 ? ['출발 ' + [...incomingOrigins][0]] : []),
+    ...[...text.matchAll(/(상차|하차)(?:\s*(?:예정|시간|시각))?(?:은|는|이|가)?\s*[:：]?\s*((?:[01]?\d|2[0-3]):[0-5]\d)/g)]
+      .map(match => match[1] + ' ' + match[2]),
+  ])].slice(0,6);
+  if (separate) {
+    if (!target.quantity || !/배차.*(?:부탁|요청)|(?:부탁|요청).*배차/.test(text)) return null;
+    return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_request_v1',details,items:[{kind:'dispatch',text:target.center+' '+target.quantity+'P 배차 준비',evidence:text,serviceOriginal:target.original,dueOriginal:null,assignee:null,needsConfirmation:false,workflowStatus:'pending',stateDeclared:false}]};
+  }
+  const match = matching.length === 1 && target.quantity != null ? matching[0] : null;
+  const publicWork = match?.work;
+  if (!match || !publicWork || publicWork.status === 'cancelled')
+    return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_followup_review_v1',details,items:[{kind:'issue',text:'기존 배차 요청 연결 확인',evidence:text,serviceOriginal:target.original,dueOriginal:null,assignee:null,needsConfirmation:true,workflowStatus:'pending',stateDeclared:false}]};
+  const quantityCorrection = supplement && /수량(?:은|이)?\s*(\d+(?:\.\d+)?)\s*[pP]\s*(?:가|이)?\s*(?:맞|정정|변경)/.exec(targetClause);
+  let title = publicWork.title;
+  if (quantityCorrection) title = title.replace(/\d+(?:\.\d+)?\s*[pP]/,quantityCorrection[1]+'P');
+  const completedPreparation = completed(targetClause) && /(?:배차|배정|차량.*준비)/.test(publicWork.title);
+  return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_followup_v1',details,items:[{kind:'dispatch',text:title,evidence:targetClause,serviceOriginal:target.original,dueOriginal:null,assignee:null,needsConfirmation:completed(targetClause)&&!completedPreparation,workRef:publicWork.workId,workflowStatus:completedPreparation?'complete':'pending',stateDeclared:false}]};
+}
 // Only unambiguous single-dispatch messages may share unassigned route lines.
 function dispatchDetails(source, items) {
   if (
@@ -421,9 +487,11 @@ function dispatchDetails(source, items) {
   ].slice(0, 6);
 }
 function unresolvedManualRequest(value) {
-  return /^(?:이거|이것|그거|그것|해당\s*(?:건|내용|일)|[이그]\s*(?:작업|업무))\s*(?:좀\s*)?(?:해\s*(?:줘|주세요|주시겠어요)|부탁(?:드립니다|드려요|해요|합니다))[.!?。]?$/u.test(
-    value.trim(),
-  );
+  const parts = value.trim().split(/(?<=[.!?。])\s+|[\r\n]+/).filter(Boolean);
+  const request = /^(?:이거|이것|그거|그것|해당\s*(?:건|내용|일)|[이그]\s*(?:작업|업무))\s*(?:좀\s*)?(?:해\s*(?:줘|주세요|주시겠어요)|부탁(?:드립니다|드려요|해요|합니다))[.!?。]?$/u;
+  // A promise to send the missing material later is not an antecedent.
+  const later = /^(?:자료|내용|정보|상세(?:내용|정보)?)(?:는|을|를)?\s*(?:뒤에|나중에|추후에?)\s*(?:보내|보낼|전달|공유)/u;
+  return parts.some(part => request.test(part)) && parts.every(part => request.test(part) || later.test(part));
 }
 export function normalizeManualItems(
   value,
@@ -464,16 +532,16 @@ export function normalizeManualItems(
     throw Error('MANUAL_FORMAT');
   const unclearRequest = unresolvedManualRequest(text);
   const sourceItems =
-    value.items.length || !unclearRequest
-      ? value.items
-      : [
+    unclearRequest
+      ? [
           {
             kind: 'issue',
             text: '요청 내용 확인',
             evidence: text.trim(),
             needsConfirmation: true,
           },
-        ];
+        ]
+      : value.items;
   return sourceItems.map((raw, index) => {
     if (
       !raw ||
@@ -752,7 +820,7 @@ export function manualDailyView(entries, day, workOverrides = {}) {
         if (item.kind === 'dispatch' && !publicValue.details.length)
           publicValue.details = dispatchDetails(entry.text, entry.items);
         publicValue.inferredStateAt =
-          item.resolution === 'dispatch_assignment_v1' && !events.length
+          ['dispatch_assignment_v1','dispatch_followup_v1'].includes(item.resolution) && !events.length
             ? state.at
             : null;
         publicValue.ownerStateAt =
@@ -914,7 +982,7 @@ export async function handleManualMessage(action, body, user, ctx) {
     const config = await ctx.resolveJevConfiguration?.(entry.entryId);
     if (!config?.key) throw fail('AI_NOT_CONFIGURED',503);
     const related = Object.values(current.manual_entries).flatMap(prior => prior.status === 'ready'
-      ? (prior.items ?? []).map(item => ({ref:item.ref,kind:item.kind,text:item.text,status:item.done ? 'complete' : 'pending'})) : []);
+      ? (prior.items ?? []).map(item => ({ref:item.ref,kind:item.kind,text:item.text,status:publicItem(item,prior.entryId).status,serviceDate:item.serviceDate,evidence:item.evidence,details:item.details??[]})) : []);
     const review = await reviewNormalizedManual({entry,related,config:{...config,timeoutMs:6000}});
     if (!review) throw fail('OWNER_REQUIRED',403);
     const saved = await rpc('private_mail_manual_jev_review', {
@@ -1032,7 +1100,12 @@ export async function handleManualMessage(action, body, user, ctx) {
   try {
     const reply = structured
       ? null
-      : resolveDispatchAssignment(
+      : resolveExistingManualWork(
+          entry.text,
+          current.manual_entries,
+          entry.referenceDate,
+          entry.submittedAt,
+        ) ?? resolveDispatchAssignment(
           entry.text,
           current.manual_entries,
           entry.referenceDate,
@@ -1063,6 +1136,8 @@ export async function handleManualMessage(action, body, user, ctx) {
         verifiedDispatchReply: !!reply,
         replyDetails: reply?.details ?? [],
       });
+    if (reply?.resolution)
+      for (const item of items) item.resolution = reply.resolution;
     phase = 'MANUAL_SOURCE';
     for (const item of items)
       if (item.portalTaskId) {
@@ -1171,7 +1246,10 @@ export async function handleManualMessage(action, body, user, ctx) {
               ref: item.ref,
               kind: item.kind,
               text: item.text,
-              status: item.done ? 'complete' : 'pending',
+              status: publicItem(item, prior.entryId).status,
+              serviceDate: item.serviceDate,
+              evidence: item.evidence,
+              details: item.details ?? [],
             }))
           : [],
       );

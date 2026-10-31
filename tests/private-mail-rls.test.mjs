@@ -1699,3 +1699,36 @@ try {
     await manualDb.close();
   }
 }
+
+{
+const ROOT=new URL('..',import.meta.url).pathname.replace(/\/$/,''), OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc', BOX='39045005-313e-42e1-b50c-2394b3b6ff26';
+const db=new PGlite({extensions:{pgcrypto}});
+try {
+await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema extensions;create extension pgcrypto with schema extensions;create table auth.users(id uuid primary key);create table public.user_profiles(id uuid primary key,active boolean);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant select on public.user_profiles to authenticated,service_role;`);
+for(const path of ['repo-root/sql/private-mail.sql','supabase/sql/private-mail-automation.sql','supabase/sql/private-mail-filters.sql','supabase/sql/private-mail-manual.sql','supabase/sql/private-mail-history.sql','supabase/sql/private-mail-message-dates.sql','supabase/sql/private-mail-jev-review.sql']) await db.exec(await readFile(ROOT+'/'+path,'utf8'));
+await db.query('insert into auth.users values($1)',[OWNER]);await db.query('insert into user_profiles values($1,true)',[OWNER]);await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled) values($1,$2,'jhs96@eangroup.kr','isolated-drive','isolated-folder',true)",[BOX,OWNER]);await db.exec('set role service_role');
+let count=0;
+const seed=async()=>{const id='f0000000-0000-4000-8000-'+String(++count).padStart(12,'0');const item={itemId:'item-001',ref:id+':manual:item-001',kind:'task',text:'합성 확인',evidence:'합성 확인',done:false,completionEvents:[]};const entry={entryId:id,status:'ready',text:'합성 확인',textHash:'a'.repeat(64),submittedAt:'2026-10-31T00:00:00Z',referenceDate:'2026-10-31',items:[item]};await db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,id,entry]);return entry;};
+const row=async e=>(await db.query('select manual_entries->$2 value from private_mailboxes where id=$1',[BOX,e.entryId])).rows[0].value;
+const history=async()=>(await db.query('select history_id,payload from private_mail_analysis_history order by history_id')).rows;
+const save=async(e,r)=>(await db.query('select public.private_mail_manual_jev_review($1,$2,$3,$4,$5,$6) value',[BOX,OWNER,e.entryId,e.textHash,e.items,r])).rows[0].value;
+const review=(e,v=2)=>({sourceId:e.entryId,sourceRevision:null,policyVersion:'manual-semantics-v'+v,status:'review',model:'jev-1.14.0',findings:[{id:e.entryId+(v===2?':coverage':':manual:item-001'),unsupportedProbability:.9}],reviewIds:[e.entryId+(v===2?':coverage':':manual:item-001')],...(v===2?{coverageChecked:true,coverageUnavailable:null}:{})});
+const legacy=await seed(), v1=review(legacy,1);assert.equal(await save(legacy,v1),true);assert.deepEqual((await row(legacy)).jevReview,v1);const legacyHistory=await history();
+const current=await seed(), v2=review(current);assert.equal(await save(current,v2),true);assert.deepEqual((await row(current)).jevReview,v2);assert.deepEqual((await row(current)).items,current.items);
+const snapshots=await history();for(const old of legacyHistory)assert.ok(snapshots.some(x=>x.history_id===old.history_id&&x.payload===old.payload));assert.ok(snapshots.some(x=>JSON.parse(x.payload).structuredResult.jevReview?.policyVersion==='manual-semantics-v2'));
+assert.equal(await save(legacy,{...review(legacy),status:'no_concerns'}),false);assert.deepEqual((await row(legacy)).jevReview,v1);assert.deepEqual(await history(),snapshots);
+for(const [label,mutate] of [
+ ['cross-entry coverage',r=>{r.findings[0].id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee:coverage';r.reviewIds=[r.findings[0].id];}],
+ ['missing finding ID',r=>{delete r.findings[0].id;r.reviewIds=[];}],['null finding ID',r=>{r.findings[0].id=null;r.reviewIds=[];}],
+ ['string flag',r=>r.coverageChecked='true'],['null flag',r=>r.coverageChecked=null],
+ ['unknown unavailable',r=>r.coverageUnavailable='SECRET_TEXT'],['numeric unavailable',r=>r.coverageUnavailable=3],
+ ['false with coverage finding',r=>r.coverageChecked=false],['true without coverage finding',r=>{r.findings=[];r.reviewIds=[];}],
+ ['checked and unavailable',r=>r.coverageUnavailable='INPUT_TOO_LARGE'],
+ ['v1 cannot use coverage',r=>{r.policyVersion='manual-semantics-v1';delete r.coverageChecked;delete r.coverageUnavailable;}],
+ ['v1 cannot use flag',r=>{r.policyVersion='manual-semantics-v1';r.findings[0].id=r.sourceId+':manual:item-001';r.reviewIds=[r.findings[0].id];}],
+]) {const e=await seed(),r=review(e);mutate(r);const before=await history();await assert.rejects(()=>save(e,r),/JEV_REVIEW_FORMAT/,label);assert.equal((await row(e)).jevReview,undefined,label);assert.deepEqual(await history(),before,label);}
+const large=await seed(), unavailable={...review(large),status:'unavailable',code:'INVALID_INPUT',findings:[],reviewIds:[],coverageChecked:false,coverageUnavailable:'INPUT_TOO_LARGE'};assert.equal(await save(large,unavailable),true);assert.deepEqual((await row(large)).jevReview,unavailable);
+const prior=await row(current);assert.equal(await save(current,v2),false);assert.deepEqual(await row(current),prior);
+console.log('PASS local PGlite JEV SQL: v1/v2 save/read, tightly typed coverage and entry identity, malformed flags rejected, prior v1 immutable, original items/history preserved; network disabled');
+} finally {await db.close();}
+}
