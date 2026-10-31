@@ -1419,6 +1419,34 @@ try {
     ]),
     approvedHash = await digest(approvedImage);
   await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,array['remoteImages',$2,'excludedUrls'],jsonb_build_array($3::text)) where id=$1",
+    [autoBox, fresh, imageUrl],
+  );
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      approvedHash,
+      fresh,
+      imageUrl,
+    ]),
+    false,
+    'explicitly excluded URL must be denied even if approved list overlaps',
+  );
+  await assert.rejects(
+    () =>
+      rpc('private_mail_image_transport_grant', [
+        autoBox,
+        autoOwner,
+        fresh,
+        imageUrl,
+      ]),
+    /IMAGE_TRANSPORT_SCOPE/,
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,array['remoteImages',$2,'excludedUrls'],'[]') where id=$1",
+    [autoBox, fresh],
+  );
+  await db.query(
     "update public.private_mailboxes set automation_config=jsonb_set(automation_config,array['remoteImages',$2,'approvedUrls'],jsonb_build_array('https://placehold.co/replacement.png')) where id=$1",
     [autoBox, fresh],
   );

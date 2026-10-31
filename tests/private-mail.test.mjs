@@ -5906,3 +5906,122 @@ console.log(
     'PASS remote OneNote image restore: exact saved HTML/URL/hash/analysis match, only requested image fetched, body_headers and revoked URL block before download',
   );
 }
+{
+  const { readFile } = await import('node:fs/promises');
+  const { loadApprovedRemoteMailImages } =
+    await import('../supabase/functions/onedrive-auth/private-mail-remote-images.js');
+  const png = await readFile(
+    new URL('../app/public/diagnostics/mail-body-fixture.png', import.meta.url),
+  );
+  const urls = Array.from(
+      { length: 5 },
+      (_, i) => 'https://cdn.vendor.com/news-' + i,
+    ),
+    calls = [];
+  const html = urls.map((url) => '<img src="' + url + '">').join('');
+  await loadApprovedRemoteMailImages({
+    html,
+    approvedUrls: urls.slice(0, 4),
+    excludedUrls: [urls[4]],
+    sourceId: '11111111-1111-4111-8111-111111111111',
+    fetcher: async (url) => {
+      calls.push(url);
+      assert.notEqual(url, urls[4]);
+      return new Response(png, { headers: { 'content-type': 'image/png' } });
+    },
+  });
+  assert.deepEqual(calls, urls.slice(0, 4));
+  await assert.rejects(
+    () =>
+      loadApprovedRemoteMailImages({
+        html,
+        approvedUrls: urls.slice(0, 4),
+        sourceId: '11111111-1111-4111-8111-111111111111',
+        fetcher: async () =>
+          assert.fail('unknown image must stop before any fetch'),
+      }),
+    /REMOTE_IMAGE_REVIEW/,
+  );
+  console.log(
+    'PASS approved newsletter images only: explicit footer excluded before download/model, other unapproved images still fail closed',
+  );
+}
+{
+  const { readFile } = await import('node:fs/promises');
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const bytes = new Uint8Array(
+    await readFile(
+      new URL(
+        '../app/public/diagnostics/mail-body-fixture.png',
+        import.meta.url,
+      ),
+    ),
+  );
+  const id = '11111111-1111-4111-8111-111111111111',
+    imageId = id + ':0',
+    proof = '기능 개선과 교육 일정 안내입니다.';
+  const source = {
+    id,
+    uidl_hash: 'a'.repeat(64),
+    subject: '소식지',
+    sender: 'sender@example.test',
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-31T01:00:00Z',
+    text: '',
+    images: [
+      {
+        id: imageId,
+        name: '문서.png',
+        mediaType: 'image/png',
+        width: 480,
+        height: 160,
+        contentHash: Array.from(
+          new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+          (b) => b.toString(16).padStart(2, '0'),
+        ).join(''),
+        bytes,
+      },
+    ],
+  };
+  const value = {
+    intent: { kind: 'reference', evidence: proof },
+    group: null,
+    summary: [],
+    issues: [],
+    tasks: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [{ imageId, text: proof, confidence: 'readable' }],
+    imageDecisions: [{ imageId, kind: 'business_document', include: true }],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  let saved;
+  const run = () =>
+    analyzePrivateMail({
+      messageId: id,
+      key: 'fixture-key',
+      loadMail: async () => source,
+      fetcher: async () =>
+        lunaResponseFixture([{ type: 'text', text: JSON.stringify(value) }]),
+      store: {
+        claim: async () => ({ row: source, lease: 'fixture' }),
+        finish: async ({ analysis }) => {
+          saved = analysis;
+          return true;
+        },
+        fail: async () => true,
+      },
+    });
+  assert.equal((await run()).status, 'done');
+  assert.equal(saved.source.intent, 'reference');
+  assert.equal(saved.intent.evidenceSource, 'image');
+  assert.equal(saved.tasks.length, 0);
+  value.intent.kind = 'request';
+  assert.equal((await run()).status, 'done');
+  assert.equal(saved.source.intent, 'unknown');
+  assert.equal(saved.tasks.length, 0);
+  console.log(
+    'PASS image-only reference/routine evidence may use validated included readable facts; image evidence alone does not confirm personal request or create tasks',
+  );
+}

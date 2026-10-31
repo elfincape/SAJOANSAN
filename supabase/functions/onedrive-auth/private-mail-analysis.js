@@ -293,7 +293,13 @@ export function mailOwnershipContext({ text, headers = '', account = null }) {
   };
 }
 
-function normalizeOwnership(parsed, context, intentOverride, sourceId) {
+function normalizeOwnership(
+  parsed,
+  context,
+  intentOverride,
+  sourceId,
+  imageReferenceFacts = [],
+) {
   const kinds = [
     'request',
     'reference',
@@ -315,9 +321,20 @@ function normalizeOwnership(parsed, context, intentOverride, sourceId) {
     throw Error('ANALYSIS_FORMAT');
   const reasons = new Set(),
     reference = intentOverride === 'reference';
+  const visualReference =
+    !context.currentBody.trim() &&
+    ['reference', 'routine'].includes(parsed.intent.kind) &&
+    typeof parsed.intent.evidence === 'string'
+      ? imageReferenceFacts.find(
+          (fact) =>
+            fact.confidence === 'readable' &&
+            fact.text.includes(parsed.intent.evidence.trim()),
+        )
+      : null;
   const validIntent =
-    typeof parsed.intent.evidence === 'string' &&
-    context.currentBody.includes(parsed.intent.evidence.trim());
+    (typeof parsed.intent.evidence === 'string' &&
+      context.currentBody.includes(parsed.intent.evidence.trim())) ||
+    !!visualReference;
   const intent = {
     kind: reference
       ? 'reference'
@@ -325,6 +342,9 @@ function normalizeOwnership(parsed, context, intentOverride, sourceId) {
         ? parsed.intent.kind
         : 'unknown',
     evidence: validIntent ? parsed.intent.evidence.trim() : null,
+    ...(visualReference
+      ? { evidenceSource: 'image', imageId: visualReference.imageId }
+      : {}),
   };
   if (!validIntent && parsed.intent.kind !== 'unknown')
     reasons.add('intent_not_current');
@@ -752,7 +772,7 @@ summary(최대 3), issues(최대 10), tasks(최대 15), waiting(최대 10)은 �
 참고·정기보고도 읽을 수 있는 내용이 있으면 summary를 최소1개 작성하세요. 사용자 할 일이 없다는 이유로 요약을 비우지 마세요. summary는 원문 문장을 나열하지 말고, 읽는 사람이 바로 판단할 수 있게 1) 누가 어떤 상황/요청인지 2) 중요한 금액·수량·기간·변경 조건 3) 명시적으로 요청된 행동이 있다면 그 요청만 짧고 자연스럽게 통합하세요. 참고 자료에는 사용자 결정/행동을 덧붙이지 마세요. 의미가 겹치는 항목은 합치세요.
 주소·중개업소 연락처·기안일·서명·명함·전화·팩스·인사말·회신 인용문은 핵심 업무 판단에 꼭 필요한 경우에만 사용하고 단순 상세 나열은 빼세요.
 승인 결과 근거가 없으면 '미승인/승인 대기 중'을 단정하지 마세요. 사용자를 향한 직접 승인 요청이 확인된 경우에만 그 요청을 tasks에 넣으세요. 참고문서에는 승인 여부를 확인하라는 업무를 덧붙이지 말고 같은 업무를 issues/tasks/waiting에 중복하지 마세요.
-정상적인 정기보고·일일점검·정기실적 자료는 intent.kind=routine으로 분류하고 별도 할 일을 만들지 마세요. 정기보고 안에 온도 이탈·사고 등 이상이 있으면 해당 문제와 상태·대응만 issues로 추출하세요. 같은 업무의 후속 메일은 related의 기존 ref에 updates로 최신 상태와 이번 변경점만 연결하고 같은 업무를 tasks에 다시 만들지 마세요. 요청 대상이 사용자임을 확인할 수 없으면 임의 할 일이 아니라 intent.kind=unknown으로 두세요.
+정상적인 정기보고·일일점검·정기실적 자료는 intent.kind=routine으로 분류하고 별도 할 일을 만들지 마세요. 정기보고 안에 온도 이탈·사고 등 이상이 있으면 해당 문제와 상태·대응만 issues로 추출하세요. 같은 업무의 후속 메일은 related의 기존 ref에 updates로 최신 상태와 이번 변경점만 연결하고 같은 업무를 tasks에 다시 만들지 마세요. 요청 대상이 사용자임을 확인할 수 없으면 임의 할 일이 아니라 intent.kind=unknown으로 두세요. 텍스트 없이 이미지뿐인 안내·소식지는 reference/routine 분류가 가능하며 intent.evidence는 include=true인 같은 imageFacts.text의 정확한 연속 인용이어야 합니다. 이 이미지 근거로 개인 할 일이나 완료를 확정하지 마세요.
 담당·회신기한이 명시되지 않으면 null로 두며, 빈 구분을 채우려고 업무나 상태를 만들지 마세요. 이미지의 명함·서명·로고 정보는 imageFacts에 상세 전사하지 마세요. 업무에 필요한 문서·현장 정보만 사진 근거로 정리하세요.
 evidence는 화면 출력용이 아니라 내부 원문 검증용입니다. 요약에 원문을 다시 붙이지 말고 evidence 필드에만 정확히 보존하세요.
 summary도 문자열 배열이 아닌 객체 배열입니다. 모든 항목의 text와 evidence는 각각 문자열 하나이며 evidence를 배열/객체로 반환하지 마세요. 구조 예: {"summary":[{"text":"짧은 통합 요약","evidence":"입력에서 그대로 가져온 연속 인용 하나"}],"issues":[],"tasks":[],"waiting":[],"group":null}. 예제 문구를 실제 내용으로 복사하지 마세요.
@@ -1079,11 +1099,22 @@ export async function analyzePrivateMail({
     if (['body_headers', 'body_remote_images'].includes(loaded.analysisScope))
       analysis.source.analysisScope = loaded.analysisScope;
     analysis.source.thread = thread;
+    const imageResults = normalizeImageResults(parsed, images, mail.id);
+    const decisions = normalizeImageDecisions(
+      parsed.imageDecisions ?? (images.length ? null : []),
+      images,
+    );
+    const included = new Set(
+      decisions.filter((item) => item.include).map((item) => item.imageId),
+    );
     const ownership = normalizeOwnership(
       parsed,
       context,
       intentOverride,
       mail.id,
+      !mail.text.trim()
+        ? imageResults.imageFacts.filter((fact) => included.has(fact.imageId))
+        : [],
     );
     analysis.intent = ownership.intent;
     analysis.source.intent = ownership.intent.kind;
@@ -1091,7 +1122,8 @@ export async function analyzePrivateMail({
     analysis.source.ownerContext = context.ownerContext;
     analysis.source.bodySeparation = context.bodySeparation;
     analysis.source.analysisPolicy = {
-      version: 'mail-intent-v2',
+      version: 'mail-intent-v3-image-reference',
+      imageInputCount: images.length,
       model: response.model,
       analyzedAt: mail.analyzed_at,
       ownerFeedback: intentOverride === 'reference' ? 'owner_feedback' : null,
@@ -1108,14 +1140,6 @@ export async function analyzePrivateMail({
             ...mail,
             text: context.currentBody,
           });
-    const imageResults = normalizeImageResults(parsed, images, mail.id);
-    const decisions = normalizeImageDecisions(
-      parsed.imageDecisions ?? (images.length ? null : []),
-      images,
-    );
-    const included = new Set(
-      decisions.filter((item) => item.include).map((item) => item.imageId),
-    );
     analysis.imageDecisions = decisions;
     analysis.source.images = images
       .filter((image) => included.has(image.source.id))

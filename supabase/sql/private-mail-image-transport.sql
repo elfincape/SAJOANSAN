@@ -60,7 +60,8 @@ begin
  if p_message='11111111-1111-4111-8111-111111111111'::uuid then
   if p_url not in ('https://placehold.co/480x160.png','https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png') then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
  elsif not exists(select 1 from public.private_mail_messages m where m.id=p_message and m.mailbox_id=p_box and m.owner_id=p_user)
- or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
+ or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true
+ or coalesce(b.automation_config->'remoteImages'->p_message::text->'excludedUrls' ? p_url,false) then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
  select coalesce(jsonb_object_agg(key,value),'{}'::jsonb) into caps from jsonb_each(b.automation_dispatch)
  where (value->>'expiresAt')::timestamptz>clock_timestamp();
  if (select count(*) from jsonb_object_keys(caps))>=16 then raise exception 'IMAGE_TRANSPORT_BUSY'; end if;
@@ -86,7 +87,8 @@ begin
  if p_message='11111111-1111-4111-8111-111111111111'::uuid then
   if p_url not in ('https://placehold.co/480x160.png','https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png') then return false; end if;
  elsif not exists(select 1 from public.private_mail_messages m where m.id=p_message and m.mailbox_id=p_box and m.owner_id=b.owner_id)
- or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true then return false; end if;
+ or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true
+ or coalesce(b.automation_config->'remoteImages'->p_message::text->'excludedUrls' ? p_url,false) then return false; end if;
  update public.private_mailboxes set automation_dispatch=automation_dispatch-p_hash where id=p_box;
  return true;
 end; $$;

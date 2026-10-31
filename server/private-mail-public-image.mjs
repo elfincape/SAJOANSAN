@@ -104,14 +104,23 @@ export async function downloadPublicMailImage(
           async (response) => {
             try {
               stage = 'headers';
+              const declaredType = String(
+                response.headers['content-type'] ?? '',
+              )
+                .split(';')[0]
+                .trim()
+                .toLowerCase();
               if (
                 response.statusCode !== 200 ||
                 !response.socket?.authorized ||
                 canonical(response.socket.remoteAddress) !==
                   canonical(pin.address) ||
-                !/^image\/(?:png|jpeg|webp)(?:;|$)/i.test(
-                  response.headers['content-type'] ?? '',
-                ) ||
+                ![
+                  'image/png',
+                  'image/jpeg',
+                  'image/webp',
+                  'application/octet-stream',
+                ].includes(declaredType) ||
                 Number(response.headers['content-length'] ?? 0) > maxBytes ||
                 (response.headers['content-encoding'] &&
                   response.headers['content-encoding'] !== 'identity')
@@ -132,6 +141,8 @@ export async function downloadPublicMailImage(
                 !['image/png', 'image/jpeg', 'image/webp'].includes(
                   info.mediaType,
                 ) ||
+                (declaredType !== 'application/octet-stream' &&
+                  info.mediaType !== declaredType) ||
                 info.width <= 2 ||
                 info.height <= 2 ||
                 info.width > 8000 ||
@@ -144,6 +155,7 @@ export async function downloadPublicMailImage(
                     'Content-Type': info.mediaType,
                     'Content-Length': String(length),
                     'Cache-Control': 'no-store',
+                    'X-Content-Type-Options': 'nosniff',
                   },
                 }),
               );
