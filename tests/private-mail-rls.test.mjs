@@ -1256,3 +1256,147 @@ try {
 } finally {
   await db.close();
 }
+
+// Isolated manual-state regressions: no mail-server or OneNote operations.
+{
+  const manualDb = new PGlite();
+  const ownerId = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
+    mailboxId = '39045005-313e-42e1-b50c-2394b3b6ff26';
+  const received = new Date(Date.now() - 3600000).toISOString();
+  const kstDay = (value) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(value));
+  const tomorrow = new Date(
+    Date.parse(kstDay(new Date()) + 'T00:00:00Z') + 86400000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  try {
+    await manualDb.exec(`create role anon;create role authenticated;create role service_role;
+      create table public.user_profiles(id uuid primary key,active boolean);
+      create table public.private_mailboxes(id uuid primary key,owner_id uuid,enabled boolean,briefing_pages jsonb default '{}',automation_config jsonb default '{}');
+      create table public.private_mail_messages(mailbox_id uuid,owner_id uuid,report_day date,analysis_manual_selected_at timestamptz,analysis_status text,analysis jsonb);
+      create function public.private_mail_automation_allowed(uuid) returns boolean language sql as $$select false$$;
+      insert into public.user_profiles values('${ownerId}',true);
+      insert into public.private_mailboxes(id,owner_id,enabled) values('${mailboxId}','${ownerId}',true);
+      grant all on public.user_profiles,public.private_mailboxes,public.private_mail_messages to service_role;`);
+    await manualDb.exec(
+      await readFile(
+        new URL('../supabase/sql/private-mail-manual.sql', import.meta.url),
+        'utf8',
+      ),
+    );
+    await manualDb.exec('set role service_role');
+    const invoke = async (name, args) =>
+      (
+        await manualDb.query(
+          'select public.' +
+            name +
+            '(' +
+            args.map((_, i) => '$' + (i + 1)).join(',') +
+            ') value',
+          args,
+        )
+      ).rows[0].value;
+    for (const status of ['complete', 'cancelled', 'pending']) {
+      const entryId = crypto.randomUUID();
+      const item = {
+        itemId: 'item-001',
+        ref: entryId + ':manual:item-001',
+        kind: status === 'pending' ? 'reference' : 'task',
+        text: '합성 업무',
+        evidence: '합성 처리 이력',
+        visibleFrom: kstDay(received),
+        receivedAt: received,
+        submittedAt: received,
+        done: false,
+        completedAt: null,
+        completionEvents: [],
+        workflowStatus: status,
+        declaredAt: received,
+        ownerStateDeclared: true,
+      };
+      const initial = {
+        entryId,
+        status: 'ready',
+        submittedAt: received,
+        referenceDate: kstDay(received),
+        referenceSource: 'received',
+        items: [item],
+      };
+      await manualDb.query(
+        "update public.private_mailboxes set manual_entries=$2,briefing_pages='{}' where id=$1",
+        [mailboxId, { [entryId]: initial }],
+      );
+      assert.equal(
+        await invoke('private_mail_manual_rollover', [mailboxId, tomorrow]),
+        false,
+        status + ' must not create empty nextday work',
+      );
+      assert.equal(
+        await invoke('private_mail_report_allowed', [mailboxId, tomorrow]),
+        false,
+        status + ' alone must not enable an empty report',
+      );
+      if (status === 'pending') continue;
+      await invoke('private_mail_manual_update', [
+        mailboxId,
+        ownerId,
+        entryId,
+        'item-001',
+        false,
+      ]);
+      let stored = (
+        await manualDb.query(
+          'select manual_entries->$2 value from public.private_mailboxes where id=$1',
+          [mailboxId, entryId],
+        )
+      ).rows[0].value;
+      assert.equal(stored.items[0].done, false);
+      assert.ok(
+        stored.items[0].completionEvents.length > 0,
+        status + ' explicit reopen must be recorded',
+      );
+      if (status === 'complete')
+        assert.deepEqual(
+          stored.items[0].completionEvents.map((e) => e.done),
+          [true, false],
+        );
+      const events = stored.items[0].completionEvents.length;
+      await invoke('private_mail_manual_update', [
+        mailboxId,
+        ownerId,
+        entryId,
+        'item-001',
+        false,
+      ]);
+      stored = (
+        await manualDb.query(
+          'select manual_entries->$2 value from public.private_mailboxes where id=$1',
+          [mailboxId, entryId],
+        )
+      ).rows[0].value;
+      assert.equal(
+        stored.items[0].completionEvents.length,
+        events,
+        'same-state retry must not invent another event',
+      );
+      assert.equal(
+        await invoke('private_mail_manual_item_state', [
+          stored.items[0],
+          tomorrow,
+        ]).then((x) => x.done),
+        false,
+      );
+    }
+    console.log(
+      'PASS manual PostgreSQL closure: declared completion/cancellation reopens with immutable history; same-state idempotence; closed/reference-only records do not carry into empty nextday reports',
+    );
+  } finally {
+    await manualDb.close();
+  }
+}

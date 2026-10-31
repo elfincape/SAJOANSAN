@@ -150,7 +150,7 @@ function DailyOverview() {
       if (mounted.current)
         setFeedback(
           refreshed
-            ? '본인의 완료 확인을 저장했습니다. 메일 근거는 그대로 유지됩니다.'
+            ? '완료 상태를 저장했습니다. 원문과 처리 이력은 유지됩니다.'
             : '완료 확인을 저장했지만 목록을 갱신하지 못했습니다. 다시 조회해 주세요.',
         );
     } catch {

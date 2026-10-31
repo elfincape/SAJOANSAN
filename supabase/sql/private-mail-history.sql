@@ -175,8 +175,8 @@ begin
     from jsonb_each(coalesce(to_jsonb(new)->'briefing_overrides','{}'::jsonb)) where left(key,37)=changed_source::text||':';
    select m.id,m.analysis into entry from public.private_mail_messages m where m.id=changed_source and m.mailbox_id=new.id and m.analysis is not null;
    if found then
-    perform public.private_mail_history_capture_analysis(entry.id,entry.analysis,jsonb_build_object('ownerOverrides',old_correction));
-    perform public.private_mail_history_capture_analysis(entry.id,entry.analysis,jsonb_build_object('ownerOverrides',new_correction));
+    perform public.private_mail_history_capture_analysis(entry.id,entry.analysis,jsonb_build_object('ownerOverrides',old_correction,'intentOverride',to_jsonb(old)->'automation_config'->'intentOverrides'->changed_source::text));
+    perform public.private_mail_history_capture_analysis(entry.id,entry.analysis,jsonb_build_object('ownerOverrides',new_correction,'intentOverride',to_jsonb(new)->'automation_config'->'intentOverrides'->changed_source::text));
    end if;
   end loop;
  end if;

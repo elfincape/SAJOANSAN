@@ -148,7 +148,7 @@ end; $$;
 
 create or replace function public.private_mail_manual_update(p_box uuid,p_user uuid,p_entry uuid,p_item text,p_done boolean)
 returns jsonb language plpgsql security invoker set search_path='' as $$
-declare b public.private_mailboxes; e jsonb; items jsonb; item jsonb; events jsonb; candidate jsonb; index_number integer; now_at timestamptz; d date;
+declare b public.private_mailboxes; e jsonb; items jsonb; item jsonb; events jsonb; candidate jsonb; index_number integer; now_at timestamptz; d date; effective_done boolean; original_completed timestamptz;
 begin
  select * into b from public.private_mailboxes where id=p_box for update;e=b.manual_entries->p_entry::text;
  now_at=clock_timestamp();d=(now_at at time zone 'Asia/Seoul')::date;
@@ -156,14 +156,16 @@ begin
  or p_item is null or p_item !~ '^item-[0-9]{3}$' then return null; end if;
  select ordinal-1,value into index_number,item from jsonb_array_elements(e->'items') with ordinality as found(value,ordinal) where value->>'itemId'=p_item;
  if item is null then return null; end if;
- if (item->>'done')::boolean=p_done then
-  return jsonb_build_object('entryId',p_entry,'itemId',p_item,'done',p_done,'completedAt',item->'completedAt','reportDay',d);
- end if;
  events=coalesce(item->'completionEvents','[]'::jsonb);
  if jsonb_typeof(events) is distinct from 'array' then raise exception 'MANUAL_FORMAT'; end if;
- -- Preserve a legacy completion before the first reopening; new items always start with [].
- if jsonb_array_length(events)=0 and item->>'done'='true' and item->>'completedAt' is not null then
-  events=jsonb_build_array(jsonb_build_object('done',true,'at',to_char((item->>'completedAt')::timestamptz at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')));
+ effective_done=coalesce((item->>'done')::boolean,false) or (coalesce(item->>'workflowStatus','')='complete' and jsonb_array_length(events)=0);
+ original_completed=coalesce((item->>'completedAt')::timestamptz,case when item->>'workflowStatus'='complete' then (item->>'declaredAt')::timestamptz end);
+ if effective_done=p_done and not (coalesce(item->>'workflowStatus','')='cancelled' and jsonb_array_length(events)=0 and not p_done) then
+  return jsonb_build_object('entryId',p_entry,'itemId',p_item,'done',p_done,'completedAt',case when effective_done then original_completed end,'reportDay',d);
+ end if;
+ -- Retain the initial completion before the first explicit reopening.
+ if jsonb_array_length(events)=0 and effective_done and original_completed is not null then
+  events=jsonb_build_array(jsonb_build_object('done',true,'at',to_char(original_completed at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')));
  end if;
  events=events||jsonb_build_array(jsonb_build_object('done',p_done,'at',to_char(now_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')));
  -- No model regeneration or unrelated checkbox state is replaced by this atomic item edit.
@@ -192,8 +194,12 @@ begin
  if event is not null then
   return jsonb_build_object('done',(event->>'done')::boolean,'completedAt',case when event->>'done'='true' then event->>'at' else null end);
  end if;
- if jsonb_array_length(events)=0 and p_item->>'done'='true' and (p_item->>'completedAt')::timestamptz<boundary then
-  return jsonb_build_object('done',true,'completedAt',p_item->>'completedAt');
+ if jsonb_array_length(events)=0 and (p_item->>'done'='true' or p_item->>'workflowStatus'='complete')
+ and coalesce((p_item->>'completedAt')::timestamptz,(p_item->>'declaredAt')::timestamptz)<boundary then
+  return jsonb_build_object('done',true,'completedAt',coalesce(p_item->>'completedAt',p_item->>'declaredAt'));
+ end if;
+ if p_item->>'workflowStatus'='cancelled' and (p_item->>'declaredAt')::timestamptz<boundary then
+  return jsonb_build_object('done',false,'completedAt',null,'cancelled',true,'closedAt',p_item->>'declaredAt');
  end if;
  return jsonb_build_object('done',false,'completedAt',null);
 end; $$;
@@ -208,6 +214,8 @@ begin
  if page->>'manualRolloverDay'=p_day::text then return false; end if;
  if not exists(select 1 from jsonb_each(b.manual_entries) e,lateral jsonb_array_elements(e.value->'items') i
   where e.value->>'status'='ready' and ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date<=p_day
+  and (i->>'kind'<>'reference' or ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date=p_day)
+  and public.private_mail_manual_item_state(i,p_day)->>'cancelled' is distinct from 'true'
   and public.private_mail_manual_item_state(i,p_day)->>'done'='false') then return false; end if;
  page=page||jsonb_build_object('manualRolloverDay',p_day,'dirty',true,'revision',coalesce((page->>'revision')::integer,0)+1);
  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[p_day::text],page) where id=p_box;
@@ -226,8 +234,10 @@ returns boolean language sql stable security invoker set search_path='' as $$
  and m.report_day=p_day and m.analysis_manual_selected_at is not null and m.analysis_status='ready' and m.analysis is not null) or
  exists(select 1 from jsonb_each(b.manual_entries) e,lateral jsonb_array_elements(e.value->'items') i
  where e.value->>'status'='ready' and (e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul'<(p_day+1)::timestamp
- and (public.private_mail_manual_item_state(i,p_day)->>'done'='false'
- or ((public.private_mail_manual_item_state(i,p_day)->>'completedAt')::timestamptz at time zone 'Asia/Seoul')::date>=p_day))));
+ and (i->>'kind'<>'reference' or ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date=p_day)
+ and ((public.private_mail_manual_item_state(i,p_day)->>'done'='false' and public.private_mail_manual_item_state(i,p_day)->>'cancelled' is distinct from 'true')
+ or ((public.private_mail_manual_item_state(i,p_day)->>'completedAt')::timestamptz at time zone 'Asia/Seoul')::date>=p_day
+ or ((public.private_mail_manual_item_state(i,p_day)->>'closedAt')::timestamptz at time zone 'Asia/Seoul')::date>=p_day))));
 $$;
 
 do $$ declare f record; begin

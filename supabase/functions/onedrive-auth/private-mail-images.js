@@ -1,3 +1,5 @@
+import PostalMime from 'postal-mime';
+import { MAIL_RAW_LIMIT } from './private-mail-limits.js';
 export const MAIL_PHOTO_LIMITS = Object.freeze({
   count: 3,
   perImageBytes: 2100000,
@@ -229,9 +231,10 @@ function photoReason(file, info = {}, context = {}) {
     displaySmall ||=
       ref.width > 0 && ref.height > 0 && ref.width <= 1600 && ref.height <= 400;
   }
-  if (businessName.test(name) || caption) return null;
+  if (caption) return null;
   if (signatureName.test(name) || refs.some((ref) => ref.signature))
     return 'SIGNATURE_IMAGE';
+  if (businessName.test(name)) return null;
   const { width, height } = info;
   const small =
     width > 0 &&
@@ -267,6 +270,112 @@ function photoReason(file, info = {}, context = {}) {
   return null;
 }
 
+function possiblePhoto(file) {
+  const name = file.name ?? file.original_name ?? '';
+  return (
+    file.kind === 'attachment' &&
+    (/\.(?:jpe?g|png|webp)$/i.test(name) ||
+      !/\.[^.]{1,10}$/.test(name) ||
+      /^image\/(?:jpeg|png|webp)$/.test(file.mediaType ?? ''))
+  );
+}
+export function needsMailPhotoMetadata(files, html) {
+  if (!files.some(possiblePhoto)) return false;
+  if (
+    files.some(
+      (file) =>
+        possiblePhoto(file) &&
+        !/\.(?:jpe?g|png|webp)$/i.test(file.name ?? file.original_name ?? '') &&
+        !file.mediaType,
+    )
+  )
+    return true;
+  return imagePositions(html).images.some(
+    (image) =>
+      /^cid:/i.test(image.src) &&
+      !files.some((file) => {
+        const id = cid(file.contentId ?? file.content_id ?? file.cid);
+        const name = cid(
+          (file.name ?? file.original_name ?? '').split(/[\\/]/).at(-1),
+        );
+        return id
+          ? cid(image.src) === id
+          : cid(image.src) === name || cid(image.src).split('@')[0] === name;
+      }),
+  );
+}
+export async function recoverMailPhotoMetadata(files, raw) {
+  if (
+    !(raw instanceof Uint8Array) ||
+    !raw.byteLength ||
+    raw.byteLength > MAIL_RAW_LIMIT
+  )
+    throw Error('IMAGE_CONTEXT_REVIEW');
+  let parsed;
+  try {
+    const input =
+      raw.byteOffset === 0 && raw.byteLength === raw.buffer.byteLength
+        ? raw.buffer
+        : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+    parsed = await PostalMime.parse(input, {
+      forceRfc822Attachments: true,
+      maxNestingDepth: 20,
+      maxPartCount: 60,
+      maxHeadersSize: 65536,
+      maxForwardedAddresses: 50,
+      maxRfc822NestingDepth: 0,
+    });
+  } catch {
+    throw Error('IMAGE_CONTEXT_REVIEW');
+  }
+  parsed.text = undefined;
+  parsed.html = undefined;
+  const wanted = new Set(
+    files.filter(possiblePhoto).map((file) => file.byte_size),
+  );
+  const metadata = new Map();
+  for (const attachment of parsed.attachments ?? []) {
+    const content = attachment.content;
+    attachment.content = undefined;
+    const data =
+      content instanceof ArrayBuffer
+        ? new Uint8Array(content)
+        : ArrayBuffer.isView(content)
+          ? new Uint8Array(
+              content.buffer,
+              content.byteOffset,
+              content.byteLength,
+            )
+          : null;
+    if (!data || !wanted.has(data.byteLength)) continue;
+    const hash = [
+      ...new Uint8Array(await crypto.subtle.digest('SHA-256', data)),
+    ]
+      .map((n) => n.toString(16).padStart(2, '0'))
+      .join('');
+    const key = hash + ':' + data.byteLength;
+    const entry = {
+      contentId: attachment.contentId ?? null,
+      disposition: attachment.disposition ?? null,
+      mediaType: attachment.mimeType,
+    };
+    const values = metadata.get(key) ?? [];
+    if (
+      !values.some((value) => JSON.stringify(value) === JSON.stringify(entry))
+    )
+      values.push(entry);
+    metadata.set(key, values);
+  }
+  return files.map((file) => {
+    if (!possiblePhoto(file)) return file;
+    const matches =
+      metadata.get(canonicalHash(file.content_hash) + ':' + file.byte_size) ??
+      [];
+    if (matches.length !== 1) throw Error('IMAGE_CONTEXT_REVIEW');
+    return { ...file, ...matches[0] };
+  });
+}
+
 export function selectMailPhotos({
   subject = '',
   text = '',
@@ -292,7 +401,10 @@ export function selectMailPhotos({
   };
   let total = 0;
   for (const file of files) {
-    if (!/\.(?:jpe?g|png|webp)$/i.test(file?.name || '')) {
+    if (
+      !/\.(?:jpe?g|png|webp)$/i.test(file?.name || '') &&
+      !/^image\/(?:jpeg|png|webp)$/.test(file?.mediaType ?? '')
+    ) {
       excluded.push({ ...file, reason: 'UNSUPPORTED_IMAGE_TYPE' });
       continue;
     }
