@@ -548,6 +548,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     'private-mail-run-now',
     'private-mail-job-stop',
     'private-mail-daily-overview',
+    'private-mail-intent-correction',
     'private-mail-analyze-one',
     'private-mail-report-now',
   ];

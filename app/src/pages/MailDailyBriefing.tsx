@@ -154,6 +154,32 @@ function DailyOverview() {
       if (mounted.current) setPending(null);
     }
   }
+  async function correctIntent(source: Source) {
+    if (saving.current || loading) return;
+    saving.current = true;
+    setPending('intent:' + source.id);
+    setFeedback('');
+    try {
+      const result = await privateMail.correctIntent(
+        source.id,
+        !source.intentCorrected,
+      );
+      if (!result.saved) throw Error('CORRECTION_NOT_SAVED');
+      const refreshed = await load();
+      if (mounted.current)
+        setFeedback(
+          refreshed
+            ? '분류 정정을 저장했습니다.'
+            : '정정은 저장됐지만 목록을 새로 불러오지 못했습니다. 다시 조회해 주세요.',
+        );
+    } catch {
+      if (mounted.current)
+        setFeedback('분류 정정을 저장하지 못했습니다. 기존 내용을 유지합니다.');
+    } finally {
+      saving.current = false;
+      if (mounted.current) setPending(null);
+    }
+  }
   function applyDate() {
     if (saving.current || loading || !validDay(dateInput)) return;
     if (dateInput === day) {
@@ -354,6 +380,18 @@ function DailyOverview() {
                                 <li key={index}>{summary.text}</li>
                               ))}
                             </ul>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              disabled={loading || pending !== null}
+                              onClick={() => void correctIntent(mail.source)}
+                            >
+                              {pending === 'intent:' + mail.source.id
+                                ? '저장 중…'
+                                : mail.source.intentCorrected
+                                  ? '참고 정정 해제'
+                                  : '참고 자료로 정정'}
+                            </button>
                           </article>
                         ))}
                       </div>

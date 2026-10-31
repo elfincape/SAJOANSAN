@@ -36,6 +36,16 @@ export async function handleMailAutomation(action, body, user, ctx) {
   };
   const current = await box();
   const ready = Object.hasOwn(current, 'automation_config');
+  if (action === 'private-mail-intent-correction') {
+    if (!uuid(body.id) || typeof body.reference !== 'boolean')
+      throw fail('CORRECTION_INVALID');
+    const saved = await rpc('private_mail_intent_correct', {
+      p_message: body.id,
+      p_user: user.id,
+      p_reference: body.reference,
+    });
+    return json({ saved: saved === true });
+  }
   async function workerProbe() {
     try {
       const response = await fetcher(
@@ -175,6 +185,10 @@ export async function handleMailAutomation(action, body, user, ctx) {
           source: {
             ...row.analysis.source,
             analysisState: row.analysis_status,
+            intentCorrected:
+              current.automation_config?.intentOverrides?.[
+                row.analysis.source.id
+              ]?.source === 'owner_feedback',
             ...(current.automation_config?.intentOverrides?.[
               row.analysis.source.id
             ]?.intent === 'reference'

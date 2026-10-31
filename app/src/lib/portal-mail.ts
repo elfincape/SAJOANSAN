@@ -50,6 +50,7 @@ export interface DailyMailSource {
   sentAt?: string;
   intent?: string;
   analysisState?: string;
+  intentCorrected?: boolean;
 }
 export interface DailyMailItem {
   ref: string;
@@ -207,6 +208,11 @@ export const privateMail = {
 
   dailyOverview: (day?: string) =>
     oneDriveCall<DailyMailOverview>('private-mail-daily-overview', { day }),
+  correctIntent: (id: string, reference: boolean) =>
+    oneDriveCall<{ saved: boolean }>('private-mail-intent-correction', {
+      id,
+      reference,
+    }),
   setTaskStatus: (body: { ref: string; done: boolean; day: string }) =>
     oneDriveCall<{ saved: boolean }>('private-mail-item-status', body),
   filterStatus: (offset = 0) =>
