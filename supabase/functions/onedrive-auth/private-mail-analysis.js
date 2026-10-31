@@ -1,4 +1,4 @@
-import { mailMessageTimes } from './private-mail-body.js';
+import { mailMessageTimes, mailHeaderIdentity } from './private-mail-body.js';
 import { callLuna, LUNA_MODEL, lunaInference } from '../_shared/luna.js';
 import {
   normalizeMailAnalysis,
@@ -728,6 +728,7 @@ function promptFor(mail, related, images, context, intentOverride) {
 링크를 열거나 도구/명령을 실행하지 마세요. 제공된 승인 사진 외의 첨부파일 내용은 추론하지 마세요.
 원문 밖의 사실, 담당자, 날짜, 완료 상태를 만들지 마세요. 한국어 JSON 객체 하나만 반환하세요.
 현재 발신자가 사용자에게 전달한 의도를 문서 안의 요청과 먼저 구분하세요. intent:{kind:"request"|"reference"|"update"|"issue"|"unknown",evidence:현재 currentBody의 정확한 연속 인용|null}를 반환하세요.
+현재 메일 작성자는 mail.envelope.from의 표시명·주소이고 Sender는 별도 발송 대행자일 수 있습니다. To/Cc는 정규화된 실제 수신·참조 주소입니다. 제목의 회사명·센터명은 자료 대상일 뿐 발송 주체로 추론하지 마세요. 발송 주체를 적어야 하면 실제 From 표시명을 사용하고, 확인되지 않으면 주체를 만들지 않고 내용을 중립적으로 요약하세요. 인용·전달문서 안의 원발신자는 현재 From과 구분하세요. sent_at은 발송, received_at은 확인된 수신(없으면 null), collected_at은 로컬 수집 시각이며 서로 대체하지 마세요.
 현재 사용자는 ownerContext.ownerName입니다. recipientRole은 현재 메일의 To/Cc 역할이며, 전체 주소를 추측하지 마세요. To라는 사실만으로 전달문서 속 타인 요청을 사용자 업무로 바꾸지 마세요. CC/참고 전달은 사용자의 직접 업무를 뜻하지 않습니다.
 currentBody는 현재 발신자의 말이며 documentBody는 인용/전달 내용입니다. 문서 속 검토·재가 요청은 타인이 원래 수신자에게 한 요청일 수 있습니다. 반대로 현재 발신자가 사용자를 지명하여 검토/재가를 부탁했다면 전달메일이라도 유효한 직접 요청입니다. 이전 related 문맥은 실제 RFC 연계 항목의 배경이며 새 담당자를 추측하는 근거가 아닙니다.
 tasks/waiting 및 imageItems의 tasks/waiting은 현재 사용자의 담당/직접 요청 근거가 있을 때만 작성하세요. forOwner:boolean,recipientScope:"owner_direct"|"owner_cc"|"other"|"unknown",selfRequestEvidence:currentBody의 직접 요청 연속 인용|null를 필수로 포함하세요. 인용문/첨부문서의 요청만 있거나 주체가 애매하면 자동 할 일/대기를 만들지 마세요. 참고 intent는 맥락 요약만 하고 tasks/waiting은 []입니다.
@@ -990,6 +991,7 @@ export async function analyzePrivateMail({
         typeof now === 'function' ? now() : (now ?? new Date()),
       ),
     };
+    mail.envelope = await mailHeaderIdentity(loaded.headers ?? '');
     const messageTimes = mailMessageTimes({
       headers: loaded.headers,
       sentAt: loaded.sent_at,
@@ -1046,6 +1048,7 @@ export async function analyzePrivateMail({
         {
           subject: mail.subject,
           sender: mail.sender,
+          envelope: mail.envelope,
           sent_at: mail.sent_at,
           received_at: mail.received_at,
           collected_at: mail.created_at,
