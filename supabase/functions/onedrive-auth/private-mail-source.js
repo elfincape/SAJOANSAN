@@ -350,15 +350,43 @@ export function createMailSource({
     )
       throw Error('NOTES_IMAGE_SOURCE');
     if (descriptor.remoteUrl) {
-      const loaded = await loadMail(row);
-      const image = loaded.images?.find(
-        (item) =>
-          item.id === descriptor.id &&
-          item.remoteUrl === descriptor.remoteUrl &&
-          item.contentHash === descriptor.contentHash,
-      );
-      if (!image) throw Error('NOTES_IMAGE_SOURCE');
-      return { ...descriptor, bytes: image.bytes };
+      if (
+        !row.analysis?.source?.images?.some(
+          (image) =>
+            image.id === descriptor.id &&
+            image.remoteUrl === descriptor.remoteUrl &&
+            image.contentHash === descriptor.contentHash,
+        )
+      )
+        throw Error('NOTES_IMAGE_SOURCE');
+      return access(row, async ({ box, bytes }) => {
+        const approved =
+          box.automation_config?.remoteImages?.[row.id]?.approvedUrls;
+        if (
+          box.automation_config?.analysisScopes?.[row.id] === 'body_headers' ||
+          !Array.isArray(approved) ||
+          !approved.includes(descriptor.remoteUrl)
+        )
+          throw Error('NOTES_IMAGE_SOURCE');
+        const htmlFile = row.files.find((file) => file.kind === 'html');
+        if (!htmlFile) throw Error('NOTES_IMAGE_SOURCE');
+        const html = new TextDecoder().decode(await bytes(htmlFile));
+        const index = Number(descriptor.id.slice(row.id.length + 1));
+        if (
+          remoteMailImageManifest(html).content[index]?.url !==
+          descriptor.remoteUrl
+        )
+          throw Error('NOTES_IMAGE_SOURCE');
+        const [image] = await loadApprovedRemoteMailImages({
+          html: '<img src="' + descriptor.remoteUrl + '">',
+          approvedUrls: approved,
+          sourceId: row.id,
+          fetcher: remoteFetcher,
+        });
+        if (image?.contentHash !== descriptor.contentHash)
+          throw Error('NOTES_IMAGE_SOURCE');
+        return { ...descriptor, bytes: image.bytes };
+      });
     }
     const index = Number(descriptor.id.slice(descriptor.sourceId.length + 1)),
       file = row.files[index];
