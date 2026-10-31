@@ -272,7 +272,13 @@ export function normalizeManualItems(
     text.length > 12000
   )
     throw Error('MANUAL_SOURCE');
-  const receivedAt = instant(submittedAt).toISOString(),
+  const receivedInstant = instant(submittedAt);
+  // PostgreSQL receipt timestamps can have microseconds; Date truncates them.
+  // Preserve the authoritative source timestamp for exact RPC identity checks.
+  const receivedAt =
+      typeof submittedAt === 'string'
+        ? submittedAt
+        : receivedInstant.toISOString(),
     visibleFrom = kstDay(receivedAt),
     base = referenceDate ?? visibleFrom;
   if (

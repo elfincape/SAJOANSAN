@@ -1302,6 +1302,70 @@ try {
           args,
         )
       ).rows[0].value;
+    {
+      const { normalizeManualItems } =
+        await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+      const requestId = crypto.randomUUID(),
+        leaseId = crypto.randomUUID();
+      const text =
+        '11/2 월\n쿠팡창원 4p 배차입니다.\n하차 13:15\n경상남도 창원시 진해구 두동로 33 A동 5층';
+      const claim = await invoke('private_mail_manual_claim', [
+        mailboxId,
+        ownerId,
+        requestId,
+        text,
+        'a'.repeat(64),
+        null,
+        leaseId,
+      ]);
+      const precise = '2026-10-31T06:21:08.135431+00:00';
+      const entry = {
+        ...claim.entry,
+        submittedAt: precise,
+        referenceDate: '2026-10-31',
+      };
+      await manualDb.query(
+        'update public.private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',
+        [mailboxId, entry.entryId, entry],
+      );
+      const items = normalizeManualItems(
+        {
+          items: [
+            {
+              kind: 'dispatch',
+              text: '11/2 쿠팡창원 배차 준비 · 4p · 하차 13:15',
+              evidence: text,
+              serviceOriginal: '11/2',
+              dueOriginal: null,
+              assignee: null,
+              needsConfirmation: false,
+            },
+          ],
+        },
+        {
+          text,
+          entryId: entry.entryId,
+          submittedAt: precise,
+          referenceDate: entry.referenceDate,
+        },
+      );
+      const saved = await invoke('private_mail_manual_finish', [
+        mailboxId,
+        ownerId,
+        entry.entryId,
+        leaseId,
+        items,
+        null,
+        {},
+      ]);
+      assert.equal(saved.status, 'ready');
+      assert.equal(saved.items[0].submittedAt, precise);
+      assert.equal(saved.items[0].serviceDate, '2026-11-02');
+      assert.equal(saved.items[0].dueAt, null);
+      console.log(
+        'PASS real manual SQL preserves PostgreSQL microsecond receipt identity through normalization and finish',
+      );
+    }
     for (const status of ['complete', 'cancelled', 'pending']) {
       const entryId = crypto.randomUUID();
       const item = {
