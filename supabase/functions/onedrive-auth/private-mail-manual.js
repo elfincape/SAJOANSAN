@@ -733,7 +733,11 @@ export function manualDailyView(entries, day) {
               : tasks
         ).push(publicValue);
       }
-    if (items.length || receivedDay === day)
+    if (
+      items.length ||
+      receivedDay === day ||
+      (receivedDay < day && entry.status !== 'ready')
+    )
       selected.push(publicEntry(entry, items));
   }
   selected.sort(
@@ -867,7 +871,10 @@ export async function handleManualMessage(action, body, user, ctx) {
     const reportQueued = await enqueue(result.reportDay);
     return json({ ...result, reportQueued });
   }
-  if (action !== 'private-mail-manual-add') throw fail('MANUAL_ACTION_INVALID');
+  if (
+    !['private-mail-manual-add', 'private-mail-manual-enqueue'].includes(action)
+  )
+    throw fail('MANUAL_ACTION_INVALID');
   if (
     !uuid.test(body.clientRequestId ?? '') ||
     typeof body.text !== 'string' ||
@@ -892,6 +899,24 @@ export async function handleManualMessage(action, body, user, ctx) {
     (v) => v.toString(16).padStart(2, '0'),
   ).join('');
   if (requiresMailPrivacyReview(text)) throw fail('MAIL_PRIVACY_REVIEW', 409);
+  if (action === 'private-mail-manual-enqueue' && !structured) {
+    const result = await rpc('private_mail_manual_enqueue', {
+      p_request: body.clientRequestId,
+      p_text: text,
+      p_hash: hash,
+      p_reference: body.referenceDate ?? null,
+      p_retry: body.retry === true,
+    });
+    if (!result?.entry) throw fail('MANUAL_CLAIM_FAILED', 409);
+    return json(
+      publicEntry(
+        result.entry,
+        (result.entry.items ?? []).map((item) =>
+          publicItem(item, result.entry.entryId),
+        ),
+      ),
+    );
+  }
   const lease = crypto.randomUUID();
   const claim = await rpc('private_mail_manual_claim', {
     p_request: body.clientRequestId,

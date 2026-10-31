@@ -5110,3 +5110,224 @@ console.log(
     'PASS normalized mail headers: decoded actual From versus Sender/subject, To/Cc preserved, subject-only sender attribution removed',
   );
 }
+
+{
+  const id = '77777777-3333-4333-8333-777777777777';
+  const mail = {
+    id,
+    uidl_hash: 'b'.repeat(64),
+    subject: '가상센터 일일 온도점검',
+    sender: 'sender@example.test',
+    sent_at: '2026-10-31T01:00:00Z',
+    created_at: '2026-10-31T02:00:00Z',
+    text: '정기 온도점검 자료입니다. 냉동 온도 이탈이 확인되어 재확인 중입니다.',
+  };
+  const normal = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        {
+          text: '가상센터 정기 온도점검 자료.',
+          evidence: '정기 온도점검 자료입니다.',
+        },
+      ],
+      tasks: [],
+      issues: [],
+      waiting: [],
+    },
+    mail,
+  );
+  normal.source.intent = 'routine';
+  normal.intent = { kind: 'routine' };
+  let view = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [normal],
+  });
+  assert.equal(view.workItems.length, 1);
+  assert.equal(view.workItems[0].section, 'routine');
+  assert.equal(view.workItems[0].controlRef, null);
+  assert.ok(
+    briefing
+      .renderDailyBriefing({
+        now: '2026-10-31T12:00:00+09:00',
+        analyses: [normal],
+      })
+      .html.includes('정기보고메일'),
+  );
+  const abnormal = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        { text: '정기 온도점검 자료.', evidence: '정기 온도점검 자료입니다.' },
+      ],
+      tasks: [],
+      issues: [
+        {
+          text: '냉동 온도 이탈',
+          evidence: '냉동 온도 이탈이 확인되어 재확인 중입니다.',
+          impact: '냉동 상태 재확인',
+          latest: '재확인 중',
+          status: 'needs_confirmation',
+        },
+      ],
+      waiting: [],
+    },
+    mail,
+  );
+  abnormal.source.intent = 'routine';
+  abnormal.intent = { kind: 'routine' };
+  view = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [abnormal],
+  });
+  assert.equal(view.workItems.length, 1);
+  assert.equal(view.workItems[0].section, 'issues');
+  assert.ok(!view.workItems[0].summary.includes('정기 온도점검 자료.'));
+  const unclear = structuredClone(normal);
+  unclear.source.intent = 'unknown';
+  unclear.intent = { kind: 'unknown' };
+  unclear.review = {
+    withheldTasks: 1,
+    withheldWaiting: 0,
+    reasons: ['owner_not_confirmed'],
+  };
+  view = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [unclear],
+  });
+  assert.equal(view.workItems[0].section, 'review');
+  assert.equal(view.workItems[0].controlRef, null);
+  assert.equal(view.tasks.length, 0);
+  assert.equal(
+    briefing.dailyBriefingView({
+      now: '2026-11-01T12:00:00+09:00',
+      analyses: [unclear],
+    }).workItems[0].section,
+    'review',
+    'unresolved ownership remains visible without another mail',
+  );
+  const corrected = briefing.applyMailIntentOverride(unclear, {
+    intent: 'reference',
+  });
+  assert.equal(
+    briefing.dailyBriefingView({
+      now: '2026-10-31T12:00:00+09:00',
+      analyses: [corrected],
+    }).workItems[0].section,
+    'reference',
+  );
+  console.log(
+    'PASS work-centered report policy: routine separated, anomalies only as issues, uncertain ownership stays review not an invented task, explicit reference correction wins',
+  );
+}
+
+{
+  const first = '44444444-5555-4555-8555-444444444444',
+    second = '66666666-5555-4555-8555-666666666666';
+  const a = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        {
+          text: '운송실적자료 확인 요청.',
+          evidence: '운송실적자료를 확인해 주세요.',
+        },
+      ],
+      tasks: [
+        {
+          text: '운송실적자료 확인',
+          evidence: '운송실적자료를 확인해 주세요.',
+          assignee: null,
+          due: null,
+        },
+      ],
+      issues: [],
+      waiting: [],
+    },
+    {
+      id: first,
+      uidl_hash: '1'.repeat(64),
+      subject: '실적 확인',
+      sender: 'sender@example.test',
+      sent_at: '2026-10-31T01:00:00Z',
+      created_at: '2026-10-31T01:01:00Z',
+      text: '운송실적자료를 확인해 주세요.',
+    },
+  );
+  a.source.thread = {
+    messageId: '<first@example.test>',
+    inReplyTo: [],
+    references: [],
+  };
+  const b = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        {
+          text: '운송실적자료 확인 완료 회신.',
+          evidence: '운송실적자료 확인을 완료했습니다.',
+        },
+      ],
+      tasks: [],
+      issues: [],
+      waiting: [],
+    },
+    {
+      id: second,
+      uidl_hash: '2'.repeat(64),
+      subject: 'Re: 실적 확인',
+      sender: 'reply@example.test',
+      sent_at: '2026-10-31T03:00:00Z',
+      created_at: '2026-10-31T03:01:00Z',
+      text: '운송실적자료 확인을 완료했습니다.',
+    },
+  );
+  b.source.thread = {
+    messageId: '<second@example.test>',
+    inReplyTo: ['<first@example.test>'],
+    references: ['<first@example.test>'],
+  };
+  b.updates = [
+    {
+      ref: first + ':tasks:0',
+      sourceId: second,
+      status: 'complete',
+      evidence: '운송실적자료 확인을 완료했습니다.',
+      text: '운송실적자료 확인 완료',
+    },
+  ];
+  const view = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [a, b],
+  });
+  assert.equal(
+    view.workItems.length,
+    1,
+    'reply status is not repeated as a separate mail-summary work item',
+  );
+  assert.equal(view.workItems[0].workId, first + ':tasks:0');
+  assert.equal(view.workItems[0].status, 'complete');
+  assert.equal(view.workItems[0].sourceRefs.length, 2);
+  assert.equal(view.workItems[0].progress, '운송실적자료 확인 완료');
+  assert.equal(view.workItems[0].closedAt, '2026-10-31T03:00:00.000Z');
+  const owner = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [a, b],
+    overrides: {
+      [first + ':tasks:0']: {
+        done: false,
+        actor: 'owner',
+        updatedAt: '2026-10-31T02:00:00Z',
+      },
+    },
+  });
+  assert.equal(
+    owner.workItems[0].status,
+    'pending',
+    'owner decision is not overwritten by a later inferred mail reply',
+  );
+  assert.equal(
+    owner.workItems[0].progress,
+    null,
+    'inferred completed progress must not contradict owner reopening',
+  );
+  console.log(
+    'PASS mail work continuity: request plus completion reply is one stable work, only latest progress, source history retained, owner status preserved',
+  );
+}

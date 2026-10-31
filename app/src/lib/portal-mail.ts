@@ -105,8 +105,10 @@ export interface DailyMailOverview {
   sources: DailyMailSource[];
 }
 export interface DailyWork {
-  section: 'tasks' | 'issues' | 'reference' | 'completed';
+  section:
+    'tasks' | 'issues' | 'reference' | 'routine' | 'review' | 'completed';
   schema: 'sajo-daily-work-v1';
+  reportKind?: 'routine' | 'review' | null;
   workId: string;
   portalTaskId: string | null;
   controlRef: string | null;
@@ -210,7 +212,7 @@ export interface MailManualItem {
 }
 export interface MailManualEntry {
   entryId: string;
-  status: 'ready' | 'processing' | 'failed';
+  status: 'ready' | 'pending' | 'processing' | 'failed';
   submittedAt: string;
   receivedAt?: string;
   reportDay: string;
@@ -238,6 +240,12 @@ export const privateMail = {
       referenceDate: string | null;
       authoredDate: string | null;
     }>('private-mail-manual-source', { entryId }),
+  manualEnqueue: (body: {
+    text: string;
+    clientRequestId: string;
+    referenceDate?: string | null;
+    retry?: boolean;
+  }) => oneDriveCall<MailManualEntry>('private-mail-manual-enqueue', body),
   manualAdd: (body: {
     text: string;
     clientRequestId: string;

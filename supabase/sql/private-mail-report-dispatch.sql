@@ -27,6 +27,12 @@ begin
   return public.private_mail_report_allowed(p_box,d) and coalesce((b.briefing_pages->p_target->>'dirty'='true'
    or (b.briefing_pages->p_target->>'leaseUntil')::timestamptz>clock_timestamp()),false);
  end if;
+ -- Explicitly submitted manual messages use the existing analyze transport,
+ -- independently of the scheduled POP/mail-analysis switch.
+ if p_kind='analyze' and b.manual_entries ? p_target then
+  return (b.manual_entries->p_target->>'status') in ('pending','processing','failed')
+   and coalesce((b.manual_entries->p_target->>'attempts')::integer,0)<3;
+ end if;
  if not public.private_mail_automation_allowed(p_box) or b.automation_config->>'analysisConsent' is distinct from 'true' then return false; end if;
  if p_kind='analyze' then
   if coalesce(p_target,'') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then return false; end if;
@@ -43,9 +49,10 @@ declare b public.private_mailboxes; item record; caps jsonb; token text; token_h
  queued boolean=false; recent boolean; entry record; issued timestamptz; notes_connected boolean=false;
 begin
  if p_history_only is null or not public.private_mail_manual_allowed(p_box,'2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid)
- or (not p_history_only and p_report_day is null and not public.private_mail_automation_allowed(p_box))
+ or (not p_history_only and p_report_day is null and p_history is null and not public.private_mail_automation_allowed(p_box))
  or (p_report_day is not null and not public.private_mail_report_allowed(p_box,p_report_day))
- or (p_history_only and p_report_day is not null) or (not p_history_only and p_history is not null) then return false; end if;
+ or (p_history_only and p_report_day is not null)
+ or (not p_history_only and p_history is not null and (p_report_day is not null or not public.private_mail_dispatch_target_allowed(p_box,'analyze',p_history::text) or not exists(select 1 from public.private_mailboxes x where x.id=p_box and x.manual_entries ? p_history::text))) then return false; end if;
  select * into b from public.private_mailboxes where id=p_box for update;
  -- Only report transport depends on Notes; collection and local analysis remain independent.
  begin
@@ -61,21 +68,27 @@ begin
  update public.private_mailboxes set automation_dispatch=caps where id=p_box;
  for item in
   select 'collect'::text as kind,b.automation_job->>'id' as target,0 as priority
-  where not p_history_only and p_report_day is null and b.automation_job->>'status' in ('queued','running') and (b.automation_job->>'attempts')::integer<5
+  where not p_history_only and p_report_day is null and p_history is null and b.automation_job->>'status' in ('queued','running') and (b.automation_job->>'attempts')::integer<5
    and not coalesce((b.automation_job->>'stopRequested')::boolean,false)
    and coalesce((b.automation_job->>'notBefore')::timestamptz,'-infinity')<=clock_timestamp()
    and coalesce((b.automation_job->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
    and coalesce(b.lease_until,'-infinity')<=clock_timestamp()
   union all
   select 'analyze',m.id::text,1 from
-   (select m0.* from public.private_mail_messages m0 where not p_history_only and p_report_day is null and m0.mailbox_id=p_box
+   (select m0.* from public.private_mail_messages m0 where not p_history_only and p_report_day is null and p_history is null and m0.mailbox_id=p_box
     and public.private_mail_dispatch_target_allowed(p_box,'analyze',m0.id::text)
     and m0.analysis_attempts<5 and coalesce(m0.analysis_next_at,'-infinity')<=clock_timestamp()
     and coalesce(m0.analysis_lease_until,'-infinity')<=clock_timestamp()
     order by m0.created_at,m0.id limit 5) m
   union all
+  select 'analyze',e.key,1 from jsonb_each(b.manual_entries) e
+   where not p_history_only and p_report_day is null and (p_history is null or e.key=p_history::text)
+   and public.private_mail_dispatch_target_allowed(p_box,'analyze',e.key)
+   and coalesce((e.value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
+   and coalesce((e.value->>'nextAt')::timestamptz,'-infinity')<=clock_timestamp()
+  union all
   select 'report',r.key,2 from
-   (select key from jsonb_each(b.briefing_pages) where not p_history_only and notes_connected and coalesce(value->>'hold','false')<>'true' and coalesce(value->>'ownerPreviewHold','false')<>'true'
+   (select key from jsonb_each(b.briefing_pages) where not p_history_only and p_history is null and notes_connected and coalesce(value->>'hold','false')<>'true' and coalesce(value->>'ownerPreviewHold','false')<>'true'
     and (p_report_day is null or key=p_report_day::text) and value->>'dirty'='true'
     and public.private_mail_dispatch_target_allowed(p_box,'report',key)
     and coalesce((value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
@@ -83,7 +96,7 @@ begin
     order by key limit 3) r
   union all
   select 'history',h.id::text,3 from
-   (select h0.id,h0.created_at from public.private_mail_analysis_history h0 where p_report_day is null
+   (select h0.id,h0.created_at from public.private_mail_analysis_history h0 where p_report_day is null and (p_history_only or p_history is null)
     and (p_history is null or h0.id=p_history) and h0.mailbox_id=p_box
     and public.private_mail_dispatch_target_allowed(p_box,'history',h0.id::text)
     and coalesce(h0.next_at,'-infinity')<=clock_timestamp()
@@ -181,6 +194,21 @@ begin
  for b in select * from public.private_mailboxes where id='39045005-313e-42e1-b50c-2394b3b6ff26'::uuid loop
   perform public.private_mail_manual_rollover(b.id,(clock_timestamp() at time zone 'Asia/Seoul')::date);
   if public.private_mail_dispatch_history(b.id,null::uuid) then count_dispatched=count_dispatched+1; end if;
+  update public.private_mailboxes x set manual_entries=(select jsonb_object_agg(e.key,case
+   when e.value->>'status'='processing' and coalesce((e.value->>'attempts')::integer,0)>=3
+    and coalesce((e.value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
+   then (e.value-'lease'-'leaseUntil')||jsonb_build_object('status','failed','error','RETRY_LIMIT','nextAt',clock_timestamp(),'updatedAt',clock_timestamp())
+   else e.value end) from jsonb_each(x.manual_entries) e)
+   where x.id=b.id and exists(select 1 from jsonb_each(x.manual_entries) e where e.value->>'status'='processing'
+    and coalesce((e.value->>'attempts')::integer,0)>=3 and coalesce((e.value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp());
+  -- Browser-independent recovery of explicitly saved messages, including when
+  -- scheduled mail collection is paused. No retry of ready/terminal entries.
+  for report_day in select e.key from jsonb_each(b.manual_entries) e where
+   public.private_mail_dispatch_target_allowed(b.id,'analyze',e.key)
+   and coalesce((e.value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
+   and coalesce((e.value->>'nextAt')::timestamptz,'-infinity')<=clock_timestamp() loop
+    if public.private_mail_dispatch_core(b.id,null::date,report_day::uuid,false) then count_dispatched=count_dispatched+1; end if;
+  end loop;
   if not public.private_mail_automation_allowed(b.id) then
    -- Explicit manual reports and their retries do not start POP or a new inference.
    for report_day in select pages.key from public.private_mailboxes current_box,

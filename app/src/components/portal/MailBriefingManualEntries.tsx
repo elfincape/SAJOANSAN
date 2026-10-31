@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
 import type {
   MailManualEntry,
@@ -57,7 +58,11 @@ export function MailBriefingManualEntries({
   onBusyChange,
   showItems = true,
   onChanged,
+  inputOpen = false,
+  onInputClose,
 }: {
+  inputOpen?: boolean;
+  onInputClose?: () => void;
   day: string;
   disabled?: boolean;
   onBusyChange: (busy: boolean) => void;
@@ -103,6 +108,23 @@ export function MailBriefingManualEntries({
       request.current++;
     };
   }, [load]);
+  const hasPending = data?.entries.some((entry) =>
+    ['pending', 'processing'].includes(entry.status),
+  );
+  useEffect(() => {
+    if (!hasPending) return;
+    let stopped = false;
+    const timer = setInterval(() => {
+      if (!stopped)
+        void load().then((ok) => {
+          if (ok && !stopped) onChanged?.();
+        });
+    }, 5000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [hasPending, load, onChanged]);
   async function act(action: () => Promise<void>) {
     if (locked.current || disabled) return;
     locked.current = true;
@@ -124,7 +146,7 @@ export function MailBriefingManualEntries({
   async function retryEntry(entry: MailManualEntry) {
     await act(async () => {
       const source = await privateMail.manualSource(entry.entryId);
-      const result = await privateMail.manualAdd({
+      const result = await privateMail.manualEnqueue({
         text: source.text,
         clientRequestId: source.clientRequestId,
         referenceDate: source.requestedReference,
@@ -135,7 +157,7 @@ export function MailBriefingManualEntries({
       setFeedback(
         result.status === 'ready'
           ? '기존 메시지를 정리했습니다. 접수일과 원문은 유지됩니다.'
-          : result.status === 'processing'
+          : ['pending', 'processing'].includes(result.status)
             ? '기존 메시지를 분석 중입니다. 목록 새로고침으로 확인해 주세요.'
             : '기존 메시지를 정리하지 못했습니다. 접수된 원문을 유지합니다.',
       );
@@ -153,7 +175,7 @@ export function MailBriefingManualEntries({
       retry = submission.current.retry === true,
       version = draftVersion.current;
     await act(async () => {
-      const result = await privateMail.manualAdd({
+      const result = await privateMail.manualEnqueue({
         text: input,
         clientRequestId,
         referenceDate: basis,
@@ -169,31 +191,15 @@ export function MailBriefingManualEntries({
         await load();
         return;
       }
-      const refreshed = await load();
-      if (!mounted.current) return;
-      if (result.status === 'processing') {
-        setFeedback(
-          '메시지를 접수했으며 분석 중입니다. 목록 새로고침으로 결과를 확인할 수 있습니다.',
-        );
-        return;
-      }
-      if (!result.items.length) {
-        setFeedback(
-          '메시지를 분석했지만 추가할 업무를 찾지 못했습니다. 입력 내용을 확인해 주세요.',
-        );
-        return;
-      }
       submission.current = null;
-      onChanged?.();
       if (draftVersion.current === version) {
         setText('');
         setReferenceDate('');
       }
-      setFeedback(
-        refreshed
-          ? '업무를 추가했습니다. 미완료 업무는 접수일부터 계속 표시됩니다.'
-          : '메시지는 추가했지만 목록을 갱신하지 못했습니다. 목록을 새로고침해 주세요.',
-      );
+      onInputClose?.();
+      setFeedback('저장했습니다. 정리가 끝나면 목록에 반영됩니다.');
+      await load();
+      onChanged?.();
     });
   }
   async function complete(entryId: string, itemId: string, done: boolean) {
@@ -279,68 +285,67 @@ export function MailBriefingManualEntries({
   }
   return (
     <section className="daily-manual" aria-label="메시지로 추가한 업무">
-      <h2>메시지에서 추가</h2>
-      <label className="manual-message-label" htmlFor="manual-message">
-        카톡 메시지·직접 입력
-        <textarea
-          id="manual-message"
-          aria-label="카톡 메시지·직접 입력"
-          className="app-input"
-          rows={4}
-          maxLength={12000}
-          value={text}
-          onChange={(event) => {
-            draftVersion.current++;
-            setText(event.target.value);
-          }}
-        />
-      </label>
-      <div className="daily-filter-actions">
-        <label className="manual-reference" htmlFor="manual-reference">
-          메시지 기준일 (선택)
-          <input
-            id="manual-reference"
-            className="app-input"
-            type="date"
-            value={referenceDate}
-            onChange={(event) => {
-              draftVersion.current++;
-              setReferenceDate(event.target.value);
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={
-            busy ||
-            disabled ||
-            !text.trim() ||
-            text.trim().length > 12000 ||
-            (Boolean(referenceDate) && !validDay(referenceDate))
-          }
-          onClick={() => void add()}
+      {inputOpen ? (
+        <Modal
+          label="메시지 입력"
+          onClose={() => onInputClose?.()}
+          dismissable={!busy}
+          width="xl"
         >
-          업무 추가
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          disabled={busy || loading || disabled}
-          onClick={() => {
-            setFeedback('');
-            void load().then((refreshed) => {
-              if (refreshed) onChanged?.();
-            });
-          }}
-        >
-          메시지 목록 새로고침
-        </button>
-      </div>
-      <p className="daily-task-meta">
-        오래된 메시지의 ‘오늘·내일’은 메시지 기준일을 지정해 주세요. 비워두면
-        접수 시각의 한국 날짜를 기준으로 저장합니다.
-      </p>
+          <div className="daily-message-dialog">
+            <h2>메시지 입력</h2>
+            <label className="manual-message-label" htmlFor="manual-message">
+              카톡 메시지·직접 입력
+              <textarea
+                id="manual-message"
+                aria-label="카톡 메시지·직접 입력"
+                className="app-input"
+                rows={4}
+                maxLength={12000}
+                value={text}
+                onChange={(event) => {
+                  draftVersion.current++;
+                  setText(event.target.value);
+                }}
+              />
+            </label>
+            <div className="daily-filter-actions">
+              <label className="manual-reference" htmlFor="manual-reference">
+                메시지 기준일 (선택)
+                <input
+                  id="manual-reference"
+                  className="app-input"
+                  type="date"
+                  value={referenceDate}
+                  onChange={(event) => {
+                    draftVersion.current++;
+                    setReferenceDate(event.target.value);
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={
+                  busy ||
+                  disabled ||
+                  !text.trim() ||
+                  text.trim().length > 12000 ||
+                  (Boolean(referenceDate) && !validDay(referenceDate))
+                }
+                onClick={() => void add()}
+              >
+                {busy ? '저장 중…' : '저장'}
+              </button>
+              <ModalClose className="btn btn-ghost" disabled={busy}>
+                취소
+              </ModalClose>
+            </div>
+            <p className="daily-task-meta">저장 후 닫아도 정리는 계속됩니다.</p>
+            {feedback ? <p role="alert">{feedback}</p> : null}
+          </div>
+        </Modal>
+      ) : null}
       <p className="daily-feedback" role="status" aria-live="polite">
         {busy
           ? '메시지와 완료 상태를 저장하는 중…'
@@ -355,8 +360,8 @@ export function MailBriefingManualEntries({
             <div className="daily-task-meta" key={entry.entryId}>
               <p>
                 {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
-                {entry.status === 'processing'
-                  ? '분석 중'
+                {['pending', 'processing'].includes(entry.status)
+                  ? '정리 중'
                   : '분석 실패 · 원문이 보존되어 있습니다.'}
               </p>
               {entry.status === 'failed' ? (

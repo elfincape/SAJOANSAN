@@ -83,6 +83,7 @@ function ItemEvidence({ item }: { item: Item }) {
 }
 function DailyOverview() {
   const [day, setDay] = useState(initialDay);
+  const [messageOpen, setMessageOpen] = useState(false);
   const [dateInput, setDateInput] = useState(day);
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -321,9 +322,13 @@ function DailyOverview() {
         <a className="btn btn-ghost" href="/portal/?view=mail">
           개인 메일함
         </a>
-        <a className="btn btn-ghost" href="#manual-messages">
-          메시지 추가
-        </a>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          onClick={() => setMessageOpen(true)}
+        >
+          메시지 입력
+        </button>
       </div>
       <p className="daily-feedback" role="status" aria-live="polite">
         {pending
@@ -471,6 +476,8 @@ function DailyOverview() {
       </div>
       <div id="manual-messages" tabIndex={-1}>
         <MailBriefingManualEntries
+          inputOpen={messageOpen}
+          onInputClose={() => setMessageOpen(false)}
           day={day}
           disabled={pending !== null || filtersBusy}
           onBusyChange={setManualBusy}

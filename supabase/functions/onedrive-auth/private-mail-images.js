@@ -1,3 +1,4 @@
+import { isRoutineMail } from './private-mail-work.js';
 import PostalMime from 'postal-mime';
 import { MAIL_RAW_LIMIT } from './private-mail-limits.js';
 export const MAIL_PHOTO_LIMITS = Object.freeze({
@@ -41,6 +42,12 @@ export const MAIL_IMAGE_KINDS = Object.freeze([
 ]);
 
 export function selectBriefingImages(analysis) {
+  if (
+    analysis &&
+    isRoutineMail(analysis) &&
+    !(analysis.issues?.length || analysis.imageItems?.issues?.length)
+  )
+    return [];
   const images = analysis?.source?.images,
     decisions = analysis?.imageDecisions;
   if (

@@ -104,6 +104,9 @@ export function normalizeDailyWork(input) {
         ? (input.controlRef ?? input.ref)
         : null,
     category: input.category,
+    reportKind: ['routine', 'review'].includes(input.reportKind)
+      ? input.reportKind
+      : null,
     title: clean(input.title),
     summary: [
       ...new Set(
@@ -138,6 +141,31 @@ export function normalizeDailyWork(input) {
     originRef: input.ref,
   };
 }
+export function needsOwnerReview(mail) {
+  if (
+    mail.source?.intentCorrected === true ||
+    mail.intent?.ownerFeedback === true ||
+    ['reference', 'routine'].includes(mail.source?.intent)
+  )
+    return false;
+  return (
+    mail.source?.intent === 'unknown' ||
+    (mail.review?.withheldTasks ?? 0) + (mail.review?.withheldWaiting ?? 0) > 0
+  );
+}
+export function isRoutineMail(mail) {
+  const explicitReference =
+    mail.source?.intentCorrected === true ||
+    mail.intent?.ownerFeedback === true;
+  return (
+    mail.source?.intent === 'routine' ||
+    (!explicitReference &&
+      mail.source?.intent === 'reference' &&
+      !(mail.tasks?.length || mail.waiting?.length) &&
+      /일일|정기|주간|월간/.test(mail.source?.subject ?? '') &&
+      /점검|보고|실적/.test(mail.source?.subject ?? ''))
+  );
+}
 export function dailyWorkItems(
   view,
   manual = {},
@@ -145,10 +173,13 @@ export function dailyWorkItems(
 ) {
   const result = [],
     summaries = new Map(),
-    references = new Map();
+    references = new Map(),
+    routineIds = new Set();
   for (const group of view.groups ?? [])
     for (const thread of group.threads ?? [])
       for (const mail of thread.mails ?? []) {
+        const routine = isRoutineMail(mail);
+        if (routine) routineIds.add(mail.source.id);
         summaries.set(
           mail.source.id,
           (mail.summary ?? []).map((item) => item.text),
@@ -157,9 +188,15 @@ export function dailyWorkItems(
           source: mail.source,
           summary: (mail.summary ?? []).map((item) => item.text),
           context: group.name,
+          reportKind: routine
+            ? 'routine'
+            : needsOwnerReview(mail)
+              ? 'review'
+              : null,
         });
       }
-  const usedSummary = new Set();
+  const usedSummary = new Set(),
+    updateSources = new Set();
   for (const [kind, category] of [
     ['tasks', 'task'],
     ['issues', 'issue'],
@@ -184,12 +221,17 @@ export function dailyWorkItems(
         ? item.resolution.email?.source
         : item.resolution?.source;
       if (proofSource && proofSource.id !== item.source.id)
+        updateSources.add(proofSource.id);
+      if (proofSource && proofSource.id !== item.source.id)
         sources.push(
           sourceRef(proofSource, 'mail', 'source:' + proofSource.id),
         );
-      const summary = usedSummary.has(item.source.id)
-        ? []
-        : (summaries.get(item.source.id) ?? []);
+      const summary =
+        item.source.intent === 'routine' || routineIds.has(item.source.id)
+          ? [item.impact].filter(Boolean)
+          : usedSummary.has(item.source.id)
+            ? []
+            : (summaries.get(item.source.id) ?? []);
       usedSummary.add(item.source.id);
       result.push(
         normalizeDailyWork({
@@ -203,7 +245,13 @@ export function dailyWorkItems(
           assignee: item.assignee,
           assigneeConfirmed: item.assigneeConfirmed,
           nextAction: item.nextAction,
-          progress: item.latest,
+          progress:
+            item.resolution?.manual &&
+            item.resolution.email &&
+            (item.resolution.email.status === 'complete') !==
+              item.resolution.done
+              ? null
+              : item.latest,
           waitingFor: item.person,
           center:
             item.center ??
@@ -225,7 +273,10 @@ export function dailyWorkItems(
             status === 'complete'
               ? item.resolution?.manual
                 ? item.resolution.updatedAt
-                : (item.completedAt ?? null)
+                : (item.completedAt ??
+                  item.resolution?.source?.receivedAt ??
+                  item.resolution?.source?.sentAt ??
+                  null)
               : null,
           sourceRefs: sources,
           needsConfirmation:
@@ -235,11 +286,16 @@ export function dailyWorkItems(
       );
     }
   for (const record of references.values())
-    if (!usedSummary.has(record.source.id))
+    if (
+      !usedSummary.has(record.source.id) &&
+      !updateSources.has(record.source.id)
+    )
       result.push(
         normalizeDailyWork({
           ref: 'source:' + record.source.id,
           category: 'reference',
+          reportKind: record.reportKind,
+          needsConfirmation: record.reportKind === 'review',
           title: record.source.subject || '참고 자료',
           summary: record.summary,
           status: 'pending',
@@ -438,10 +494,13 @@ export const WORK_STATUS_LABELS = {
 export const WORK_SECTIONS = [
   { id: 'tasks', title: '할 일' },
   { id: 'issues', title: '진행 이슈·회신 대기' },
+  { id: 'review', title: '확인 필요' },
   { id: 'reference', title: '참고·공유' },
+  { id: 'routine', title: '정기보고메일' },
   { id: 'completed', title: '완료' },
 ];
 export function workSection(item) {
+  if (item.category === 'reference' && item.reportKind) return item.reportKind;
   return ['complete', 'cancelled'].includes(item.status)
     ? 'completed'
     : item.status === 'waiting'
