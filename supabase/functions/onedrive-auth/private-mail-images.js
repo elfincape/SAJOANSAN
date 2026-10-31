@@ -52,9 +52,9 @@ export function selectBriefingImages(analysis) {
     decisions = analysis?.imageDecisions;
   if (
     !Array.isArray(images) ||
-    images.length > 3 ||
+    images.length > 5 ||
     !Array.isArray(decisions) ||
-    decisions.length > 3
+    decisions.length > 5
   )
     return [];
   const byId = new Map();

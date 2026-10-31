@@ -8,6 +8,14 @@ import type {
 
 type Override = 'inherit' | 'include' | 'exclude';
 const photoReasons: Record<string, string> = {
+  REMOTE_IMAGE_REVIEW:
+    '본문이 외부 이미지로 구성되어 있습니다. 확인된 본문 이미지의 분석 범위를 검토해야 합니다.',
+  REMOTE_IMAGE_SOURCE:
+    '외부 본문 이미지를 안전하게 읽지 못했습니다. 원문은 보존되어 있습니다.',
+  BODY_IMAGES_EXCLUDED:
+    '본문이 이미지로 구성되어 있어 본문·헤더만으로 정리할 수 없습니다. 이번 분석 범위에서 이미지는 제외됐습니다.',
+  ANALYSIS_SUMMARY_EMPTY:
+    '요약 내용이 비어 있어 완료로 저장하지 않았습니다. 기존 결과를 보존합니다.',
   IMAGE_CONTEXT_REVIEW:
     '첨부 사진을 원본 메일과 정확히 연결하지 못했습니다. 원본 첨부를 확인해 주세요.',
   IMAGE_PRIVACY_REVIEW:
