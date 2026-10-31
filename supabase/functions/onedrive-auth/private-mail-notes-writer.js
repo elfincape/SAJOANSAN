@@ -212,10 +212,21 @@ async function snapshot({ html, marker, hash }) {
     node.attrs['data-id']?.startsWith(marker + '-block-'),
   );
   const tables = matches.filter((node) => node.tag === 'table');
-  if (tables.length > 1) throw Error('PAGE_MANAGED_AMBIGUOUS');
+  let needsManagedCollapse = false;
+  let managedTables = tables;
+  if (tables.length > 1) {
+    const outer = tables.filter(node => !tables.some(other => other !== node && isDescendant(node,other)));
+    const inner = tables.filter(node => !tables.some(other => other !== node && isDescendant(other,node)));
+    // Graph can nest a replacement inside its retired table shell. Never merge parallel regions or extra owner content.
+    if (outer.length !== 1 || inner.length !== 1 ||
+        JSON.stringify(contentSignature(outer[0])) !== JSON.stringify(contentSignature(inner[0])))
+      throw Error('PAGE_MANAGED_AMBIGUOUS');
+    managedTables = outer;
+    needsManagedCollapse = true;
+  }
   let regions = [];
-  if (tables.length) {
-    regions = tables;
+  if (managedTables.length) {
+    regions = managedTables;
   } else if (tagged.length) {
     const start = nodes.indexOf(tagged[0]);
     const last = nodes.indexOf(tagged.at(-1));
@@ -293,7 +304,7 @@ async function snapshot({ html, marker, hash }) {
     : null;
   if (managedHash !== null && !hex.test(managedHash))
     throw Error('PAGE_CONTENT_HASH');
-  return { managedHash, managed, managedTargets, nodes };
+  return { managedHash, managed, managedTargets, nodes, needsManagedCollapse };
 }
 function normalizePage(page) {
   if (!page || typeof page.id !== 'string' || !page.id || page.id.length > 1000)
@@ -880,7 +891,8 @@ export async function writeDailyBriefing({
         throw Error('PAGE_MANAGED_CONFLICT');
       if (
         state.fingerprint === finalFingerprint &&
-        current.managedHash !== null
+        current.managedHash !== null &&
+        !current.needsManagedCollapse
       )
         return {
           status: status === 'reconciled' ? status : 'skipped',
