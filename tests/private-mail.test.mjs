@@ -913,7 +913,11 @@ assert.equal(
   'actionable work has no duplicate mail-summary section',
 );
 assert.ok(!report.html.includes('<img'));
-assert.ok(report.html.includes('&lt;img'));
+assert.ok(
+  !report.html.includes('&lt;img'),
+  'source subject is not repeated in the human summary',
+);
+assert.ok(!report.html.includes('<h2>출처</h2>'));
 assert.ok(
   !report.html.includes('메일 요약') &&
     !report.html.includes('정리된 이슈 없음') &&
@@ -1423,8 +1427,8 @@ assert.equal(
       /href="https:\/\/sajoansan.vercel.app\/portal\//g,
     ) ?? []
   ).length,
-  1,
-  'mail source appears once',
+  0,
+  'mail source remains in the ledger, not the OneNote body',
 );
 assert.ok(
   !approvedReport.managedHtml.includes('직접 메모'),
@@ -2777,7 +2781,7 @@ console.log(
   assert.ok(!report.html.includes('정리된 메일 없음'));
   assert.ok(!report.html.includes(original));
   assert.ok(!report.html.replace(/<[^>]*>/g, '').includes(entryId));
-  assert.ok(report.html.includes('?entry=' + entryId));
+  assert.ok(!report.html.includes('?entry=' + entryId));
   assert.ok(!report.html.includes('23:59'));
   assert.ok(report.sourceIds.includes(entryId));
   console.log(
@@ -3769,7 +3773,7 @@ console.log(
   const html = renderWorkSections(works);
   assert.ok(html.includes('완료'));
   assert.ok(!html.includes('담당자: 미지정'));
-  assert.ok(html.includes('?entry=' + first));
+  assert.ok(!html.includes('?entry=' + first));
   const reference = readStructuredWorkInput(
     JSON.stringify({
       schema: 'sajo-daily-work-v1',
@@ -4633,5 +4637,67 @@ console.log(
   assert.equal(completed.items[0].serviceDate, '2026-11-02');
   console.log(
     'PASS supplied Kakao dispatch case: 4p/address/unloading time preserved; immediate preparation; no invented dispatch deadline; carry until preparation completed, service date unchanged',
+  );
+}
+
+{
+  const { renderWorkSections } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const id = '55555555-5555-4555-8555-555555555555';
+  const source = {
+    kind: 'mail',
+    id,
+    ref: 'source:' + id,
+    title: 'RE: RE: 전달 원문 제목',
+    evidence: '긴 원문 인용과 서명',
+    receivedAt: '2026-10-31T06:00:00Z',
+  };
+  const task = {
+    category: 'task',
+    title: '2026년 10월 이안물류 운송실적 마감자료를 확인합니다.',
+    status: 'pending',
+    summary: [
+      '김해마트통합센터에서 2026년 10월 이안물류 운송실적 마감자료를 전달하며 확인을 요청했습니다.',
+    ],
+    sourceRefs: [source],
+  };
+  const reference = {
+    category: 'reference',
+    title: source.title,
+    status: 'pending',
+    summary: ['안산센터 10/30~31 온도점검 자료 공유.'],
+    sourceRefs: [source],
+  };
+  const html = renderWorkSections([task, reference]);
+  assert.ok(html.includes(task.title));
+  assert.ok(
+    !html.includes(task.summary[0]),
+    'delivery wording must not repeat the same action',
+  );
+  assert.ok(html.includes(reference.summary[0]));
+  for (const value of ['RE: RE:', source.evidence, '<h2>출처</h2>', 'href='])
+    assert.ok(!html.includes(value));
+  assert.ok(
+    html.includes('sajo-mail-photos-' + id),
+    'verified business-photo anchor is preserved without a source list',
+  );
+  assert.equal(
+    task.sourceRefs[0].evidence,
+    source.evidence,
+    'ledger provenance remains intact',
+  );
+  const important = renderWorkSections([
+    {
+      ...task,
+      summary: [
+        '보증금 500만원, 월 지원 40만원.',
+        '변경 요청으로 승인 대기 중입니다.',
+      ],
+    },
+  ]);
+  assert.ok(important.includes('보증금 500만원'));
+  assert.ok(important.includes('승인 대기'));
+  console.log(
+    'PASS human OneNote summary: no repeated subjects/source lists/evidence, duplicate delivery sentence removed, important conditions and business-photo anchors preserved',
   );
 }
