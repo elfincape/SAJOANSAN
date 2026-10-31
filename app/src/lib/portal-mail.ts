@@ -127,6 +127,7 @@ export interface DailyWork {
   status: 'pending' | 'in_progress' | 'waiting' | 'complete' | 'cancelled';
   closedAt: string | null;
   ownerStateAt: string | null;
+  inferredStateAt?: string | null;
   sourceRefs: {
     kind: 'mail' | 'manual' | 'assistant' | 'linked';
     id: string;
