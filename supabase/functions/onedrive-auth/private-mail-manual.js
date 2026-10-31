@@ -300,7 +300,19 @@ export function resolveDispatchAssignment(
   const byRef = new Map(
     Object.values(entries)
       .filter((entry) => entry.status === 'ready')
-      .flatMap((entry) => (entry.items ?? []).map((item) => [item.ref, item])),
+      .flatMap((entry) =>
+        (entry.items ?? []).map((item) => [
+          item.ref,
+          {
+            ...item,
+            assignmentSource:
+              (entry.items ?? []).filter((row) => row.kind === 'dispatch')
+                .length === 1
+                ? entry.text
+                : item.evidence,
+          },
+        ]),
+      ),
   );
   const matches = work.filter((item) => {
     const original = byRef.get(item.workId);
@@ -308,6 +320,30 @@ export function resolveDispatchAssignment(
       original?.kind !== 'dispatch' ||
       item.serviceDate !== serviceDate ||
       item.status === 'cancelled'
+    )
+      return false;
+    const knownOrigins = new Set(
+      String(original.assignmentSource ?? '')
+        .split(/\r?\n/)
+        .flatMap((line) => {
+          const value = line.trim();
+          const origin =
+            /^(?:상차지|출발지|상차\s*장소)\s*[:：]\s*([^()\n]{1,100}?)(?=\s+(?:상차\s*)?\d{1,2}:\d{2}|$)/.exec(
+              value,
+            )?.[1] ??
+            /^([^()\n]{1,100}?)\s+상차\s*(?:[01]?\d|2[0-3]):[0-5]\d/.exec(
+              value,
+            )?.[1] ??
+            /^([^()\n]{1,100}?)\((?:[01]?\d|2[0-3]):[0-5]\d\s*상(?:차)?\)/.exec(
+              value,
+            )?.[1];
+          return origin ? [origin.replace(/\s/g, '')] : [];
+        }),
+    );
+    if (
+      knownOrigins.size &&
+      (knownOrigins.size !== 1 ||
+        !knownOrigins.has(route[1].replace(/\s/g, '')))
     )
       return false;
     const name =
@@ -384,6 +420,11 @@ function dispatchDetails(source, items) {
     ),
   ].slice(0, 6);
 }
+function unresolvedManualRequest(value) {
+  return /^(?:이거|이것|그거|그것|해당\s*(?:건|내용|일)|[이그]\s*(?:작업|업무))\s*(?:좀\s*)?(?:해\s*(?:줘|주세요|주시겠어요)|부탁(?:드립니다|드려요|해요|합니다))[.!?。]?$/u.test(
+    value.trim(),
+  );
+}
 export function normalizeManualItems(
   value,
   {
@@ -421,7 +462,19 @@ export function normalizeManualItems(
     value.items.length > 30
   )
     throw Error('MANUAL_FORMAT');
-  return value.items.map((raw, index) => {
+  const unclearRequest = unresolvedManualRequest(text);
+  const sourceItems =
+    value.items.length || !unclearRequest
+      ? value.items
+      : [
+          {
+            kind: 'issue',
+            text: '요청 내용 확인',
+            evidence: text.trim(),
+            needsConfirmation: true,
+          },
+        ];
+  return sourceItems.map((raw, index) => {
     if (
       !raw ||
       !['task', 'dispatch', 'issue', 'reference', 'waiting'].includes(
@@ -432,7 +485,8 @@ export function normalizeManualItems(
     )
       throw Error('MANUAL_FORMAT');
     const evidence = sourceQuote(raw.evidence, text),
-      label = required(raw.text, 500);
+      label = required(raw.text, 500),
+      unclearItem = unclearRequest || unresolvedManualRequest(evidence);
     const offset = text.indexOf(evidence),
       context = text.slice(
         text.lastIndexOf('\n', offset - 1) + 1,
@@ -441,6 +495,7 @@ export function normalizeManualItems(
     if (
       (raw.kind !== 'reference' &&
         !verifiedDispatchReply &&
+        !unresolvedManualRequest(evidence) &&
         !/(?:배차|차량|확인|제출|회신|요청|연락|발송|예약|준비|검토|작성|처리|점검|납품|운행|회의|상차|하차|배송|보고|취소|변경)/.test(
           evidence,
         )) ||
@@ -488,7 +543,7 @@ export function normalizeManualItems(
     return {
       itemId,
       ref: entryId + ':manual:' + itemId,
-      kind: raw.kind,
+      kind: unclearItem ? 'issue' : raw.kind,
       origin,
       ...(allowLinks
         ? {
@@ -508,7 +563,7 @@ export function normalizeManualItems(
             sourceQuote(raw[key], text, key === 'nextAction' ? 500 : 200),
           ]),
       ),
-      text: label,
+      text: unclearItem ? '요청 내용 확인' : label,
       ...(verifiedDispatchReply
         ? {
             resolution: raw.workRef
@@ -535,6 +590,7 @@ export function normalizeManualItems(
       dueOriginal,
       assignee: confirmed ? mentioned : null,
       needsConfirmation:
+        unclearItem ||
         raw.needsConfirmation === true ||
         due.uncertain ||
         (!!serviceOriginal && !serviceDate) ||

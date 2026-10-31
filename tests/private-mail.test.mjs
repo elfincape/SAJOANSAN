@@ -7047,3 +7047,42 @@ console.log(
  await assert.rejects(()=>snapshot({html:page(wrapped.replace('<td><table','<td><p>소유자 추가 내용</p><table')),marker,hash}),/PAGE_MANAGED_AMBIGUOUS/);
  console.log('PASS recover only empty nested managed shells; reject independent duplicates and owner content outside inner region');
 }
+
+{
+const {normalizeManualItems,resolveDispatchAssignment}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const day='2026-10-31',entryId='aaaaaaaa-1111-4111-8111-000000000001';
+const text='11/2 쿠팡창원 4p 배차 요청\n양산공장 상차 09:00\n하차 13:15';
+const raw={kind:'dispatch',text:'쿠팡창원 4p 배차',evidence:'11/2 쿠팡창원 4p 배차 요청',serviceOriginal:'11/2'};
+const options={text,entryId,submittedAt:'2026-10-31T01:00:00Z',referenceDate:day};
+const e={entryId,status:'ready',text,submittedAt:options.submittedAt,items:normalizeManualItems({items:[raw]},options)};
+const wire='11월2일\n부산공장(09:00상)-창원쿠팡\n경기12바3456 홍길동 01018832830';
+for(const [name,test] of [
+ ['known origin conflict stays unlinked',()=>{const r=resolveDispatchAssignment(wire,{[entryId]:e},day);assert.equal(r.items[0].workRef,null);assert.equal(r.items[0].needsConfirmation,true)}],
+ ['matching known origin links',()=>assert.equal(resolveDispatchAssignment(wire.replace('부산공장','양산공장'),{[entryId]:e},day).items[0].workRef,e.items[0].ref)],
+ ['unknown origin retains existing destination match',()=>{const unknown={...e,text:'11/2 쿠팡창원 4p 배차 요청'};assert.equal(resolveDispatchAssignment(wire,{[entryId]:unknown},day).items[0].workRef,e.items[0].ref)}],
+ ['deictic request normalizes into confirmation',()=>{const s='이거 해줘';const result=normalizeManualItems({items:[{kind:'issue',text:'요청 내용 확인',evidence:s,needsConfirmation:true}]},{...options,text:s});assert.equal(result[0].needsConfirmation,true);assert.equal(result[0].kind,'issue')}],
+ ['deictic request must not be discarded by empty extraction',()=>{const s='이것 좀 해주세요';const result=normalizeManualItems({items:[]},{...options,text:s});assert.equal(result.length,1);assert.equal(result[0].needsConfirmation,true)}],
+ ['deictic reference classification still requires confirmation',()=>{const s='그거 부탁드립니다';const result=normalizeManualItems({items:[{kind:'reference',text:'참고',evidence:s,needsConfirmation:false}]},{...options,text:s});assert.equal(result[0].kind,'issue');assert.equal(result[0].needsConfirmation,true)}],
+ ['greeting remains empty',()=>assert.equal(normalizeManualItems({items:[]},{...options,text:'안녕하세요. 잘 부탁드립니다.'}).length,0)],
+ ['quoted example stays rejected',()=>assert.throws(()=>normalizeManualItems({items:[{kind:'issue',text:'요청 내용 확인',evidence:'이거 해줘'}]},{...options,text:'예시: 이거 해줘'}),/MANUAL_EVIDENCE/)],
+]) { test(); }
+}
+
+{
+ const {handleMailAutomation}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+ const {APPROVED_MAIL_TARGET:target}=await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+ const {stressCatalogue,parseStressMail,runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const ctx={db:()=>assert.fail('catalogue/unauthorized checks must not access operational storage'),json:Response.json,fail:(message)=>Error(message)};
+ await assert.rejects(()=>handleMailAutomation('private-mail-stress-verify',{confirmation:'isolated-stress',list:true},{id:'not-owner'},ctx),/OWNER_REQUIRED/);
+ await assert.rejects(()=>handleMailAutomation('private-mail-stress-verify',{list:true},{id:target.owner_id},ctx),/STRESS_CONFIRMATION_REQUIRED/);
+ const result=await(await handleMailAutomation('private-mail-stress-verify',{confirmation:'isolated-stress',list:true},{id:target.owner_id},ctx)).json();
+ assert.equal(result.cases.length,stressCatalogue().length);assert.ok(result.cases.length>=15);
+ assert.equal(result.productionBusinessWritten,false);assert.equal(result.oneNoteWritten,false);
+ await assert.rejects(()=>runStressCase('arbitrary-client-body',{}),/STRESS_CASE_INVALID/);
+ const fixture=fixtureById('mail-cid-evidence-duplicate-signatures');
+ assert.ok(Object.isFrozen(fixture.expected));
+ const parsed=await parseStressMail(fixture,()=>assert.fail('CID mail does not download remote content'));
+ assert.equal(parsed.parser.attachments,3);assert.equal(parsed.source.images.length,1);assert.equal(parsed.parser.excludedImages.length,2);
+ console.log('PASS fixed stress corpus, frozen expectations, owner-only diagnostic, real MIME/CID extraction and no operational persistence');
+}

@@ -36,6 +36,13 @@ export async function handleMailAutomation(action, body, user, ctx) {
       throw fail('MAILBOX_TARGET_REJECTED', 403);
     return row;
   };
+  if (action === 'private-mail-stress-verify') {
+    if (body.confirmation !== 'isolated-stress') throw fail('STRESS_CONFIRMATION_REQUIRED',400);
+    const { stressCatalogue, runStressCase } = await import('./private-mail-stress-verify.js');
+    if (body.list === true) return json({cases:stressCatalogue(),productionBusinessWritten:false,oneNoteWritten:false});
+    try { return json(await runStressCase(body.caseId,ctx)); }
+    catch (error) { return json({status:'failed',code:/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_VERIFY_FAILED',productionBusinessWritten:false,oneNoteWritten:false}); }
+  }
   const current = await box();
   const ready = Object.hasOwn(current, 'automation_config');
   const syntheticAnalysis =
