@@ -66,6 +66,9 @@ export async function handleMailAutomation(action, body, user, ctx) {
     }
   }
   if (action === 'private-mail-automation-status') {
+    const ai = ctx.resolveAiConfiguration
+      ? await ctx.resolveAiConfiguration()
+      : ctx;
     const config = current.automation_config ?? {},
       job = current.automation_job;
     const notes =
@@ -90,7 +93,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
       workerReady,
       schedulerReady,
       notesConnected: notes,
-      analysisReady: !!ctx.aiKey,
+      analysisReady: !!ai.aiKey,
       config: {
         enabled: config.enabled === true,
         readStateVerified: config.readStateVerified === true,
@@ -233,7 +236,12 @@ export async function handleMailAutomation(action, body, user, ctx) {
         !(await rpc('private_mail_scheduler_ready', {})))
     )
       throw fail('AUTOMATION_CONNECTION_REQUIRED', 409);
-    if (body.enabled && !ctx.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
+    if (body.enabled) {
+      const ai = ctx.resolveAiConfiguration
+        ? await ctx.resolveAiConfiguration()
+        : ctx;
+      if (!ai.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
+    }
     const config = {
       ...previous,
       enabled: body.enabled,
@@ -361,14 +369,18 @@ export async function handleMailAutomation(action, body, user, ctx) {
     return json({ job: { id: job.id, status: job.status, error: job.error } });
   }
   if (body.operation === 'analyze') {
+    const ai = ctx.resolveAiConfiguration
+      ? await ctx.resolveAiConfiguration()
+      : ctx;
     if (!uuid(body.id)) throw fail('ANALYSIS_SOURCE');
     const lease = crypto.randomUUID();
     const result = await analyzePrivateMail({
       messageId: body.id,
       intentOverride:
         current.automation_config?.intentOverrides?.[body.id]?.intent,
-      key: ctx.aiKey,
-      provider: ctx.aiProvider,
+      key: ai.aiKey,
+      provider: ai.aiProvider,
+      model: ai.aiModel,
       fetcher,
       loadMail,
       store: {

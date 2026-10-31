@@ -1,5 +1,146 @@
 import assert from 'node:assert/strict';
 {
+  const { providerModels, modelCapabilities, handleApiManagement } =
+    await import('../supabase/functions/_shared/ai-providers.js');
+  let requests = 0,
+    writes = 0;
+  const env = {
+    AIAPIFLOW_API_KEY: 'PRIVATE_FLOW_KEY_SENTINEL',
+    OPENAI_API_KEY: 'PRIVATE_OPENAI_KEY_SENTINEL',
+  };
+  const fetcher = async (url, options) => {
+    requests++;
+    assert.ok(
+      [
+        'https://aiapiflow.com/v1/models',
+        'https://api.openai.com/v1/models',
+      ].includes(url),
+    );
+    assert.equal(options.redirect, 'error');
+    assert.ok(options.headers.authorization.startsWith('Bearer '));
+    return Response.json({
+      data: [
+        { id: 'gpt-5.6-luna' },
+        { id: 'gpt-6-luna' },
+        { id: 'claude-haiku-4-5-20251001' },
+        { id: 'text-embedding-3-small' },
+        { id: 'unknown-vendor-model' },
+        { id: 'gpt-6-luna' },
+        { id: '<script>PRIVATE_INVALID</script>', owned_by: 'PRIVATE_ACCOUNT' },
+      ],
+    });
+  };
+  const unconfigured = await providerModels('openai', {}, () =>
+    assert.fail('unconnected catalog must not fetch'),
+  );
+  assert.equal(unconfigured.catalogStatus, 'not_configured');
+  assert.equal(unconfigured.models[0].available, false);
+  const catalog = await providerModels('openai', env, fetcher);
+  assert.equal(
+    catalog.models.filter((item) => item.id === 'gpt-6-luna').length,
+    1,
+  );
+  assert.equal(
+    catalog.models.find((item) => item.id === 'text-embedding-3-small').support,
+    'unsupported',
+  );
+  assert.equal(
+    catalog.models.find((item) => item.id === 'unknown-vendor-model').support,
+    'unknown',
+  );
+  for (const value of Object.values(env))
+    assert.ok(!JSON.stringify(catalog).includes(value));
+  assert.ok(!JSON.stringify(catalog).includes('PRIVATE_ACCOUNT'));
+  assert.equal(modelCapabilities('openai', 'claude-haiku-4-5-20251001'), null);
+  await assert.rejects(
+    () => providerModels('__proto__', env, fetcher),
+    /AI_PROVIDER_INVALID/,
+  );
+  assert.equal(
+    (
+      await providerModels('openai', env, async () =>
+        Response.json({ error: 'PRIVATE_SECRET_ERROR' }, { status: 401 }),
+      )
+    ).catalogStatus,
+    'access_denied',
+  );
+  let current = {
+    provider: 'aiapiflow',
+    model: 'gpt-5.6-luna',
+    protocol: 'responses',
+    revision: 2,
+  };
+  const ctx = {
+    env,
+    fetcher,
+    json: Response.json,
+    db: async (path, options) => {
+      if (path.startsWith('onedrive_settings?'))
+        return [{ ai_defaults: current }];
+      assert.equal(path, 'rpc/onedrive_ai_default_save');
+      writes++;
+      if (options.body.p_revision !== current.revision)
+        throw Error('AI_CONFIG_CHANGED');
+      current = {
+        provider: options.body.p_provider,
+        model: options.body.p_model,
+        protocol: options.body.p_protocol,
+        revision: current.revision + 1,
+      };
+      return current;
+    },
+  };
+  const before = requests;
+  await assert.rejects(
+    () => handleApiManagement('api-admin-status', {}, { role: 'editor' }, ctx),
+    /ADMIN_REQUIRED/,
+  );
+  assert.equal(requests, before);
+  const response = await handleApiManagement(
+    'api-admin-default',
+    { provider: 'openai', model: 'gpt-6-luna', revision: 2 },
+    { role: 'admin', id: 'owner' },
+    ctx,
+  );
+  assert.equal((await response.json()).default.provider, 'openai');
+  assert.equal(current.protocol, 'responses');
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'gpt-6-luna', revision: 2 },
+        { role: 'admin', id: 'owner' },
+        ctx,
+      ),
+    /AI_CONFIG_CHANGED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'text-embedding-3-small', revision: 3 },
+        { role: 'admin', id: 'owner' },
+        ctx,
+      ),
+    /AI_MODEL_UNSUPPORTED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'gpt-6-absent-model', revision: 3 },
+        { role: 'admin', id: 'owner' },
+        ctx,
+      ),
+    /AI_MODEL_UNAVAILABLE/,
+  );
+  assert.equal(current.model, 'gpt-6-luna');
+  assert.equal(writes, 2);
+  console.log(
+    'PASS API admin: safe catalog/no paid requests, provider isolation, unavailable/unsupported states, admin fence, default save and stale revision rejection',
+  );
+}
+{
   const { handleMailAutomation } =
     await import('../supabase/functions/onedrive-auth/private-mail-background.js');
   const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
@@ -56,6 +197,60 @@ import assert from 'node:assert/strict';
   );
 }
 import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
+{
+  let calls = 0;
+  const result = await callLuna({
+    provider: 'aiapiflow',
+    model: 'claude-haiku-4-5-20251001',
+    key: 'mock-anthropic',
+    prompt: 'public fixture',
+    images: [{ mediaType: 'image/png', data: 'AA==' }],
+    schemaName: 'fixture',
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      additionalProperties: false,
+    },
+    fetcher: async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://aiapiflow.com/v1/messages');
+      assert.equal(options.headers['x-api-key'], 'mock-anthropic');
+      assert.equal(options.headers.authorization, undefined);
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, 'claude-haiku-4-5-20251001');
+      assert.equal(body.messages[0].content[0].type, 'image');
+      assert.ok(
+        body.messages[0].content[1].text.includes(
+          '"additionalProperties":false',
+        ),
+      );
+      return Response.json({
+        model: body.model,
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: '{"ok":true}' }],
+        usage: { input_tokens: 10, output_tokens: 4 },
+      });
+    },
+  });
+  assert.equal(result.content[0].text, '{"ok":true}');
+  assert.equal(calls, 1);
+  assert.equal(result.provider, 'aiapiflow');
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        key: 'mock',
+        prompt: 'fixture',
+        fetcher: () => assert.fail('unsupported model must never transmit'),
+      }),
+    /AI_MODEL_UNSUPPORTED/,
+  );
+  console.log(
+    'PASS Anthropic adapter: distinct endpoint/header/image/schema prompt, normalized response, no unsupported model request',
+  );
+}
 {
   const { OPENAI_LUNA_MODEL, mailAiConfiguration, lunaInference } =
     await import('../supabase/functions/_shared/luna.js');

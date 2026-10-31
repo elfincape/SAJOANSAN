@@ -448,7 +448,10 @@ export async function handleManualMessage(action, body, user, ctx) {
     (body.referenceDate != null && !validDay(body.referenceDate))
   )
     throw fail('MANUAL_INPUT_INVALID');
-  if (!ctx.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
+  const ai = ctx.resolveAiConfiguration
+    ? await ctx.resolveAiConfiguration()
+    : ctx;
+  if (!ai.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
   const text = body.text.trim(),
     hash = Array.from(
       new Uint8Array(
@@ -486,8 +489,9 @@ export async function handleManualMessage(action, body, user, ctx) {
     const response = await callLuna({
       schema: MANUAL_MESSAGE_SCHEMA,
       schemaName: 'private_manual_message',
-      key: ctx.aiKey,
-      provider: ctx.aiProvider,
+      key: ai.aiKey,
+      provider: ai.aiProvider,
+      model: ai.aiModel,
       prompt: promptFor(entry),
       fetcher: ctx.fetcher,
       maxTokens: 5000,

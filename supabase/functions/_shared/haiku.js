@@ -54,6 +54,7 @@ export async function callHaiku({
       messages: [{ role: 'user', content }],
     }),
     signal: AbortSignal.timeout(timeoutMs),
+    redirect: 'error',
   });
   if (!response.ok)
     throw Object.assign(
