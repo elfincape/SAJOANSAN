@@ -890,7 +890,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
   const managedHtml =
     '<div data-id="sajo-mail-daily-' +
     view.day +
-    '"><p>최종 업데이트: ' +
+    '"><p style="font-size:9pt;color:#666666;margin-top:0pt;margin-bottom:10pt">최종 업데이트: ' +
     escape(localTime(updatedAt)) +
     ' (한국시간)</p>' +
     renderBriefingWorkNote(view.workItems) +
