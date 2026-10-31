@@ -6039,3 +6039,328 @@ console.log(
     'PASS image-only reference/routine evidence may use validated included readable facts; image evidence alone does not confirm personal request or create tasks',
   );
 }
+
+{
+  const { verifyMailExtraction } =
+    await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+  const source =
+    '11/2 가상센터 4P 배차. 하차13:15. 처리기한과 톤수는 명시하지 않음.';
+  const items = [
+    { id: 'service', text: '운행일11월2일' },
+    { id: 'tons', text: '차량4톤' },
+  ];
+  items.forEach(Object.freeze);
+  Object.freeze(items);
+  const original = JSON.stringify(items);
+  let calls = 0;
+  const fetcher = async (url, options) => {
+    calls++;
+    assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+    assert.equal(options.redirect, 'error');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'jev-1.14.0');
+    assert.ok(
+      body.state.interpretationRules.some((rule) =>
+        rule.includes('운행 대상일'),
+      ),
+    );
+    assert.equal(body.state.source, source);
+    assert.equal(body.questions.q0.type, 'noul');
+    assert.equal(body.questions.q1.type, 'noul');
+    return Response.json({
+      model: 'jev-1.14.0',
+      answers: {
+        q0: { type: 'noul', noul: 0.05 },
+        q1: { type: 'noul', noul: 0.9 },
+      },
+      usage: { input_tokens: 200, output_tokens: 20 },
+    });
+  };
+  const value = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher,
+  });
+  assert.equal(value.status, 'review');
+  assert.deepEqual(value.reviewIds, ['tons']);
+  assert.equal(value.model, 'jev-1.14.0');
+  assert.equal(value.findings[1].unsupportedProbability, 0.9);
+  assert.equal(JSON.stringify(items), original);
+  assert.equal(calls, 1);
+  const missing = await verifyMailExtraction({
+    source,
+    items,
+    fetcher: () => assert.fail('no implicit auth or network'),
+  });
+  assert.equal(missing.status, 'unavailable');
+  assert.equal(missing.code, 'NOT_CONFIGURED');
+  const malformed = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () =>
+      Response.json({
+        model: 'jev-1.14.0',
+        answers: {
+          q0: { type: 'noul', noul: 0 },
+          q1: { type: 'noul', confidence: 1 },
+        },
+      }),
+  });
+  assert.equal(malformed.status, 'unavailable');
+  assert.equal(malformed.code, 'INVALID_RESPONSE');
+  const failed = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () => new Response('', { status: 429 }),
+  });
+  assert.equal(failed.status, 'unavailable');
+  assert.equal(failed.code, 'RATE_LIMIT');
+  const slow = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    timeoutMs: 20,
+    fetcher: async () => new Promise(() => {}),
+  });
+  assert.equal(slow.status, 'unavailable');
+  assert.equal(slow.code, 'TIMEOUT');
+  const ambiguous = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () =>
+      Response.json({
+        model: 'jev-1.14.0',
+        answers: {
+          q0: { type: 'noul', noul: 0.31 },
+          q1: { type: 'noul', noul: 0.1 },
+        },
+      }),
+  });
+  assert.deepEqual(ambiguous.reviewIds, ['service']);
+  assert.equal(JSON.stringify(items), original);
+  console.log(
+    'PASS advisory JEV verifier: pinned REST/Noul, only suspect IDs, no mutation, no implicit key, malformed/rate-limit/timeout preserve existing result',
+  );
+}
+
+{
+  const { reviewNormalizedMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+  const id = '11111111-1111-4111-8111-111111111111';
+  const analysis = Object.freeze({
+    source: Object.freeze({ id }),
+    revision: 3,
+    summary: Object.freeze([{ text: '참고 자료', evidence: '참고 자료' }]),
+    tasks: Object.freeze([
+      Object.freeze({
+        itemIndex: 7,
+        text: '배차 준비',
+        status: 'complete',
+        due: null,
+        serviceDate: '2026-11-02',
+        dueDate: '2026-11-01',
+        dueAt: '2026-11-01T03:00:00Z',
+        ownerEdited: true,
+      }),
+    ]),
+    issues: [],
+    waiting: [],
+    updates: [
+      { ref: 'prior-task-1', status: 'resolved', evidence: '차량 배정 완료' },
+    ],
+  });
+  const mail = {
+    id,
+    subject: '테스트',
+    text: '참고 자료. 11월2일 배차. 차량 배정 완료.',
+    sent_at: '2026-10-31T01:00:00Z',
+  };
+  const original = JSON.stringify(analysis);
+  assert.equal(
+    await reviewNormalizedMail({
+      analysis,
+      mail,
+      config: { key: 'fixture', fetcher: () => assert.fail('disabled') },
+    }),
+    null,
+  );
+  assert.equal(
+    await reviewNormalizedMail({
+      analysis,
+      mail,
+      config: {
+        enabled: true,
+        key: 'fixture',
+        approvedSourceIds: [],
+        fetcher: () => assert.fail('unapproved source'),
+      },
+    }),
+    null,
+  );
+  let count = 0;
+  const config = {
+    enabled: true,
+    key: 'fixture',
+    approvedSourceIds: [id],
+    fetcher: async (_, options) => {
+      count++;
+      const state = JSON.parse(options.body).state;
+      assert.ok(state.proposed.some((item) => item.text.includes('complete')));
+      assert.ok(
+        state.proposed.some(
+          (item) => JSON.parse(item.text).serviceDate === '2026-11-02',
+        ),
+      );
+      assert.ok(
+        state.proposed.some(
+          (item) => JSON.parse(item.text).ref === 'prior-task-1',
+        ),
+      );
+      assert.ok(
+        state.proposed.some(
+          (item) => JSON.parse(item.text).dueDate === '2026-11-01',
+        ),
+      );
+      assert.ok(
+        state.proposed.some(
+          (item) => JSON.parse(item.text).dueAt === '2026-11-01T03:00:00Z',
+        ),
+      );
+      const answers = Object.fromEntries(
+        state.proposed.map((item) => [item.ref, { type: 'noul', noul: 0.99 }]),
+      );
+      return Response.json({ model: 'jev-1.14.0', answers });
+    },
+  };
+  const review = await reviewNormalizedMail({ analysis, mail, config });
+  assert.equal(review.status, 'review');
+  assert.equal(review.sourceRevision, 3);
+  assert.ok(review.reviewIds.includes(id + ':tasks:7'));
+  assert.ok(review.reviewIds.includes(id + ':updates:0'));
+  assert.equal(JSON.stringify(analysis), original);
+  assert.equal(count, 1);
+  const unavailable = await reviewNormalizedMail({
+    analysis,
+    mail,
+    config: {
+      ...config,
+      fetcher: async () => {
+        throw Error('transport');
+      },
+    },
+  });
+  assert.equal(unavailable.status, 'unavailable');
+  assert.equal(JSON.stringify(analysis), original);
+  console.log(
+    'PASS normalized JEV review: opt-in and exact source approval, stable item IDs/revision, immutable owner completion/deadline preserved, failures are advisory',
+  );
+}
+
+{
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const id = '11111111-1111-4111-8111-111111111111';
+  const mail = {
+    id,
+    uidl_hash: 'b'.repeat(64),
+    subject: '참고 자료',
+    sender: 'test@example.test',
+    sent_at: '2026-10-31T01:00:00Z',
+    created_at: '2026-10-31T02:00:00Z',
+    text: '참고 자료를 공유합니다.',
+  };
+  const value = {
+    intent: { kind: 'reference', evidence: mail.text },
+    group: null,
+    summary: [{ text: '테스트 참고자료 공유', evidence: mail.text }],
+    tasks: [],
+    issues: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [],
+    imageDecisions: [],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  let latest;
+  let finishes = 0;
+  let verifierCalls = 0;
+  const run = (jevReview) =>
+    analyzePrivateMail({
+      messageId: id,
+      key: 'fixture-luna',
+      jevReview,
+      loadMail: async () => mail,
+      fetcher: async (_, options) => {
+        assert.ok(
+          JSON.stringify(JSON.parse(options.body)).includes('운행 대상일'),
+        );
+        return lunaResponseFixture([
+          { type: 'text', text: JSON.stringify(value) },
+        ]);
+      },
+      store: {
+        claim: async () => ({
+          row: { ...mail, analysis: latest },
+          lease: 'fixture-lease',
+        }),
+        finish: async ({ messageId, analysis }) => {
+          assert.equal(messageId, id);
+          finishes++;
+          latest = analysis;
+          return true;
+        },
+        fail: async () =>
+          assert.fail('optional verifier failure must not fail Luna analysis'),
+      },
+    });
+  assert.equal((await run()).status, 'done');
+  assert.equal(latest.source.jevReview, undefined);
+  const config = {
+    enabled: true,
+    approvedSourceIds: [id],
+    key: 'fixture-jev',
+    fetcher: async (_, options) => {
+      verifierCalls++;
+      const request = JSON.parse(options.body);
+      return Response.json({
+        model: 'jev-1.14.0',
+        answers: Object.fromEntries(
+          Object.keys(request.questions).map((key) => [
+            key,
+            { type: 'noul', noul: 0.99 },
+          ]),
+        ),
+      });
+    },
+  };
+  assert.equal((await run(config)).status, 'done');
+  assert.equal(latest.source.jevReview.status, 'review');
+  assert.equal(latest.summary.length, 1);
+  assert.equal(latest.tasks.length, 0);
+  assert.equal(latest.source.intent, 'reference');
+  assert.equal(verifierCalls, 1);
+  assert.equal(
+    (
+      await run({
+        ...config,
+        fetcher: async () => {
+          throw Error('network');
+        },
+      })
+    ).status,
+    'done',
+  );
+  assert.equal(latest.source.jevReview.status, 'unavailable');
+  assert.equal(latest.summary[0].text, '테스트 참고자료 공유');
+  assert.equal(latest.tasks.length, 0);
+  assert.equal(finishes, 3);
+  assert.equal(latest.source.id, id);
+  assert.equal(latest.revision, 3);
+  console.log(
+    'PASS real analysis pipeline optional JEV hook: same source/save path, common semantics, review-only metadata, network failure preserves normal result and no extra tasks',
+  );
+}

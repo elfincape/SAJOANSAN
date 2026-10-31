@@ -591,6 +591,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const lease = crypto.randomUUID();
     const result = await analyzePrivateMail({
       messageId: body.id,
+      jevReview: ctx.jevReview,
       intentOverride:
         current.automation_config?.intentOverrides?.[body.id]?.intent,
       key: ai.aiKey,

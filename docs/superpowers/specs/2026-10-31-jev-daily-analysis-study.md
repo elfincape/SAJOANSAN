@@ -1,0 +1,80 @@
+# 일일정리 JEV 조합 조사
+
+현재 운영은 공식 OpenAI gpt-6-luna가 본문·사진을 읽고 공통 분석 JSON을 생성한다. JEV는 아직 운영 메일·카톡 분석에 연결되지 않았다. 사용자 요청은 빠른 판단 모델을 실용적으로 조합하는 것이며 모든 단계의 이중 호출이나 UI 확장은 목적이 아니다.
+
+## 확인한 계약
+
+설치된 고정 Hermes SDK와 공식 문서가 같은 POST https://api.typesafe.ai/v1/systemone 계약을 사용한다. model/state/questions를 보내며 model/answers/usage를 받는다. Choice는 폐쇄 후보와 probabilities/confidence, Noul은 noul만 반환한다. 여러 질문은 같은 state에서 독립적으로 평가된다. 후속 질문에 앞선 답이 필요하면 별도 단계로 분리한다. 모델은 jev-1.14.0으로 고정해 비교한다. 사진은 실험적 JEV 기능보다 현재 검증된 Luna 경로를 유지한다. 확률은 정답 보증이나 자동 완료 승인이 아니다.
+
+## 접근 비교
+
+1. Luna 단독: 현행 기준선, 추가 호출 없음.
+2. JEV 선분류 후 Luna: 분류가 필요한 모든 항목에 추가 호출이 생기며 추출 결과 검증에는 직접 도움이 적다.
+3. Luna 추출 후 선택적 JEV 검증: 불명확한 근거/수신자 역할/기존 업무 후보 연결에만 적용. 현재 조사에서 우선 검증할 제안이다. 확정된 사용자 정정과 코드의 날짜·ID·완료 보호가 항상 우선한다.
+
+## 실제 비민감 한국어 시험
+
+2026-10-31 기존 승인된 TypeSafe 인증을 재사용했고 사용자 메일·사진·전화·주소는 보내지 않았다. 첫 SDK 기본 전송은 cloud proxy 미사용으로 network 실패했다. 같은 공식 endpoint에 환경 proxy를 사용하는 전송으로 성공했다. 제공자를 다른 gateway로 변경한 것이 아니다.
+
+- 3개 독립 의도 선택: 참고/직접요청/동일업무후속 모두 기대와 일치. jev-1.14.0, 224ms, 입력887/출력129토큰.
+- 5개 판단: 4P→4톤 및 하차13:15→처리기한 오추출 Noul0.85; 참고품의→개인승인업무 오인0.88; 직접검토요청 근거0.92; 동일후보2건은 unknown(probability0.91/confidence0.86); 명시D1은 D1(probability0.99/confidence0.98). 217ms, 입력1146/출력138토큰.
+- 각 요청1회이므로 p50/p95/전체정확도나 Luna보다 빠르다는 결론은 내리지 않는다. 제공자 공식 가격을 적용한 단순 입력비용 추정은 총2033토큰×$0.042/백만=$0.000085386이며 실제 청구 확인은 별도다.
+
+## 적용 전 남은 검증
+
+같은 한국어 합성 세트로 Luna 단독/JEV선분류+Luna/Luna후JEV검증을 비교한다. 잘못된할일·연결·누락, p50/p95, 실제 usage와 실패를 분리한다. 애매한 후보는 none/unknown으로 남기고 JEV 실패는 기존 정상 경로나 확인필요를 보존한다. JEV가 완료를 직접 확정하거나 사용자정정을 덮어쓰지 않는다. 현재 실제 회사메일은 JEV에 추가 전송하지 않았다. 새로운 공급자 전송 범위는 합성 시험과 구분한다. 운영에 가짜 업무를 저장하지 않는다.
+
+## 근거
+
+- .agent-tools/JEV.md, .agent-tools/jev/sources-lock.json, 설치 Hermes jevkit/client.py·docs/mailbox-sorting.md
+- https://docs.typesafe.ai/api/system-one
+- https://docs.typesafe.ai/cookbooks/sde_cascade
+- https://docs.typesafe.ai/cookbooks/entity_alignment
+- https://docs.typesafe.ai/cookbooks/parallel_questions
+- https://docs.typesafe.ai/primitives/choice
+- https://docs.typesafe.ai/primitives/noul
+- https://typesafe.ai/legal/privacy-policy
+
+공식 서비스의 보관·미국처리 정책은 기본 ZDR을 뜻하지 않는다. 커뮤니티 mailbox helper의 자동분류·임계값·가격 예시는 이 제품의 검증 결과나 공식 정확도 보장이 아니다.
+
+## 별도 검증기와 반복 측정
+
+private-mail-jev-verifier.js는 명시적으로 주입한 입력과 키만 받는 advisory 함수다. 운영메일 경로 import나 환경변수 추가가 없어 실제 회사메일은 전송하지 않는다. 실패/미설정/429/응답불량/시간초과는 unavailable이며 기존항목을 수정하지 않는다. 0.3 이상은 임시 검토밴드일 뿐 삭제·수정·자동완료 기준이 아니다.
+
+7개 추출주장(잘못된주장4/정상3) 동일자료 반복5회는 오탐0/미탐0, p50 311ms, nearest-rank p95 525ms, 입력회당1781/출력123토큰이었다. 별도선행1회에는 정상운행일0.31 오탐1이 있었으며 이 사실도 보존한다. n=5는 일반성능보장이 아니다. 정확한입력·응답은 docs/diagnostics/jev-daily-verification*.json에 있고 같은자료 공식Luna 요청본문도 포함한다. Luna 비교는 아직 실행하지 않았다.
+
+관련22개검사통과, 독립검토에서중요결함없음. 운영활성화·실제회사자료JEV전송은미실행이다.
+
+## 예비 오탐 검토와 적용 판단
+
+정확한 입력은 docs/diagnostics/jev-daily-verification.json과 같다. source의 메시지B는 ‘11월2일 가상센터4P배차’, proposed service는 ‘메시지B 운행일은11월2일이다’였다. 기대는 뒷받침되는 정상주장이고 예비 응답 unsupportedProbability=0.31이었다. 현재 임시0.3밴드에서 service가 reviewIds에 들어갔다. 후속 동일입력5회는0.25/0.28/0.19/0.24/0.28로 정상밴드였다.
+
+내부 원인은 응답만으로 확정할 수 없다. 운행일을 명시한 문장을 의미로 읽는 과정과 여러 메시지A/B/C가 한 state에 있어 대상매칭이 어려워지는 가능성, 확률출력의 변동, 검증되지 않은 임계값이 원인 가설이다. 어느 가설도 현재 입증하지 않았다. 이 작은 세트에 맞춰 임계값을 올려 오탐을 숨기지 않는다.
+
+우선 연결 구조는 원본추출을 그대로 유지하고 advisory 검토ID와 점수만 별도 보존하는 방식이다. score가0.99라도 자동삭제·차단·업무병합·완료·기한변경에 쓰지 않는다. 불일치 후보의 후속 재검토는 같은 원문과 그 항목만 대상으로 하며, 정상 항목이나 사용자 수정은 교체하지 않는다. JEV 장애는 기존 정상경로를 유지하고 unavailable임을 남긴다. UI 추가 없이 기존 확인필요 상태를 재사용하는 범위를 비교 후 결정한다.
+
+현재 검증기는 운영경로 import/DB/OneNote/저장콜백이 없으므로 병합·완료·사용자정정을 변경하는 부작용이 없다. 0.31 실제오탐을 재현한 모의응답과 freeze한 원본항목으로 결과불변을 검사한다. 운영 연결은 아직 하지 않았다.
+
+## 동일 자료 공식 Luna 비교와 문맥 보완
+
+별도공식검증담당결과: gpt-6-luna, 기존고정fixture5회 HTTP200/completed/JSON5/5. 지연[8754,5554,6499,6254,6826]ms, p50 6499/p95 8754. 35항목중30정답,FP5(service매회)/FN0. service 불일치확률[.90,.95,.90,.95,.75]. 입력2000/출력1074(추론579)/총3074토큰. 같은분류기준에서관측상JEV가빠르지만다른전송/환경/출력형식이므로일반성능주장이아니다.
+
+두모델모두운행일오탐을보였으므로임계값이아닌사용자확정업무의미를공통state에명시했다. ‘X일배차’=운행대상일, 준비업무는현재, 하차시각≠처리마감,P≠톤,차량배정완료≠운행하차완료,현재요청≠전달문서타인요청. 원문자체는변경하지않는다. 이규칙은이미사용자가정한정의이며이번샘플정답을state에붙인것이아니다.
+
+새규칙JEV5회: p50274ms/p95303ms,FP0/FN0, service.05/.06/.08/.07/.05. 입력1965/출력123토큰각회. 작은고정세트의후속검증일뿐이고구버전Luna와직접성능비교하지않는다. 새Luna동일입력요청은 docs/diagnostics/jev-daily-verification-domain.json에준비했으며이작업에서는호출하지않았다.
+
+## 업무규칙 fixture의 공식 Luna 비교
+
+별도검증담당실행: gpt-6-luna5회 HTTP200/completed/JSON5/5. 35/35기대값일치,FP0/FN0,service확률전부0.01. 지연[10176,5030,4221,4904,5400]ms,p505030/p9510176. 입력2695/출력860(추론365포함)/총3555토큰. 원본fixture와분리된결과이며두모델모두업무의미기준명시후운행일오탐이없었다. 동일7항목반복이고실행환경/응답형식이다르므로일반성능으로확장하지않는다. 이작업에서Luna중복호출은없다.
+
+## 기본 비활성 파이프라인 어댑터
+
+reviewNormalizedMail은정규화된메일의본문요약/tasks/issues/waiting만scalar주장으로만들고고정sourceID+itemIndex를검토참조로사용한다. sourceRevision과policyVersion을남기며JEV응답으로원래항목을교체하지않는다. analyzePrivateMail의선택적jevReview옵션을통해source.jevReview에검토의견만덧붙인다. server ctx.jevReview에서만전달되며클라이언트요청body나키존재만으로켜지지않는다. 현재ctx설정은없다.
+
+모의실제분석함수→기존finish저장검사에서기본비활성호출0,활성허용ID검토의견저장,0.99도기존참고/할일0유지,통신실패도정상분석저장,동일source/revision연속보존을확인했다. owner수정완료/기한이포함된freeze입력도변경없음을검사했다. 검토결과에는원문/제안텍스트를중복저장하지않고ID·점수·상태·사용량만남긴다. 항목8개나입력12000자한도를넘으면unavailable로보존하며몰래절단하지않는다. 자동재처리나자동병합은아직연결하지않는다. 카톡수동입력경로의JEV연결도아직없다.
+
+실제활성화에필요한것은①기존Supabase Edge TYPESAFE_API_KEY의존재확인(이번조사에서비밀설정조회/수정안함),②서버전용enabled+정확한approvedSourceIds설정,③해당메일의본문/제목/발송·수신시각과정규화주장을TypeSafe로보내는범위확인이다. 사진·첨부·연락처목록·다른메일은자동포함하지않는다. 원문본문에포함된개인정보는전송될수있으므로공식OpenAI기존동의와구분한다. 운영메일실전송/새secret/권한설정/운영활성화는하지않았다.
+
+독립검토에서정규화serviceDate/dueDate/dueAt와후속updates누락을발견하여보완했다. 원문날짜표현뿐아니라계산결과와ref/status/evidence를scalar검토주장에포함한다. 검토대상수가한도를초과하면전체unavailable로남기며부분만검사한것을전체검증이라하지않는다. 이전메일원문을자동으로JEV에추가전송하지않으므로후속ref에대한이전업무의미확인은현재범위밖이다. 현재원문이명확히지지하는후속상태주장만검토하며모호하면검토의견으로보존한다.
+
+현재날짜의공통규칙·검토어댑터는PR80 draft이고운영배포하지않았다. 공개된벤치마크는고정scalar주장용verifier단독결과다. 정규화adapter의필드구성이더풍부해지므로동일지연/정확도라고확대하지않는다. 이통합은모의검증이며개인메일JEV실전송미실행이다.
