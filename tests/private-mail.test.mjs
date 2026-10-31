@@ -4701,3 +4701,184 @@ console.log(
     'PASS human OneNote summary: no repeated subjects/source lists/evidence, duplicate delivery sentence removed, important conditions and business-photo anchors preserved',
   );
 }
+
+{
+  const { resolveDispatchAssignment, normalizeManualItems, manualDailyView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const { dailyWorkItems, renderWorkSections } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const first = 'dadadada-1111-4111-8111-dadadadadada',
+    second = 'bcbcbcbc-2222-4222-8222-bcbcbcbcbcbc';
+  const source =
+    '11/2 월\n쿠팡창원 4p 배차입니다.\n하차 13:15\n경상남도 창원시 진해구 두동로 33 A동 5층';
+  const original = {
+    entryId: first,
+    status: 'ready',
+    submittedAt: '2026-10-31T06:21:08.135431+00:00',
+    referenceDate: '2026-10-31',
+    text: source,
+    items: normalizeManualItems(
+      {
+        items: [
+          {
+            kind: 'dispatch',
+            text: '쿠팡창원 4p 배차',
+            evidence: '11/2 월\n쿠팡창원 4p 배차입니다.',
+            serviceOriginal: '11/2 월',
+            dueOriginal: null,
+            assignee: null,
+            needsConfirmation: false,
+          },
+        ],
+      },
+      {
+        text: source,
+        entryId: first,
+        submittedAt: '2026-10-31T06:21:08.135431+00:00',
+        referenceDate: '2026-10-31',
+      },
+    ),
+  };
+  const text =
+    '11월2일\n양산공장(09:00상)-창원쿠팡\n경기12바3456 홍길동 01018832830';
+  const reply = resolveDispatchAssignment(
+    text,
+    { [first]: original },
+    '2026-10-31',
+  );
+  assert.equal(reply.items[0].workRef, first + ':manual:item-001');
+  assert.equal(reply.items[0].workflowStatus, 'complete');
+  const saved = {
+    entryId: second,
+    status: 'ready',
+    text,
+    submittedAt: '2026-10-31T08:00:00.345678+00:00',
+    referenceDate: '2026-10-31',
+    items: normalizeManualItems(reply, {
+      text,
+      entryId: second,
+      submittedAt: '2026-10-31T08:00:00.345678+00:00',
+      referenceDate: '2026-10-31',
+      allowLinks: true,
+      verifiedReplyRef: reply.items[0].workRef,
+      verifiedDispatchReply: true,
+      replyDetails: reply.details,
+    }),
+  };
+  const entries = { [first]: original, [second]: saved };
+  const work = dailyWorkItems(
+    { day: '2026-10-31', groups: [], tasks: [], issues: [], waiting: [] },
+    manualDailyView(entries, '2026-10-31'),
+  );
+  assert.equal(work.length, 1);
+  assert.equal(work[0].workId, first + ':manual:item-001');
+  assert.equal(work[0].status, 'complete');
+  assert.equal(work[0].serviceDate, '2026-11-02');
+  assert.equal(work[0].dueAt, null);
+  const html = renderWorkSections(work);
+  for (const value of [
+    '4p',
+    '하차 13:15',
+    '두동로 33 A동 5층',
+    '양산공장',
+    '09:00',
+    '경기12바3456',
+    '홍길동',
+    '010-1883-2830',
+  ])
+    assert.ok(html.includes(value), value);
+  const ownerReopened = structuredClone(original);
+  ownerReopened.items[0].completionEvents = [
+    { done: true, at: '2026-10-31T06:30:00Z' },
+    { done: false, at: '2026-10-31T07:00:00Z' },
+  ];
+  ownerReopened.items[0].ownerUpdatedAt = '2026-10-31T07:00:00Z';
+  const ownerWins = dailyWorkItems(
+    { day: '2026-10-31', groups: [], tasks: [], issues: [], waiting: [] },
+    manualDailyView({ [first]: ownerReopened, [second]: saved }, '2026-10-31'),
+  );
+  assert.equal(ownerWins.length, 1);
+  assert.equal(
+    ownerWins[0].status,
+    'pending',
+    'inferred assignment must not override an explicit owner reopen',
+  );
+  assert.equal(ownerWins[0].ownerStateAt, '2026-10-31T07:00:00.000Z');
+  assert.equal(ownerWins[0].closedAt, null);
+  assert.ok(!html.includes('운행 완료'));
+  assert.ok(!html.includes('하차 완료'));
+  const next = dailyWorkItems(
+    { day: '2026-11-01', groups: [], tasks: [], issues: [], waiting: [] },
+    manualDailyView(entries, '2026-11-01'),
+  );
+  assert.equal(
+    next.length,
+    0,
+    'linked assignment completion cannot resurrect on the following day',
+  );
+  const other = structuredClone(original);
+  other.entryId = 'eeeeeeee-3333-4333-8333-eeeeeeeeeeee';
+  other.items[0].ref = other.entryId + ':manual:item-001';
+  assert.equal(
+    resolveDispatchAssignment(
+      text,
+      { [first]: original, [other.entryId]: other },
+      '2026-10-31',
+    ).items[0].workRef,
+    null,
+    'same-day ambiguous requests are never guessed',
+  );
+  const ambiguousReply = resolveDispatchAssignment(
+    text,
+    { [first]: original, [other.entryId]: other },
+    '2026-10-31',
+  );
+  assert.equal(ambiguousReply.items[0].kind, 'issue');
+  assert.equal(ambiguousReply.items[0].needsConfirmation, true);
+  assert.equal(ambiguousReply.items[0].workflowStatus, 'pending');
+  const reviewItems = normalizeManualItems(ambiguousReply, {
+    text,
+    entryId: second,
+    submittedAt: '2026-10-31T08:00:00Z',
+    referenceDate: '2026-10-31',
+    allowLinks: true,
+    verifiedDispatchReply: true,
+    replyDetails: ambiguousReply.details,
+  });
+  assert.equal(reviewItems[0].workRef, undefined);
+  assert.equal(reviewItems[0].done, false);
+  assert.equal(reviewItems[0].resolution, 'dispatch_assignment_review_v1');
+
+  assert.equal(
+    resolveDispatchAssignment(
+      text.replace('11월2일', '11월3일'),
+      { [first]: original },
+      '2026-10-31',
+    )?.items[0].workRef ?? null,
+    null,
+  );
+  assert.equal(
+    resolveDispatchAssignment(
+      text.replace('창원쿠팡', '김해쿠팡'),
+      { [first]: original },
+      '2026-10-31',
+    )?.items[0].workRef ?? null,
+    null,
+  );
+  assert.equal(
+    resolveDispatchAssignment(
+      text.replace('01018832830', ''),
+      { [first]: original },
+      '2026-10-31',
+    )?.items[0].workRef ?? null,
+    null,
+  );
+  assert.equal(
+    original.items[0].done,
+    false,
+    'original request/history must remain immutable',
+  );
+  console.log(
+    'PASS dispatch assignment follow-up: same work identity, destination word-order alias, preserved request conditions, preparation complete only, no nextday revival, ambiguity/date/destination/incomplete guards',
+  );
+}

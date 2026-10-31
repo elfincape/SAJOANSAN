@@ -126,6 +126,7 @@ export function normalizeDailyWork(input) {
     status: input.status,
     closedAt: stamp(input.closedAt),
     ownerStateAt: stamp(input.ownerStateAt),
+    inferredStateAt: stamp(input.inferredStateAt),
     sourceRefs: refs,
     needsConfirmation: input.needsConfirmation === true,
     originRef: input.ref,
@@ -309,8 +310,12 @@ export function dailyWorkItems(
             : item.status === 'cancelled'
               ? item.closedAt
               : null,
-          ownerStateAt:
-            item.ownerStateAt ?? (item.done ? item.completedAt : null),
+          ownerStateAt: Object.hasOwn(item, 'ownerStateAt')
+            ? item.ownerStateAt
+            : item.done
+              ? item.completedAt
+              : null,
+          inferredStateAt: item.inferredStateAt,
           sourceRefs: refs,
           needsConfirmation: item.needsConfirmation,
         }),
@@ -342,6 +347,12 @@ export function dailyWorkItems(
       .filter((row) => row.ownerStateAt)
       .sort((a, b) => a.ownerStateAt.localeCompare(b.ownerStateAt))
       .at(-1);
+    const state =
+      owner ??
+      [previous, item]
+        .filter((row) => row.inferredStateAt)
+        .sort((a, b) => a.inferredStateAt.localeCompare(b.inferredStateAt))
+        .at(-1);
     const combined = {
       ...previous,
       ...item,
@@ -380,10 +391,11 @@ export function dailyWorkItems(
         6,
       );
     }
-    if (owner) {
-      combined.status = owner.status;
-      combined.ownerStateAt = owner.ownerStateAt;
-      combined.closedAt = owner.closedAt;
+    if (state) {
+      combined.status = state.status;
+      combined.ownerStateAt = state.ownerStateAt;
+      combined.inferredStateAt = state.inferredStateAt ?? null;
+      combined.closedAt = state.closedAt;
     }
     merged.set(key, combined);
   }

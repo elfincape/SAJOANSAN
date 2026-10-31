@@ -254,6 +254,108 @@ export function deadline(original, evidence, referenceDate) {
   };
 }
 
+export function resolveDispatchAssignment(
+  text,
+  entries,
+  referenceDate,
+  receivedAt = referenceDate + 'T12:00:00+09:00',
+) {
+  if (
+    typeof text !== 'string' ||
+    text.length > 2000 ||
+    /취소|미배차|미정|예정|변경요청|확인[ ]*필요|[?？]/.test(text)
+  )
+    return null;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length !== 3) return null;
+  const dateOriginal = lines[0],
+    serviceDate = dateFrom(dateOriginal, referenceDate);
+  if (
+    !serviceDate ||
+    !/^(?:\d{1,2}월\s*\d{1,2}일|\d{1,2}\/\d{1,2})(?:\s*[월화수목금토일](?:요일)?)?$/.test(
+      dateOriginal,
+    )
+  )
+    return null;
+  const route =
+    /^([^()\n]{1,100})\(((?:[01]?\d|2[0-3]):[0-5]\d)\s*상(?:차)?\)\s*[-–—→ㅡ]\s*([^()\n]{1,100})$/.exec(
+      lines[1],
+    );
+  const vehicle =
+    /^((?:[가-힣]{2,3})?\d{2,3}[가-힣]\d{4})\s+([가-힣]{2,5})\s+(010[- ]?\d{4}[- ]?\d{4})$/.exec(
+      lines[2],
+    );
+  if (!route || !vehicle) return null;
+  const destination = route[3].replace(/\s/g, '');
+  const manual = manualDailyView(entries, kstDay(receivedAt));
+  const work = dailyWorkItems(
+    { groups: [], tasks: [], issues: [], waiting: [] },
+    manual,
+  );
+  const byRef = new Map(
+    Object.values(entries)
+      .filter((entry) => entry.status === 'ready')
+      .flatMap((entry) => (entry.items ?? []).map((item) => [item.ref, item])),
+  );
+  const matches = work.filter((item) => {
+    const original = byRef.get(item.workId);
+    if (
+      original?.kind !== 'dispatch' ||
+      item.serviceDate !== serviceDate ||
+      item.status === 'cancelled'
+    )
+      return false;
+    const name =
+      /(?:^|\s)([가-힣A-Za-z]+)\s*(?:\d+(?:\.\d+)?\s*[pP])?\s*배차/.exec(
+        item.title,
+      )?.[1];
+    // A word-order variant is supporting evidence only: same service date,
+    // complete route/vehicle reply and exactly one existing request are required.
+    if (!name) return false;
+    if (name === destination) return true;
+    const location = (value) =>
+      /^(?:쿠팡.+|.+쿠팡)$/.test(value)
+        ? value.replace(/^쿠팡|쿠팡$/g, '')
+        : null;
+    return !!location(name) && location(name) === location(destination);
+  });
+  const match = matches.length === 1 ? matches[0] : null,
+    phone = vehicle[3].replace(/[- ]/g, '');
+  return {
+    origin: 'manual',
+    sourceText: text,
+    authoredDate: null,
+    details: [
+      route[1].trim() + ' → ' + route[3].trim() + ' · 상차 ' + route[2],
+      vehicle[1] +
+        ' ' +
+        vehicle[2] +
+        ' ' +
+        phone.slice(0, 3) +
+        '-' +
+        phone.slice(3, 7) +
+        '-' +
+        phone.slice(7),
+    ],
+    items: [
+      {
+        kind: match ? 'dispatch' : 'issue',
+        text: match?.title ?? '배차 회신 연결 확인',
+        evidence: text,
+        serviceOriginal: dateOriginal,
+        dueOriginal: null,
+        assignee: null,
+        needsConfirmation: !match,
+        workRef: match?.workId ?? null,
+        workflowStatus: match ? 'complete' : 'pending',
+        stateDeclared: false,
+      },
+    ],
+  };
+}
 // Only unambiguous single-dispatch messages may share unassigned route lines.
 function dispatchDetails(source, items) {
   if (
@@ -289,6 +391,9 @@ export function normalizeManualItems(
     entryId,
     origin = 'manual',
     allowLinks = false,
+    verifiedReplyRef = null,
+    verifiedDispatchReply = false,
+    replyDetails = [],
   },
 ) {
   if (
@@ -333,6 +438,7 @@ export function normalizeManualItems(
       );
     if (
       (raw.kind !== 'reference' &&
+        !verifiedDispatchReply &&
         !/(?:배차|차량|확인|제출|회신|요청|연락|발송|예약|준비|검토|작성|처리|점검|납품|운행|회의|상차|하차|배송|보고|취소|변경)/.test(
           evidence,
         )) ||
@@ -401,8 +507,20 @@ export function normalizeManualItems(
           ]),
       ),
       text: label,
+      ...(verifiedDispatchReply
+        ? {
+            resolution: raw.workRef
+              ? 'dispatch_assignment_v1'
+              : 'dispatch_assignment_review_v1',
+          }
+        : {}),
       details:
-        raw.kind === 'dispatch' ? dispatchDetails(text, value.items) : [],
+        verifiedDispatchReply ||
+        (raw.workRef === verifiedReplyRef && verifiedReplyRef)
+          ? replyDetails
+          : raw.kind === 'dispatch'
+            ? dispatchDetails(text, value.items)
+            : [],
       evidence,
       visibleFrom,
       receivedAt,
@@ -480,7 +598,7 @@ function publicItem(
       ? (item.ownerUpdatedAt ?? item.completionEvents.at(-1).at)
       : item.ownerStateDeclared
         ? item.declaredAt
-        : done
+        : done && item.resolution !== 'dispatch_assignment_v1'
           ? completedAt
           : null,
   };
@@ -575,11 +693,15 @@ export function manualDailyView(entries, day) {
         );
         if (item.kind === 'dispatch' && !publicValue.details.length)
           publicValue.details = dispatchDetails(entry.text, entry.items);
+        publicValue.inferredStateAt =
+          item.resolution === 'dispatch_assignment_v1' && !events.length
+            ? state.at
+            : null;
         publicValue.ownerStateAt =
           events.at(-1)?.at ??
           (item.ownerStateDeclared
             ? item.declaredAt
-            : state.done
+            : state.done && !publicValue.inferredStateAt
               ? state.at
               : null);
         if (events.length && !state.done) {
@@ -636,7 +758,10 @@ export function manualDailyView(entries, day) {
     for (const item of entry.items) addContext(item.workRef);
   // Hidden linked owner decisions still govern the underlying mail/work on later days.
   for (const [ref, context] of allItems)
-    if (context.items[0].workRef && context.items[0].ownerStateAt)
+    if (
+      context.items[0].workRef &&
+      (context.items[0].ownerStateAt || context.items[0].inferredStateAt)
+    )
       addContext(ref);
   return {
     day,
@@ -793,7 +918,16 @@ export async function handleManualMessage(action, body, user, ctx) {
   let phase = 'MODEL_FAILED',
     finished;
   try {
-    const response = structured
+    const reply = structured
+      ? null
+      : resolveDispatchAssignment(
+          entry.text,
+          current.manual_entries,
+          entry.referenceDate,
+          entry.submittedAt,
+        );
+    const resolved = structured ?? reply;
+    const response = resolved
       ? null
       : await callLuna({
           schema: MANUAL_MESSAGE_SCHEMA,
@@ -805,14 +939,17 @@ export async function handleManualMessage(action, body, user, ctx) {
           fetcher: ctx.fetcher,
           maxTokens: 5000,
         });
-    const value = structured ?? parseModel(response),
+    const value = resolved ?? parseModel(response),
       items = normalizeManualItems(value, {
-        text: structured?.sourceText ?? entry.text,
+        text: resolved?.sourceText ?? entry.text,
         submittedAt: entry.submittedAt,
         referenceDate: entry.referenceDate,
         entryId: entry.entryId,
-        origin: structured?.origin ?? 'manual',
-        allowLinks: !!structured,
+        origin: resolved?.origin ?? 'manual',
+        allowLinks: !!resolved,
+        verifiedReplyRef: reply?.items[0].workRef ?? null,
+        verifiedDispatchReply: !!reply,
+        replyDetails: reply?.details ?? [],
       });
     phase = 'MANUAL_SOURCE';
     for (const item of items)
