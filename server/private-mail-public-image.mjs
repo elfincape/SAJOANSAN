@@ -80,7 +80,7 @@ export async function downloadPublicMailImage(
       addresses.some((item) => !isPublicMailImageAddress(item.address))
     )
       throw Error('REMOTE_IMAGE_SOURCE');
-    const pin = addresses[0];
+    const pin = addresses.find((item) => item.family === 4) ?? addresses[0];
     stage = 'request';
     const result = await Promise.race([
       new Promise((resolve, reject) => {
