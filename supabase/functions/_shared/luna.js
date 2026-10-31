@@ -274,11 +274,29 @@ export async function callLuna({
       model,
       outputLimit: maxTokens,
       reasoningEffort: provider === 'openai' ? 'low' : null,
+      promptBytes: new TextEncoder().encode(prompt).byteLength,
+      schemaBytes: structured
+        ? new TextEncoder().encode(JSON.stringify(schema)).byteLength
+        : 0,
+      imageCount: images.length,
+      requestId: /^req_[A-Za-z0-9_-]{1,120}$/.test(
+        response.headers.get('x-request-id') ?? '',
+      )
+        ? response.headers.get('x-request-id')
+        : null,
     },
     reject = (code, reason) => {
       throw failure(code, 502, reason, shape);
     };
   if (value?.error) reject('MODEL_FAILED', 'provider_error');
+  if (
+    value?.status === 'incomplete' &&
+    Array.isArray(value.output) &&
+    !value.output.length &&
+    value.usage?.input_tokens === 0 &&
+    value.usage?.output_tokens === 0
+  )
+    reject('MODEL_RESPONSE', 'empty_incomplete');
   if (value?.status === 'incomplete')
     reject(
       value?.incomplete_details?.reason === 'max_output_tokens'

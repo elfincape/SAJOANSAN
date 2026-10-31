@@ -3991,3 +3991,68 @@ console.log(
     'PASS official reasoning budget: explicit low effort, unchanged token cap, safe truncation usage diagnostics and no automatic retry',
   );
 }
+{
+  const { callLuna } = await import('../supabase/functions/_shared/luna.js');
+  const schema = {
+    type: 'object',
+    properties: { ok: { type: 'boolean' } },
+    required: ['ok'],
+    additionalProperties: false,
+  };
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: 'openai',
+        key: 'mock',
+        prompt: '비민감 예문',
+        schema,
+        schemaName: 'probe',
+        maxTokens: 6000,
+        fetcher: async () => {
+          calls++;
+          return Response.json(
+            {
+              model: 'gpt-6-luna',
+              status: 'incomplete',
+              incomplete_details: { reason: 'max_output_tokens' },
+              output: [],
+              usage: {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                output_tokens_details: { reasoning_tokens: 0 },
+              },
+            },
+            { headers: { 'x-request-id': 'req_public-diagnostic' } },
+          );
+        },
+      }),
+    (error) => {
+      assert.equal(
+        error.code,
+        'MODEL_RESPONSE',
+        'zero usage/empty response is not proof of consumed output budget',
+      );
+      assert.equal(error.reason, 'empty_incomplete');
+      assert.equal(
+        error.modelResponseShape.promptBytes,
+        new TextEncoder().encode('비민감 예문').byteLength,
+      );
+      assert.equal(
+        error.modelResponseShape.schemaBytes,
+        new TextEncoder().encode(JSON.stringify(schema)).byteLength,
+      );
+      assert.equal(error.modelResponseShape.requestId, 'req_public-diagnostic');
+      assert.equal(error.modelResponseShape.imageCount, 0);
+      assert.ok(
+        !JSON.stringify(error.modelResponseShape).includes('비민감 예문'),
+      );
+      return true;
+    },
+  );
+  assert.equal(calls, 1);
+  console.log(
+    'PASS empty provider completion: zero-usage incomplete response distinguished, safe request dimensions/id logged, no automatic retries',
+  );
+}

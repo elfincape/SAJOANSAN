@@ -45,7 +45,7 @@ function filterError(error: unknown) {
         MODEL_TRUNCATED:
           '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_RESPONSE:
-          '모델 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
+          '모델이 빈 답변을 반환했거나 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_FAILED:
           'AI 제공자 요청이 실패했습니다. 연결 상태와 서버 오류 기록을 확인해 주세요.',
         RATE_LIMITED:
@@ -306,7 +306,7 @@ export function MailFilterControls({
         MODEL_TRUNCATED:
           '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_RESPONSE:
-          '모델 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
+          '모델이 빈 답변을 반환했거나 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_FAILED:
           'AI 제공자 요청이 실패했습니다. 연결 상태와 서버 오류 기록을 확인해 주세요.',
         RATE_LIMITED:
