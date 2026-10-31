@@ -90,7 +90,9 @@ export function DailyWorkList({
                       <strong>{item.title}</strong>
                     )}
                     <span className="daily-item-status">
-                      {labels[item.status] || '확인 필요'}
+                      {item.category === 'reference'
+                        ? '참고'
+                        : labels[item.status] || '확인 필요'}
                     </span>
                   </div>
                   {item.status === 'cancelled' && item.controlRef ? (
@@ -191,7 +193,8 @@ export function DailyWorkList({
                           {ref.receivedAt ? (
                             <span>
                               {' '}
-                              · {formatBriefingTimestamp(ref.receivedAt)}
+                              · {ref.kind === 'mail' ? '수집' : '입력'}{' '}
+                              {formatBriefingTimestamp(ref.receivedAt)}
                             </span>
                           ) : null}
                           {ref.evidence ? (

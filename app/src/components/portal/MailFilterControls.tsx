@@ -42,6 +42,8 @@ function filterError(error: unknown) {
           'Microsoft 계정의 OneNote 권한을 먼저 연결해 주세요.',
         NOTES_TARGET_UNAVAILABLE: 'OneNote 일일정리 섹션 접근을 확인해 주세요.',
         AI_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
+        ONEDRIVE_CONNECTION_BUSY:
+          '다른 파일 작업이 진행 중입니다. 작업이 끝나면 원노트 기록을 이어갑니다.',
         MODEL_TRUNCATED:
           '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_RESPONSE:
@@ -303,6 +305,8 @@ export function MailFilterControls({
         PAGE_WRITE_UNCERTAIN:
           'OneNote 반영 결과를 다시 확인해야 합니다. 정리 반영을 이어서 확인해 주세요.',
         AI_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
+        ONEDRIVE_CONNECTION_BUSY:
+          '다른 파일 작업이 진행 중입니다. 작업이 끝나면 원노트 기록을 이어갑니다.',
         MODEL_TRUNCATED:
           '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
         MODEL_RESPONSE:

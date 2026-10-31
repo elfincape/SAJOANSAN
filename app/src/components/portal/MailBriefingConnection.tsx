@@ -19,6 +19,7 @@ const reasons: Record<string, string> = {
   OWNER_CONNECTION_REQUIRED: '본인의 Microsoft 계정을 먼저 연결해 주세요.',
   MICROSOFT_CONNECTION_REQUIRED: 'Microsoft 계정을 먼저 연결해 주세요.',
   NOTES_PERMISSION_REQUIRED: 'OneNote 읽기·쓰기 권한을 연결해 주세요.',
+  ONEDRIVE_CONNECTION_BUSY: '다른 파일 작업이 끝나면 원노트 기록을 이어갑니다.',
   NOTES_TARGET_UNAVAILABLE:
     '할 일 목록 노트북의 일일정리 섹션에 접근할 수 없습니다.',
   NOTEBOOK_SHARED: '대상 노트북의 공유 설정을 확인해 주세요.',
@@ -139,6 +140,12 @@ export function MailBriefingConnection() {
   const canRun = Boolean(
     ready && data?.config.enabled && !loadError && !running,
   );
+  const notesNeedsReconnect = Boolean(
+    data?.reports[0]?.error &&
+    ['NOTES_PERMISSION_REQUIRED', 'MICROSOFT_CONNECTION_REQUIRED'].includes(
+      data.reports[0].error,
+    ),
+  );
   const setup = !data
     ? loadError
       ? '상태 확인 필요'
@@ -156,7 +163,7 @@ export function MailBriefingConnection() {
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
       <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
         <strong>메일 자동화</strong> ·{' '}
-        {data?.notesConnected ? (
+        {data?.notesConnected && !notesNeedsReconnect ? (
           <>
             <span>OneNote 연결됨</span> ·{' '}
           </>
@@ -167,10 +174,16 @@ export function MailBriefingConnection() {
         <div>
           <p>
             OneNote (선택 출력){' '}
-            {!data ? '확인 중…' : data.notesConnected ? '연결됨' : '미연결'} ·
-            할 일 목록 → 일일정리
+            {!data
+              ? '확인 중…'
+              : notesNeedsReconnect
+                ? '다시 연결 필요'
+                : data.notesConnected
+                  ? '연결됨'
+                  : '미연결'}{' '}
+            · 할 일 목록 → 일일정리
           </p>
-          {data && !data.notesConnected ? (
+          {data ? (
             <button
               type="button"
               disabled={busy}
@@ -182,7 +195,7 @@ export function MailBriefingConnection() {
                 )
               }
             >
-              OneNote 연결
+              {data.notesConnected ? 'OneNote 다시 연결' : 'OneNote 연결'}
             </button>
           ) : null}
         </div>
@@ -310,13 +323,16 @@ export function MailBriefingConnection() {
                 {data.reports.slice(0, 7).map((report) => (
                   <li key={report.day}>
                     {report.day} ·{' '}
-                    {report.error
-                      ? '기록 실패 · 연결 확인 필요'
-                      : report.dirty
-                        ? '일일정리 갱신 대기'
-                        : report.pageId
-                          ? '일일정리 기록 완료'
-                          : '일일정리 대기'}
+                    {report.error === 'ONEDRIVE_CONNECTION_BUSY'
+                      ? '기록 대기 · 다른 파일 작업 처리 중'
+                      : report.error
+                        ? '기록 실패 · ' +
+                          (reasons[report.error] || '연결 확인 필요')
+                        : report.dirty
+                          ? '일일정리 갱신 대기'
+                          : report.pageId
+                            ? '일일정리 기록 완료'
+                            : '일일정리 대기'}
                   </li>
                 ))}
               </ul>

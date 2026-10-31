@@ -556,11 +556,35 @@ export async function handleMailAutomation(action, body, user, ctx) {
         ...(unsupportedPhotos ? { code: 'NOTES_IMAGE_TYPE_UNSUPPORTED' } : {}),
       });
     } catch (error) {
-      const code = /^[A-Z_]{1,64}$/.test(error?.message ?? '')
-        ? error.message
-        : 'NOTES_SYNC_FAILED';
+      const code =
+        error?.code === 'ONEDRIVE_CONNECTION_BUSY'
+          ? 'ONEDRIVE_CONNECTION_BUSY'
+          : /^[A-Z_]{1,64}$/.test(error?.message ?? '')
+            ? error.message
+            : 'NOTES_SYNC_FAILED';
       console.warn('PRIVATE_MAIL_REPORT_FAILED', {
         stage: reportStage,
+        connectionReason: [
+          'purpose',
+          'consent',
+          'metadata',
+          'refresh',
+          'scope',
+          'token_response',
+        ].includes(error?.connectionReason)
+          ? error.connectionReason
+          : null,
+        oauthCode: [
+          'invalid_grant',
+          'invalid_client',
+          'unauthorized_client',
+          'invalid_scope',
+          'interaction_required',
+          'consent_required',
+          'temporarily_unavailable',
+        ].includes(error?.oauthCode)
+          ? error.oauthCode
+          : null,
         code,
         errorName: [
           'Error',
@@ -582,7 +606,10 @@ export async function handleMailAutomation(action, body, user, ctx) {
           lease,
           value: {
             error: code,
-            notBefore: new Date(Date.now() + 300000).toISOString(),
+            notBefore: new Date(
+              Date.now() +
+                (code === 'ONEDRIVE_CONNECTION_BUSY' ? 15000 : 300000),
+            ).toISOString(),
           },
         });
       return json({ status: 'waiting', code });
