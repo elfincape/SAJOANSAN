@@ -1,3 +1,4 @@
+import { MAIL_RAW_LIMIT } from './private-mail-limits.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { mailBodyText, emlHeaderText } from './private-mail-body.js';
 import {
@@ -8,6 +9,8 @@ import { matchMailRules } from './private-mail-filter.js';
 import { applyMailIntentOverride } from './private-mail-briefing-model.js';
 import {
   selectMailPhotos,
+  needsMailPhotoMetadata,
+  recoverMailPhotoMetadata,
   inspectMailImage,
   mailPhotoExclusionReason,
   requiresMailPrivacyReview,
@@ -215,19 +218,30 @@ export function createMailSource({
       if (exclusion.excluded) return { ...base, exclusion };
       if (requiresMailPrivacyReview(row.subject + '\n' + text))
         throw Error('MAIL_PRIVACY_REVIEW');
-      const files = row.files.map((file, index) => ({
+      let files = row.files.map((file, index) => ({
         ...file,
         index,
         name: file.original_name,
       }));
       const htmlFile = row.files.find((file) => file.kind === 'html');
-      const hasImage = files.some((file) =>
-        /\.(?:jpe?g|png|webp)$/i.test(file.name ?? ''),
+      const hasImage = files.some(
+        (file) =>
+          /\.(?:jpe?g|png|webp)$/i.test(file.name ?? '') ||
+          (file.kind === 'attachment' &&
+            !/\.[^.]{1,10}$/.test(file.name ?? '')),
       );
       const html =
         hasImage && htmlFile
           ? new TextDecoder().decode(await bytes(htmlFile))
           : '';
+      let verifiedHeaders = null;
+      const eml = row.files.find((file) => file.kind === 'eml');
+      if (needsMailPhotoMetadata(files, html)) {
+        if (!eml) throw Error('IMAGE_CONTEXT_REVIEW');
+        const original = await bytes(eml, MAIL_RAW_LIMIT);
+        files = await recoverMailPhotoMetadata(files, original);
+        verifiedHeaders = emlHeaderText(original);
+      }
       const candidates = selectMailPhotos({
         subject: row.subject,
         text,
@@ -257,8 +271,8 @@ export function createMailSource({
           bytes: data,
         });
       }
-      const eml = row.files.find((file) => file.kind === 'eml');
-      const verifiedHeaders = eml ? await headers(eml) : '';
+      if (verifiedHeaders === null)
+        verifiedHeaders = eml ? await headers(eml) : '';
       return {
         ...base,
         images,

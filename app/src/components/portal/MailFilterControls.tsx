@@ -7,6 +7,17 @@ import type {
 } from '../../lib/portal-mail';
 
 type Override = 'inherit' | 'include' | 'exclude';
+const photoReasons: Record<string, string> = {
+  IMAGE_CONTEXT_REVIEW:
+    '첨부 사진을 원본 메일과 정확히 연결하지 못했습니다. 원본 첨부를 확인해 주세요.',
+  IMAGE_PRIVACY_REVIEW:
+    '보호 정보가 포함될 수 있는 사진은 자동 분석하지 않았습니다. 원본 첨부를 직접 확인해 주세요.',
+  IMAGE_LIMIT:
+    '첨부 사진이 자동 분석의 크기·개수 범위를 넘었습니다. 원본 첨부를 확인해 주세요.',
+  IMAGE_TYPE_UNSUPPORTED:
+    '이 사진 형식은 자동 분석을 지원하지 않습니다. 원본 첨부에서 확인해 주세요.',
+};
+
 const fields: Record<MailAnalysisRule['conditions'][number]['field'], string> =
   {
     subject: '제목에 포함',
@@ -25,6 +36,7 @@ function filterError(error: unknown) {
   return (
     (
       {
+        ...photoReasons,
         MAIL_FILTER_SCHEMA_REQUIRED:
           '분석 제외 저장 설정이 준비되지 않았습니다.',
         MAIL_RULE_INVALID:
@@ -290,6 +302,7 @@ export function MailFilterControls({
   function reportReason(code?: string) {
     return (
       {
+        ...photoReasons,
         NOTES_IMAGE_TYPE_UNSUPPORTED:
           '본문 정리는 반영됐지만 원본 WebP 등 사진 형식을 확인해야 합니다. 해당 사진의 반영은 완료되지 않았습니다.',
         NOTES_PERMISSION_REQUIRED:

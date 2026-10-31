@@ -4285,3 +4285,252 @@ console.log(
     'PASS Notes refresh: omitted unchanged scope inherits existing valid consent; explicit scope loss/invalid metadata/revoked refresh fail closed without overwriting connection',
   );
 }
+
+{
+  const { recoverMailPhotoMetadata, selectMailPhotos, needsMailPhotoMetadata } =
+    await import('../supabase/functions/onedrive-auth/private-mail-images.js');
+  const payload = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const hash = Buffer.from(
+    await crypto.subtle.digest('SHA-256', payload),
+  ).toString('hex');
+  const makeRaw = (signature, name = 'image001.png') =>
+    new TextEncoder().encode(
+      'Date: Fri, 30 Oct 2026 09:00:00 +0900\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="case"\r\n\r\n--case\r\nContent-Type: text/html; charset=utf-8\r\n\r\n' +
+        (signature
+          ? '<div class="gmail_signature"><img src="cid:random-part-id"></div>'
+          : '<p>현장 사진</p><img src="cid:random-part-id">') +
+        '\r\n--case\r\nContent-Type: image/png' +
+        (name ? '; name="' + name + '"' : '') +
+        '\r\nContent-Disposition: inline' +
+        (name ? '; filename="' + name + '"' : '') +
+        '\r\nContent-ID: <random-part-id>\r\nContent-Transfer-Encoding: base64\r\n\r\n' +
+        payload.toString('base64') +
+        '\r\n--case--\r\n',
+    );
+  for (const [signature, name] of [
+    [true, 'image001.png'],
+    [false, 'image001.png'],
+    [false, null],
+  ]) {
+    const file = {
+      kind: 'attachment',
+      index: 2,
+      name: name ?? 'attachment',
+      original_name: name ?? 'attachment',
+      content_hash: hash,
+      byte_size: payload.length,
+    };
+    const files = await recoverMailPhotoMetadata(
+      [file],
+      makeRaw(signature, name),
+    );
+    assert.equal(files[0].index, 2);
+    assert.equal(files[0].content_hash, hash);
+    assert.equal(files[0].name, file.name);
+    const html = signature
+      ? '<div class="gmail_signature"><img src="cid:random-part-id"></div>'
+      : '<p>현장 사진</p><img src="cid:random-part-id">';
+    const selected = selectMailPhotos({ files, html });
+    assert.equal(selected.selected.length, signature ? 0 : 1);
+    if (signature) assert.equal(selected.excluded[0].reason, 'SIGNATURE_IMAGE');
+  }
+  console.log(
+    'PASS original MIME metadata: signature excluded before model, generic/unnamed business images retained, source index/hash/name immutable',
+  );
+
+  const raw = makeRaw(false);
+  const file = {
+    kind: 'attachment',
+    index: 2,
+    name: 'image001.png',
+    original_name: 'image001.png',
+    content_hash: hash,
+    byte_size: payload.length,
+  };
+  assert.equal(
+    needsMailPhotoMetadata([file], '<img src="cid:random-part-id">'),
+    true,
+  );
+  assert.equal(
+    needsMailPhotoMetadata([file], '<img src="cid:image001.png">'),
+    false,
+  );
+  await assert.rejects(
+    () =>
+      recoverMailPhotoMetadata(
+        [{ ...file, content_hash: 'f'.repeat(64) }],
+        raw,
+      ),
+    /IMAGE_CONTEXT_REVIEW/,
+  );
+  await assert.rejects(
+    () =>
+      recoverMailPhotoMetadata(
+        [{ ...file, byte_size: payload.length + 1 }],
+        raw,
+      ),
+    /IMAGE_CONTEXT_REVIEW/,
+  );
+  const duplicate = new TextEncoder().encode(
+    new TextDecoder()
+      .decode(raw)
+      .replace(
+        '--case--',
+        '--case\r\nContent-Type: image/png; name="second.png"\r\nContent-Disposition: inline; filename="second.png"\r\nContent-ID: <other-cid>\r\nContent-Transfer-Encoding: base64\r\n\r\n' +
+          payload.toString('base64') +
+          '\r\n--case--',
+      ),
+  );
+  await assert.rejects(
+    () => recoverMailPhotoMetadata([file], duplicate),
+    /IMAGE_CONTEXT_REVIEW/,
+  );
+  const base64url = Buffer.from(hash, 'hex').toString('base64url');
+  const recovered = await recoverMailPhotoMetadata(
+    [{ ...file, content_hash: base64url }],
+    raw,
+  );
+  assert.equal(recovered[0].content_hash, base64url);
+  console.log(
+    'PASS MIME recovery trust: exact original bytes hash/size, ambiguous CID rejects, legacy hash encoding and identity preserved',
+  );
+}
+{
+  const {
+    readStructuredWorkInput,
+    normalizeManualItems,
+    manualDailyView,
+    handleManualMessage,
+  } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const { APPROVED_MAIL_TARGET: T } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  for (const status of ['complete', 'cancelled']) {
+    const id = '77777777-7777-4777-8777-777777777777';
+    const sourceText =
+      status === 'complete' ? '배차 처리했습니다' : '배차 요청을 취소합니다';
+    const text = JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'assistant',
+      sourceText,
+      items: [
+        {
+          category: 'task',
+          title: '배차 처리',
+          evidence: sourceText,
+          status,
+          ...(status === 'cancelled'
+            ? {
+                workRef: '66666666-6666-4666-8666-666666666666:manual:item-001',
+              }
+            : {}),
+        },
+      ],
+    });
+    const structured = readStructuredWorkInput(text);
+    const [item] = normalizeManualItems(structured, {
+      text: sourceText,
+      submittedAt: '2026-10-30T01:00:00Z',
+      referenceDate: '2026-10-30',
+      entryId: id,
+      allowLinks: true,
+      origin: 'assistant',
+    });
+    item.completionEvents = [
+      ...(status === 'complete'
+        ? [{ done: true, at: '2026-10-30T01:00:00Z' }]
+        : []),
+      { done: false, at: '2026-10-31T01:00:00Z' },
+    ];
+    item.ownerUpdatedAt = '2026-10-31T01:00:00Z';
+    const entry = {
+      entryId: id,
+      status: 'ready',
+      submittedAt: '2026-10-30T01:00:00Z',
+      referenceDate: '2026-10-30',
+      text,
+      items: [item],
+    };
+    const past = manualDailyView({ [id]: entry }, '2026-10-30').entries[0]
+      .items[0];
+    assert.equal(past.status, status);
+    assert.equal(
+      Date.parse(past.ownerStateAt),
+      Date.parse('2026-10-30T01:00:00Z'),
+      'future reopening must not change past owner state',
+    );
+    const present = manualDailyView({ [id]: entry }, '2026-10-31').entries[0]
+      .items[0];
+    assert.equal(present.status, 'pending');
+    assert.equal(present.done, false);
+    const replay = await handleManualMessage(
+      'private-mail-manual-add',
+      { clientRequestId: '88888888-8888-4888-8888-888888888888', text },
+      { id: T.owner_id },
+      {
+        json: (x) => Response.json(x),
+        fail: (m) => Error(m),
+        db: async (path) =>
+          path.startsWith('private_mailboxes?')
+            ? [
+                {
+                  id: T.mailbox_id,
+                  owner_id: T.owner_id,
+                  enabled: true,
+                  manual_entries: { [id]: entry },
+                },
+              ]
+            : { entry, claimed: false },
+        fetcher: async () =>
+          assert.fail('ready replay must not call any model'),
+      },
+    );
+    const body = await replay.json();
+    assert.equal(body.items[0].done, false);
+    assert.equal(body.items[0].status, 'pending');
+    assert.equal(body.items[0].completedAt, null);
+    assert.equal(body.items[0].ownerStateAt, item.ownerUpdatedAt);
+  }
+  console.log(
+    'PASS declared closed ready replay: explicit owner reopening survives retries while prior-day completed/cancelled snapshots retain their original state',
+  );
+}
+{
+  const { manualDailyView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const id = '99999999-9999-4999-8999-999999999999';
+  const entry = {
+    entryId: id,
+    status: 'ready',
+    submittedAt: '2026-10-29T01:00:00Z',
+    referenceDate: '2026-10-29',
+    items: [
+      {
+        itemId: 'item-001',
+        ref: id + ':manual:item-001',
+        kind: 'task',
+        text: '진행 중인 업무',
+        visibleFrom: '2026-10-29',
+        workflowStatus: 'in_progress',
+        ownerStateDeclared: true,
+        declaredAt: '2026-10-29T01:00:00Z',
+        done: true,
+        completedAt: '2026-10-30T01:00:00Z',
+        ownerUpdatedAt: '2026-10-30T01:00:00Z',
+        completionEvents: [{ done: true, at: '2026-10-30T01:00:00Z' }],
+      },
+    ],
+  };
+  assert.equal(
+    manualDailyView({ [id]: entry }, '2026-10-29').entries[0].items[0].status,
+    'in_progress',
+    'future completion must not turn historical in-progress work into pending',
+  );
+  assert.equal(
+    manualDailyView({ [id]: entry }, '2026-10-30').entries[0].items[0].status,
+    'complete',
+  );
+  console.log(
+    'PASS historical declared progress: future owner completion does not rewrite prior-day workflow status',
+  );
+}

@@ -394,10 +394,13 @@ export function normalizeManualItems(
 function publicItem(
   item,
   entryId,
-  done = item.done === true || item.workflowStatus === 'complete',
+  done = item.done === true ||
+    (!item.completionEvents?.length && item.workflowStatus === 'complete'),
   completedAt = item.completedAt ??
     (item.workflowStatus === 'complete' ? item.declaredAt : null),
+  hasOwnerHistory = !!item.completionEvents?.length,
 ) {
+  const declaredStatus = hasOwnerHistory ? null : item.workflowStatus;
   return {
     entryId,
     itemId: item.itemId,
@@ -420,14 +423,14 @@ function publicItem(
       ? 'complete'
       : item.kind === 'waiting'
         ? 'waiting'
-        : item.workflowStatus === 'cancelled'
+        : declaredStatus === 'cancelled'
           ? 'cancelled'
-          : item.workflowStatus === 'in_progress'
+          : declaredStatus === 'in_progress'
             ? 'in_progress'
             : item.kind === 'issue'
               ? 'needs_confirmation'
               : 'pending',
-    completedAt,
+    completedAt: done ? completedAt : null,
     sourceType: 'manual',
     origin: item.origin ?? 'manual',
     evidence: item.evidence,
@@ -437,12 +440,14 @@ function publicItem(
     customer: item.customer ?? null,
     requester: item.requester ?? null,
     nextAction: item.nextAction ?? null,
-    closedAt: item.workflowStatus === 'cancelled' ? item.declaredAt : null,
-    ownerStateAt: item.ownerStateDeclared
-      ? item.declaredAt
-      : done
-        ? completedAt
-        : null,
+    closedAt: declaredStatus === 'cancelled' ? item.declaredAt : null,
+    ownerStateAt: hasOwnerHistory
+      ? (item.ownerUpdatedAt ?? item.completionEvents.at(-1).at)
+      : item.ownerStateDeclared
+        ? item.declaredAt
+        : done
+          ? completedAt
+          : null,
   };
 }
 function publicEntry(entry, items) {
@@ -531,15 +536,24 @@ export function manualDailyView(entries, day) {
           entry.entryId,
           state.done && completionDay <= day,
           state.done && completionDay <= day ? state.at : null,
+          events.length > 0,
         );
         publicValue.ownerStateAt =
-          events.at(-1)?.at ?? publicValue.ownerStateAt;
+          events.at(-1)?.at ??
+          (item.ownerStateDeclared
+            ? item.declaredAt
+            : state.done
+              ? state.at
+              : null);
         if (events.length && !state.done) {
           publicValue.status =
             item.kind === 'issue' ? 'needs_confirmation' : 'pending';
           publicValue.closedAt = null;
         }
-        if (cancelled) publicValue.status = 'cancelled';
+        if (cancelled) {
+          publicValue.status = 'cancelled';
+          publicValue.closedAt = item.declaredAt;
+        }
         allItems.set(publicValue.ref, {
           entryId: entry.entryId,
           submittedAt: entry.submittedAt,
