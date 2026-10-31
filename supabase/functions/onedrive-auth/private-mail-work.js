@@ -287,7 +287,7 @@ export function dailyWorkItems(
                 : 'task',
           title: item.text,
           status: item.kind === 'waiting' && !item.done ? 'waiting' : status,
-          summary: [],
+          summary: item.details ?? [],
           assignee: item.assignee,
           assigneeConfirmed: !!item.assignee,
           center: item.center,

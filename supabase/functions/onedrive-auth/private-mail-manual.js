@@ -254,6 +254,32 @@ export function deadline(original, evidence, referenceDate) {
   };
 }
 
+// Only unambiguous single-dispatch messages may share unassigned route lines.
+function dispatchDetails(source, items) {
+  if (
+    typeof source !== 'string' ||
+    items.filter((item) => item.kind === 'dispatch').length !== 1 ||
+    items.some((item) => item.kind !== 'dispatch')
+  )
+    return [];
+  return [
+    ...new Set(
+      source
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(
+          (line) =>
+            line.length <= 500 &&
+            (/^(?:상차|하차)(?:\s*(?:예정|시간|시각))?\s*[:：]?\s*(?:[01]?\d|2[0-3]):[0-5]\d(?:\s|$)/.test(
+              line,
+            ) ||
+              /^(?:서울(?:특별시)?|부산(?:광역시)?|대구(?:광역시)?|인천(?:광역시)?|광주(?:광역시)?|대전(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|경기도|강원(?:도|특별자치도)|충청[남북]도|전라[남북]도|전북특별자치도|경상[남북]도|제주(?:도|특별자치도))\s.+(?:로|길|동|읍|면|리)\s*\d/.test(
+                line,
+              )),
+        ),
+    ),
+  ].slice(0, 6);
+}
 export function normalizeManualItems(
   value,
   {
@@ -375,6 +401,8 @@ export function normalizeManualItems(
           ]),
       ),
       text: label,
+      details:
+        raw.kind === 'dispatch' ? dispatchDetails(text, value.items) : [],
       evidence,
       visibleFrom,
       receivedAt,
@@ -413,6 +441,7 @@ function publicItem(
     ref: entryId + ':manual:' + item.itemId,
     kind: item.kind,
     text: item.text,
+    details: item.details ?? [],
     visibleFrom: item.visibleFrom,
     receivedAt: item.receivedAt,
     submittedAt: item.submittedAt,
@@ -544,6 +573,8 @@ export function manualDailyView(entries, day) {
           state.done && completionDay <= day ? state.at : null,
           events.length > 0,
         );
+        if (item.kind === 'dispatch' && !publicValue.details.length)
+          publicValue.details = dispatchDetails(entry.text, entry.items);
         publicValue.ownerStateAt =
           events.at(-1)?.at ??
           (item.ownerStateDeclared
