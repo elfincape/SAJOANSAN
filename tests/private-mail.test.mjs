@@ -921,7 +921,7 @@ assert.ok(!report.html.includes('<h2>출처</h2>'));
 assert.ok(
   !report.html.includes('메일 요약') &&
     !report.html.includes('정리된 이슈 없음') &&
-    report.html.includes('할 일'),
+    report.html.includes('오늘 챙길 일'),
 );
 assert.throws(
   () =>
@@ -1409,7 +1409,7 @@ const approvedReport = briefing.renderDailyBriefing({
   analyses: [approvedAnalysis],
 });
 for (const label of [
-  '진행 이슈·회신 대기',
+  '진행·회신 대기',
   '직접 메모',
   '최종 업데이트',
   '평택센터',
@@ -1420,7 +1420,10 @@ for (const label of [
   assert.ok(approvedReport.html.includes(label), label);
 assert.ok(!approvedReport.html.includes('<blockquote>'));
 assert.ok(!approvedReport.html.includes('납품 지연으로 재확인 중입니다.'));
-assert.ok(!approvedReport.html.includes('할 일'), 'empty sections are omitted');
+assert.ok(
+  !approvedReport.html.includes('오늘 챙길 일'),
+  'empty sections are omitted',
+);
 assert.equal(
   (
     approvedReport.html.match(
@@ -2775,8 +2778,8 @@ console.log(
     manual,
   });
   assert.ok(report.html.includes('운행 차량 섭외 및 배차'));
-  assert.ok(report.html.includes('대상일: 2026-11-02'));
-  assert.ok(report.html.includes('할 일'));
+  assert.ok(report.html.includes('운행·납품 2026-11-02'));
+  assert.ok(report.html.includes('오늘 챙길 일'));
   assert.ok(!report.html.includes('메일 요약'));
   assert.ok(!report.html.includes('정리된 메일 없음'));
   assert.ok(!report.html.includes(original));
@@ -3331,8 +3334,8 @@ console.log(
     now: '2026-10-30T09:00:00Z',
     analyses: [normalized],
   });
-  assert.match(page.managedHtml, /대상일: 2026-11-02/);
-  assert.match(page.managedHtml, /기한: 2026-10-30 17:00/);
+  assert.match(page.managedHtml, /운행·납품 2026-11-02/);
+  assert.match(page.managedHtml, /기한 2026-10-30 17:00/);
   assert.doesNotMatch(page.html, /<h2>\d+\./);
   console.log(
     'PASS mail: immediate task visibility, service date independent of deadline, explicit KST time, unnumbered sections',
@@ -6089,5 +6092,859 @@ console.log(
   assert.throws(() => renderDailyBriefing(options), /IMAGE_SOURCE/);
   console.log(
     'PASS report image contract: four/five valid source images do not block later-day reports, past reference remains hidden, six still rejected',
+  );
+}
+
+{
+  const { dailyBriefingView, renderDailyBriefing } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const id = '11111111-1111-4111-8111-111111111111',
+    workId = 'source:' + id;
+  const mail = {
+    source: {
+      id,
+      uidl: 'a'.repeat(64),
+      subject: '검토 자료',
+      sender: 'test@example.test',
+      sentAt: '2026-10-31T01:00:00Z',
+      intent: 'reference',
+    },
+    revision: 1,
+    summary: [{ text: '조건을 검토할 자료', evidence: '검토 자료' }],
+    tasks: [],
+    issues: [],
+    waiting: [],
+    updates: [],
+  };
+  const options = {
+    now: '2026-10-31T03:00:00Z',
+    analyses: [mail],
+    overrides: {},
+  };
+  options.overrides['work:' + workId] = {
+    actor: 'owner',
+    category: 'task',
+    updatedAt: '2026-10-31T03:00:00Z',
+  };
+  const task = dailyBriefingView(options).workItems[0];
+  assert.equal(task.category, 'task');
+  assert.equal(task.workId, workId);
+  assert.equal(task.controlRef, 'work:' + workId);
+  assert.equal(
+    dailyBriefingView({ ...options, now: '2026-11-01T03:00:00Z' }).workItems
+      .length,
+    1,
+  );
+  options.overrides['work:' + workId].done = true;
+  assert.equal(dailyBriefingView(options).workItems[0].status, 'complete');
+  assert.equal(
+    dailyBriefingView({ ...options, now: '2026-11-01T03:00:00Z' }).workItems
+      .length,
+    0,
+  );
+  options.overrides['work:' + workId].excluded = true;
+  options.overrides['work:' + workId].reason = 'spam';
+  assert.equal(dailyBriefingView(options).workItems.length, 0);
+  assert.equal(dailyBriefingView(options).excludedWorkItems[0].workId, workId);
+  assert.ok(
+    !renderDailyBriefing(options).managedHtml.includes('조건을 검토할 자료'),
+  );
+  options.overrides['work:' + workId].excluded = false;
+  options.overrides['work:' + workId].category = 'routine';
+  assert.equal(dailyBriefingView(options).workItems[0].section, 'routine');
+  assert.equal(mail.source.intent, 'reference');
+  assert.equal(mail.tasks.length, 0);
+  console.log(
+    'PASS owner work corrections: stable identity, reference-to-task carry, completion/no revival, exclusion/undo, note projection and original analysis retained',
+  );
+}
+
+{
+  const { renderBriefingWorkNote } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const base = {
+    workId: 'test',
+    category: 'reference',
+    status: 'pending',
+    title: '직원 숙소 지원 품의',
+    summary: [
+      '직원 숙소 지원 품의 참고자료. 보증금 500만원, 월세 60만원, 계약기간 1년.',
+    ],
+    sourceRefs: [],
+  };
+  const note = renderBriefingWorkNote([
+    base,
+    {
+      ...base,
+      workId: 'dispatch',
+      category: 'task',
+      title: '11/2 가상센터 4P 배차 준비',
+      summary: ['하차 13:15', '가상 하차 주소'],
+      serviceDate: '2026-11-02',
+    },
+  ]);
+  assert.ok(note.includes('오늘 챙길 일'));
+  assert.ok(note.includes('참고사항'));
+  assert.ok(note.includes('직원 숙소 지원 품의 참고자료'));
+  assert.ok(!note.includes('500만원'));
+  assert.ok(!note.includes('60만원'));
+  assert.ok(
+    note.includes('4P') &&
+      note.includes('13:15') &&
+      note.includes('2026-11-02'),
+  );
+  assert.ok(!note.includes('미착수'));
+  assert.ok(!note.includes('주요 이슈'));
+  console.log(
+    'PASS human briefing note: action-first, reference one-line, important dispatch details retained, no empty sections/default machine state or reference financial inventory',
+  );
+}
+
+{
+  const { handleApiManagement } =
+    await import('../supabase/functions/_shared/ai-providers.js');
+  let calls = 0;
+  const body = {
+    provider: 'openai',
+    model: 'gpt-6-luna',
+    confirmation: 'synthetic-compatibility',
+  };
+  const ctx = {
+    env: { OPENAI_API_KEY: 'mock-only' },
+    json: Response.json,
+    db: () => assert.fail('verification must not read or write settings'),
+    fetcher: async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, body.model);
+      assert.equal(request.store, false);
+      if (calls === 2)
+        assert.equal(request.input[0].content[1].type, 'input_image');
+      if (calls === 3) assert.equal(request.text.format.type, 'json_object');
+      return Response.json({
+        status: 'completed',
+        model: body.model,
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [
+              {
+                type: 'output_text',
+                text: calls === 3 ? '{"ok":true}' : calls === 2 ? '4' : 'OK',
+              },
+            ],
+          },
+        ],
+      });
+    },
+  };
+  await assert.rejects(
+    () =>
+      handleApiManagement('api-admin-verify', body, { role: 'editor' }, ctx),
+    /ADMIN_REQUIRED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-verify',
+        { ...body, confirmation: '' },
+        { role: 'admin' },
+        ctx,
+      ),
+    /AI_VERIFICATION_CONFIRMATION_REQUIRED/,
+  );
+  assert.equal(calls, 0);
+  const result = await (
+    await handleApiManagement('api-admin-verify', body, { role: 'admin' }, ctx)
+  ).json();
+  assert.equal(result.passed, true);
+  assert.equal(calls, 3);
+  assert.equal(result.checks[1].returnedModel, body.model);
+  assert.equal(result.checks[1].providerStatus, 200);
+  assert.equal(result.checks[1].stopReason, 'end_turn');
+  const mismatch = await (
+    await handleApiManagement(
+      'api-admin-verify',
+      body,
+      { role: 'admin' },
+      {
+        ...ctx,
+        fetcher: async () =>
+          Response.json({
+            status: 'completed',
+            model: 'gpt-other',
+            output: [
+              {
+                type: 'message',
+                role: 'assistant',
+                status: 'completed',
+                content: [{ type: 'output_text', text: 'OK' }],
+              },
+            ],
+          }),
+      },
+    )
+  ).json();
+  assert.equal(mismatch.passed, false);
+  assert.equal(mismatch.checks[0].status, 'model_mismatch');
+  assert.equal(mismatch.checks[0].returnedModel, 'gpt-other');
+  for (const [http, expected] of [
+    [401, 'auth'],
+    [403, 'auth'],
+    [404, 'model_missing'],
+    [400, 'unsupported'],
+    [429, 'transient'],
+    [503, 'transient'],
+  ]) {
+    let failures = 0;
+    const result = await (
+      await handleApiManagement(
+        'api-admin-verify',
+        body,
+        { role: 'admin' },
+        {
+          ...ctx,
+          fetcher: async () => {
+            failures++;
+            return new Response('', { status: http });
+          },
+        },
+      )
+    ).json();
+    assert.equal(result.passed, false);
+    assert.equal(result.checks[0].status, expected);
+    assert.equal(failures, 1, 'failure must stop without fallback or retry');
+    assert.ok(!JSON.stringify(result).includes('mock-only'));
+  }
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-verify',
+        { ...body, model: 'unknown' },
+        { role: 'admin' },
+        ctx,
+      ),
+    /AI_MODEL_UNSUPPORTED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-verify',
+        body,
+        { role: 'admin' },
+        { ...ctx, env: {} },
+      ),
+    /AI_NOT_CONFIGURED/,
+  );
+  const timeout = await (
+    await handleApiManagement(
+      'api-admin-verify',
+      body,
+      { role: 'admin' },
+      {
+        ...ctx,
+        fetcher: async () => {
+          throw new DOMException('synthetic', 'TimeoutError');
+        },
+      },
+    )
+  ).json();
+  assert.equal(timeout.checks[0].status, 'transient');
+  let stored = {
+    provider: 'aiapiflow',
+    model: 'gpt-5.6-luna',
+    protocol: 'responses',
+    revision: 0,
+  };
+  const persisted = {
+    ...ctx,
+    db: async (path, options) => {
+      if (path.startsWith('onedrive_settings?'))
+        return [{ ai_defaults: stored }];
+      assert.equal(path, 'rpc/onedrive_ai_default_save');
+      stored = {
+        provider: options.body.p_provider,
+        model: options.body.p_model,
+        protocol: options.body.p_protocol,
+        revision: options.body.p_revision + 1,
+      };
+      return stored;
+    },
+    fetcher: async (url, options) => {
+      if (url.endsWith('/models'))
+        return Response.json({
+          data: [
+            {
+              id: url.includes('api.openai.com')
+                ? 'gpt-6-luna'
+                : 'gpt-5.6-luna',
+            },
+          ],
+        });
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      assert.equal(JSON.parse(options.body).model, stored.model);
+      return new Response('', { status: 404 });
+    },
+  };
+  await handleApiManagement(
+    'api-admin-default',
+    { provider: 'openai', model: 'gpt-6-luna', revision: 0 },
+    { role: 'admin', id: 'synthetic-admin' },
+    persisted,
+  );
+  const reloaded = await (
+    await handleApiManagement(
+      'api-admin-status',
+      {},
+      { role: 'admin' },
+      persisted,
+    )
+  ).json();
+  assert.deepEqual(reloaded.judgment, {
+    provider: 'typesafe',
+    keyConfigured: false,
+    liveVerified: false,
+  });
+  const configuredJudgment = await (
+    await handleApiManagement(
+      'api-admin-status',
+      {},
+      { role: 'admin' },
+      {
+        ...persisted,
+        env: {
+          ...persisted.env,
+          TYPESAFE_API_KEY: 'PRIVATE_JUDGMENT_SENTINEL',
+        },
+      },
+    )
+  ).json();
+  assert.equal(configuredJudgment.judgment.keyConfigured, true);
+  assert.equal(configuredJudgment.judgment.liveVerified, false);
+  assert.ok(
+    !JSON.stringify(configuredJudgment).includes('PRIVATE_JUDGMENT_SENTINEL'),
+  );
+  assert.equal(reloaded.default.revision, 1);
+  assert.equal(reloaded.default.provider, 'openai');
+  assert.equal(reloaded.default.model, 'gpt-6-luna');
+  const routed = await (
+    await handleApiManagement(
+      'api-admin-verify',
+      { ...reloaded.default, confirmation: 'synthetic-compatibility' },
+      { role: 'admin' },
+      persisted,
+    )
+  ).json();
+  assert.equal(routed.checks[0].status, 'model_missing');
+  let judgmentCalls = 0;
+  const judgment = await (
+    await handleApiManagement(
+      'api-admin-verify',
+      {
+        provider: 'typesafe',
+        model: 'jev-1.14.0',
+        confirmation: 'synthetic-compatibility',
+      },
+      { role: 'admin' },
+      {
+        ...ctx,
+        env: { TYPESAFE_API_KEY: 'PRIVATE_JEV_DIAGNOSTIC' },
+        fetcher: async (url, options) => {
+          judgmentCalls++;
+          assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+          const request = JSON.parse(options.body);
+          assert.equal(request.model, 'jev-1.14.0');
+          assert.equal(request.questions.q0.type, 'noul');
+          assert.equal(request.state.proposed.length, 1);
+          assert.equal(request.state.proposed[0].text, '4톤 차량 배차');
+          assert.ok(request.state.source.includes('4P'));
+          assert.ok(!JSON.stringify(request).includes('image'));
+          return Response.json({
+            model: 'jev-1.14.0',
+            answers: { q0: { type: 'noul', noul: 0.8 } },
+            usage: { input_tokens: 10, output_tokens: 1 },
+          });
+        },
+      },
+    )
+  ).json();
+  assert.equal(judgmentCalls, 1);
+  assert.equal(judgment.passed, true);
+  assert.equal(judgment.protocol, 'systemone');
+  assert.equal(judgment.checks[0].kind, 'judgment');
+  assert.equal(judgment.checks[0].unsupportedProbability, 0.8);
+  assert.equal(judgment.checks[0].reviewRequired, true);
+  assert.equal(judgment.checks[0].returnedModel, 'jev-1.14.0');
+  assert.equal(judgment.checks[0].usage.inputTokens, 10);
+  assert.ok(!JSON.stringify(judgment).includes('PRIVATE_JEV_DIAGNOSTIC'));
+
+  console.log(
+    'PASS API compatibility: explicit admin confirmation, fixed synthetic text/image/JSON, no settings mutation, sanitized failure classes and no fallback',
+  );
+}
+
+// JEV advisory runtime integration: synthetic inputs only, never a live provider call.
+{
+  const { reviewNormalizedMail, reviewNormalizedManual, JEV_VERIFIER_MODEL } =
+    await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const { handleManualMessage } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const id = '11111111-1111-4111-8111-111111111111',
+    proof = '장희성님 11월 2일 배차 준비 부탁드립니다.';
+  const mail = {
+    id,
+    uidl_hash: 'a'.repeat(64),
+    subject: '배차 요청',
+    sender: 'sender@example.test',
+    headers:
+      'From: Sender <sender@example.test>\r\nTo: 장희성 <jhs96@eangroup.kr>',
+    text: proof,
+    sent_at: '2026-10-31T01:00:00Z',
+    created_at: '2026-10-31T02:00:00Z',
+  };
+  const value = {
+    intent: { kind: 'request', evidence: proof },
+    group: null,
+    summary: [{ text: '배차 준비 요청', evidence: proof }],
+    tasks: [
+      {
+        text: '배차 준비',
+        evidence: proof,
+        status: 'pending',
+        assignee: null,
+        due: null,
+        serviceOriginal: '11월 2일',
+        completionEvidence: null,
+        forOwner: true,
+        recipientScope: 'owner_direct',
+        selfRequestEvidence: proof,
+      },
+    ],
+    issues: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [],
+    imageDecisions: [],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  const mainResponse = () =>
+    Response.json({
+      model: 'gpt-5.6-luna',
+      status: 'completed',
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{ type: 'output_text', text: JSON.stringify(value) }],
+        },
+      ],
+    });
+  const configured = {
+    enabled: true,
+    approvedSourceIds: [id],
+    key: 'SYNTHETIC_JEV_KEY',
+    timeoutMs: 10,
+  };
+  const jevResponse = (payload, probability = 0.6) =>
+    Response.json({
+      model: JEV_VERIFIER_MODEL,
+      answers: Object.fromEntries(
+        Object.keys(payload.questions).map((q) => [
+          q,
+          { type: 'noul', noul: probability },
+        ]),
+      ),
+    });
+  let mainCalls = 0,
+    jevCalls = 0,
+    finishes = 0;
+  const baseline = await analyzePrivateMail({
+    messageId: id,
+    key: 'synthetic-main',
+    now: '2026-10-31T03:00:00Z',
+    loadMail: async () => mail,
+    fetcher: async () => {
+      mainCalls++;
+      return mainResponse();
+    },
+    store: {
+      claim: async () => ({ row: mail, lease: 'fixture' }),
+      finish: async () => {
+        finishes++;
+        return true;
+      },
+      fail: async () => assert.fail('main failure'),
+    },
+  });
+  assert.equal(baseline.status, 'done');
+  assert.equal(baseline.analysis.tasks.length, 1);
+  for (const failure of [
+    'missing-key',
+    'timeout',
+    '429',
+    'invalid',
+    'review',
+    'resolver-error',
+  ]) {
+    const before = finishes,
+      calls = jevCalls;
+    const result = await analyzePrivateMail({
+      messageId: id,
+      key: 'synthetic-main',
+      now: '2026-10-31T03:00:00Z',
+      loadMail: async () => mail,
+      fetcher: async () => {
+        mainCalls++;
+        return mainResponse();
+      },
+      resolveJevConfiguration: async () => {
+        if (failure === 'resolver-error') throw Error('synthetic resolver');
+        return {
+          ...configured,
+          key: failure === 'missing-key' ? undefined : configured.key,
+          fetcher: async (url, options) => {
+            jevCalls++;
+            assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+            assert.equal(options.redirect, 'error');
+            const payload = JSON.parse(options.body),
+              state = payload.state;
+            assert.equal(state.source.includes('sender@example.test'), true);
+            assert.equal(state.source.includes('jhs96@eangroup.kr'), true);
+            assert.ok(!JSON.stringify(payload).includes('image_url'));
+            if (failure === 'timeout') return new Promise(() => {});
+            if (failure === '429') return new Response('', { status: 429 });
+            if (failure === 'invalid')
+              return Response.json({ answers: { q0: { noul: 'yes' } } });
+            return jevResponse(payload);
+          },
+        };
+      },
+      store: {
+        claim: async () => ({ row: mail, lease: 'fixture' }),
+        finish: async () => {
+          finishes++;
+          return true;
+        },
+        fail: async () => assert.fail('advisory must not fail main'),
+      },
+    });
+    assert.equal(result.status, 'done');
+    assert.equal(finishes, before + 1);
+    assert.equal(
+      jevCalls - calls,
+      ['missing-key', 'resolver-error'].includes(failure) ? 0 : 1,
+    );
+    const { jevReview, ...unchanged } = result.analysis;
+    assert.deepEqual(
+      unchanged,
+      baseline.analysis,
+      'review preserves normalized source, stable IDs, dates and completion',
+    );
+    assert.equal(
+      jevReview.status,
+      failure === 'review' ? 'review' : 'unavailable',
+    );
+    assert.ok(!JSON.stringify(jevReview).includes('SYNTHETIC_JEV_KEY'));
+  }
+  const reference = {
+    source: { id },
+    revision: 1,
+    intent: { kind: 'reference' },
+    review: { reasons: ['reference_intent'] },
+    tasks: [],
+    issues: [],
+    waiting: [],
+    updates: [],
+  };
+  assert.equal(
+    (
+      await reviewNormalizedMail({
+        analysis: reference,
+        mail,
+        config: { ...configured, fetcher: () => assert.fail('reference skip') },
+      })
+    ).status,
+    'skipped',
+  );
+  assert.equal(
+    await reviewNormalizedMail({
+      analysis: reference,
+      mail,
+      config: { ...configured, approvedSourceIds: [] },
+    }),
+    null,
+  );
+  const manual = {
+    entryId: id,
+    status: 'ready',
+    text: proof,
+    referenceDate: '2026-10-31',
+    submittedAt: mail.created_at,
+    items: [
+      {
+        itemId: 'item-001',
+        kind: 'dispatch',
+        text: '배車 준비',
+        evidence: proof,
+        done: true,
+        dueAt: null,
+        dueDate: null,
+        serviceDate: '2026-11-02',
+        completedAt: mail.created_at,
+        completionEvents: [{ done: true, at: mail.created_at }],
+        ownerUpdatedAt: mail.created_at,
+        workRef: 'original:manual:item-001',
+      },
+    ],
+  };
+  const snapshot = structuredClone(manual);
+  const reviewed = await reviewNormalizedManual({
+    entry: manual,
+    related: [
+      {
+        ref: 'original:manual:item-001',
+        text: '정규화 기존 업무',
+        status: 'pending',
+        raw: 'PRIVATE_OTHER_MAIL',
+      },
+    ],
+    config: {
+      ...configured,
+      fetcher: async (_, options) => {
+        const payload = JSON.parse(options.body);
+        assert.ok(JSON.stringify(payload).includes('정규화 기존 업무'));
+        assert.ok(!JSON.stringify(payload).includes('PRIVATE_OTHER_MAIL'));
+        return jevResponse(payload);
+      },
+    },
+  });
+  assert.equal(reviewed.status, 'review');
+  assert.deepEqual(manual, snapshot);
+  let registered = null,
+    registerCalls = 0,
+    paidCalls = 0,
+    reviewWrites = 0;
+  const ctx = {
+    json: Response.json,
+    fail: (m) => Error(m),
+    aiKey: 'synthetic-main',
+    resolveJevConfiguration: async () => ({
+      ...configured,
+      fetcher: async (_, opts) => {
+        paidCalls++;
+        return jevResponse(JSON.parse(opts.body));
+      },
+    }),
+    fetcher: async () =>
+      Response.json({
+        model: 'gpt-5.6-luna',
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [
+              {
+                type: 'output_text',
+                text: JSON.stringify({
+                  items: [
+                    {
+                      kind: 'dispatch',
+                      text: '배차 준비',
+                      evidence: proof,
+                      assignee: null,
+                      serviceOriginal: '11월 2일',
+                      dueOriginal: null,
+                      needsConfirmation: false,
+                    },
+                  ],
+                  authoredDate: null,
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    db: async (path, opts) => {
+      if (path.startsWith('private_mailboxes?'))
+        return [
+          {
+            id: target.mailbox_id,
+            owner_id: target.owner_id,
+            enabled: true,
+            manual_entries: {},
+          },
+        ];
+      if (path === 'rpc/private_mail_manual_claim')
+        return registered
+          ? { claimed: false, entry: registered }
+          : {
+              claimed: true,
+              entry: {
+                entryId: id,
+                text: proof,
+                textHash: opts.body.p_hash,
+                status: 'processing',
+                submittedAt: mail.created_at,
+                referenceDate: '2026-10-31',
+              },
+            };
+      if (path === 'rpc/private_mail_manual_finish') {
+        registerCalls++;
+        assert.ok(!Object.hasOwn(opts.body.p_inference, 'jevReview'));
+        return (registered = {
+          entryId: id,
+          text: proof,
+          status: 'ready',
+          submittedAt: mail.created_at,
+          referenceDate: '2026-10-31',
+          items: opts.body.p_items,
+        });
+      }
+      if (path === 'rpc/private_mail_manual_jev_review') {
+        reviewWrites++;
+        assert.deepEqual(opts.body.p_items, registered.items);
+        throw Error('synthetic metadata DB timeout');
+      }
+      assert.fail('unexpected query ' + path);
+    },
+  };
+  const request = { clientRequestId: id, text: proof };
+  const first = await (
+    await handleManualMessage(
+      'private-mail-manual-add',
+      request,
+      { id: target.owner_id },
+      ctx,
+    )
+  ).json();
+  assert.equal(first.status, 'ready');
+  assert.equal(first.items.length, 1);
+  assert.equal(first.items[0].serviceDate, '2026-11-02');
+  await handleManualMessage(
+    'private-mail-manual-add',
+    request,
+    { id: target.owner_id },
+    ctx,
+  );
+  assert.equal(registerCalls, 1);
+  assert.equal(paidCalls, 1);
+  assert.equal(reviewWrites, 1);
+  console.log(
+    'PASS JEV runtime: server-approved advisory only, one bounded call, reference skip, mail/manual dates and completion unchanged, no images, timeout/429/invalid/missing-key fail open and ready replay does not call again',
+  );
+}
+
+{
+  const { normalizeMailAnalysis, dailyBriefingView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const { normalizeManualItems, manualDailyView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const id = '22222222-2222-4222-8222-222222222222',
+    entryId = '33333333-3333-4333-8333-333333333333';
+  const mail = normalizeMailAnalysis(
+    {
+      summary: [],
+      tasks: [
+        {
+          text: '가상 업무 확인',
+          evidence: '가상 업무 확인 완료했습니다.',
+          status: 'complete',
+          completionEvidence: '가상 업무 확인 완료했습니다.',
+        },
+      ],
+      issues: [],
+      waiting: [],
+    },
+    {
+      id,
+      uidl_hash: 'a'.repeat(64),
+      subject: '가상업무',
+      sender: 'test@example.test',
+      text: '가상 업무 확인 완료했습니다.',
+      sent_at: '2026-10-30T01:00:00Z',
+    },
+  );
+  const overrides = {
+    ['work:' + id + ':tasks:0']: {
+      actor: 'owner',
+      done: false,
+      updatedAt: '2026-10-31T03:00:00Z',
+    },
+  };
+  assert.equal(
+    dailyBriefingView({
+      now: '2026-10-31T04:00:00Z',
+      analyses: [mail],
+      overrides,
+    }).workItems[0].status,
+    'pending',
+  );
+  const text = '가상 참고 자료';
+  const entry = {
+    entryId,
+    status: 'ready',
+    submittedAt: '2026-10-30T01:00:00Z',
+    referenceDate: '2026-10-30',
+    text,
+    items: normalizeManualItems(
+      {
+        items: [
+          {
+            kind: 'reference',
+            text,
+            evidence: text,
+            assignee: null,
+            dueOriginal: null,
+            serviceOriginal: null,
+            needsConfirmation: false,
+          },
+        ],
+      },
+      {
+        entryId,
+        text,
+        submittedAt: '2026-10-30T01:00:00Z',
+        referenceDate: '2026-10-30',
+      },
+    ),
+  };
+  const ref = entry.items[0].ref;
+  overrides['work:' + ref] = {
+    actor: 'owner',
+    category: 'task',
+    done: false,
+    updatedAt: '2026-10-31T03:00:00Z',
+  };
+  const manual = manualDailyView({ [entryId]: entry }, '2026-10-31', overrides);
+  assert.equal(
+    dailyBriefingView({
+      now: '2026-10-31T04:00:00Z',
+      analyses: [],
+      manual,
+      overrides,
+    }).workItems[0].category,
+    'task',
+  );
+  assert.equal(
+    dailyBriefingView({
+      now: '2026-10-30T04:00:00Z',
+      analyses: [mail],
+      overrides,
+    }).workItems[0].status,
+    'complete',
+    'later reopen does not rewrite prior-day completion',
+  );
+  console.log(
+    'PASS owner corrections precede mail/manual carry filters; owner reopen survives AI completion and reference-to-task carry; prior-day state retained',
   );
 }

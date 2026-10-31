@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiManagement } from '../lib/api-management';
-import type { ApiManagementStatus } from '../lib/api-management';
+import type {
+  ApiManagementStatus,
+  ApiCompatibilityResult,
+} from '../lib/api-management';
 
 const catalogLabels = {
   ready: '모델 목록 조회됨',
@@ -9,6 +12,8 @@ const catalogLabels = {
   unavailable: '목록 조회 실패',
 };
 export function ApiManagement({ editable }: { editable: boolean }) {
+  const [verification, setVerification] =
+    useState<ApiCompatibilityResult | null>(null);
   const [data, setData] = useState<ApiManagementStatus | null>(null);
   const [draft, setDraft] = useState({ provider: '', model: '' });
   const [search, setSearch] = useState('');
@@ -87,6 +92,34 @@ export function ApiManagement({ editable }: { editable: boolean }) {
           error instanceof Error && error.message === 'AI_CONFIG_CHANGED'
             ? '다른 관리자가 설정을 변경했습니다. 목록을 갱신한 뒤 다시 선택해 주세요.'
             : '기본 모델을 저장하지 못했습니다. 기존 설정을 유지합니다. 연결과 모델 목록을 확인해 주세요.',
+        );
+      }
+    } finally {
+      if (alive.current && request === sequence.current) setBusy(false);
+    }
+  }
+  async function verify(provider = draft.provider, model = draft.model) {
+    if (
+      provider === 'typesafe'
+        ? !editable || busy || !data?.judgment?.keyConfigured
+        : !canSave
+    )
+      return;
+    const request = ++sequence.current;
+    setBusy(true);
+    setFeedback('');
+    setFailed(false);
+    setVerification(null);
+    try {
+      const result = await apiManagement.verify(provider, model);
+      if (!alive.current || request !== sequence.current) return;
+      setVerification(result);
+      setFailed(!result.passed);
+    } catch {
+      if (alive.current && request === sequence.current) {
+        setFailed(true);
+        setFeedback(
+          '호환검증을 완료하지 못했습니다. 기본 설정은 변경되지 않았습니다.',
         );
       }
     } finally {
@@ -226,7 +259,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
               {model.capabilities.protocol === 'anthropic'
                 ? 'Anthropic Messages'
                 : 'Responses'}{' '}
-              · 이미지 입력 지원 ·{' '}
+              · 이미지 입력 요청 ·{' '}
               {model.capabilities.structured === 'json_schema'
                 ? 'JSON Schema 요청 + 서버 검증'
                 : model.capabilities.structured === 'json_object'
@@ -247,6 +280,55 @@ export function ApiManagement({ editable }: { editable: boolean }) {
           >
             기본 모델 저장
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={!canSave}
+            onClick={() => void verify()}
+          >
+            합성 입력으로 호환검증 (유료 요청 최대 3회)
+          </button>
+          <p className="feature-help">
+            검증은 선택한 제공자·모델에 비민감 텍스트, 공개 합성 이미지, JSON
+            요청만 전송합니다. 기본값 저장과 별개이며 실패하면 중단합니다.
+          </p>
+          {verification ? (
+            <p role="status">
+              {verification.provider} · {verification.model} ·{' '}
+              {verification.passed ? '합성 호환검증 통과' : '호환검증 미완료'} ·{' '}
+              {verification.checks
+                .map(
+                  (check) =>
+                    `${check.kind}: ${({ passed: '통과', auth: '인증/권한 확인 필요', model_missing: '모델 없음', unsupported: '요청 형식 미지원', transient: '일시 오류', model_mismatch: '반환 모델 불일치', invalid_response: '응답 검증 실패' } as Record<string, string>)[check.status] ?? check.status}${check.returnedModel ? ` (반환 ${check.returnedModel}, ${check.stopReason}, HTTP ${check.providerStatus}, 사용량 ${JSON.stringify(check.usage ?? {})}${check.unsupportedProbability !== undefined ? `, 검토 확률 ${check.unsupportedProbability}, 검토 대상 ${check.reviewRequired ? '포함' : '미포함'}` : ''})` : ''}`,
+                )
+                .join(' / ')}{' '}
+              · {verification.checkedAt}
+            </p>
+          ) : null}
+          <p className="feature-help">
+            JEV 판단 API · 서버 키{' '}
+            {data.judgment
+              ? data.judgment.keyConfigured
+                ? '설정됨'
+                : '미설정'
+              : '확인 필요'}{' '}
+            ·{' '}
+            {verification?.provider === 'typesafe' && verification.passed
+              ? '현재 화면에서 연결 확인됨'
+              : '실제 검증 미확인'}
+          </p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={busy || !editable || !data.judgment?.keyConfigured}
+            onClick={() => void verify('typesafe', 'jev-1.14.0')}
+          >
+            판단 API 연결 확인 (유료 요청 1회)
+          </button>
+          <p className="feature-help">
+            고정 합성 문장의 물량·톤수 혼동을 검토 대상으로 잡는지 확인합니다.
+            실업무 정확도를 보장하지 않습니다.
+          </p>
           <p className="feature-help">
             키는 서버 비밀 저장소에서 등록합니다. 이 화면은 키 값을 받거나
             표시하지 않습니다. 목록 갱신은 유료 추론을 실행하지 않습니다.

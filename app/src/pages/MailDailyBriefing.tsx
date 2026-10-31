@@ -9,6 +9,8 @@ import { MailBriefingConnection } from '../components/portal/MailBriefingConnect
 import { DailyWorkList } from '../components/portal/DailyWorkList';
 import { MAIL_DIAGNOSTIC_OWNER_ID } from '../domain/portal-mail';
 import { privateMail } from '../lib/portal-mail';
+import type { DailyWork, WorkPatch } from '../lib/portal-mail';
+import { applyOwnerWorkCorrection } from '../../../supabase/functions/onedrive-auth/private-mail-work.js';
 import '../styles/mail-daily-briefing.css';
 
 type Overview = Awaited<ReturnType<typeof privateMail.dailyOverview>>;
@@ -191,6 +193,42 @@ function DailyOverview() {
       if (mounted.current) setPending(null);
     }
   }
+  async function changeWork(item: DailyWork, patch: WorkPatch) {
+    if (saving.current || loading) throw Error('WORK_BUSY');
+    saving.current = true;
+    setPending('work:' + item.workId);
+    try {
+      const result = await privateMail.correctWork({
+        workId: item.workId,
+        day,
+        patch,
+        expectedUpdatedAt: item.correction?.updatedAt ?? null,
+      });
+      if (!result.saved) throw Error('WORK_CORRECTION_NOT_SAVED');
+      const acknowledged = applyOwnerWorkCorrection(
+        item,
+        { ['work:' + item.workId]: { ...result.correction, actor: 'owner' } },
+        day,
+      );
+      setData((current) => {
+        if (!current || current.day !== day) return current;
+        const rows = [
+          ...(current.workItems ?? []),
+          ...(current.excludedWorkItems ?? []),
+        ].map((row) => (row.workId === item.workId ? acknowledged : row));
+        return {
+          ...current,
+          workItems: rows.filter((row) => !row.excluded),
+          excludedWorkItems: rows.filter((row) => row.excluded),
+        };
+      });
+      const refreshed = await load();
+      return { ...result, refreshed };
+    } finally {
+      saving.current = false;
+      if (mounted.current) setPending(null);
+    }
+  }
   function applyDate() {
     if (saving.current || loading || !validDay(dateInput)) return;
     if (dateInput === day) {
@@ -334,7 +372,7 @@ function DailyOverview() {
       </div>
       <p className="daily-feedback" role="status" aria-live="polite">
         {pending
-          ? '완료 확인을 저장하는 중…'
+          ? '변경을 저장하는 중…'
           : loading
             ? '일일정리를 불러오는 중…'
             : feedback}
@@ -354,17 +392,12 @@ function DailyOverview() {
             overview.workStatusLabels ? (
               <DailyWorkList
                 items={overview.workItems}
+                excludedItems={overview.excludedWorkItems || []}
                 sections={overview.workSections}
                 labels={overview.workStatusLabels}
                 day={day}
                 busy={loading || pending !== null || filtersBusy || manualBusy}
-                onComplete={(item, done) => {
-                  if (item.controlRef)
-                    void complete({ ref: item.controlRef }, done);
-                }}
-                onCorrectIntent={(id, corrected) =>
-                  void correctIntent({ id, intentCorrected: corrected })
-                }
+                onChangeWork={changeWork}
               />
             ) : (
               <>

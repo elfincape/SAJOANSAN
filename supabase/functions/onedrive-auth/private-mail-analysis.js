@@ -1,3 +1,4 @@
+import { reviewNormalizedMail } from './private-mail-jev-verifier.js';
 import { mailMessageTimes, mailHeaderIdentity } from './private-mail-body.js';
 import { callLuna, LUNA_MODEL, lunaInference } from '../_shared/luna.js';
 import {
@@ -959,6 +960,7 @@ export async function analyzePrivateMail({
   fetcher,
   now,
   intentOverride,
+  resolveJevConfiguration,
 }) {
   if (
     typeof messageId !== 'string' ||
@@ -1204,6 +1206,24 @@ export async function analyzePrivateMail({
     )
       throw Error('ANALYSIS_SUMMARY_EMPTY');
     reconcileMailItems(analysis, row.analysis);
+    if (typeof resolveJevConfiguration === 'function') {
+      try {
+        const config = await resolveJevConfiguration(messageId);
+        const review = await reviewNormalizedMail({
+          analysis,
+          mail,
+          related,
+          config,
+        });
+        if (review) analysis.jevReview = review;
+      } catch {
+        analysis.jevReview = {
+          status: 'unavailable',
+          code: 'REVIEW_FAILED',
+          policyVersion: 'mail-semantics-v1',
+        };
+      }
+    }
     phase = 'STORE_FAILED';
     const saved = await store.finish({ messageId, lease, analysis });
     return saved ? { status: 'done', analysis } : { status: 'stale' };

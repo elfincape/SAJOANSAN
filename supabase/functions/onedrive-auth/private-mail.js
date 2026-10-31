@@ -517,6 +517,18 @@ export async function handlePrivateMail(action, req, user, ctx) {
       throw fail('메일함에 접근할 수 없습니다.', 403);
     return box;
   };
+  // Owner consent is server policy; no client enablement, destination, or key is accepted.
+  const resolveJevConfiguration = (sourceId) => {
+    if (user.id !== APPROVED_MAIL_TARGET.owner_id || !uuid(sourceId))
+      return null;
+    let key;
+    try {
+      key = globalThis.Deno?.env?.get('TYPESAFE_API_KEY');
+    } catch {
+      /* unavailable */
+    }
+    return { enabled: true, approvedSourceIds: [sourceId], key, fetcher };
+  };
   if (
     [
       'private-mail-manual-add',
@@ -528,6 +540,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
   ) {
     return handleManualMessage(action, body, user, {
       ...ctx,
+      resolveJevConfiguration,
       enqueueManualReport: (day) =>
         db('rpc/private_mail_dispatch_report', {
           method: 'POST',
@@ -551,6 +564,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     'private-mail-job-stop',
     'private-mail-daily-overview',
     'private-mail-intent-correction',
+    'private-mail-work-correction',
     'private-mail-analyze-one',
     'private-mail-remote-verify',
     'private-mail-report-now',
@@ -622,6 +636,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       });
     return handleMailAutomation(action, body, user, {
       ...ctx,
+      resolveJevConfiguration,
       ...source,
       remoteFetcher,
       writeHistory: (document) =>
