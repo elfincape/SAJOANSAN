@@ -1636,6 +1636,28 @@ console.log(
   );
   assert.equal(noLegacy.status, 200);
   assert.equal(downloads, 2);
+  const probeRequest = new Request(
+    'https://sajoansan.vercel.app/api/private-mail-worker',
+    {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + workerKey },
+      body: JSON.stringify({
+        kind: 'remote-image',
+        mailboxId: '39045005-313e-42e1-b50c-2394b3b6ff26',
+        messageId: '11111111-1111-4111-8111-111111111111',
+        url: 'https://placehold.co/480x160.png',
+        probe: true,
+      }),
+    },
+  );
+  const probe = await (
+    await handlePrivateMailWorker(probeRequest, remoteOptions)
+  ).json();
+  assert.equal(probe.status, 'done');
+  assert.equal(probe.modelCalled, false);
+  assert.equal(probe.stored, false);
+  assert.equal(probe.byteLength, image.length);
+
   console.log(
     'PASS public image downloader: DNS all-address checks and pinned lookup/TLS/socket verification; private/mixed DNS, metadata, rebinding, redirect, MIME, bytes and timeout rejected; server-only existing key relay, no model or POP calls',
   );
