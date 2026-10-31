@@ -552,9 +552,29 @@ export async function handlePrivateMail(action, req, user, ctx) {
     'private-mail-daily-overview',
     'private-mail-intent-correction',
     'private-mail-analyze-one',
+    'private-mail-remote-verify',
     'private-mail-report-now',
   ];
   if ([...automationActions, ...filterActions].includes(action)) {
+    const remoteFetcher = async (url, options) => {
+      if (typeof ctx.workerKey !== 'string' || ctx.workerKey.length < 32)
+        throw Error('REMOTE_IMAGE_REVIEW');
+      return fetcher('https://sajoansan.vercel.app/api/private-mail-worker', {
+        method: 'POST',
+        redirect: 'error',
+        signal: options.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + ctx.workerKey,
+        },
+        body: JSON.stringify({
+          kind: 'remote-image',
+          mailboxId: APPROVED_MAIL_TARGET.mailbox_id,
+          messageId: options.sourceId,
+          url,
+        }),
+      });
+    };
     const source = createMailSource({
       db,
       withLock,
@@ -564,6 +584,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       verify,
       privateDestination,
       privatePermissions,
+      remoteFetcher,
     });
     if (filterActions.includes(action))
       return handleMailFilter(action, body, user, {
@@ -575,6 +596,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return handleMailAutomation(action, body, user, {
       ...ctx,
       ...source,
+      remoteFetcher,
       writeHistory: (document) =>
         writeMailHistoryDocument({
           document,

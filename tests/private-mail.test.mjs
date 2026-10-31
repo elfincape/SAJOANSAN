@@ -5582,3 +5582,53 @@ console.log(
     'PASS image-only reference uses readable included business-image summary, not subject-only output or signature text',
   );
 }
+
+{
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  let calls = 0;
+  const ctx = {
+    db: async (path) => {
+      assert.ok(path.startsWith('private_mailboxes?'));
+      return [{ id: target.mailbox_id, owner_id: target.owner_id }];
+    },
+    json: (value) => Response.json(value),
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    remoteFetcher: async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://placehold.co/480x160.png');
+      assert.equal(options.sourceId, '11111111-1111-4111-8111-111111111111');
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'content-type': 'image/png' },
+      });
+    },
+  };
+  const result = await (
+    await handleMailAutomation(
+      'private-mail-remote-verify',
+      { url: 'https://127.0.0.1/forbidden' },
+      { id: target.owner_id },
+      ctx,
+    )
+  ).json();
+  assert.equal(result.status, 'done');
+  assert.equal(result.stored, false);
+  assert.equal(result.modelCalled, false);
+  assert.equal(calls, 1);
+  await assert.rejects(
+    () =>
+      handleMailAutomation(
+        'private-mail-remote-verify',
+        {},
+        { id: 'other' },
+        ctx,
+      ),
+    (error) => error.status === 403,
+  );
+  assert.equal(calls, 1);
+  console.log(
+    'PASS remote verification is fixed synthetic fixture, strict owner-only, ignores caller URLs, no model or storage effects',
+  );
+}
