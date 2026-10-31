@@ -1685,6 +1685,27 @@ console.log(
     'report snapshot is loaded only after revision lease',
   );
   assert.equal(released, true, 'failed report releases its own lease');
+  const busyResult = await handleMailAutomation(
+    'private-mail-background-work',
+    { operation: 'report', day: '2026-10-30', mailbox: target.mailbox_id },
+    { id: target.owner_id },
+    {
+      ...ctx,
+      background: true,
+      connectedNotes: async () => {
+        throw Object.assign(Error('다른 서류를 처리 중입니다.'), {
+          code: 'ONEDRIVE_CONNECTION_BUSY',
+          status: 409,
+        });
+      },
+    },
+  );
+  assert.equal(
+    (await busyResult.json()).code,
+    'ONEDRIVE_CONNECTION_BUSY',
+    'temporary shared lock must not be mislabeled as authentication failure',
+  );
+
   console.log(
     'PASS daily overview owner override and report claim-before-input ordering',
   );

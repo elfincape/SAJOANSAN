@@ -523,7 +523,10 @@ export function makeHandler(
         body: { p_holder: holder },
       }))
     )
-      throw fail('다른 서류를 처리 중입니다. 잠시 후 다시 시도해 주세요.', 409);
+      throw Object.assign(
+        fail('다른 서류를 처리 중입니다. 잠시 후 다시 시도해 주세요.', 409),
+        { code: 'ONEDRIVE_CONNECTION_BUSY' },
+      );
     try {
       return await action(holder);
     } finally {
