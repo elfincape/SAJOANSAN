@@ -1,4 +1,60 @@
 import assert from 'node:assert/strict';
+{
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
+    mailbox = '39045005-313e-42e1-b50c-2394b3b6ff26',
+    source = '00000000-0000-4000-8000-000000000001';
+  const calls = [];
+  const ctx = {
+    json: Response.json,
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    db: async (path, options) => {
+      if (path.startsWith('private_mailboxes?'))
+        return [{ id: mailbox, owner_id: owner, automation_config: {} }];
+      calls.push({ path, body: options.body });
+      return true;
+    },
+  };
+  for (const reference of [true, false]) {
+    const result = await handleMailAutomation(
+      'private-mail-intent-correction',
+      { id: source, reference },
+      { id: owner },
+      ctx,
+    );
+    assert.equal((await result.json()).saved, true);
+    assert.deepEqual(calls.at(-1), {
+      path: 'rpc/private_mail_intent_correct',
+      body: { p_message: source, p_user: owner, p_reference: reference },
+    });
+  }
+  await assert.rejects(
+    () =>
+      handleMailAutomation(
+        'private-mail-intent-correction',
+        { id: source, reference: 'true' },
+        { id: owner },
+        ctx,
+      ),
+    /CORRECTION_INVALID/,
+  );
+  await assert.rejects(
+    () =>
+      handleMailAutomation(
+        'private-mail-intent-correction',
+        { id: source, reference: true },
+        { id: 'other' },
+        ctx,
+      ),
+    /OWNER_REQUIRED/,
+  );
+  assert.equal(
+    calls.length,
+    2,
+    'correction invokes only scoped RPC, never model or collection',
+  );
+}
 import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
 function lunaResponseFixture(content, stopReason = 'end_turn') {
   return Response.json({

@@ -260,4 +260,29 @@ do $$ declare f record; begin
   execute format('grant execute on function %s to service_role',f.signature);
  end loop;
 end $$;
+create or replace function public.private_mail_intent_correct(p_message uuid,p_user uuid,p_reference boolean)
+returns boolean language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; m public.private_mail_messages; config jsonb; correction jsonb; page jsonb;
+begin
+ select * into b from public.private_mailboxes where id='39045005-313e-42e1-b50c-2394b3b6ff26' for update;
+ select * into m from public.private_mail_messages where id=p_message and mailbox_id=b.id for update;
+ if p_user is distinct from b.owner_id or p_user is distinct from m.owner_id or not public.private_mail_history_allowed(b.id)
+ or m.id is null or m.analysis is null or p_reference is null then raise exception 'CORRECTION_SCOPE'; end if;
+ perform public.private_mail_history_capture(m.id,null);
+ config=b.automation_config;
+ if p_reference then
+  correction=jsonb_build_object('intent','reference','source','owner_feedback','recordedAt',clock_timestamp(),'reason','사용자가 참고 자료로 정정');
+  config=jsonb_set(config,'{intentOverrides}',coalesce(config->'intentOverrides','{}')||jsonb_build_object(m.id::text,correction));
+ else config=config#-array['intentOverrides',m.id::text]; end if;
+ update public.private_mailboxes set automation_config=config where id=b.id;
+ perform public.private_mail_history_capture(m.id,null);
+ page=b.briefing_pages->m.report_day::text;
+ if page is not null then
+  page=page||jsonb_build_object('dirty',true,'revision',coalesce((page->>'revision')::integer,0)+1);
+  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[m.report_day::text],page) where id=b.id;
+ end if;
+ return true;
+end; $$;
+revoke all on function public.private_mail_intent_correct(uuid,uuid,boolean) from public,anon,authenticated;
+grant execute on function public.private_mail_intent_correct(uuid,uuid,boolean) to service_role;
 commit;
