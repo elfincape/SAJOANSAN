@@ -1599,8 +1599,16 @@ console.log(
       downloads++;
       return new Response(image, { headers: { 'content-type': 'image/png' } });
     },
-    fetcher: async () =>
-      assert.fail('remote binary relay must not call model or collection'),
+    fetcher: async (url, options) => {
+      assert.equal(
+        url,
+        'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-background-work',
+      );
+      assert.equal(JSON.parse(options.body).operation, 'image-authorize');
+      return options.headers.Authorization === 'Bearer ' + workerKey
+        ? Response.json({ authorized: true })
+        : new Response('', { status: 403 });
+    },
     collect: () => assert.fail('no collection'),
   };
   assert.equal(
@@ -1618,6 +1626,38 @@ console.log(
     403,
   );
   assert.equal(downloads, 1);
+  const noLegacy = await handlePrivateMailWorker(
+    request('pmjob_' + 'b'.repeat(64)),
+    {
+      ...remoteOptions,
+      env: {},
+      fetcher: async () => Response.json({ authorized: true }),
+    },
+  );
+  assert.equal(noLegacy.status, 200);
+  assert.equal(downloads, 2);
+  const probeRequest = new Request(
+    'https://sajoansan.vercel.app/api/private-mail-worker',
+    {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + workerKey },
+      body: JSON.stringify({
+        kind: 'remote-image',
+        mailboxId: '39045005-313e-42e1-b50c-2394b3b6ff26',
+        messageId: '11111111-1111-4111-8111-111111111111',
+        url: 'https://placehold.co/480x160.png',
+        probe: true,
+      }),
+    },
+  );
+  const probe = await (
+    await handlePrivateMailWorker(probeRequest, remoteOptions)
+  ).json();
+  assert.equal(probe.status, 'done');
+  assert.equal(probe.modelCalled, false);
+  assert.equal(probe.stored, false);
+  assert.equal(probe.byteLength, image.length);
+
   console.log(
     'PASS public image downloader: DNS all-address checks and pinned lookup/TLS/socket verification; private/mixed DNS, metadata, rebinding, redirect, MIME, bytes and timeout rejected; server-only existing key relay, no model or POP calls',
   );

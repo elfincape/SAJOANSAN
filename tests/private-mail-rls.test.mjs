@@ -1322,6 +1322,144 @@ try {
   console.log(
     'PASS dispatch capabilities PostgreSQL: fixed TLS worker, hash-only state, ten-minute sessions, target/consent/exclusion revocation, lease fencing, sixty-second recovery, bounded dispatch and service-only authentication',
   );
+
+  await db.exec('reset role');
+  await db.exec(
+    await readFile(
+      new URL('../supabase/sql/private-mail-manual.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/sql/private-mail-image-transport.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+  await db.exec('set role service_role');
+  await db.query(
+    "update public.private_mailboxes set automation_dispatch='{}' where id=$1",
+    [autoBox],
+  );
+  const imageFixture = '11111111-1111-4111-8111-111111111111',
+    imageUrl = 'https://placehold.co/480x160.png';
+  const imageToken = await rpc('private_mail_image_transport_grant', [
+      autoBox,
+      autoOwner,
+      imageFixture,
+      imageUrl,
+    ]),
+    imageHash = await digest(imageToken);
+  const imageCaps = (
+    await db.query(
+      'select automation_dispatch from public.private_mailboxes where id=$1',
+      [autoBox],
+    )
+  ).rows[0].automation_dispatch;
+  assert.ok(imageCaps[imageHash]);
+  assert.ok(!JSON.stringify(imageCaps).includes(imageToken));
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      imageHash,
+      imageFixture,
+      'https://placehold.co/other.png',
+    ]),
+    false,
+  );
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      imageHash,
+      imageFixture,
+      imageUrl,
+    ]),
+    true,
+  );
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      imageHash,
+      imageFixture,
+      imageUrl,
+    ]),
+    false,
+  );
+  assert.equal(
+    await rpc('private_mail_dispatch_target_allowed', [
+      autoBox,
+      'remote-image',
+      fresh,
+    ]),
+    false,
+    'missing URL approval must never return SQL NULL',
+  );
+  await assert.rejects(
+    () =>
+      rpc('private_mail_image_transport_grant', [
+        autoBox,
+        autoOwner,
+        fresh,
+        imageUrl,
+      ]),
+    /IMAGE_TRANSPORT_SCOPE/,
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,'{remoteImages}',jsonb_build_object($2::text,jsonb_build_object('approvedUrls',jsonb_build_array($3::text)))) where id=$1",
+    [autoBox, fresh, imageUrl],
+  );
+  const approvedImage = await rpc('private_mail_image_transport_grant', [
+      autoBox,
+      autoOwner,
+      fresh,
+      imageUrl,
+    ]),
+    approvedHash = await digest(approvedImage);
+  await db.query(
+    "update public.private_mailboxes set automation_config=jsonb_set(automation_config,array['remoteImages',$2,'approvedUrls'],jsonb_build_array('https://placehold.co/replacement.png')) where id=$1",
+    [autoBox, fresh],
+  );
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      approvedHash,
+      fresh,
+      imageUrl,
+    ]),
+    false,
+    'revoked URL must fail inside TTL',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_config=automation_config-'remoteImages' where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_image_transport_auth', [
+      autoBox,
+      approvedHash,
+      fresh,
+      imageUrl,
+    ]),
+    false,
+    'removed approval must fail closed',
+  );
+  await db.exec('reset role;set role authenticated');
+  await assert.rejects(
+    () =>
+      rpc('private_mail_image_transport_grant', [
+        autoBox,
+        autoOwner,
+        imageFixture,
+        imageUrl,
+      ]),
+    /permission denied/,
+  );
+  console.log(
+    'PASS image capabilities PostgreSQL: no legacy key, hash-only URL-bound one-use transport, missing/revoked approvals deny, no client grants',
+  );
 } finally {
   await db.close();
 }

@@ -86,7 +86,6 @@ export async function handlePrivateMailWorker(
     });
   if (!authorizedCandidate) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
   if (body?.kind === 'remote-image') {
-    if (!staticKey) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
     if (
       body.mailboxId !== BOX ||
       !UUID.test(body.messageId ?? '') ||
@@ -94,10 +93,52 @@ export async function handlePrivateMailWorker(
       body.url.length > 2000
     )
       return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
+    if (
+      body.probe === true &&
+      (body.messageId !== '11111111-1111-4111-8111-111111111111' ||
+        body.url !== 'https://placehold.co/480x160.png')
+    )
+      return json({ error: 'WORKER_TARGET_REJECTED' }, 403);
     try {
-      return await downloadImage(body.url);
-    } catch {
-      return json({ error: 'REMOTE_IMAGE_SOURCE' }, 422);
+      const approval = await edge(
+        { operation: 'image-authorize', id: body.messageId, url: body.url },
+        10000,
+      );
+      if (approval.authorized !== true)
+        return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
+      const image = await downloadImage(body.url);
+      if (body.probe === true) {
+        if (
+          body.messageId !== '11111111-1111-4111-8111-111111111111' ||
+          body.url !== 'https://placehold.co/480x160.png'
+        )
+          return json({ error: 'WORKER_TARGET_REJECTED' }, 403);
+        const bytes = await image.arrayBuffer();
+        return json({
+          status: 'done',
+          mediaType: image.headers.get('content-type'),
+          byteLength: bytes.byteLength,
+          fixture: 'synthetic-480x160',
+          stored: false,
+          modelCalled: false,
+        });
+      }
+      return image;
+    } catch (error) {
+      const stage =
+        error.status === 403
+          ? 'transport_auth'
+          : (error.remoteStage ?? 'download');
+      return json(
+        {
+          error:
+            error.status === 403
+              ? 'WORKER_AUTH_REQUIRED'
+              : 'REMOTE_IMAGE_SOURCE',
+          stage,
+        },
+        error.status === 403 ? 403 : 422,
+      );
     }
   }
 

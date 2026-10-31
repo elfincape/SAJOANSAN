@@ -557,23 +557,50 @@ export async function handlePrivateMail(action, req, user, ctx) {
   ];
   if ([...automationActions, ...filterActions].includes(action)) {
     const remoteFetcher = async (url, options) => {
-      if (typeof ctx.workerKey !== 'string' || ctx.workerKey.length < 32)
-        throw Error('REMOTE_IMAGE_REVIEW');
-      return fetcher('https://sajoansan.vercel.app/api/private-mail-worker', {
-        method: 'POST',
-        redirect: 'error',
-        signal: options.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + ctx.workerKey,
-        },
-        body: JSON.stringify({
-          kind: 'remote-image',
-          mailboxId: APPROVED_MAIL_TARGET.mailbox_id,
-          messageId: options.sourceId,
-          url,
-        }),
-      });
+      let token;
+      try {
+        token = await db('rpc/private_mail_image_transport_grant', {
+          method: 'POST',
+          body: {
+            p_box: APPROVED_MAIL_TARGET.mailbox_id,
+            p_user: user.id,
+            p_message: options.sourceId,
+            p_url: url,
+          },
+        });
+      } catch {
+        throw Object.assign(Error('REMOTE_IMAGE_REVIEW'), {
+          remoteStage: 'transport_grant',
+        });
+      }
+      if (typeof token !== 'string' || !/^pmjob_[a-f0-9]{64}$/.test(token))
+        throw Object.assign(Error('REMOTE_IMAGE_REVIEW'), {
+          remoteStage: 'transport_grant',
+        });
+      try {
+        return await fetcher(
+          'https://sajoansan.vercel.app/api/private-mail-worker',
+          {
+            method: 'POST',
+            redirect: 'error',
+            signal: options.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + token,
+            },
+            body: JSON.stringify({
+              kind: 'remote-image',
+              mailboxId: APPROVED_MAIL_TARGET.mailbox_id,
+              messageId: options.sourceId,
+              url,
+            }),
+          },
+        );
+      } catch {
+        throw Object.assign(Error('REMOTE_IMAGE_SOURCE'), {
+          remoteStage: 'transport_request',
+        });
+      }
     };
     const source = createMailSource({
       db,
