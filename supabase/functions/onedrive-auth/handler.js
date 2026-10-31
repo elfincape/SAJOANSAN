@@ -2,6 +2,8 @@ import { handleCharter } from './charter.js';
 import { handleOperations } from './operations.js';
 import { handleBackups } from './backups.js';
 import { handlePrivateMail } from './private-mail.js';
+import { mailAiConfiguration } from '../_shared/luna.js';
+import { handleApiManagement } from '../_shared/ai-providers.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
 import { authorizeMailWork } from './private-mail-worker-auth.js';
 import {
@@ -245,6 +247,9 @@ export function makeHandler(
           'MAIL_RULE_LIMIT',
           'ITEM_REF',
           'FILTER_MATCH_INVALID',
+          'AI_CONFIG_CHANGED',
+          'AI_CONFIG_INVALID',
+          'AI_SETTINGS_NOT_READY',
         ].includes(detail.message)
       )
         throw fail(detail.message, 409);
@@ -370,6 +375,10 @@ export function makeHandler(
     if (!s || !FOLDER_KINDS.every((k) => s.folders[k]))
       throw fail('저장 폴더 설정이 필요합니다.', 503);
     return s;
+  }
+  async function dailyAiConfiguration() {
+    const row = (await db('onedrive_settings?select=*&id=eq.true'))[0];
+    return mailAiConfiguration(env, row?.ai_defaults ?? {});
   }
   async function grant(body) {
     if (env.ONEDRIVE_CLIENT_ID !== CLIENT_ID || !env.ONEDRIVE_CLIENT_SECRET)
@@ -689,6 +698,15 @@ export function makeHandler(
         return await callback(url);
       if (req.method !== 'POST')
         return json({ error: 'POST 요청이 필요합니다.' }, 405);
+      if (['api-admin-status', 'api-admin-default'].includes(action)) {
+        const administrator = await caller(req, true);
+        return await handleApiManagement(
+          action,
+          await req.json(),
+          administrator,
+          { db, env, fetcher, json },
+        );
+      }
       if (['notes-start', 'notes-finish'].includes(action)) {
         const notesUser = await caller(req, false, true);
         if (notesUser.id !== APPROVED_MAIL_TARGET.owner_id)
@@ -774,7 +792,8 @@ export function makeHandler(
             ownerSync: true,
             background: true,
             workerKey: env.MAIL_COLLECTOR_KEY,
-            aiKey: env.AIAPIFLOW_API_KEY,
+            ...mailAiConfiguration(env),
+            resolveAiConfiguration: dailyAiConfiguration,
           },
         );
       }
@@ -844,7 +863,8 @@ export function makeHandler(
           hash,
           fetcher,
           workerKey: env.MAIL_COLLECTOR_KEY,
-          aiKey: env.AIAPIFLOW_API_KEY,
+          ...mailAiConfiguration(env),
+          resolveAiConfiguration: dailyAiConfiguration,
         });
       }
       if (action === 'backups-scheduled') {

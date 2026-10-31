@@ -1,5 +1,150 @@
 import assert from 'node:assert/strict';
 {
+  const { providerModels, modelCapabilities, handleApiManagement } =
+    await import('../supabase/functions/_shared/ai-providers.js');
+  let requests = 0,
+    writes = 0;
+  const env = {
+    AIAPIFLOW_API_KEY: 'PRIVATE_FLOW_KEY_SENTINEL',
+    OPENAI_API_KEY: 'PRIVATE_OPENAI_KEY_SENTINEL',
+  };
+  const fetcher = async (url, options) => {
+    requests++;
+    assert.ok(
+      [
+        'https://aiapiflow.com/v1/models',
+        'https://api.openai.com/v1/models',
+      ].includes(url),
+    );
+    assert.equal(options.redirect, 'error');
+    assert.ok(options.headers.authorization.startsWith('Bearer '));
+    return Response.json({
+      data: [
+        { id: 'gpt-5.6-luna' },
+        { id: 'gpt-6-luna' },
+        { id: 'claude-haiku-4-5-20251001' },
+        { id: 'text-embedding-3-small' },
+        { id: 'unknown-vendor-model' },
+        { id: 'gpt-6-luna' },
+        { id: '<script>PRIVATE_INVALID</script>', owned_by: 'PRIVATE_ACCOUNT' },
+      ],
+    });
+  };
+  const unconfigured = await providerModels('openai', {}, () =>
+    assert.fail('unconnected catalog must not fetch'),
+  );
+  assert.equal(unconfigured.catalogStatus, 'not_configured');
+  assert.equal(unconfigured.models[0].available, false);
+  const catalog = await providerModels('openai', env, fetcher);
+  assert.equal(
+    catalog.models.filter((item) => item.id === 'gpt-6-luna').length,
+    1,
+  );
+  assert.equal(
+    catalog.models.find((item) => item.id === 'text-embedding-3-small').support,
+    'unsupported',
+  );
+  assert.equal(
+    catalog.models.find((item) => item.id === 'unknown-vendor-model').support,
+    'unknown',
+  );
+  for (const value of Object.values(env))
+    assert.ok(!JSON.stringify(catalog).includes(value));
+  assert.ok(!JSON.stringify(catalog).includes('PRIVATE_ACCOUNT'));
+  assert.equal(modelCapabilities('openai', 'claude-haiku-4-5-20251001'), null);
+  await assert.rejects(
+    () => providerModels('__proto__', env, fetcher),
+    /AI_PROVIDER_INVALID/,
+  );
+  assert.equal(
+    (
+      await providerModels('openai', env, async () =>
+        Response.json({ error: 'PRIVATE_SECRET_ERROR' }, { status: 401 }),
+      )
+    ).catalogStatus,
+    'access_denied',
+  );
+  let current = {
+    provider: 'aiapiflow',
+    model: 'gpt-5.6-luna',
+    protocol: 'responses',
+    revision: 2,
+  };
+  const ctx = {
+    env,
+    fetcher,
+    json: Response.json,
+    db: async (path, options) => {
+      if (path.startsWith('onedrive_settings?'))
+        return [{ ai_defaults: current }];
+      assert.equal(path, 'rpc/onedrive_ai_default_save');
+      writes++;
+      if (options.body.p_revision !== current.revision)
+        throw Error('AI_CONFIG_CHANGED');
+      current = {
+        provider: options.body.p_provider,
+        model: options.body.p_model,
+        protocol: options.body.p_protocol,
+        revision: current.revision + 1,
+      };
+      return current;
+    },
+  };
+  const before = requests;
+  await assert.rejects(
+    () => handleApiManagement('api-admin-status', {}, { role: 'editor' }, ctx),
+    /ADMIN_REQUIRED/,
+  );
+  assert.equal(requests, before);
+  const response = await handleApiManagement(
+    'api-admin-default',
+    { provider: 'openai', model: 'gpt-6-luna', revision: 2 },
+    { role: 'admin', id: 'owner' },
+    ctx,
+  );
+  assert.equal((await response.json()).default.provider, 'openai');
+  assert.equal(current.protocol, 'responses');
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'gpt-6-luna', revision: 2 },
+        { role: 'admin', id: 'owner' },
+        ctx,
+      ),
+    /AI_CONFIG_CHANGED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'text-embedding-3-small', revision: 3 },
+        { role: 'admin', id: 'owner' },
+        ctx,
+      ),
+    /AI_MODEL_UNSUPPORTED/,
+  );
+  await assert.rejects(
+    () =>
+      handleApiManagement(
+        'api-admin-default',
+        { provider: 'openai', model: 'gpt-6-luna', revision: 3 },
+        { role: 'admin', id: 'owner' },
+        { ...ctx, fetcher: async () => Response.json({ data: [] }) },
+      ),
+    /AI_MODEL_UNAVAILABLE/,
+  );
+  assert.equal(modelCapabilities('openai', 'gpt-4o-search-preview'), null);
+  assert.equal(modelCapabilities('openai', 'gpt-4o-mini-search-preview'), null);
+  assert.equal(modelCapabilities('aiapiflow', 'claude-3-haiku-20240307'), null);
+  assert.equal(modelCapabilities('aiapiflow', 'claude-3-opus-20240229'), null);
+  assert.equal(current.model, 'gpt-6-luna');
+  assert.equal(writes, 2);
+  console.log(
+    'PASS API admin: safe catalog/no paid requests, provider isolation, unavailable/unsupported states, admin fence, default save and stale revision rejection',
+  );
+}
+{
   const { handleMailAutomation } =
     await import('../supabase/functions/onedrive-auth/private-mail-background.js');
   const owner = '2a828c2d-9a6f-40d4-8e13-336b591811cc',
@@ -56,6 +201,141 @@ import assert from 'node:assert/strict';
   );
 }
 import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
+{
+  let calls = 0;
+  const result = await callLuna({
+    provider: 'aiapiflow',
+    model: 'claude-haiku-4-5-20251001',
+    key: 'mock-anthropic',
+    prompt: 'public fixture',
+    images: [{ mediaType: 'image/png', data: 'AA==' }],
+    schemaName: 'fixture',
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      additionalProperties: false,
+    },
+    fetcher: async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://aiapiflow.com/v1/messages');
+      assert.equal(options.headers['x-api-key'], 'mock-anthropic');
+      assert.equal(options.headers.authorization, undefined);
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, 'claude-haiku-4-5-20251001');
+      assert.equal(body.messages[0].content[0].type, 'image');
+      assert.ok(
+        body.messages[0].content[1].text.includes(
+          '"additionalProperties":false',
+        ),
+      );
+      return Response.json({
+        model: body.model,
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: '{"ok":true}' }],
+        usage: { input_tokens: 10, output_tokens: 4 },
+      });
+    },
+  });
+  assert.equal(result.content[0].text, '{"ok":true}');
+  assert.equal(calls, 1);
+  assert.equal(result.provider, 'aiapiflow');
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        key: 'mock',
+        prompt: 'fixture',
+        fetcher: () => assert.fail('unsupported model must never transmit'),
+      }),
+    /AI_MODEL_UNSUPPORTED/,
+  );
+  console.log(
+    'PASS Anthropic adapter: distinct endpoint/header/image/schema prompt, normalized response, no unsupported model request',
+  );
+}
+{
+  const { OPENAI_LUNA_MODEL, mailAiConfiguration, lunaInference } =
+    await import('../supabase/functions/_shared/luna.js');
+  const legacy = 'mock-legacy-key',
+    official = 'mock-official-key';
+  assert.deepEqual(mailAiConfiguration({ AIAPIFLOW_API_KEY: legacy }), {
+    aiKey: legacy,
+    aiProvider: 'aiapiflow',
+  });
+  assert.deepEqual(
+    mailAiConfiguration({
+      PRIVATE_MAIL_AI_PROVIDER: 'openai',
+      OPENAI_API_KEY: official,
+      AIAPIFLOW_API_KEY: legacy,
+    }),
+    { aiKey: official, aiProvider: 'openai' },
+  );
+  const missing = mailAiConfiguration({
+    PRIVATE_MAIL_AI_PROVIDER: 'openai',
+    AIAPIFLOW_API_KEY: legacy,
+  });
+  assert.equal(
+    missing.aiKey,
+    undefined,
+    'official configuration never falls back to another provider key',
+  );
+  assert.equal(
+    mailAiConfiguration({
+      PRIVATE_MAIL_AI_PROVIDER: 'arbitrary',
+      OPENAI_API_KEY: official,
+    }).aiKey,
+    undefined,
+  );
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: missing.aiProvider,
+        key: missing.aiKey,
+        prompt: 'fixture',
+        fetcher: () => assert.fail('missing official key must not transmit'),
+      }),
+    /AI_NOT_CONFIGURED/,
+  );
+  let requests = 0;
+  const response = await callLuna({
+    provider: 'openai',
+    key: official,
+    prompt: 'public fixture only',
+    images: [{ mediaType: 'image/png', data: 'AA==' }],
+    schemaName: 'fixture',
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      additionalProperties: false,
+    },
+    fetcher: async (url, options) => {
+      requests++;
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      assert.equal(options.headers.authorization, 'Bearer ' + official);
+      assert.equal(options.redirect, 'error');
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, OPENAI_LUNA_MODEL);
+      assert.equal(body.store, false);
+      assert.equal(body.text.format.strict, true);
+      assert.equal(body.input[0].content[1].type, 'input_image');
+      const result = await lunaResponseFixture([
+        { type: 'text', text: '{"ok":true}' },
+      ]).json();
+      result.model = OPENAI_LUNA_MODEL;
+      return Response.json(result);
+    },
+  });
+  assert.equal(requests, 1);
+  assert.equal(lunaInference(response).provider, 'openai');
+  assert.equal(lunaInference(response).model, 'gpt-6-luna');
+  assert.equal(response.content[0].text, '{"ok":true}');
+  console.log(
+    'PASS official OpenAI Responses: explicit server selection, separate key, fixed endpoint/model, text/image/schema, provenance, no fallback or live call',
+  );
+}
 function lunaResponseFixture(content, stopReason = 'end_turn') {
   return Response.json({
     model: LUNA_MODEL,
@@ -624,11 +904,15 @@ const report = briefing.renderDailyBriefing({
 });
 assert.equal(report.title, '261030 일일정리');
 assert.equal(report.sourceIds.length, 1);
-assert.equal((report.html.match(/<h3>/g) || []).length, 1);
+assert.equal(
+  (report.html.match(/<h3>/g) || []).length,
+  0,
+  'actionable work has no duplicate mail-summary section',
+);
 assert.ok(!report.html.includes('<img'));
 assert.ok(report.html.includes('&lt;img'));
 assert.ok(
-  report.html.includes('메일 요약') &&
+  !report.html.includes('메일 요약') &&
     !report.html.includes('정리된 이슈 없음') &&
     report.html.includes('할 일'),
 );
@@ -1118,13 +1402,11 @@ const approvedReport = briefing.renderDailyBriefing({
   analyses: [approvedAnalysis],
 });
 for (const label of [
-  '메일 요약',
-  '주요 이슈',
-  '회신·확인 대기',
+  '진행 이슈·회신 대기',
   '직접 메모',
   '최종 업데이트',
   '평택센터',
-  '확인 필요',
+  '진행 중',
   '김담당',
   '2026-10-30 15:22',
 ])
@@ -2470,7 +2752,8 @@ console.log(
   assert.ok(!report.html.includes('메일 요약'));
   assert.ok(!report.html.includes('정리된 메일 없음'));
   assert.ok(!report.html.includes(original));
-  assert.ok(!report.html.includes(entryId));
+  assert.ok(!report.html.replace(/<[^>]*>/g, '').includes(entryId));
+  assert.ok(report.html.includes('?entry=' + entryId));
   assert.ok(!report.html.includes('23:59'));
   assert.ok(report.sourceIds.includes(entryId));
   console.log(
@@ -3361,5 +3644,288 @@ console.log(
   assert.equal(calls, 0);
   console.log(
     'PASS Luna minimum output limit: invalid allocation rejected before provider',
+  );
+}
+{
+  const { dailyWorkItems, normalizeDailyWork, renderWorkSections } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const { readStructuredWorkInput } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const first = '11111111-1111-4111-8111-111111111111';
+  const second = '22222222-2222-4222-8222-222222222222';
+  const third = '33333333-3333-4333-8333-333333333333';
+  const ref = first + ':manual:item-001';
+  const base = { groups: [], tasks: [], issues: [], waiting: [] };
+  const original = {
+    entryId: first,
+    submittedAt: '2026-10-30T01:00:00Z',
+    items: [
+      {
+        ref,
+        kind: 'dispatch',
+        text: '11/2 운행 차량 배차',
+        serviceDate: '2026-11-02',
+        evidence: '11월 2일 배차 요청',
+        status: 'complete',
+        done: true,
+        completedAt: '2026-10-30T04:00:00Z',
+        ownerStateAt: '2026-10-30T04:00:00Z',
+      },
+    ],
+  };
+  const followup = {
+    entryId: second,
+    submittedAt: '2026-10-31T01:00:00Z',
+    items: [
+      {
+        ref: second + ':manual:item-001',
+        workRef: ref,
+        kind: 'reference',
+        text: '차량 정보 참고',
+        evidence: '차량 정보 참고',
+        status: 'pending',
+        done: false,
+      },
+    ],
+  };
+  const works = dailyWorkItems(base, {
+    workContext: [original],
+    entries: [followup],
+  });
+  assert.equal(works.length, 1);
+  assert.equal(works[0].workId, ref);
+  assert.equal(works[0].status, 'complete');
+  assert.equal(works[0].category, 'task');
+  assert.equal(works[0].serviceDate, '2026-11-02');
+  assert.equal(works[0].dueAt, null);
+  assert.equal(
+    works[0].requestedAt,
+    new Date(original.submittedAt).toISOString(),
+  );
+  assert.ok(works[0].sourceRefs.some((source) => source.id === second));
+  const pending = dailyWorkItems(base, {
+    entries: [
+      {
+        ...original,
+        items: [
+          {
+            ...original.items[0],
+            status: 'pending',
+            done: false,
+            completedAt: null,
+            ownerStateAt: null,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(pending[0].section, 'tasks');
+  assert.equal(pending[0].serviceDate, '2026-11-02');
+  const unrelated = dailyWorkItems(base, {
+    entries: [
+      original,
+      {
+        ...followup,
+        items: [
+          {
+            ...followup.items[0],
+            workRef: null,
+            kind: 'task',
+            text: original.items[0].text,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(
+    unrelated.length,
+    2,
+    'same title alone must not join unrelated work',
+  );
+  const html = renderWorkSections(works);
+  assert.ok(html.includes('완료'));
+  assert.ok(!html.includes('담당자: 미지정'));
+  assert.ok(html.includes('?entry=' + first));
+  const reference = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'assistant',
+      sourceText: '허 차장님이 참고하라고 전달한 숙소 자료',
+      items: [
+        {
+          category: 'reference',
+          title: '숙소 지원 참고자료',
+          evidence: '참고하라고 전달한 숙소 자료',
+        },
+      ],
+    }),
+  );
+  assert.equal(reference.items[0].kind, 'reference');
+  const direct = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'manual',
+      sourceText: '장희성님 검토 및 재가 요청드립니다',
+      items: [
+        {
+          category: 'task',
+          title: '숙소 지원 검토',
+          evidence: '장희성님 검토 및 재가 요청드립니다',
+        },
+      ],
+    }),
+  );
+  assert.equal(direct.items[0].kind, 'task');
+  assert.throws(
+    () =>
+      readStructuredWorkInput(JSON.stringify({ schema: 'sajo-daily-work-v2' })),
+    /MANUAL_FORMAT/,
+  );
+  assert.throws(
+    () =>
+      readStructuredWorkInput(
+        JSON.stringify({
+          schema: 'sajo-daily-work-v1',
+          origin: 'manual',
+          sourceText: '처리 예정',
+          items: [
+            {
+              category: 'task',
+              title: '처리',
+              evidence: '처리 예정',
+              status: 'complete',
+            },
+          ],
+        }),
+      ),
+    /MANUAL_EVIDENCE/,
+  );
+  assert.throws(
+    () =>
+      normalizeDailyWork({
+        ref,
+        category: 'task',
+        title: '배차',
+        status: 'pending',
+        serviceDate: '2026-02-30',
+        sourceRefs: [{ kind: 'manual', id: first, ref }],
+      }),
+    /WORK_DATE/,
+  );
+  console.log(
+    'PASS common daily work: stable identity, future service preparation, owner completion preservation, explicit links only, reference/direct request distinction and no fabricated completion',
+  );
+}
+{
+  const { dailyWorkItems } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const { manualDailyView, normalizeManualItems, readStructuredWorkInput } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const entryId = '44444444-4444-4444-8444-444444444444',
+    mailId = '55555555-5555-4555-8555-555555555555';
+  const mailRef = mailId + ':tasks:0';
+  const input = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'manual',
+      sourceText: '배차 처리했습니다',
+      items: [
+        {
+          category: 'task',
+          title: '배차 처리',
+          evidence: '배차 처리했습니다',
+          status: 'complete',
+          workRef: mailRef,
+        },
+      ],
+    }),
+  );
+  const items = normalizeManualItems(input, {
+    text: input.sourceText,
+    submittedAt: '2026-10-30T01:00:00Z',
+    referenceDate: null,
+    entryId,
+    allowLinks: true,
+    origin: 'manual',
+  });
+  const entry = {
+    entryId,
+    status: 'ready',
+    submittedAt: '2026-10-30T01:00:00Z',
+    referenceDate: null,
+    items,
+  };
+  const nextDay = manualDailyView({ [entryId]: entry }, '2026-10-31');
+  assert.equal(nextDay.entries.length, 0);
+  assert.equal(
+    nextDay.workContext.length,
+    1,
+    'hidden owner completion must survive as linked context',
+  );
+  const view = {
+    day: '2026-10-31',
+    groups: [],
+    tasks: [
+      {
+        ref: mailRef,
+        text: '배차 처리',
+        status: 'pending',
+        source: {
+          id: mailId,
+          subject: '배차 요청',
+          receivedAt: '2026-10-30T00:00:00Z',
+        },
+      },
+    ],
+    issues: [],
+    waiting: [],
+  };
+  assert.equal(
+    dailyWorkItems(view, nextDay).length,
+    0,
+    'closed linked mail task must not reappear pending next day',
+  );
+  const reopened = {
+    ...entry,
+    items: [
+      {
+        ...items[0],
+        completionEvents: [{ done: false, at: '2026-10-31T01:00:00Z' }],
+      },
+    ],
+  };
+  const open = dailyWorkItems(
+    view,
+    manualDailyView({ [entryId]: reopened }, '2026-10-31'),
+  );
+  assert.equal(open.length, 1);
+  assert.equal(open[0].status, 'pending');
+  const issue = dailyWorkItems(
+    { groups: [], tasks: [], issues: [], waiting: [] },
+    {
+      entries: [
+        {
+          entryId,
+          submittedAt: entry.submittedAt,
+          items: [
+            {
+              ref: entryId + ':manual:item-002',
+              kind: 'waiting',
+              text: '운수사 회신 대기',
+              status: 'pending',
+              done: false,
+            },
+          ],
+        },
+      ],
+    },
+  );
+  assert.equal(
+    issue[0].controlRef,
+    entryId + ':manual:item-002',
+    'manual issues retain owner completion control',
+  );
+  console.log(
+    'PASS linked owner-state carry: completed mail does not resurrect; explicit reopen wins; manual waiting remains completable',
   );
 }

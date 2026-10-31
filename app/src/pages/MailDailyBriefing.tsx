@@ -6,6 +6,7 @@ import {
 } from '../components/portal/MailBriefingManualEntries';
 import { MailFilterControls } from '../components/portal/MailFilterControls';
 import { MailBriefingConnection } from '../components/portal/MailBriefingConnection';
+import { DailyWorkList } from '../components/portal/DailyWorkList';
 import { MAIL_DIAGNOSTIC_OWNER_ID } from '../domain/portal-mail';
 import { privateMail } from '../lib/portal-mail';
 import '../styles/mail-daily-briefing.css';
@@ -123,18 +124,26 @@ function DailyOverview() {
     };
   }, [load]);
   const overview = data?.day === day ? data : null;
-  async function complete(item: Item, done: boolean) {
+  async function complete(item: Pick<Item, 'ref'>, done: boolean) {
     if (saving.current || loading || !overview) return;
     saving.current = true;
     setPending(item.ref);
     setFeedback('');
     const id = request.current;
     try {
-      const result = await privateMail.setTaskStatus({
-        ref: item.ref,
-        done,
-        day,
-      });
+      const result = item.ref.includes(':manual:')
+        ? await privateMail
+            .manualUpdate({
+              entryId: item.ref.slice(0, 36),
+              itemId: item.ref.split(':manual:')[1],
+              done,
+            })
+            .then(() => ({ saved: true }))
+        : await privateMail.setTaskStatus({
+            ref: item.ref,
+            done,
+            day,
+          });
       if (!mounted.current || id !== request.current) return;
       if (!result.saved) throw Error('task status was not saved');
       const refreshed = await load();
@@ -154,7 +163,7 @@ function DailyOverview() {
       if (mounted.current) setPending(null);
     }
   }
-  async function correctIntent(source: Source) {
+  async function correctIntent(source: Pick<Source, 'id' | 'intentCorrected'>) {
     if (saving.current || loading) return;
     saving.current = true;
     setPending('intent:' + source.id);
@@ -327,99 +336,134 @@ function DailyOverview() {
         <h2 className="daily-title">{overview?.title || `${day} 일일정리`}</h2>
         {overview ? (
           <>
-            {!overview.sources.length ? (
+            {!overview.sources.length && !overview.workItems ? (
               <p>
                 이 날짜에 정리된 메일이 없습니다. 새 메일의 분석이 완료되면
                 표시됩니다.
               </p>
             ) : null}
-            {overview.groups.length ? (
-              <section className="daily-section" aria-label="메일 정리">
-                <h2>메일 정리</h2>
-                {overview.groups.map((group, groupIndex) => (
-                  <div
-                    className="daily-mail-group"
-                    key={`${group.name}:${groupIndex}`}
-                  >
-                    {group.name &&
-                    !['분류 미확정', '분류미확정'].includes(group.name) ? (
-                      <h3>{group.name}</h3>
-                    ) : null}
-                    {group.threads.map((thread, threadIndex) => (
-                      <div key={`${thread.subject}:${threadIndex}`}>
-                        <h4>{thread.subject || '(제목 없음)'}</h4>
-                        {thread.mails.map((mail) => (
-                          <article
-                            className="daily-mail-summary"
-                            aria-label={mail.source.subject || thread.subject}
-                            key={mail.source.id}
-                          >
-                            <p className="daily-mail-summary-meta">
-                              {mail.source.intent === 'reference' ? (
-                                <span className="daily-item-status">참고</span>
-                              ) : null}
-                              {mail.source.analysisState === 'failed' ||
-                              mail.source.analysisState === 'blocked' ? (
-                                <span className="daily-item-status">
-                                  이전 정리
-                                </span>
-                              ) : null}
-                              <SourceLink source={mail.source} label="원문" />
-                              {mail.source.sender ? (
-                                <span>{mail.source.sender}</span>
-                              ) : null}
-                              <span>
-                                수신{' '}
-                                {formatBriefingTimestamp(
-                                  mail.source.receivedAt,
-                                )}
-                              </span>
-                            </p>
-                            <ul className="daily-mail-summary-points">
-                              {mail.summary.map((summary, index) => (
-                                <li key={index}>{summary.text}</li>
-                              ))}
-                            </ul>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-secondary"
-                              disabled={loading || pending !== null}
-                              onClick={() => void correctIntent(mail.source)}
-                            >
-                              {pending === 'intent:' + mail.source.id
-                                ? '저장 중…'
-                                : mail.source.intentCorrected
-                                  ? '참고 정정 해제'
-                                  : '참고 자료로 정정'}
-                            </button>
-                          </article>
+            {overview.workItems &&
+            overview.workSections &&
+            overview.workStatusLabels ? (
+              <DailyWorkList
+                items={overview.workItems}
+                sections={overview.workSections}
+                labels={overview.workStatusLabels}
+                day={day}
+                busy={loading || pending !== null || filtersBusy || manualBusy}
+                onComplete={(item, done) => {
+                  if (item.controlRef)
+                    void complete({ ref: item.controlRef }, done);
+                }}
+                onCorrectIntent={(id, corrected) =>
+                  void correctIntent({ id, intentCorrected: corrected })
+                }
+              />
+            ) : (
+              <>
+                {overview.groups.length ? (
+                  <section className="daily-section" aria-label="메일 정리">
+                    <h2>메일 정리</h2>
+                    {overview.groups.map((group, groupIndex) => (
+                      <div
+                        className="daily-mail-group"
+                        key={`${group.name}:${groupIndex}`}
+                      >
+                        {group.name &&
+                        !['분류 미확정', '분류미확정'].includes(group.name) ? (
+                          <h3>{group.name}</h3>
+                        ) : null}
+                        {group.threads.map((thread, threadIndex) => (
+                          <div key={`${thread.subject}:${threadIndex}`}>
+                            <h4>{thread.subject || '(제목 없음)'}</h4>
+                            {thread.mails.map((mail) => (
+                              <article
+                                className="daily-mail-summary"
+                                aria-label={
+                                  mail.source.subject || thread.subject
+                                }
+                                key={mail.source.id}
+                              >
+                                <p className="daily-mail-summary-meta">
+                                  {mail.source.intent === 'reference' ? (
+                                    <span className="daily-item-status">
+                                      참고
+                                    </span>
+                                  ) : null}
+                                  {mail.source.analysisState === 'failed' ||
+                                  mail.source.analysisState === 'blocked' ? (
+                                    <span className="daily-item-status">
+                                      이전 정리
+                                    </span>
+                                  ) : null}
+                                  <SourceLink
+                                    source={mail.source}
+                                    label="원문"
+                                  />
+                                  {mail.source.sender ? (
+                                    <span>{mail.source.sender}</span>
+                                  ) : null}
+                                  <span>
+                                    수신{' '}
+                                    {formatBriefingTimestamp(
+                                      mail.source.receivedAt,
+                                    )}
+                                  </span>
+                                </p>
+                                <ul className="daily-mail-summary-points">
+                                  {mail.summary.map((summary, index) => (
+                                    <li key={index}>{summary.text}</li>
+                                  ))}
+                                </ul>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-secondary"
+                                  disabled={loading || pending !== null}
+                                  onClick={() =>
+                                    void correctIntent(mail.source)
+                                  }
+                                >
+                                  {pending === 'intent:' + mail.source.id
+                                    ? '저장 중…'
+                                    : mail.source.intentCorrected
+                                      ? '참고 정정 해제'
+                                      : '참고 자료로 정정'}
+                                </button>
+                              </article>
+                            ))}
+                          </div>
                         ))}
                       </div>
                     ))}
-                  </div>
-                ))}
-              </section>
-            ) : null}
-            {section('이슈', overview.issues, '정리된 이슈가 없습니다.')}
-            {section('할 일', overview.tasks, '정리된 할 일이 없습니다.', true)}
-            {section(
-              '회신 대기',
-              overview.waiting,
-              '대기 중인 회신이 없습니다.',
+                  </section>
+                ) : null}
+                {section('이슈', overview.issues, '정리된 이슈가 없습니다.')}
+                {section(
+                  '할 일',
+                  overview.tasks,
+                  '정리된 할 일이 없습니다.',
+                  true,
+                )}
+                {section(
+                  '회신 대기',
+                  overview.waiting,
+                  '대기 중인 회신이 없습니다.',
+                )}
+                {overview.sources.length ? (
+                  <details className="daily-sources">
+                    <summary>원본 메일 {overview.sources.length}건</summary>
+                    <ul>
+                      {overview.sources.map((source) => (
+                        <li key={source.id}>
+                          <SourceLink source={source} />
+                          {source.sender ? ` · ${source.sender}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </>
             )}
-            {overview.sources.length ? (
-              <details className="daily-sources">
-                <summary>원본 메일 {overview.sources.length}건</summary>
-                <ul>
-                  {overview.sources.map((source) => (
-                    <li key={source.id}>
-                      <SourceLink source={source} />
-                      {source.sender ? ` · ${source.sender}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
           </>
         ) : !loading ? (
           <p>표시할 일일정리를 확인하지 못했습니다.</p>
@@ -430,6 +474,8 @@ function DailyOverview() {
           day={day}
           disabled={pending !== null || filtersBusy}
           onBusyChange={setManualBusy}
+          showItems={overview ? !overview.workItems : false}
+          onChanged={() => void load()}
         />
       </div>
       <MailFilterControls

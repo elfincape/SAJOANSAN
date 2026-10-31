@@ -1,4 +1,10 @@
 import { dateFrom, deadline } from './private-mail-manual.js';
+import {
+  dailyWorkItems,
+  renderWorkSections,
+  WORK_SECTIONS,
+  WORK_STATUS_LABELS,
+} from './private-mail-work.js';
 
 export const BRIEFING_TARGET = Object.freeze({
   notebookId: '0-6DACE80AD4C07B59!s8d3015ec347d47fdb476f785ac84d3da',
@@ -360,7 +366,12 @@ function uniqueAnalyses(analyses) {
   return rows;
 }
 
-export function dailyBriefingView({ now, analyses, overrides = {} }) {
+export function dailyBriefingView({
+  now,
+  analyses,
+  overrides = {},
+  manual = {},
+}) {
   const identity = dailyReportIdentity(now),
     allRows = uniqueAnalyses(analyses),
     rows = allRows.filter((mail) => mail.source.excluded !== true);
@@ -610,7 +621,47 @@ export function dailyBriefingView({ now, analyses, overrides = {} }) {
       email: task.resolution,
     };
   }
+  const replyProof = new Map();
+  const workKey = (item) =>
+    [
+      item.text,
+      item.serviceDate ?? '',
+      item.dueAt ?? '',
+      item.dueDate ?? '',
+      item.assignee ?? '',
+    ].join('\0');
+  for (const task of output.tasks) {
+    const proof = task.resolution?.manual
+      ? task.resolution.email
+      : task.resolution;
+    if (!proof?.source) continue;
+    const key = proof.source.id + '\0' + workKey(task);
+    replyProof.set(key, [...(replyProof.get(key) ?? []), task]);
+  }
+  for (const task of output.tasks) {
+    const matches = replyProof.get(task.source.id + '\0' + workKey(task));
+    if (matches?.length !== 1 || matches[0] === task) continue;
+    const target = matches[0];
+    if (
+      task.resolution?.manual &&
+      (!target.resolution?.manual ||
+        task.resolution.updatedAt > target.resolution.updatedAt)
+    ) {
+      target.status = task.status;
+      target.resolution = task.resolution;
+    }
+    task.linkedWorkRef = target.ref;
+    task.status = target.status;
+    task.resolution = target.resolution;
+  }
+  const linkedRefs = new Set(
+    [...(manual.entries ?? []), ...(manual.workContext ?? [])].flatMap(
+      (entry) =>
+        (entry.items ?? []).map((item) => item.workRef).filter(Boolean),
+    ),
+  );
   const visible = (item) =>
+    linkedRefs.has(item.ref) ||
     item.source.carryOnly !== true ||
     !['complete', 'resolved'].includes(item.status) ||
     (item.resolution?.manual === true &&
@@ -666,7 +717,7 @@ export function dailyBriefingView({ now, analyses, overrides = {} }) {
         throw Error('IMAGE_EVIDENCE');
       else text(fact.text);
   }
-  return {
+  const view = {
     ...identity,
     groups,
     issues: output.issues,
@@ -677,14 +728,20 @@ export function dailyBriefingView({ now, analyses, overrides = {} }) {
     ),
     sources: rows.map((mail) => mail.source),
   };
+  return {
+    ...view,
+    workItems: dailyWorkItems(view, manual, {
+      excludedSourceIds: new Set(
+        allRows
+          .filter((mail) => mail.source.excluded === true)
+          .map((mail) => mail.source.id),
+      ),
+    }),
+    workSections: WORK_SECTIONS,
+    workStatusLabels: WORK_STATUS_LABELS,
+  };
 }
 
-const mailLink = (source) =>
-  '<a href="https://sajoansan.vercel.app/portal/?view=mail&amp;message=' +
-  encodeURIComponent(source.id) +
-  '">' +
-  escape(source.subject) +
-  '</a>';
 const localTime = (value) =>
   new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -695,191 +752,31 @@ const localTime = (value) =>
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(date(value));
-function evidenceHtml(item) {
-  return item.sourceType === 'image' && item.confidence === 'uncertain'
-    ? '<p>첨부사진의 불명확한 내용은 원본 확인이 필요합니다.</p>'
-    : '';
-}
-function resolutionHtml(resolution) {
-  if (!resolution) return '';
-  return resolution.manual
-    ? '<p>직접 ' + (resolution.done ? '완료 표시' : '완료 해제') + '</p>'
-    : '<p>회신 내용으로 상태 갱신</p>';
-}
 export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
-  const view = dailyBriefingView({ now, analyses, overrides });
+  const view = dailyBriefingView({ now, analyses, overrides, manual });
   if (manual.day != null && manual.day !== view.day) throw Error('REPORT_DATE');
-  const manualItem = (item) => ({
-    ...item,
-    sourceType: 'manual',
-    source: {
-      id: item.entryId,
-      sentAt: item.submittedAt,
-      receivedAt: item.submittedAt,
-    },
-    assigneeConfirmed: !!item.assignee,
-    due: item.dueAt ? localTime(item.dueAt) : (item.dueDate ?? null),
-  });
-  view.tasks.push(...(manual.tasks ?? []).map(manualItem));
-  view.issues.push(
-    ...(manual.issues ?? []).map((item) => ({
-      ...manualItem(item),
-      status: item.done ? 'resolved' : 'needs_confirmation',
-    })),
-  );
-  const mails = view.groups.flatMap((group) =>
-    group.threads.flatMap((thread) => thread.mails),
-  );
-  const updates = [
-    ...(manual.updatedAt ? [manual.updatedAt] : []),
-    ...(manual.entries ?? []).map((entry) => entry.submittedAt),
-    ...(manual.tasks ?? [])
-      .filter((item) => item.completedAt)
-      .map((item) => item.completedAt),
-    ...mails.map(
-      (mail) => mail.updatedAt ?? mail.source.receivedAt ?? mail.source.sentAt,
+  const times = [
+    ...analyses.map(
+      (item) => item.updatedAt ?? item.source.receivedAt ?? item.source.sentAt,
     ),
-    ...view.tasks
-      .filter((task) => task.resolution?.manual)
-      .map((task) => task.resolution.updatedAt),
+    ...(manual.entries ?? []).map((item) => item.updatedAt ?? item.submittedAt),
+    ...view.workItems
+      .flatMap((item) => [item.ownerStateAt, item.closedAt])
+      .filter(Boolean),
   ];
   const updatedAt =
-    updates
+    times
+      .filter(Boolean)
       .map((value) => date(value).toISOString())
       .sort()
       .at(-1) ?? view.day + 'T00:00:00+09:00';
-  const chunks = [],
-    encoder = new TextEncoder();
-  let length = 0;
-  const append = (html) => {
-    length += encoder.encode(html).byteLength;
-    if (length > 2 * 1024 * 1024) throw Error('REPORT_LIMIT');
-    chunks.push(html);
-  };
-  append(
-    '<p>최종 업데이트: ' + escape(localTime(updatedAt)) + ' (한국시간)</p>',
-  );
-  if (mails.length) append('<h2>메일 요약</h2>');
-  for (const group of view.groups) {
-    if (group.name !== '분류 미확정' && group.name !== '분류미확정')
-      append('<p><strong>' + escape(group.name) + '</strong></p>');
-    for (const thread of group.threads) {
-      append('<h3>' + escape(thread.subject) + '</h3>');
-      for (const mail of thread.mails) {
-        append(
-          '<p>' +
-            escape(mail.source.sender) +
-            ' · ' +
-            escape(localTime(mail.source.receivedAt ?? mail.source.sentAt)) +
-            ' 수신</p><p>원문: ' +
-            mailLink(mail.source) +
-            '</p>',
-        );
-        const seenSummary = new Set();
-        for (const item of mail.summary ?? []) {
-          if (seenSummary.has(item.text.trim())) continue;
-          seenSummary.add(item.text.trim());
-          append('<p>' + escape(item.text) + '</p>');
-        }
-        append('<div data-id="sajo-mail-photos-' + mail.source.id + '"></div>');
-      }
-    }
-  }
-  const section = (label, items, _empty, render) => {
-    if (!items.length) return;
-    append('<h2>' + label + '</h2>');
-    for (const item of items)
-      append(
-        render(item) +
-          carryOrigin(item) +
-          evidenceHtml(item) +
-          resolutionHtml(item.resolution),
-      );
-  };
-  const linkedCarry = new Set();
-  const carryOrigin = (item) => {
-    if (item.source?.carryOnly !== true || linkedCarry.has(item.source.id))
-      return '';
-    linkedCarry.add(item.source.id);
-    return '<p>원문: ' + mailLink(item.source) + '</p>';
-  };
-  const linkedManual = new Set();
-  const manualOrigin = (item) => {
-    if (item.sourceType !== 'manual' || linkedManual.has(item.entryId))
-      return '';
-    linkedManual.add(item.entryId);
-    return '<p>카톡 입력 · ' + escape(localTime(item.submittedAt)) + '</p>';
-  };
-  section(
-    '주요 이슈',
-    view.issues,
-    '정리된 이슈 없음',
-    (item) =>
-      manualOrigin(item) +
-      '<p>' +
-      escape(item.text) +
-      ' · ' +
-      ({
-        in_progress: '진행 중',
-        needs_confirmation: '확인 필요',
-        resolved: '해결',
-      }[item.status] ?? '확인 필요') +
-      (item.impact ? ' · 영향: ' + escape(item.impact) : '') +
-      (item.latest ? ' · 현재: ' + escape(item.latest) : '') +
-      '</p>',
-  );
-  section(
-    '할 일',
-    view.tasks,
-    '정리된 할 일 없음',
-    (item) =>
-      manualOrigin(item) +
-      '<p>' +
-      escape(item.text) +
-      (item.status === 'complete' ? ' · 완료' : '') +
-      '</p>' +
-      (item.serviceDate
-        ? '<p>대상일: ' + escape(item.serviceDate) + '</p>'
-        : '') +
-      '<p>담당: ' +
-      escape(item.assignee ?? '미확정') +
-      (item.assignee && !item.assigneeConfirmed ? ' (확인 필요)' : '') +
-      ' · 기한: ' +
-      escape(
-        item.due ??
-          (item.dueOriginal ? item.dueOriginal + ' (날짜 미확정)' : '미확정'),
-      ) +
-      '</p>',
-  );
-  section(
-    '회신·확인 대기',
-    view.waiting,
-    '정리된 대기 항목 없음',
-    (item) =>
-      '<p>' +
-      escape(item.text) +
-      '</p><p>대상: ' +
-      escape(item.person ?? '미지정') +
-      ' · 마지막 요청: ' +
-      escape(localTime(item.lastRequestedAt ?? item.source.sentAt)) +
-      '</p>',
-  );
-  if (view.resolvedWaiting.length) {
-    append('<p><strong>회신·확인 완료</strong></p>');
-    for (const item of view.resolvedWaiting)
-      append(
-        '<p>' +
-          escape(item.text) +
-          '</p>' +
-          evidenceHtml(item) +
-          resolutionHtml(item.resolution),
-      );
-  }
   const managedHtml =
     '<div data-id="sajo-mail-daily-' +
     view.day +
-    '">' +
-    chunks.join('') +
+    '"><p>최종 업데이트: ' +
+    escape(localTime(updatedAt)) +
+    ' (한국시간)</p>' +
+    renderWorkSections(view.workItems) +
     '</div>';
   const html =
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
@@ -887,7 +784,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
     '</title></head><body>' +
     managedHtml +
     '<div data-id="sajo-mail-manual"><h2>직접 메모</h2><p></p></div></body></html>';
-  if (encoder.encode(html).byteLength > 2 * 1024 * 1024)
+  if (new TextEncoder().encode(html).byteLength > 2 * 1024 * 1024)
     throw Error('REPORT_LIMIT');
   return {
     day: view.day,
@@ -896,7 +793,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
     managedHtml,
     sourceIds: [
       ...new Set([
-        ...view.sources.map((source) => source.id),
+        ...view.sources.map((item) => item.id),
         ...(manual.entries ?? [])
           .filter((entry) => entry.status === 'ready' && entry.items?.length)
           .map((entry) => entry.entryId),

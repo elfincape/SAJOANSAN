@@ -96,5 +96,22 @@ revoke all on function public.onedrive_commit_document(uuid,uuid,text,text,text,
 grant execute on function public.onedrive_acquire(uuid) to service_role;
 grant execute on function public.onedrive_finish_oauth(text,text,uuid) to service_role;
 grant execute on function public.onedrive_commit_document(uuid,uuid,text,text,text,text,text,bigint,date,uuid,uuid) to service_role;
+alter table public.onedrive_settings add column if not exists ai_defaults jsonb not null default '{}';
+create or replace function public.onedrive_ai_default_save(p_user uuid,p_revision bigint,p_provider text,p_model text,p_protocol text)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare previous jsonb; result jsonb;
+begin
+ if not exists(select 1 from public.user_profiles where id=p_user and active and role='admin') then raise exception 'ADMIN_REQUIRED'; end if;
+ if p_provider is null or p_protocol is null or p_model is null or p_provider not in ('aiapiflow','openai') or p_protocol not in ('responses','anthropic') or p_model !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$'
+ or (p_provider='openai' and p_protocol<>'responses') or p_revision is null or p_revision<0 or p_revision>=9007199254740991 then raise exception 'AI_CONFIG_INVALID'; end if;
+ select ai_defaults into previous from public.onedrive_settings where id=true for update;
+ if previous is null then raise exception 'AI_SETTINGS_NOT_READY'; end if;
+ if coalesce((previous->>'revision')::bigint,0)<>p_revision then raise exception 'AI_CONFIG_CHANGED'; end if;
+ result=jsonb_build_object('provider',p_provider,'model',p_model,'protocol',p_protocol,'scope','daily-briefing','revision',p_revision+1,'updatedAt',clock_timestamp(),'updatedBy',p_user);
+ update public.onedrive_settings set ai_defaults=result where id=true;
+ return result;
+end; $$;
+revoke all on function public.onedrive_ai_default_save(uuid,bigint,text,text,text) from public,anon,authenticated;
+grant execute on function public.onedrive_ai_default_save(uuid,bigint,text,text,text) to service_role;
 notify pgrst,'reload schema';
 commit;

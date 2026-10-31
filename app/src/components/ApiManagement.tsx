@@ -1,0 +1,263 @@
+import { useEffect, useRef, useState } from 'react';
+import { apiManagement } from '../lib/api-management';
+import type { ApiManagementStatus } from '../lib/api-management';
+
+const catalogLabels = {
+  ready: '모델 목록 조회됨',
+  not_configured: '서버 키 미등록',
+  access_denied: '목록 조회 권한 확인 필요',
+  unavailable: '목록 조회 실패',
+};
+export function ApiManagement({ editable }: { editable: boolean }) {
+  const [data, setData] = useState<ApiManagementStatus | null>(null);
+  const [draft, setDraft] = useState({ provider: '', model: '' });
+  const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [failed, setFailed] = useState(false);
+  const alive = useRef(false),
+    sequence = useRef(0);
+  async function load() {
+    const request = ++sequence.current;
+    setBusy(true);
+    setFeedback('');
+    setFailed(false);
+    try {
+      const result = await apiManagement.status();
+      if (!alive.current || request !== sequence.current) return;
+      setData(result);
+      setDraft((current) =>
+        current.provider
+          ? current
+          : { provider: result.default.provider, model: result.default.model },
+      );
+    } catch {
+      if (alive.current && request === sequence.current) {
+        setFailed(true);
+        setFeedback(
+          'API 설정을 불러오지 못했습니다. 기존 선택은 변경되지 않았습니다.',
+        );
+      }
+    } finally {
+      if (alive.current && request === sequence.current) setBusy(false);
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    void load();
+    return () => {
+      alive.current = false;
+      sequence.current++;
+    };
+  }, []);
+  const provider = data?.providers.find((item) => item.id === draft.provider);
+  const model = provider?.models.find((item) => item.id === draft.model);
+  const filtered =
+    provider?.models.filter((item) =>
+      item.id.toLowerCase().includes(search.trim().toLowerCase()),
+    ) ?? [];
+  const canSave =
+    editable &&
+    !busy &&
+    provider?.catalogStatus === 'ready' &&
+    model?.available &&
+    !!model.capabilities;
+  async function save() {
+    if (!canSave || !data) return;
+    const request = ++sequence.current;
+    setBusy(true);
+    setFeedback('');
+    setFailed(false);
+    try {
+      const result = await apiManagement.save(
+        draft.provider,
+        draft.model,
+        data.default.revision,
+      );
+      if (!result.saved) throw Error('NOT_SAVED');
+      if (!alive.current || request !== sequence.current) return;
+      setData((current) =>
+        current ? { ...current, default: result.default } : current,
+      );
+      setFeedback('기본 모델을 저장했습니다. 다음 분석부터 적용됩니다.');
+    } catch (error) {
+      if (alive.current && request === sequence.current) {
+        setFailed(true);
+        setFeedback(
+          error instanceof Error && error.message === 'AI_CONFIG_CHANGED'
+            ? '다른 관리자가 설정을 변경했습니다. 목록을 갱신한 뒤 다시 선택해 주세요.'
+            : '기본 모델을 저장하지 못했습니다. 기존 설정을 유지합니다. 연결과 모델 목록을 확인해 주세요.',
+        );
+      }
+    } finally {
+      if (alive.current && request === sequence.current) setBusy(false);
+    }
+  }
+  return (
+    <section aria-label="API 관리" className="api-management">
+      <div className="feature-toolbar">
+        <h2 className="app-function-title mr-auto">API 관리</h2>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          disabled={busy}
+          onClick={() => void load()}
+        >
+          모델 목록 갱신
+        </button>
+      </div>
+      <p className="feature-help">
+        적용 범위: 메일·카톡 일일정리 분석. 새로 시작하는 분석부터 적용하며,
+        실패해도 다른 제공자나 유료 모델로 자동 전환하지 않습니다.
+      </p>
+      {data ? (
+        <>
+          <p>
+            현재 기본:{' '}
+            <strong>
+              {data.providers.find((item) => item.id === data.default.provider)
+                ?.label ?? data.default.provider}{' '}
+              · {data.default.model}
+            </strong>
+          </p>
+          <div className="api-provider-grid">
+            {data.providers.map((item) => (
+              <div className="feature-panel api-provider" key={item.id}>
+                <h3>{item.label}</h3>
+                <p>{catalogLabels[item.catalogStatus]}</p>
+                <p className="feature-help">
+                  서버 키: {item.maskedKey || '미등록'} · 실호출 미검증
+                </p>
+                <small>서버 비밀 설정: {item.secretName}</small>
+              </div>
+            ))}
+          </div>
+          <div className="feature-toolbar">
+            <label htmlFor="api-provider">
+              제공자
+              <select
+                className="app-input"
+                id="api-provider"
+                aria-label="제공자"
+                value={draft.provider}
+                disabled={busy || !editable}
+                onChange={(event) => {
+                  const next = data.providers.find(
+                    (item) => item.id === event.target.value,
+                  );
+                  setDraft({
+                    provider: event.target.value,
+                    model:
+                      next?.models.find(
+                        (item) => item.available && item.capabilities,
+                      )?.id ??
+                      next?.models[0]?.id ??
+                      '',
+                  });
+                  setSearch('');
+                }}
+              >
+                {data.providers.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label htmlFor="api-model-search">
+              모델 검색
+              <input
+                className="app-input"
+                id="api-model-search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="모델 이름 검색"
+              />
+            </label>
+          </div>
+          <label htmlFor="api-model">
+            기본 모델
+            <select
+              className="app-input"
+              id="api-model"
+              aria-label="기본 모델"
+              value={draft.model}
+              disabled={
+                busy || !editable || provider?.catalogStatus !== 'ready'
+              }
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  model: event.target.value,
+                }))
+              }
+            >
+              {!filtered.some((item) => item.id === draft.model) ? (
+                <option value={draft.model}>
+                  {draft.model || '모델 선택'}
+                </option>
+              ) : null}
+              {filtered.map((item) => (
+                <option
+                  key={item.id}
+                  value={item.id}
+                  disabled={!item.available || !item.capabilities}
+                >
+                  {item.id}
+                  {!item.available
+                    ? ' · 미연결'
+                    : !item.capabilities
+                      ? item.support === 'unsupported'
+                        ? ' · 분석용 미지원'
+                        : ' · 호환 미검증'
+                      : ' · 실호출 미검증'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="feature-help">
+            조회된 모델 {provider?.models.length ?? 0}개 · 검색 결과{' '}
+            {filtered.length}개. 목록에 있어도 모델 접근·과금·실제 응답 성공을
+            보장하지 않습니다.
+          </p>
+          {model?.capabilities ? (
+            <p className="feature-help">
+              요청 형식:{' '}
+              {model.capabilities.protocol === 'anthropic'
+                ? 'Anthropic Messages'
+                : 'Responses'}{' '}
+              · 이미지 입력 지원 ·{' '}
+              {model.capabilities.structured === 'json_schema'
+                ? 'JSON Schema 요청 + 서버 검증'
+                : 'JSON 형식 지시 + 서버 검증'}
+            </p>
+          ) : (
+            <p className="feature-help">
+              현재 분석 흐름과 호환이 확인되지 않은 모델은 기본값으로 저장할 수
+              없습니다.
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!canSave}
+            onClick={() => void save()}
+          >
+            기본 모델 저장
+          </button>
+          <p className="feature-help">
+            키는 서버 비밀 저장소에서 등록합니다. 이 화면은 키 값을 받거나
+            표시하지 않습니다. 목록 갱신은 유료 추론을 실행하지 않습니다.
+          </p>
+        </>
+      ) : null}
+      <p
+        className="api-management-status"
+        aria-live="polite"
+        role={failed ? 'alert' : 'status'}
+      >
+        {busy ? '설정을 확인하는 중입니다…' : feedback}
+      </p>
+    </section>
+  );
+}
