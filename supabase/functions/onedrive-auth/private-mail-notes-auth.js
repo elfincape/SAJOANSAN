@@ -100,3 +100,59 @@ export async function completeNotesAuth(
     body: { encrypted_data: await seal(payload), stage: 'ready' },
   });
 }
+
+export async function refreshNotesConnection(
+  data,
+  { grant, save, fail, now = Date.now },
+) {
+  const reject = (reason, extra = {}) => {
+    throw Object.assign(fail('NOTES_PERMISSION_REQUIRED', 409), {
+      connectionStage: 'notes_refresh',
+      connectionReason: reason,
+      ...extra,
+    });
+  };
+  if (data?.purpose !== 'mail-briefing') reject('purpose');
+  if (data.notesGranted !== true) reject('consent');
+  if (
+    typeof data.refreshToken !== 'string' ||
+    !data.refreshToken ||
+    !Number.isFinite(data.expiresAt)
+  )
+    reject('metadata');
+  if (data.expiresAt >= now() + 60000) return data;
+  let fresh;
+  try {
+    fresh = await grant({
+      grant_type: 'refresh_token',
+      refresh_token: data.refreshToken,
+      scope: NOTES_SCOPES,
+    });
+  } catch (error) {
+    if (error?.status === 409)
+      reject('refresh', { oauthCode: error.oauthCode ?? 'unknown' });
+    throw error;
+  }
+  if (!fresh || typeof fresh !== 'object' || Array.isArray(fresh))
+    reject('token_response');
+  // OAuth permits omitting scope when it is unchanged; only the prior validated Notes grant is inherited.
+  if (Object.hasOwn(fresh, 'scope') && !notesGranted(fresh.scope))
+    reject('scope');
+  if (
+    (fresh.refresh_token != null &&
+      (typeof fresh.refresh_token !== 'string' || !fresh.refresh_token)) ||
+    typeof fresh.access_token !== 'string' ||
+    !fresh.access_token ||
+    !Number.isFinite(Number(fresh.expires_in)) ||
+    Number(fresh.expires_in) <= 0
+  )
+    reject('token_response');
+  const renewed = {
+    ...data,
+    accessToken: fresh.access_token,
+    refreshToken: fresh.refresh_token || data.refreshToken,
+    expiresAt: now() + Number(fresh.expires_in) * 1000,
+  };
+  await save(renewed);
+  return renewed;
+}

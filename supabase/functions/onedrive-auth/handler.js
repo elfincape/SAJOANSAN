@@ -9,8 +9,7 @@ import { authorizeMailWork } from './private-mail-worker-auth.js';
 import {
   startNotesAuth,
   completeNotesAuth,
-  notesGranted,
-  NOTES_SCOPES,
+  refreshNotesConnection,
 } from './private-mail-notes-auth.js';
 export const FOLDER_KINDS = [
   'food_transport',
@@ -394,11 +393,32 @@ export function makeHandler(
       }),
       signal: AbortSignal.timeout(20000),
     });
-    if (!res.ok)
-      throw fail(
-        'OneDrive 인증에 실패했습니다. 관리자가 다시 연결해 주세요.',
-        409,
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      const oauthCode = [
+        'invalid_grant',
+        'invalid_client',
+        'unauthorized_client',
+        'invalid_scope',
+        'interaction_required',
+        'consent_required',
+        'temporarily_unavailable',
+      ].includes(detail.error)
+        ? detail.error
+        : 'unknown';
+      console.warn('MICROSOFT_TOKEN_FAILURE', {
+        httpStatus: res.status,
+        oauthCode,
+        grantType:
+          body.grant_type === 'refresh_token'
+            ? 'refresh_token'
+            : 'authorization_code',
+      });
+      throw Object.assign(
+        fail('OneDrive 인증에 실패했습니다. 관리자가 다시 연결해 주세요.', 409),
+        { oauthCode },
       );
+    }
     return await res.json();
   }
   async function graph(path, access, options = {}) {
@@ -540,28 +560,19 @@ export function makeHandler(
     if (!row?.encrypted_notes_tokens)
       return { ...(await connected()), notesGranted: false };
     const data = await open(row.encrypted_notes_tokens);
-    if (data.purpose !== 'mail-briefing' || data.notesGranted !== true)
-      throw fail('OneNote 권한을 다시 연결해 주세요.', 409);
-    if (data.expiresAt < Date.now() + 60000) {
-      const fresh = await grant({
-        grant_type: 'refresh_token',
-        refresh_token: data.refreshToken,
-        scope: NOTES_SCOPES,
-      });
-      if (!notesGranted(fresh.scope))
-        throw fail('OneNote 권한을 다시 연결해 주세요.', 409);
-      data.accessToken = fresh.access_token;
-      data.refreshToken = fresh.refresh_token || data.refreshToken;
-      data.expiresAt = Date.now() + fresh.expires_in * 1000;
-      await db('onedrive_connection?id=eq.true', {
-        method: 'PATCH',
-        body: {
-          encrypted_notes_tokens: await seal(data),
-          updated_at: new Date().toISOString(),
-        },
-      });
-    }
-    return data;
+    return refreshNotesConnection(data, {
+      grant,
+      fail,
+      save: async (value) => {
+        await db('onedrive_connection?id=eq.true', {
+          method: 'PATCH',
+          body: {
+            encrypted_notes_tokens: await seal(value),
+            updated_at: new Date().toISOString(),
+          },
+        });
+      },
+    });
   }
   async function callback(url) {
     const state = url.searchParams.get('state');

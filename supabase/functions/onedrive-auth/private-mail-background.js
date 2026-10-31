@@ -561,6 +561,27 @@ export async function handleMailAutomation(action, body, user, ctx) {
         : 'NOTES_SYNC_FAILED';
       console.warn('PRIVATE_MAIL_REPORT_FAILED', {
         stage: reportStage,
+        connectionReason: [
+          'purpose',
+          'consent',
+          'metadata',
+          'refresh',
+          'scope',
+          'token_response',
+        ].includes(error?.connectionReason)
+          ? error.connectionReason
+          : null,
+        oauthCode: [
+          'invalid_grant',
+          'invalid_client',
+          'unauthorized_client',
+          'invalid_scope',
+          'interaction_required',
+          'consent_required',
+          'temporarily_unavailable',
+        ].includes(error?.oauthCode)
+          ? error.oauthCode
+          : null,
         code,
         errorName: [
           'Error',

@@ -4178,3 +4178,89 @@ console.log(
     'PASS official JSON mode: full contract instruction, reasoning/message extraction, all original schema constraints fail closed without retries',
   );
 }
+{
+  const { refreshNotesConnection } =
+    await import('../supabase/functions/onedrive-auth/private-mail-notes-auth.js');
+  const original = {
+    purpose: 'mail-briefing',
+    notesGranted: true,
+    accessToken: 'old-mock',
+    refreshToken: 'refresh-mock',
+    expiresAt: 0,
+  };
+  let writes = 0;
+  const helpers = {
+    now: () => 100000,
+    fail: (code, status) => Object.assign(Error(code), { status }),
+    grant: async () => ({ access_token: 'new-mock', expires_in: 3600 }),
+    save: async (data) => {
+      writes++;
+      assert.equal(data.refreshToken, 'refresh-mock');
+    },
+  };
+  const renewed = await refreshNotesConnection(original, helpers);
+  assert.equal(renewed.notesGranted, true);
+  assert.equal(renewed.accessToken, 'new-mock');
+  assert.equal(writes, 1);
+  assert.equal(
+    original.accessToken,
+    'old-mock',
+    'failed or pending refresh must not mutate prior saved grant',
+  );
+  await assert.rejects(
+    () =>
+      refreshNotesConnection(original, {
+        ...helpers,
+        grant: async () => ({
+          scope: 'Files.ReadWrite',
+          access_token: 'not-notes',
+          expires_in: 3600,
+        }),
+      }),
+    (error) =>
+      error.message === 'NOTES_PERMISSION_REQUIRED' &&
+      error.connectionReason === 'scope',
+  );
+  await assert.rejects(
+    () => refreshNotesConnection({ ...original, purpose: 'files' }, helpers),
+    (error) =>
+      error.message === 'NOTES_PERMISSION_REQUIRED' &&
+      error.connectionReason === 'purpose',
+  );
+  await assert.rejects(
+    () =>
+      refreshNotesConnection(original, {
+        ...helpers,
+        grant: async () => {
+          throw Object.assign(Error('opaque OAuth failure'), {
+            status: 409,
+            oauthCode: 'invalid_grant',
+          });
+        },
+      }),
+    (error) =>
+      error.message === 'NOTES_PERMISSION_REQUIRED' &&
+      error.connectionReason === 'refresh' &&
+      error.oauthCode === 'invalid_grant',
+  );
+  assert.equal(
+    writes,
+    1,
+    'invalid scope/metadata/refresh must preserve saved connection',
+  );
+  for (const fresh of [
+    null,
+    { scope: null, access_token: 'mock', expires_in: 3600 },
+  ])
+    await assert.rejects(
+      () =>
+        refreshNotesConnection(original, {
+          ...helpers,
+          grant: async () => fresh,
+        }),
+      (error) => error.message === 'NOTES_PERMISSION_REQUIRED',
+    );
+  console.log(
+    'PASS Notes refresh: omitted unchanged scope inherits existing valid consent; explicit scope loss/invalid metadata/revoked refresh fail closed without overwriting connection',
+  );
+}
