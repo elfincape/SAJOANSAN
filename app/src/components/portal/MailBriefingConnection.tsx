@@ -139,6 +139,12 @@ export function MailBriefingConnection() {
   const canRun = Boolean(
     ready && data?.config.enabled && !loadError && !running,
   );
+  const notesNeedsReconnect = Boolean(
+    data?.reports[0]?.error &&
+    ['NOTES_PERMISSION_REQUIRED', 'MICROSOFT_CONNECTION_REQUIRED'].includes(
+      data.reports[0].error,
+    ),
+  );
   const setup = !data
     ? loadError
       ? '상태 확인 필요'
@@ -156,7 +162,7 @@ export function MailBriefingConnection() {
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
       <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
         <strong>메일 자동화</strong> ·{' '}
-        {data?.notesConnected ? (
+        {data?.notesConnected && !notesNeedsReconnect ? (
           <>
             <span>OneNote 연결됨</span> ·{' '}
           </>
@@ -167,10 +173,16 @@ export function MailBriefingConnection() {
         <div>
           <p>
             OneNote (선택 출력){' '}
-            {!data ? '확인 중…' : data.notesConnected ? '연결됨' : '미연결'} ·
-            할 일 목록 → 일일정리
+            {!data
+              ? '확인 중…'
+              : notesNeedsReconnect
+                ? '다시 연결 필요'
+                : data.notesConnected
+                  ? '연결됨'
+                  : '미연결'}{' '}
+            · 할 일 목록 → 일일정리
           </p>
-          {data && !data.notesConnected ? (
+          {data ? (
             <button
               type="button"
               disabled={busy}
@@ -182,7 +194,7 @@ export function MailBriefingConnection() {
                 )
               }
             >
-              OneNote 연결
+              {data.notesConnected ? 'OneNote 다시 연결' : 'OneNote 연결'}
             </button>
           ) : null}
         </div>
