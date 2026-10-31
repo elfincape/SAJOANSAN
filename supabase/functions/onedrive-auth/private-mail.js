@@ -1209,28 +1209,52 @@ export async function handlePrivateMail(action, req, user, ctx) {
       )
         throw fail('EML_HASH_REJECTED');
       return withLock(async (holder) => {
-        const env = await environment(),
-          driveOwner = await privateDestination(box, env),
-          manifest = [];
-        for (const file of refs)
-          manifest.push(
-            await transferFile(box, file, null, holder, env, driveOwner),
+        let finishStage = 'destination',
+          fileIndex = -1;
+        try {
+          const env = await environment(),
+            driveOwner = await privateDestination(box, env),
+            manifest = [];
+          finishStage = 'file_verification';
+          for (const file of refs) {
+            fileIndex++;
+            manifest.push(
+              await transferFile(box, file, null, holder, env, driveOwner),
+            );
+          }
+          finishStage = 'lock_renewal';
+          await renew(holder);
+          finishStage = 'database_publish';
+          const id = await db('rpc/private_mail_publish', {
+            method: 'POST',
+            body: {
+              p_id: box.id,
+              p_lease: body.lease,
+              p_uidl: uidl,
+              p_hash: m.hash,
+              p_subject: m.subject,
+              p_sender: m.sender,
+              p_sent: m.sent,
+              p_files: manifest,
+            },
+          });
+          return json({ id });
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              event: 'PRIVATE_MAIL_FINISH_FAILURE',
+              stage: finishStage,
+              fileIndex,
+              httpStatus:
+                Number.isInteger(error?.status) &&
+                error.status >= 400 &&
+                error.status <= 599
+                  ? error.status
+                  : null,
+            }),
           );
-        await renew(holder);
-        const id = await db('rpc/private_mail_publish', {
-          method: 'POST',
-          body: {
-            p_id: box.id,
-            p_lease: body.lease,
-            p_uidl: uidl,
-            p_hash: m.hash,
-            p_subject: m.subject,
-            p_sender: m.sender,
-            p_sent: m.sent,
-            p_files: manifest,
-          },
-        });
-        return json({ id });
+          throw error;
+        }
       });
     }
     let total = 0;

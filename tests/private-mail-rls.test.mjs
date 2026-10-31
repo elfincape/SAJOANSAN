@@ -394,6 +394,107 @@ try {
     ]);
     assert.equal(failed.status, attempt === 5 ? 'failed' : 'queued');
   }
+  const frozenRetry = { ...cycle, requestId: retryJob.id };
+  await db.query(
+    'update public.private_mailboxes set last_counts=$2 where id=$1',
+    [autoBox, { cycle: frozenRetry }],
+  );
+  assert.equal(
+    await rpc('private_mail_job_start', [autoBox, false]),
+    null,
+    'failed cycle cannot retry before scheduled time',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_next_at=now()-interval '1 second' where id=$1",
+    [autoBox],
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_job=jsonb_set(automation_job,'{stopRequested}','true') where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_job_start', [autoBox, false]),
+    null,
+    'owner cancellation forbids scheduled restart',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_job=jsonb_set(automation_job,'{stopRequested}','false'),lease_until=now()+interval '1 minute' where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_job_start', [autoBox, false]),
+    null,
+    'active mailbox lease prevents recovery',
+  );
+  await db.query(
+    'update public.private_mailboxes set lease_until=null where id=$1',
+    [autoBox],
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_job=jsonb_set(automation_job,'{leaseUntil}',to_jsonb((now()+interval '1 minute')::text)) where id=$1",
+    [autoBox],
+  );
+  assert.equal(
+    await rpc('private_mail_job_start', [autoBox, false]),
+    null,
+    'worker lease prevents recovery',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_job=jsonb_set(automation_job,'{leaseUntil}','null') where id=$1",
+    [autoBox],
+  );
+  const recovered = await rpc('private_mail_job_start', [autoBox, false]);
+  assert.equal(recovered.id, retryJob.id);
+  assert.equal(recovered.periodFailures, 0);
+  assert.equal(
+    (await rpc('private_mail_job_start', [autoBox, false])).createdAt,
+    recovered.createdAt,
+    'second tick cannot reset queued job budget',
+  );
+  assert.deepEqual(
+    (
+      await db.query(
+        'select last_counts from public.private_mailboxes where id=$1',
+        [autoBox],
+      )
+    ).rows[0].last_counts,
+    { cycle: frozenRetry },
+    'scheduled recovery preserves all checkpoint data',
+  );
+  await db.query(
+    "update public.private_mailboxes set automation_job=jsonb_set(automation_job,'{periodFailures}','4') where id=$1",
+    [autoBox],
+  );
+  await rpc('private_mail_job_claim', [autoBox, recovered.id, lease]);
+  assert.equal(
+    (
+      await rpc('private_mail_job_finish', [
+        autoBox,
+        recovered.id,
+        lease,
+        frozenRetry,
+        null,
+      ])
+    ).periodFailures,
+    4,
+    'successful chunk never erases this period failure count',
+  );
+  await rpc('private_mail_job_claim', [autoBox, recovered.id, lease]);
+  const exhaustedPeriod = await rpc('private_mail_job_finish', [
+    autoBox,
+    recovered.id,
+    lease,
+    null,
+    'POP_FAILED',
+  ]);
+  assert.equal(exhaustedPeriod.status, 'failed');
+  assert.equal(exhaustedPeriod.periodFailures, 5);
+  assert.equal(
+    await rpc('private_mail_job_start', [autoBox, false]),
+    null,
+    'exhausted period waits for next scheduled window',
+  );
+  await rpc('private_mail_job_stop', [autoBox]);
   await db.query(
     "update public.private_mailboxes set automation_next_at=null,last_counts='{}' where id=$1",
     [autoBox],
