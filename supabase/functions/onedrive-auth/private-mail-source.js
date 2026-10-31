@@ -218,6 +218,21 @@ export function createMailSource({
       if (exclusion.excluded) return { ...base, exclusion };
       if (requiresMailPrivacyReview(row.subject + '\n' + text))
         throw Error('MAIL_PRIVACY_REVIEW');
+      if (box.automation_config?.analysisScopes?.[row.id] === 'body_headers') {
+        const eml = row.files.find((file) => file.kind === 'eml');
+        const verifiedHeaders = eml ? await headers(eml) : '';
+        return {
+          ...base,
+          images: [],
+          headers: verifiedHeaders,
+          analysisScope: 'body_headers',
+          ...mailOwnershipContext({
+            text,
+            headers: verifiedHeaders,
+            account: box.account,
+          }),
+        };
+      }
       let files = row.files.map((file, index) => ({
         ...file,
         index,
@@ -285,6 +300,8 @@ export function createMailSource({
       };
     });
     if (source.exclusion?.excluded) return source;
+    if (source.analysisScope === 'body_headers')
+      return { ...source, related: [] };
     const thread = extractMailThreadHeaders(source.headers);
     return {
       ...source,
