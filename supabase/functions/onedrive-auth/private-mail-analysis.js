@@ -1091,7 +1091,42 @@ export async function analyzePrivateMail({
     });
     const parsed = parseResponse(response);
     evidenceContext = { parsed, mail };
-    const analysis = normalizeMailAnalysis(parsed, mail);
+    let analysis;
+    try {
+      analysis = normalizeMailAnalysis(parsed, mail);
+    } catch (error) {
+      // Image information belongs in imageFacts, never forged body quotes.
+      // Validate every other field first; only omit invalid body summaries
+      // when approved readable image facts provide the informational result.
+      const imageResult = normalizeImageResults(parsed, images, mail.id);
+      const imageDecisions = normalizeImageDecisions(
+        parsed.imageDecisions ?? (images.length ? null : []),
+        images,
+      );
+      const readable = imageResult.imageFacts.some(
+        (fact) =>
+          fact.confidence === 'readable' &&
+          imageDecisions.some(
+            (item) => item.imageId === fact.imageId && item.include,
+          ),
+      );
+      if (
+        error.message !== 'ANALYSIS_EVIDENCE' ||
+        !['reference', 'routine'].includes(parsed.intent?.kind) ||
+        !readable
+      )
+        throw error;
+      analysis = normalizeMailAnalysis({ ...parsed, summary: [] }, mail);
+      analysis.summary = parsed.summary.flatMap((item) => {
+        try {
+          return normalizeMailAnalysis({ ...parsed, summary: [item] }, mail)
+            .summary;
+        } catch (summaryError) {
+          if (summaryError.message !== 'ANALYSIS_EVIDENCE') throw summaryError;
+          return [];
+        }
+      });
+    }
     analysis.inference = lunaInference(response);
     if (['body_headers', 'body_remote_images'].includes(loaded.analysisScope))
       analysis.source.analysisScope = loaded.analysisScope;
