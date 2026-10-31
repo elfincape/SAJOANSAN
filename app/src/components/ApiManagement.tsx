@@ -229,7 +229,9 @@ export function ApiManagement({ editable }: { editable: boolean }) {
               · 이미지 입력 지원 ·{' '}
               {model.capabilities.structured === 'json_schema'
                 ? 'JSON Schema 요청 + 서버 검증'
-                : 'JSON 형식 지시 + 서버 검증'}
+                : model.capabilities.structured === 'json_object'
+                  ? 'JSON mode + 전체 Schema 서버 검증'
+                  : 'JSON 형식 지시 + 서버 검증'}
             </p>
           ) : (
             <p className="feature-help">

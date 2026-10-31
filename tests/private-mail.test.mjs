@@ -319,7 +319,10 @@ import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
       const body = JSON.parse(options.body);
       assert.equal(body.model, OPENAI_LUNA_MODEL);
       assert.equal(body.store, false);
-      assert.equal(body.text.format.strict, true);
+      assert.deepEqual(body.text.format, { type: 'json_object' });
+      assert.ok(
+        body.input[0].content[0].text.includes('mandatory output contract'),
+      );
       assert.equal(body.input[0].content[1].type, 'input_image');
       const result = await lunaResponseFixture([
         { type: 'text', text: '{"ok":true}' },
@@ -4036,8 +4039,9 @@ console.log(
       );
       assert.equal(error.reason, 'empty_incomplete');
       assert.equal(
-        error.modelResponseShape.promptBytes,
-        new TextEncoder().encode('비민감 예문').byteLength,
+        error.modelResponseShape.promptBytes >
+          new TextEncoder().encode('비민감 예문').byteLength,
+        true,
       );
       assert.equal(
         error.modelResponseShape.schemaBytes,
@@ -4054,5 +4058,123 @@ console.log(
   assert.equal(calls, 1);
   console.log(
     'PASS empty provider completion: zero-usage incomplete response distinguished, safe request dimensions/id logged, no automatic retries',
+  );
+}
+{
+  const { MAIL_ANALYSIS_SCHEMA } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const { callLuna } = await import('../supabase/functions/_shared/luna.js');
+  const valid = {
+    intent: { kind: 'reference', evidence: '참고용 테스트 자료입니다.' },
+    group: null,
+    summary: [
+      {
+        text: '참고용 테스트 자료 공유',
+        evidence: '참고용 테스트 자료입니다.',
+      },
+    ],
+    issues: [],
+    tasks: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [],
+    imageDecisions: [],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  const response = (value) =>
+    Response.json({
+      model: 'gpt-6-luna',
+      status: 'completed',
+      output: [
+        { type: 'reasoning', summary: [] },
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          phase: 'final_answer',
+          content: [{ type: 'output_text', text: JSON.stringify(value) }],
+        },
+      ],
+      usage: {
+        input_tokens: 155,
+        output_tokens: 114,
+        total_tokens: 269,
+        output_tokens_details: { reasoning_tokens: 26 },
+      },
+    });
+  const args = {
+    provider: 'openai',
+    key: 'mock-only',
+    prompt: '합성 참고 자료',
+    schema: MAIL_ANALYSIS_SCHEMA,
+    schemaName: 'private_mail_analysis',
+    maxTokens: 6000,
+  };
+  let calls = 0;
+  const result = await callLuna({
+    ...args,
+    fetcher: async (url, options) => {
+      calls++;
+      const body = JSON.parse(options.body);
+      assert.deepEqual(body.text.format, { type: 'json_object' });
+      assert.equal(body.max_output_tokens, 6000);
+      assert.deepEqual(body.reasoning, { effort: 'low' });
+      assert.ok(
+        body.input[0].content[0].text.includes(
+          JSON.stringify(MAIL_ANALYSIS_SCHEMA),
+        ),
+        'full original contract must remain in instructions',
+      );
+      return response(valid);
+    },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(JSON.parse(result.content[0].text), valid);
+  for (const [label, mutate] of [
+    ['missing required field', (v) => delete v.intent.evidence],
+    ['extra property', (v) => (v.intent.unrequested = 'forbidden')],
+    ['invalid enum', (v) => (v.intent.kind = 'made-up')],
+    ['wrong nullable type', (v) => (v.group = 4)],
+    [
+      'array exceeds original maxItems',
+      (v) => (v.summary = Array(4).fill(v.summary[0])),
+    ],
+    [
+      'string exceeds original maxLength',
+      (v) => (v.summary[0].text = 'x'.repeat(1001)),
+    ],
+    ['string below original minLength', (v) => (v.summary[0].text = '')],
+    [
+      'ref violates original pattern',
+      (v) =>
+        (v.updates = [
+          { ref: 'invalid', status: 'pending', evidence: '자료', text: null },
+        ]),
+    ],
+    ['nested field missing', (v) => delete v.imageItems.tasks],
+  ]) {
+    const value = structuredClone(valid);
+    mutate(value);
+    let n = 0;
+    await assert.rejects(
+      () =>
+        callLuna({
+          ...args,
+          fetcher: async () => {
+            n++;
+            return response(value);
+          },
+        }),
+      (error) => {
+        assert.equal(error.code, 'MODEL_RESPONSE', label);
+        assert.equal(error.reason, 'json_contract', label);
+        assert.ok(error.modelResponseShape.contractFailure.keyword);
+        return true;
+      },
+    );
+    assert.equal(n, 1, label + ' must not retry');
+  }
+  console.log(
+    'PASS official JSON mode: full contract instruction, reasoning/message extraction, all original schema constraints fail closed without retries',
   );
 }
