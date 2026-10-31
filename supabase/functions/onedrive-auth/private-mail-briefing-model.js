@@ -55,9 +55,16 @@ export function mailItemIndex(item, fallback) {
   return index;
 }
 export function applyMailIntentOverride(analysis, correction) {
-  if (correction?.intent !== 'reference') return analysis;
-  return {
+  const projected = {
     ...analysis,
+    summary: (analysis.summary ?? []).map((item) => ({
+      ...item,
+      text: mailSummaryText(item.text, analysis.source),
+    })),
+  };
+  if (correction?.intent !== 'reference') return projected;
+  return {
+    ...projected,
     source: { ...analysis.source, intent: 'reference' },
     intent: { kind: 'reference', evidence: null, ownerFeedback: true },
     tasks: [],
@@ -106,6 +113,28 @@ export function reconcileMailItems(analysis, previous) {
     previous && Number.isSafeInteger(previous.revision)
       ? previous.revision + 1
       : 1;
+}
+function mailSummaryText(value, source) {
+  const prefix = (
+    /^\[([^\]]{1,40})\]/.exec(source.subject ?? '')?.[1] ??
+    (source.subject ?? '').split(/\s+[-–—]|[:：]/)[0]
+  ).trim();
+  if (
+    !prefix ||
+    prefix.length > 40 ||
+    source.envelope?.from?.name?.includes(prefix)
+  )
+    return value;
+  if (
+    !/(?:전달|송부|공유|발송|보냈).*(?:했습니다|하였습니다|습니다)[.]?$/.test(
+      value,
+    )
+  )
+    return value;
+  const starter = [prefix + '가 ', prefix + '이 ', prefix + '에서 '].find(
+    (part) => value.startsWith(part),
+  );
+  return starter ? value.slice(starter.length) : value;
 }
 export function projectMailDates(analysis, row) {
   const sentAt = date(row.sent_at ?? analysis.source.sentAt).toISOString();
@@ -185,7 +214,10 @@ export function normalizeMailAnalysis(value, mail) {
       return { text: text(item.text), evidence };
     });
   }
-  const summary = items('summary', 20),
+  const summary = items('summary', 20).map((item) => ({
+      ...item,
+      text: mailSummaryText(item.text, { subject, envelope: mail.envelope }),
+    })),
     issues = items('issues', 30).map((item, index) => {
       const raw = value.issues[index],
         status = raw.status ?? 'needs_confirmation';
@@ -295,6 +327,7 @@ export function normalizeMailAnalysis(value, mail) {
       uidl: mail.uidl_hash,
       subject,
       sender,
+      envelope: mail.envelope ?? null,
       sentAt,
       receivedAt: mail.received_at
         ? date(mail.received_at).toISOString()

@@ -2879,8 +2879,15 @@ console.log(
         const request = JSON.parse(options.body);
         assert.equal(request.model, 'gpt-5.6-luna');
         assert.equal(request.text.format.strict, true);
-        assert.ok(!options.body.includes(account));
-        assert.ok(!options.body.includes('PRIVATE_CC'));
+        assert.ok(
+          options.body.includes(account),
+          'normalized To metadata is supplied by the current envelope',
+        );
+        assert.ok(
+          options.body.includes('PRIVATE_CC'),
+          'normalized Cc metadata is supplied separately from To',
+        );
+        assert.ok(options.body.includes('sender@example.test'));
         return lunaResponseFixture([
           { type: 'text', text: JSON.stringify(answer) },
         ]);
@@ -5007,5 +5014,99 @@ console.log(
   assert.equal(carry.workItems[0].dueDate, '2026-08-20');
   console.log(
     'PASS daily mail projection: backfilled reference stays historical, current arrival of older material stays current, pending work carries with original relative deadline',
+  );
+}
+
+{
+  const { mailHeaderIdentity } =
+    await import('../supabase/functions/onedrive-auth/private-mail-body.js');
+  const name = '실제 발신자';
+  const headers =
+    'From: =?UTF-8?B?' +
+    Buffer.from(name).toString('base64') +
+    '?= <person@example.test>\r\nSender: Delivery Agent <delivery@example.test>\r\nTo: Receiver <receiver@example.test>\r\nCc: Copy <copy@example.test>\r\nDate: Sat, 31 Oct 2026 09:00:00 +0900\r\nSubject: 이안물류 - 가상자료';
+  const envelope = await mailHeaderIdentity(headers);
+  assert.equal(envelope.from.name, name);
+  assert.equal(envelope.from.address, 'person@example.test');
+  assert.equal(envelope.sender.address, 'delivery@example.test');
+  assert.equal(envelope.to[0].address, 'receiver@example.test');
+  assert.equal(envelope.cc[0].address, 'copy@example.test');
+  const source = {
+    id: '88888888-7777-4777-8777-888888888888',
+    uidl_hash: 'a'.repeat(64),
+    subject: '이안물류 - 가상자료',
+    sender: 'person@example.test',
+    sent_at: '2026-10-31T00:00:00Z',
+    created_at: '2026-10-31T02:00:00Z',
+    envelope,
+    text: '자료를 공유합니다.',
+  };
+  const analysis = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        {
+          text: '이안물류가 가상자료를 공유했습니다.',
+          evidence: '자료를 공유합니다.',
+        },
+      ],
+      tasks: [],
+      issues: [],
+      waiting: [],
+    },
+    source,
+  );
+  assert.equal(
+    analysis.summary[0].text,
+    '가상자료를 공유했습니다.',
+    'subject organization cannot become a fabricated mail sender',
+  );
+  assert.equal(analysis.source.envelope.from.name, name);
+  const savedWrong = {
+    ...analysis,
+    summary: [
+      {
+        text: '이안물류가 가상자료를 공유했습니다.',
+        evidence: '자료를 공유합니다.',
+      },
+    ],
+    intent: { kind: 'reference' },
+  };
+  assert.equal(
+    briefing.applyMailIntentOverride(savedWrong).summary[0].text,
+    '가상자료를 공유했습니다.',
+    'saved ordinary reference is repaired without an owner classification override or model call',
+  );
+  assert.equal(
+    savedWrong.summary[0].text,
+    '이안물류가 가상자료를 공유했습니다.',
+    'stored raw analysis is not mutated',
+  );
+  const direct = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        {
+          text: '이안물류가 가상자료를 공유했습니다.',
+          evidence: '자료를 공유합니다.',
+        },
+      ],
+      tasks: [],
+      issues: [],
+      waiting: [],
+    },
+    {
+      ...source,
+      envelope: {
+        ...envelope,
+        from: { name: '이안물류', address: 'person@example.test' },
+      },
+    },
+  );
+  assert.equal(
+    direct.summary[0].text,
+    '이안물류가 가상자료를 공유했습니다.',
+    'verified From display name can be used',
+  );
+  console.log(
+    'PASS normalized mail headers: decoded actual From versus Sender/subject, To/Cc preserved, subject-only sender attribution removed',
   );
 }

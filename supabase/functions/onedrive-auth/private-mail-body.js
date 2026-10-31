@@ -1,3 +1,4 @@
+import PostalMime from 'postal-mime';
 const entities = {
   amp: '&',
   lt: '<',
@@ -83,5 +84,38 @@ export function mailMessageTimes({ headers = '', sentAt, collectedAt }) {
     collectedAt: collected,
     reportAt: received || sent,
     dateBasis: received ? 'received_header' : 'sent_header',
+  };
+}
+
+export async function mailHeaderIdentity(headers) {
+  if (typeof headers !== 'string' || headers.length > 65536)
+    throw Error('MAIL_LOAD_FAILED');
+  const mail = await PostalMime.parse(headers + '\r\n\r\n', {
+    maxHeadersSize: 65536,
+    maxNestingDepth: 1,
+    maxPartCount: 1,
+    maxRfc822NestingDepth: 0,
+  });
+  const address = (value) =>
+    value &&
+    typeof value.address === 'string' &&
+    value.address.length <= 320 &&
+    /^[^\s<>@]+@[^\s<>@]+$/.test(value.address)
+      ? {
+          name: typeof value.name === 'string' ? value.name.slice(0, 200) : '',
+          address: value.address,
+        }
+      : null;
+  const addresses = (list) =>
+    (list ?? [])
+      .flatMap((item) => item.group ?? [item])
+      .map(address)
+      .filter(Boolean)
+      .slice(0, 50);
+  return {
+    from: address(mail.from),
+    sender: address(mail.sender),
+    to: addresses(mail.to),
+    cc: addresses(mail.cc),
   };
 }
