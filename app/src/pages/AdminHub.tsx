@@ -29,7 +29,9 @@ const categoryIcons: Record<string, LucideIcon> = {
 };
 function CategoryIcon({ category }: { category: string }) {
   const Icon = categoryIcons[category] ?? SlidersHorizontal;
-  return <Icon aria-hidden="true" size={22} strokeWidth={1.5} />;
+  return (
+    <Icon aria-hidden="true" data-menu-icon={category} size={22} strokeWidth={1.5} />
+  );
 }
 
 function HubContent() {
