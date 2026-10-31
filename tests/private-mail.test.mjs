@@ -6023,6 +6023,14 @@ console.log(
   assert.equal(saved.source.intent, 'reference');
   assert.equal(saved.intent.evidence, proof);
   assert.equal(saved.intent.evidenceSource, 'image');
+  value.summary = [
+    { text: '이미지 안내 요약', evidence: '본문에는 없는 이미지 문구' },
+  ];
+  assert.equal((await run()).status, 'done');
+  assert.equal(saved.source.intent, 'reference');
+  assert.equal(saved.summary.length, 0);
+  assert.equal(saved.imageFacts[0].text, proof);
+  value.summary = [];
   value.intent.kind = 'request';
   assert.equal((await run()).status, 'done');
   assert.equal(saved.source.intent, 'unknown');
