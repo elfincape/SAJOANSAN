@@ -42,6 +42,15 @@ function filterError(error: unknown) {
           'Microsoft 계정의 OneNote 권한을 먼저 연결해 주세요.',
         NOTES_TARGET_UNAVAILABLE: 'OneNote 일일정리 섹션 접근을 확인해 주세요.',
         AI_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
+        MODEL_TRUNCATED:
+          '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
+        MODEL_RESPONSE:
+          '모델 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
+        MODEL_FAILED:
+          'AI 제공자 요청이 실패했습니다. 연결 상태와 서버 오류 기록을 확인해 주세요.',
+        RATE_LIMITED:
+          'AI 제공자 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
+
         MAIL_NOT_FOUND:
           '대상 메일을 찾지 못했습니다. 목록을 다시 확인해 주세요.',
       } as Record<string, string>
@@ -294,6 +303,14 @@ export function MailFilterControls({
         PAGE_WRITE_UNCERTAIN:
           'OneNote 반영 결과를 다시 확인해야 합니다. 정리 반영을 이어서 확인해 주세요.',
         AI_NOT_CONFIGURED: 'AI 분석 연결이 준비되지 않았습니다.',
+        MODEL_TRUNCATED:
+          '모델의 출력 한도에 도달해 분석이 중단됐습니다. 이번 결과는 저장하지 않았습니다.',
+        MODEL_RESPONSE:
+          '모델 응답 형식을 확인하지 못했습니다. 이번 결과는 저장하지 않았습니다.',
+        MODEL_FAILED:
+          'AI 제공자 요청이 실패했습니다. 연결 상태와 서버 오류 기록을 확인해 주세요.',
+        RATE_LIMITED:
+          'AI 제공자 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
       } as Record<string, string>
     )[code || ''];
   }

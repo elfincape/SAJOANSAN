@@ -3929,3 +3929,65 @@ console.log(
     'PASS linked owner-state carry: completed mail does not resurrect; explicit reopen wins; manual waiting remains completable',
   );
 }
+{
+  const { callLuna } = await import('../supabase/functions/_shared/luna.js');
+  let requests = 0;
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: 'openai',
+        key: 'mock-only',
+        prompt: 'synthetic output-budget reproduction',
+        maxTokens: 6000,
+        fetcher: async (url, options) => {
+          requests++;
+          const body = JSON.parse(options.body);
+          assert.deepEqual(
+            body.reasoning,
+            { effort: 'low' },
+            'official daily extraction must set bounded low reasoning effort',
+          );
+          assert.equal(
+            body.max_output_tokens,
+            6000,
+            'do not silently increase paid output budget',
+          );
+          assert.equal(body.store, false);
+          return Response.json({
+            model: 'gpt-6-luna',
+            status: 'incomplete',
+            incomplete_details: { reason: 'max_output_tokens' },
+            output: [],
+            usage: {
+              input_tokens: 101,
+              output_tokens: 6000,
+              total_tokens: 6101,
+              output_tokens_details: { reasoning_tokens: 6000 },
+              private: 'NEVER_LOG',
+            },
+          });
+        },
+      }),
+    (error) => {
+      assert.equal(error.code, 'MODEL_TRUNCATED');
+      assert.equal(
+        error.modelResponseShape.incompleteReason,
+        'max_output_tokens',
+      );
+      assert.equal(error.modelResponseShape.usage.reasoning_tokens, 6000);
+      assert.equal(error.modelResponseShape.usage.output_tokens, 6000);
+      assert.ok(
+        !JSON.stringify(error.modelResponseShape).includes('NEVER_LOG'),
+      );
+      return true;
+    },
+  );
+  assert.equal(
+    requests,
+    1,
+    'truncation must not trigger an automatic paid retry',
+  );
+  console.log(
+    'PASS official reasoning budget: explicit low effort, unchanged token cap, safe truncation usage diagnostics and no automatic retry',
+  );
+}

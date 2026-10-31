@@ -51,6 +51,13 @@ function responseShape(value) {
   }
   const texts = blocks.filter((block) => block?.type === 'output_text');
   return {
+    incompleteReason:
+      value?.incomplete_details?.reason === 'max_output_tokens'
+        ? 'max_output_tokens'
+        : value?.status === 'incomplete'
+          ? 'other'
+          : null,
+    usage: tokenUsage(value?.usage),
     stopReason:
       value?.status === 'completed'
         ? 'end_turn'
@@ -190,6 +197,7 @@ export async function callLuna({
           model,
           store: false,
           max_output_tokens: maxTokens,
+          ...(provider === 'openai' ? { reasoning: { effort: 'low' } } : {}),
           input: [
             {
               role: 'user',
@@ -260,7 +268,13 @@ export async function callLuna({
   } catch {
     throw failure('MODEL_RESPONSE', 502, 'json');
   }
-  const shape = responseShape(value),
+  const shape = {
+      ...responseShape(value),
+      provider,
+      model,
+      outputLimit: maxTokens,
+      reasoningEffort: provider === 'openai' ? 'low' : null,
+    },
     reject = (code, reason) => {
       throw failure(code, 502, reason, shape);
     };
