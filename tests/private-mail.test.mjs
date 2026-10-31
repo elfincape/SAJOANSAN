@@ -6961,3 +6961,31 @@ console.log(
  assert.equal(jev.checks[0].status,'transient');
  console.log('PASS independently test unverified model protocols, exact fenced JSON validation and JEV HTTP diagnostics');
 }
+
+{
+ const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const {APPROVED_MAIL_TARGET:target}=await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+ const id='11111111-1111-4111-8111-111111111111';
+ const entry={entryId:id,status:'ready',text:'11월2일 가상센터4P 배차',textHash:'a'.repeat(64),referenceDate:'2026-10-31',submittedAt:'2026-10-31T01:00:00Z',items:[{itemId:'item-001',kind:'dispatch',text:'가상센터4P 배차 준비',done:true,serviceDate:'2026-11-02',dueDate:null}]};
+ const baseline=structuredClone(entry);let calls=0,writes=0,history=0;
+ const ctx={json:Response.json,fail:(message,status)=>Object.assign(Error(message),{status}),resolveJevConfiguration:async()=>({enabled:true,key:'mock',approvedSourceIds:[id],fetcher:async(_,opts)=>{calls++;const req=JSON.parse(opts.body);return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(req.questions).map(k=>[k,{type:'noul',noul:0.01}]))});}}),db:async(path,opts)=>{
+ if(path.startsWith('private_mailboxes?'))return[{id:target.mailbox_id,owner_id:target.owner_id,enabled:true,manual_entries:{[id]:entry}}];
+ if(path==='rpc/private_mail_manual_jev_review'){writes++;assert.deepEqual(opts.body.p_items,baseline.items);entry.jevReview=opts.body.p_review;return true;}
+ if(path==='rpc/private_mail_history_capture_manual'){history++;assert.deepEqual(opts.body.p_entry_value.items,baseline.items);return {};}
+ assert.fail('unexpected operation '+path);
+ }};
+ const body={entryId:id,confirmation:'existing-extraction'};
+ const result=await(await handleManualMessage('private-mail-manual-verify',body,{id:target.owner_id},ctx)).json();
+ assert.equal(result.saved,true);assert.equal(calls,1);assert.equal(writes,1);assert.equal(history,1);
+ assert.deepEqual({...entry,jevReview:undefined},{...baseline,jevReview:undefined});
+ const repeat=await(await handleManualMessage('private-mail-manual-verify',body,{id:target.owner_id},ctx)).json();
+ assert.equal(repeat.status,'already_reviewed');assert.equal(calls,1);
+ console.log('PASS review existing manual extraction without Luna, task mutation or replay call; immutable history retained');
+}
+
+{
+ const {verifyApiCompatibility}=await import('../supabase/functions/_shared/ai-providers.js');
+ const result=await verifyApiCompatibility({provider:'aiapiflow',model:'claude-haiku-4-5-20251001',confirmation:'synthetic-compatibility'},{AIAPIFLOW_API_KEY:'mock'},async()=>new Response('{}',{status:429,headers:{'retry-after':'7'}}));
+ assert.equal(result.checks[0].status,'transient');
+ assert.equal(result.checks[0].retryAfterSeconds,7);
+}

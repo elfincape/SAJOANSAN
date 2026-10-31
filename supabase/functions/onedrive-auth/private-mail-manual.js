@@ -849,6 +849,25 @@ export async function handleManualMessage(action, body, user, ctx) {
       return false;
     }
   };
+  if (action === 'private-mail-manual-verify') {
+    if (!uuid.test(body.entryId ?? '') || body.confirmation !== 'existing-extraction')
+      throw fail('MANUAL_INPUT_INVALID');
+    const entry = current.manual_entries[body.entryId];
+    if (!entry || entry.status !== 'ready') throw fail('MANUAL_SOURCE', 409);
+    if (entry.jevReview) return json({entryId:entry.entryId,status:'already_reviewed',saved:true,review:entry.jevReview});
+    const config = await ctx.resolveJevConfiguration?.(entry.entryId);
+    if (!config?.key) throw fail('AI_NOT_CONFIGURED',503);
+    const related = Object.values(current.manual_entries).flatMap(prior => prior.status === 'ready'
+      ? (prior.items ?? []).map(item => ({ref:item.ref,kind:item.kind,text:item.text,status:item.done ? 'complete' : 'pending'})) : []);
+    const review = await reviewNormalizedManual({entry,related,config:{...config,timeoutMs:6000}});
+    if (!review) throw fail('OWNER_REQUIRED',403);
+    const saved = await rpc('private_mail_manual_jev_review', {
+      p_entry:entry.entryId,p_source_hash:entry.textHash,p_items:entry.items,p_review:review,
+    });
+    if (!saved) throw fail('MANUAL_ITEM_CONFLICT',409);
+    await db('rpc/private_mail_history_capture_manual', {method:'POST',body:{p_entry:entry.entryId,p_entry_value:{...entry,jevReview:review}}});
+    return json({entryId:entry.entryId,status:'reviewed',saved:true,review});
+  }
   if (action === 'private-mail-manual-source') {
     if (!uuid.test(body.entryId ?? '')) throw fail('MANUAL_SOURCE');
     const entry = current.manual_entries[body.entryId];

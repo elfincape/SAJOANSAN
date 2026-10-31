@@ -303,7 +303,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
               {verification.checks
                 .map(
                   (check) =>
-                    `${check.kind}: ${({ passed: '통과', auth: '인증/권한 확인 필요', model_missing: '모델 없음', unsupported: '요청 형식 미지원', transient: '일시 오류', model_mismatch: '반환 모델 불일치', invalid_response: '응답 검증 실패' } as Record<string, string>)[check.status] ?? check.status}${` (HTTP ${check.providerStatus ?? '응답 없음'}${check.diagnosticCode ? ', ' + check.diagnosticCode : ''}${check.responseReason ? ', ' + check.responseReason : ''})`}${check.returnedModel ? ` (반환 ${check.returnedModel}, ${check.stopReason}, 사용량 ${JSON.stringify(check.usage ?? {})}${check.unsupportedProbability !== undefined ? `, 검토 확률 ${check.unsupportedProbability}, 검토 대상 ${check.reviewRequired ? '포함' : '미포함'}` : ''})` : ''}`,
+                    `${check.kind}: ${({ passed: '통과', auth: '인증/권한 확인 필요', model_missing: '모델 없음', unsupported: '요청 형식 미지원', transient: '일시 오류', model_mismatch: '반환 모델 불일치', invalid_response: '응답 검증 실패' } as Record<string, string>)[check.status] ?? check.status}${` (HTTP ${check.providerStatus ?? '응답 없음'}${check.diagnosticCode ? ', ' + check.diagnosticCode : ''}${check.responseReason ? ', ' + check.responseReason : ''}${check.retryAfterSeconds != null ? ', 재시도 대기 ' + check.retryAfterSeconds + '초' : ''})`}${check.returnedModel ? ` (반환 ${check.returnedModel}, ${check.stopReason}, 사용량 ${JSON.stringify(check.usage ?? {})}${check.unsupportedProbability !== undefined ? `, 검토 확률 ${check.unsupportedProbability}, 검토 대상 ${check.reviewRequired ? '포함' : '미포함'}` : ''})` : ''}`,
                 )
                 .join(' / ')}{' '}
               · {verification.checkedAt}

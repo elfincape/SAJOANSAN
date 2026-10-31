@@ -1,3 +1,9 @@
+export function retryAfterSeconds(response, now = Date.now()) {
+  const value = response.headers?.get?.('retry-after');
+  if (!value) return null;
+  const seconds = /^\d+$/.test(value) ? Number(value) : Math.ceil((Date.parse(value)-now)/1000);
+  return Number.isSafeInteger(seconds) && seconds >= 0 && seconds <= 86400 ? seconds : null;
+}
 export const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 export async function callHaiku({
   key,
@@ -66,6 +72,7 @@ export async function callHaiku({
       {
         code: response.status === 429 ? 'RATE_LIMITED' : 'MODEL_FAILED',
         providerStatus: response.status,
+        retryAfterSeconds: retryAfterSeconds(response),
         status: response.status === 429 ? 429 : 502,
       },
     );

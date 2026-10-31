@@ -55,6 +55,7 @@ export interface ApiCompatibilityResult {
     providerStatus?: number | null;
     diagnosticCode?: string | null;
     responseReason?: string | null;
+    retryAfterSeconds?: number | null;
   }[];
 }
 export const apiManagement = {

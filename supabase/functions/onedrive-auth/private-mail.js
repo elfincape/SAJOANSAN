@@ -536,6 +536,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'private-mail-manual-list',
       'private-mail-manual-update',
       'private-mail-manual-source',
+      'private-mail-manual-verify',
     ].includes(action)
   ) {
     return handleManualMessage(action, body, user, {
