@@ -5804,3 +5804,105 @@ console.log(
     'PASS full synthetic image flow: remote body -> official JSON-mode model -> strict validation -> common normalized reference; expected quantity/times, no private inputs or operating business/OneNote writes',
   );
 }
+{
+  const { readFile } = await import('node:fs/promises');
+  const { createMailSource } =
+    await import('../supabase/functions/onedrive-auth/private-mail-source.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const png = new Uint8Array(
+    await readFile(
+      new URL(
+        '../app/public/diagnostics/mail-body-fixture.png',
+        import.meta.url,
+      ),
+    ),
+  );
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', png)),
+    (b) => b.toString(16).padStart(2, '0'),
+  ).join('');
+  const id = '11111111-1111-4111-8111-111111111111',
+    urls = ['https://cdn.vendor.com/first', 'https://cdn.vendor.com/second'];
+  const html = new TextEncoder().encode(
+    urls.map((url) => '<img src="' + url + '">').join(''),
+  );
+  const descriptor = {
+    sourceId: id,
+    id: id + ':1',
+    remoteUrl: urls[1],
+    contentHash: hash,
+  };
+  const file = {
+    kind: 'html',
+    item_id: 'html',
+    file_name: 'html.download',
+    byte_size: html.length,
+  };
+  const row = {
+    id,
+    owner_id: target.owner_id,
+    mailbox_id: target.mailbox_id,
+    files: [file],
+    analysis: { source: { images: [descriptor] } },
+  };
+  let downloads = 0,
+    scope = 'body_remote_images',
+    approved = urls;
+  const loader = createMailSource({
+    db: async () => [row],
+    withLock: async (fn) => fn(),
+    mailbox: async () => ({
+      drive_id: 'drive',
+      folder_id: 'folder',
+      automation_config: {
+        analysisScopes: { [id]: scope },
+        remoteImages: { [id]: { approvedUrls: approved } },
+      },
+    }),
+    environment: async () => ({ access: 'fixture' }),
+    privateDestination: async () => ({}),
+    privatePermissions: async () => {},
+    verify: async (f) => {
+      assert.equal(f.item_id, 'html');
+      return html;
+    },
+    graph: async () =>
+      Response.json({
+        id: 'html',
+        name: file.file_name,
+        size: file.byte_size,
+        file: {},
+        parentReference: { driveId: 'drive', id: 'folder' },
+      }),
+    remoteFetcher: async (url, options) => {
+      downloads++;
+      assert.equal(url, urls[1]);
+      assert.equal(options.sourceId, id);
+      return new Response(png, { headers: { 'content-type': 'image/png' } });
+    },
+  });
+  const image = await loader.loadImage(descriptor);
+  assert.equal(image.bytes.length, png.length);
+  assert.equal(
+    downloads,
+    1,
+    'OneNote must not download all other mail images again',
+  );
+  scope = 'body_headers';
+  await assert.rejects(
+    () => loader.loadImage(descriptor),
+    /NOTES_IMAGE_SOURCE/,
+  );
+  assert.equal(downloads, 1);
+  scope = 'body_remote_images';
+  approved = [urls[0]];
+  await assert.rejects(
+    () => loader.loadImage(descriptor),
+    /NOTES_IMAGE_SOURCE/,
+  );
+  assert.equal(downloads, 1);
+  console.log(
+    'PASS remote OneNote image restore: exact saved HTML/URL/hash/analysis match, only requested image fetched, body_headers and revoked URL block before download',
+  );
+}
