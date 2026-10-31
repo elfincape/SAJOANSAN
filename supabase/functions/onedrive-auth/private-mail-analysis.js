@@ -321,16 +321,9 @@ function normalizeOwnership(
     throw Error('ANALYSIS_FORMAT');
   const reasons = new Set(),
     reference = intentOverride === 'reference';
-  const visualReference =
-    !context.currentBody.trim() &&
-    ['reference', 'routine'].includes(parsed.intent.kind) &&
-    typeof parsed.intent.evidence === 'string'
-      ? imageReferenceFacts.find(
-          (fact) =>
-            fact.confidence === 'readable' &&
-            fact.text.includes(parsed.intent.evidence.trim()),
-        )
-      : null;
+  const visualReference = ['reference', 'routine'].includes(parsed.intent.kind)
+    ? imageReferenceFacts.find((fact) => fact.confidence === 'readable')
+    : null;
   const validIntent =
     (typeof parsed.intent.evidence === 'string' &&
       context.currentBody.includes(parsed.intent.evidence.trim())) ||
@@ -341,7 +334,11 @@ function normalizeOwnership(
       : validIntent
         ? parsed.intent.kind
         : 'unknown',
-    evidence: validIntent ? parsed.intent.evidence.trim() : null,
+    evidence: visualReference
+      ? visualReference.text
+      : validIntent
+        ? parsed.intent.evidence.trim()
+        : null,
     ...(visualReference
       ? { evidenceSource: 'image', imageId: visualReference.imageId }
       : {}),
@@ -1112,9 +1109,7 @@ export async function analyzePrivateMail({
       context,
       intentOverride,
       mail.id,
-      !mail.text.trim()
-        ? imageResults.imageFacts.filter((fact) => included.has(fact.imageId))
-        : [],
+      imageResults.imageFacts.filter((fact) => included.has(fact.imageId)),
     );
     analysis.intent = ownership.intent;
     analysis.source.intent = ownership.intent.kind;
