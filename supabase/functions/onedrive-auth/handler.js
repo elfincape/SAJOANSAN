@@ -225,6 +225,18 @@ export function makeHandler(
     });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
+      if (path === 'rpc/private_mail_publish')
+        console.warn(
+          JSON.stringify({
+            event: 'PRIVATE_MAIL_PUBLISH_REJECTED',
+            httpStatus: response.status,
+            databaseCode:
+              typeof detail.code === 'string' &&
+              /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(detail.code)
+                ? detail.code
+                : 'unknown',
+          }),
+        );
       if (
         detail.code === 'P0001' &&
         [
