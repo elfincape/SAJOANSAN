@@ -1564,6 +1564,13 @@ console.log(
       ),
     /REMOTE_IMAGE_SOURCE/,
   );
+  const generic = await downloadPublicMailImage(
+    'https://cdn.vendor.com/uuid',
+    bad({ headers: { 'content-type': 'application/octet-stream' } }),
+  );
+  assert.equal(generic.headers.get('content-type'), 'image/png');
+  assert.equal((await generic.arrayBuffer()).byteLength, image.length);
+
   await assert.rejects(
     () =>
       downloadPublicMailImage('https://cdn.vendor.com/uuid', {

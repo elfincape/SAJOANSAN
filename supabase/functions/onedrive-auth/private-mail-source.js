@@ -304,6 +304,8 @@ export function createMailSource({
             sourceId: row.id,
             approvedUrls:
               box.automation_config?.remoteImages?.[row.id]?.approvedUrls,
+            excludedUrls:
+              box.automation_config?.remoteImages?.[row.id]?.excludedUrls ?? [],
             fetcher: remoteFetcher,
           })),
         );
@@ -365,7 +367,10 @@ export function createMailSource({
         if (
           box.automation_config?.analysisScopes?.[row.id] === 'body_headers' ||
           !Array.isArray(approved) ||
-          !approved.includes(descriptor.remoteUrl)
+          !approved.includes(descriptor.remoteUrl) ||
+          (
+            box.automation_config?.remoteImages?.[row.id]?.excludedUrls ?? []
+          ).includes(descriptor.remoteUrl)
         )
           throw Error('NOTES_IMAGE_SOURCE');
         const htmlFile = row.files.find((file) => file.kind === 'html');

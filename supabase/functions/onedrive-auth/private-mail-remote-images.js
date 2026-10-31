@@ -78,15 +78,30 @@ export function remoteMailImageManifest(html) {
 export async function loadApprovedRemoteMailImages({
   html,
   approvedUrls,
+  excludedUrls = [],
   sourceId,
   fetcher,
 }) {
+  if (
+    !Array.isArray(approvedUrls ?? []) ||
+    !Array.isArray(excludedUrls) ||
+    (approvedUrls ?? []).length > 5 ||
+    excludedUrls.length > 5
+  )
+    throw Error('REMOTE_IMAGE_REVIEW');
   const manifest = remoteMailImageManifest(html);
   if (!manifest.content.length) return [];
   const approved = new Set(
     (approvedUrls ?? []).map((value) => safeUrl(value)).filter(Boolean),
   );
-  if (manifest.content.some((item) => !approved.has(item.url)))
+  const excluded = new Set(
+    excludedUrls.map((value) => safeUrl(value)).filter(Boolean),
+  );
+  if (
+    manifest.content.some(
+      (item) => !excluded.has(item.url) && !approved.has(item.url),
+    )
+  )
     throw Error('REMOTE_IMAGE_REVIEW');
   // The caller must supply a transport that pins public destination addresses.
   // Edge fetch alone cannot guarantee that an approved hostname resolves publicly.
@@ -94,6 +109,7 @@ export async function loadApprovedRemoteMailImages({
   const images = [];
   let total = 0;
   for (const [index, item] of manifest.content.entries()) {
+    if (excluded.has(item.url)) continue;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
