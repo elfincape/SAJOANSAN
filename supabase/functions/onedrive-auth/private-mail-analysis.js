@@ -364,12 +364,12 @@ function normalizeOwnership(
       typeof raw.selfRequestEvidence === 'string'
         ? raw.selfRequestEvidence.trim()
         : null;
+    const ownerName = context.ownerContext.ownerName ?? '장희성';
+    const ownerPattern = ownerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const assignment = !!proof && new RegExp('담당(?:자)?\\s*[:：]\\s*' + ownerPattern).test(proof);
     const named =
       !!proof &&
-      (/장희성(?:\s*(?:차장|과장|부장|팀장|대리|사원))?\s*(?:님|씨|께|[:：,，])/.test(
-        proof,
-      ) ||
-        /담당(?:자)?\s*[:：]\s*장희성/.test(proof));
+      (new RegExp(ownerPattern + '(?:\\s*(?:차장|과장|부장|팀장|대리|사원))?\\s*(?:님|씨|께|[:：,，])').test(proof) || assignment);
     const otherName =
       !!proof &&
       !named &&
@@ -378,9 +378,8 @@ function normalizeOwnership(
           /([가-힣]{2,4})(?:\s*(?:차장|과장|부장|팀장|대리|사원))?님/g,
         ),
       ].some(
-        (match) => !['담당자', '수신자', '관계자', '장희성'].includes(match[1]),
+        (match) => !['담당자', '수신자', '관계자', ownerName].includes(match[1]),
       );
-    const assignment = !!proof && /담당(?:자)?\s*[:：]\s*장희성/.test(proof);
     const direct =
       !!proof &&
       (/(?:검토|확인|제출|회신|승인|재가|처리|준비|진행|연락|발주|배차|조치|협의|결정|서명|납부|예약|선정|변경|해결|보내|기다려).{0,50}(?:해\s*주|부탁|바랍니다|요청|하세요|주시|주십시오|주세요)/.test(
@@ -961,8 +960,10 @@ export async function analyzePrivateMail({
   now,
   intentOverride,
   resolveJevConfiguration,
+  ownerName = '장희성',
 }) {
   if (
+    typeof ownerName !== 'string' || !ownerName.trim() || ownerName.length > 60 ||
     typeof messageId !== 'string' ||
     !uuid.test(messageId) ||
     typeof store?.claim !== 'function' ||
@@ -1057,7 +1058,7 @@ export async function analyzePrivateMail({
     }
     if (loaded.ownerContext)
       context.ownerContext = {
-        ownerName: '장희성',
+        ownerName,
         recipientRole: ['to', 'cc', 'both', 'other', 'unknown'].includes(
           loaded.ownerContext.recipientRole,
         )
@@ -1065,6 +1066,7 @@ export async function analyzePrivateMail({
           : 'unknown',
         senderIsOwner: loaded.ownerContext.senderIsOwner === true,
       };
+    context.ownerContext.ownerName = ownerName;
     const related = relatedItems(loaded.related, thread, mail.id);
     phase = 'MODEL_FAILED';
     const response = await callLuna({

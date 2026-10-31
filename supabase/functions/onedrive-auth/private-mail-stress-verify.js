@@ -31,8 +31,11 @@ export async function parseStressMail(fixture, remoteFetcher) {
   const images = photos.selected.map(file=>({id:id+':'+file.index,name:file.name,mediaType:file.mediaType,contentHash:file.content_hash,width:file.width,height:file.height,bytes:bytes.get(file.index)}));
   if (fixture.remoteUrls?.length) images.push(...await loadApprovedRemoteMailImages({html:parsed.html??'',approvedUrls:fixture.remoteUrls,sourceId:id,fetcher:remoteFetcher}));
   const times = mailMessageTimes({headers,sentAt:parsed.date,collectedAt:fixture.now});
+  const hasOwner = addresses => (addresses??[]).some(person=>person.address?.toLowerCase()==='owner@example.test');
+  const inTo = hasOwner(parsed.to), inCc = hasOwner(parsed.cc);
+  const recipientRole = inTo && inCc ? 'both' : inTo ? 'to' : inCc ? 'cc' : 'other';
   return {
-    source:{id,uidl_hash:await digest(raw),subject:parsed.subject,sender:parsed.from?.name+' <'+parsed.from?.address+'>',headers,text,images,sent_at:times.sentAt,received_at:times.receivedAt,created_at:fixture.now,related:fixture.related??[],analysisScope:fixture.remoteUrls?.length?'body_remote_images':'body_attachments',ownerContext:{recipientRole:'to',senderIsOwner:false}},
+    source:{id,uidl_hash:await digest(raw),subject:parsed.subject,sender:parsed.from?.name+' <'+parsed.from?.address+'>',headers,text,images,sent_at:times.sentAt,received_at:times.receivedAt,created_at:fixture.now,related:fixture.related??[],analysisScope:fixture.remoteUrls?.length?'body_remote_images':'body_attachments',ownerContext:{recipientRole,senderIsOwner:parsed.from?.address?.toLowerCase()==='owner@example.test'}},
     parser:{attachments:files.length,selectedImages:photos.selected.map(file=>file.name),excludedImages:photos.excluded.map(file=>({name:file.name,reason:file.reason})),reviewImages:photos.review.map(file=>file.name),textChars:text.length,reportDay:day(times.reportAt),sentAt:times.sentAt,receivedAt:times.receivedAt},
   };
 }
@@ -87,7 +90,7 @@ export async function runStressCase(caseId,ctx) {
     parser=parsed.parser;
     let leased=false,failed=null;
     const store={claim:async()=>{if(leased||saved)return null;leased=true;return{row:{id,uidl_hash:parsed.source.uidl_hash},lease:'isolated-stress'};},finish:async({analysis})=>{saved=structuredClone(analysis);leased=false;return true;},fail:async({code})=>{failed=code;leased=false;return true;}};
-    const args={messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
+    const args={messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
     const results=await Promise.all([analyzePrivateMail(args),analyzePrivateMail(args)]);
     status=results[0].status;duplicate=results[1].status;
     if(!saved) return{caseId,status:'failed',code:results[0].code??failed,trace,replay,parser,expected:fixture.expected,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};

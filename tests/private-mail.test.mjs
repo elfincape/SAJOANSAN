@@ -7086,3 +7086,12 @@ for(const [name,test] of [
  assert.equal(parsed.parser.attachments,3);assert.equal(parsed.source.images.length,1);assert.equal(parsed.parser.excludedImages.length,2);
  console.log('PASS fixed stress corpus, frozen expectations, owner-only diagnostic, real MIME/CID extraction and no operational persistence');
 }
+
+{
+ const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+ const id='f9999999-9999-4999-8999-999999999999',proof='테스트담당자님, 가상문서 검토 부탁드립니다.';let saved;
+ const value={intent:{kind:'request',evidence:proof},group:null,summary:[],tasks:[{text:'가상문서 검토',evidence:proof,status:'pending',assignee:null,due:null,serviceOriginal:null,completionEvidence:null,forOwner:true,recipientScope:'owner_direct',selfRequestEvidence:proof}],issues:[],waiting:[],updates:[],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}};
+ const result=await analyzePrivateMail({messageId:id,ownerName:'테스트담당자',provider:'openai',model:'gpt-6-luna',key:'mock',now:'2026-11-02T01:00:00Z',loadMail:async()=>({id,uidl_hash:'f'.repeat(64),subject:'가상 검토',sender:'sender@example.test',sent_at:'2026-11-02T00:00:00Z',created_at:'2026-11-02T01:00:00Z',headers:'From: sender@example.test\r\nTo: owner@example.test\r\nDate: Mon, 2 Nov 2026 00:00:00 +0000',text:proof,ownerContext:{recipientRole:'to',senderIsOwner:false}}),fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]}),store:{claim:async()=>({row:{id,uidl_hash:'f'.repeat(64)},lease:'test'}),finish:async input=>{saved=input.analysis;return true;},fail:async()=>true}});
+ assert.equal(result.status,'done');assert.equal(saved.tasks.length,1);assert.equal(saved.source.ownerContext.ownerName,'테스트담당자');
+ console.log('PASS owner identity comes from trusted analysis context; synthetic named recipient is not another person');
+}
