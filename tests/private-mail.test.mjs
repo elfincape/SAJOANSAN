@@ -5695,3 +5695,112 @@ console.log(
     'PASS image relay authorization works without legacy key, binds mailbox/message/URL to one-use SQL capability and fails closed before download',
   );
 }
+{
+  const { readFile } = await import('node:fs/promises');
+  const { handleMailAutomation } =
+    await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const { APPROVED_MAIL_TARGET: target } =
+    await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+  const image = await readFile(
+    new URL('../app/public/diagnostics/mail-body-fixture.png', import.meta.url),
+  );
+  const id = '11111111-1111-4111-8111-111111111111',
+    imageId = id + ':0';
+  let modelCalls = 0,
+    downloads = 0;
+  const answer = {
+    intent: { kind: 'unknown', evidence: null },
+    group: null,
+    summary: [],
+    issues: [],
+    tasks: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [
+      {
+        imageId,
+        text: '상차 09:00, 하차 13:15, 수량 4P.',
+        confidence: 'readable',
+      },
+    ],
+    imageDecisions: [{ imageId, kind: 'business_document', include: true }],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  const ctx = {
+    aiProvider: 'openai',
+    aiModel: 'gpt-6-luna',
+    aiKey: 'fixture-only',
+    db: async (path) => {
+      assert.ok(path.startsWith('private_mailboxes?'));
+      return [{ id: target.mailbox_id, owner_id: target.owner_id }];
+    },
+    json: (value) => Response.json(value),
+    fail: (message, status) => Object.assign(Error(message), { status }),
+    remoteFetcher: async (url, options) => {
+      downloads++;
+      assert.equal(
+        url,
+        'https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png',
+      );
+      assert.equal(options.sourceId, id);
+      return new Response(image, { headers: { 'content-type': 'image/png' } });
+    },
+    fetcher: async (url, options) => {
+      modelCalls++;
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, 'gpt-6-luna');
+      assert.equal(body.store, false);
+      assert.equal(body.text.format.type, 'json_object');
+      assert.ok(!JSON.stringify(body).includes('장희성'));
+      assert.ok(
+        body.input.some((message) =>
+          message.content.some((part) => part.type === 'input_image'),
+        ),
+      );
+      return Response.json({
+        status: 'completed',
+        model: 'gpt-6-luna',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: JSON.stringify(answer) }],
+          },
+        ],
+        usage: { input_tokens: 20, output_tokens: 100, total_tokens: 120 },
+      });
+    },
+  };
+  const result = await (
+    await handleMailAutomation(
+      'private-mail-remote-verify',
+      { analyze: true, url: 'https://127.0.0.1/ignored', text: 'ignored' },
+      { id: target.owner_id },
+      ctx,
+    )
+  ).json();
+  assert.equal(result.status, 'done');
+  assert.ok(Object.values(result.checks).every(Boolean));
+  assert.equal(result.stored, false);
+  assert.equal(result.oneNoteWritten, false);
+  assert.equal(result.normalized.length, 1);
+  assert.equal(result.normalized[0].category, 'reference');
+  assert.equal(modelCalls, 1);
+  assert.equal(downloads, 1);
+  const wrong = await (
+    await handleMailAutomation(
+      'private-mail-remote-verify',
+      { analyze: true },
+      { id: target.owner_id },
+      { ...ctx, aiProvider: 'aiapiflow' },
+    )
+  ).json();
+  assert.equal(wrong.code, 'AI_VERIFY_CONFIGURATION');
+  assert.equal(modelCalls, 1);
+  assert.equal(downloads, 1);
+  console.log(
+    'PASS full synthetic image flow: remote body -> official JSON-mode model -> strict validation -> common normalized reference; expected quantity/times, no private inputs or operating business/OneNote writes',
+  );
+}

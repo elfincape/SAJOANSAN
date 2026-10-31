@@ -40,7 +40,18 @@ export async function authorizeMailWork(
     } catch {
       denied();
     }
-    if (imageRequest?.operation === 'image-authorize') {
+    if (
+      ['image-authorize', 'image-analyze-verify'].includes(
+        imageRequest?.operation,
+      )
+    ) {
+      if (
+        imageRequest.operation === 'image-analyze-verify' &&
+        (imageRequest.id !== '11111111-1111-4111-8111-111111111111' ||
+          imageRequest.url !==
+            'https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png')
+      )
+        denied();
       if (
         imageRequest.mailbox !== TARGET.mailbox_id ||
         !UUID.test(imageRequest.id ?? '') ||

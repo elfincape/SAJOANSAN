@@ -1,3 +1,4 @@
+import { loadApprovedRemoteMailImages } from './private-mail-remote-images.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
 import { manualDailyView, handleManualMessage } from './private-mail-manual.js';
@@ -37,7 +38,142 @@ export async function handleMailAutomation(action, body, user, ctx) {
   };
   const current = await box();
   const ready = Object.hasOwn(current, 'automation_config');
-  if (action === 'private-mail-remote-verify') {
+  const syntheticAnalysis =
+    action === 'private-mail-background-work' &&
+    ctx.background === true &&
+    body.operation === 'image-analyze-verify';
+  if (action === 'private-mail-remote-verify' || syntheticAnalysis) {
+    if (body.analyze === true || syntheticAnalysis) {
+      const fixture =
+          'https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png',
+        id = '11111111-1111-4111-8111-111111111111';
+      const ai = ctx.resolveAiConfiguration
+        ? await ctx.resolveAiConfiguration()
+        : ctx;
+      if (
+        ai.aiProvider !== 'openai' ||
+        ai.aiModel !== 'gpt-6-luna' ||
+        !ai.aiKey
+      )
+        return json({
+          status: 'failed',
+          code: 'AI_VERIFY_CONFIGURATION',
+          stored: false,
+        });
+      const trace = [];
+      let saved = null;
+      try {
+        const images = await loadApprovedRemoteMailImages({
+          html: '<img src="' + fixture + '" width="480" height="160">',
+          approvedUrls: [fixture],
+          sourceId: id,
+          fetcher: ctx.remoteFetcher,
+        });
+        const source = {
+          id,
+          uidl_hash: 'a'.repeat(64),
+          subject: '합성 상하차 참고 자료',
+          sender: 'sender@example.test',
+          sent_at: '2026-10-31T03:00:00Z',
+          created_at: '2026-10-31T03:00:00Z',
+          text: '',
+          images,
+          analysisScope: 'body_remote_images',
+          headers:
+            'From: Test Sender <sender@example.test>\r\nTo: Test Owner <owner@example.test>\r\nDate: Sat, 31 Oct 2026 03:00:00 +0000',
+          ownerContext: { recipientRole: 'to', senderIsOwner: false },
+        };
+        const result = await analyzePrivateMail({
+          messageId: id,
+          provider: ai.aiProvider,
+          model: ai.aiModel,
+          key: ai.aiKey,
+          intentOverride: 'reference',
+          loadMail: async () => source,
+          fetcher: async (url, options) => {
+            if (url !== 'https://api.openai.com/v1/responses')
+              throw Error('AI_VERIFY_DESTINATION');
+            const payload = JSON.parse(options.body);
+            for (const message of payload.input ?? [])
+              for (const part of message.content ?? [])
+                if (part.type === 'input_text')
+                  part.text =
+                    part.text.replaceAll('장희성', '테스트 담당자') +
+                    '\n이 호출은 격리된 합성 이미지 판독 검증입니다. SYNTHETIC TEST 표시가 있는 상하차 표를 판독용 업무문서로 취급해 imageFacts에 보이는 수량·시각을 간결히 기록하고 imageDecisions는 business_document/include=true로 분류하세요. 실제 요청이나 사용자 할 일을 만들지는 마세요.';
+            const response = await fetcher(url, {
+              ...options,
+              body: JSON.stringify(payload),
+            });
+            const metadata = await response
+              .clone()
+              .json()
+              .catch(() => ({}));
+            trace.push({
+              httpStatus: response.status,
+              model: metadata.model ?? null,
+              status: metadata.status ?? null,
+              usage: metadata.usage ?? null,
+            });
+            return response;
+          },
+          store: {
+            claim: async () => ({
+              row: { id, uidl_hash: 'a'.repeat(64) },
+              lease: 'synthetic-memory',
+            }),
+            finish: async ({ analysis }) => {
+              saved = analysis;
+              return true;
+            },
+            fail: async () => true,
+          },
+        });
+        if (result.status !== 'done' || !saved)
+          return json({
+            status: 'failed',
+            code: result.code ?? 'AI_VERIFY_ANALYSIS',
+            trace,
+            stored: false,
+            modelCalled: trace.length > 0,
+          });
+        const normalized = dailyBriefingView({
+          now: '2026-10-31T12:00:00+09:00',
+          analyses: [saved],
+        }).workItems;
+        const text = normalized.flatMap((item) => item.summary).join(' '),
+          checks = {
+            quantity: /4\s*(?:[pP]|팔레트|파렛트)/.test(text),
+            loading: /0?9[:시\s]+00/.test(text),
+            unloading: /13[:시\s]*15/.test(text),
+            referenceOnly:
+              normalized.length > 0 &&
+              normalized.every((item) => item.category === 'reference'),
+          };
+        return json({
+          status: Object.values(checks).every(Boolean) ? 'done' : 'failed',
+          checks,
+          trace,
+          normalized,
+          stored: false,
+          modelCalled: true,
+          oneNoteWritten: false,
+        });
+      } catch (error) {
+        return json({
+          status: 'failed',
+          code: [
+            'REMOTE_IMAGE_REVIEW',
+            'REMOTE_IMAGE_SOURCE',
+            'IMAGE_LIMIT',
+          ].includes(error.message)
+            ? error.message
+            : 'AI_VERIFY_FAILED',
+          trace,
+          stored: false,
+          modelCalled: trace.length > 0,
+        });
+      }
+    }
     try {
       if (typeof ctx.remoteFetcher !== 'function')
         throw Error('REMOTE_IMAGE_REVIEW');

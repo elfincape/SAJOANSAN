@@ -58,7 +58,7 @@ begin
  if not public.private_mail_manual_allowed(p_box,p_user) or p_url is null or length(p_url)>2000
  or public.private_mail_dispatch_target_allowed(p_box,'remote-image',p_message::text) is distinct from true then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
  if p_message='11111111-1111-4111-8111-111111111111'::uuid then
-  if p_url<>'https://placehold.co/480x160.png' then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
+  if p_url not in ('https://placehold.co/480x160.png','https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png') then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
  elsif not exists(select 1 from public.private_mail_messages m where m.id=p_message and m.mailbox_id=p_box and m.owner_id=p_user)
  or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true then raise exception 'IMAGE_TRANSPORT_SCOPE'; end if;
  select coalesce(jsonb_object_agg(key,value),'{}'::jsonb) into caps from jsonb_each(b.automation_dispatch)
@@ -84,7 +84,7 @@ begin
  or coalesce((cap->>'expiresAt')::timestamptz,'-infinity')<=clock_timestamp()
  or public.private_mail_dispatch_target_allowed(p_box,'remote-image',p_message::text) is distinct from true then return false; end if;
  if p_message='11111111-1111-4111-8111-111111111111'::uuid then
-  if p_url<>'https://placehold.co/480x160.png' then return false; end if;
+  if p_url not in ('https://placehold.co/480x160.png','https://sajoansan.vercel.app/diagnostics/mail-body-fixture.png') then return false; end if;
  elsif not exists(select 1 from public.private_mail_messages m where m.id=p_message and m.mailbox_id=p_box and m.owner_id=b.owner_id)
  or (b.automation_config->'remoteImages'->p_message::text->'approvedUrls' ? p_url) is distinct from true then return false; end if;
  update public.private_mailboxes set automation_dispatch=automation_dispatch-p_hash where id=p_box;
