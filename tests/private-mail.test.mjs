@@ -6989,3 +6989,14 @@ console.log(
  assert.equal(result.checks[0].status,'transient');
  assert.equal(result.checks[0].retryAfterSeconds,7);
 }
+
+{
+ const {renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const html=renderBriefingWorkNote([{category:'task',title:'가상센터4P 배차 준비',status:'pending',summary:['하차 13:15','가상시 테스트로33 A동'],serviceDate:'2026-11-02',dueDate:'2026-11-01',sourceRefs:[]}]);
+ assert.match(html,/<h2 style="[^"]*margin-top:18pt/);
+ assert.match(html,/<p style="[^"]*margin-top:12pt/);
+ assert.match(html,/line-height:150%/);
+ assert.match(html,/<strong>기한 2026-11-01<\/strong>/);
+ assert.ok(!html.includes('<table'));
+ console.log('PASS explicit OneNote heading/item spacing, readable line height and restrained deadline emphasis');
+}
