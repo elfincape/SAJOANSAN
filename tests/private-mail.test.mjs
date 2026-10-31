@@ -6039,3 +6039,102 @@ console.log(
     'PASS image-only reference/routine evidence may use validated included readable facts; image evidence alone does not confirm personal request or create tasks',
   );
 }
+
+{
+  const { verifyMailExtraction } =
+    await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+  const source =
+    '11/2 가상센터 4P 배차. 하차13:15. 처리기한과 톤수는 명시하지 않음.';
+  const items = [
+    { id: 'service', text: '운행일11월2일' },
+    { id: 'tons', text: '차량4톤' },
+  ];
+  const original = JSON.stringify(items);
+  let calls = 0;
+  const fetcher = async (url, options) => {
+    calls++;
+    assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+    assert.equal(options.redirect, 'error');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'jev-1.14.0');
+    assert.equal(body.questions.q0.type, 'noul');
+    assert.equal(body.questions.q1.type, 'noul');
+    return Response.json({
+      model: 'jev-1.14.0',
+      answers: {
+        q0: { type: 'noul', noul: 0.05 },
+        q1: { type: 'noul', noul: 0.9 },
+      },
+      usage: { input_tokens: 200, output_tokens: 20 },
+    });
+  };
+  const value = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher,
+  });
+  assert.equal(value.status, 'review');
+  assert.deepEqual(value.reviewIds, ['tons']);
+  assert.equal(value.model, 'jev-1.14.0');
+  assert.equal(value.findings[1].unsupportedProbability, 0.9);
+  assert.equal(JSON.stringify(items), original);
+  assert.equal(calls, 1);
+  const missing = await verifyMailExtraction({
+    source,
+    items,
+    fetcher: () => assert.fail('no implicit auth or network'),
+  });
+  assert.equal(missing.status, 'unavailable');
+  assert.equal(missing.code, 'NOT_CONFIGURED');
+  const malformed = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () =>
+      Response.json({
+        model: 'jev-1.14.0',
+        answers: {
+          q0: { type: 'noul', noul: 0 },
+          q1: { type: 'noul', confidence: 1 },
+        },
+      }),
+  });
+  assert.equal(malformed.status, 'unavailable');
+  assert.equal(malformed.code, 'INVALID_RESPONSE');
+  const failed = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () => new Response('', { status: 429 }),
+  });
+  assert.equal(failed.status, 'unavailable');
+  assert.equal(failed.code, 'RATE_LIMIT');
+  const slow = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    timeoutMs: 20,
+    fetcher: async () => new Promise(() => {}),
+  });
+  assert.equal(slow.status, 'unavailable');
+  assert.equal(slow.code, 'TIMEOUT');
+  const ambiguous = await verifyMailExtraction({
+    source,
+    items,
+    key: 'fixture-key',
+    fetcher: async () =>
+      Response.json({
+        model: 'jev-1.14.0',
+        answers: {
+          q0: { type: 'noul', noul: 0.5 },
+          q1: { type: 'noul', noul: 0.1 },
+        },
+      }),
+  });
+  assert.deepEqual(ambiguous.reviewIds, ['service']);
+  assert.equal(JSON.stringify(items), original);
+  console.log(
+    'PASS advisory JEV verifier: pinned REST/Noul, only suspect IDs, no mutation, no implicit key, malformed/rate-limit/timeout preserve existing result',
+  );
+}
