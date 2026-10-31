@@ -6999,7 +6999,7 @@ console.log(
  assert.ok(html.includes('기한 2026-11-01'));
  assert.ok(!html.includes('<strong>'));
  assert.ok(!html.includes('<table'));
- console.log('PASS explicit OneNote heading/item spacing, readable line height and restrained deadline emphasis');
+ console.log('PASS explicit OneNote heading/item spacing, readable line height and plain consistent body text');
 }
 
 {
@@ -7013,7 +7013,7 @@ console.log(
  assert.match(html,/<ol style="list-style-type:decimal"><li style="[^"]*">가상센터4P 배차 준비<ul/);
  assert.ok(!html.includes('<strong>가상센터4P 배차 준비'));
  assert.ok(html.includes('font-family:Malgun Gothic,Arial,sans-serif'));
- console.log('PASS uniform report hierarchy: consecutive sections, circled items, indented hyphen detail, plain consistent body font');
+ console.log('PASS uniform report hierarchy: consecutive sections, native numbered items, nested supporting detail, plain consistent body font');
 }
 
 {
@@ -7025,4 +7025,25 @@ console.log(
  assert.deepEqual(workSummaryForDisplay({summary:['하차 13:15']}),['하차 13:15']);
  assert.deepEqual(workSummaryForDisplay({...item,summary:['11/3 하차13:15']}),['11/3 하차13:15']);
  console.log('PASS Korean date-before-time display from confirmed service date, no source mutation or date inference');
+}
+
+{
+ const {readFile}=await import('node:fs/promises');
+ const {createHash}=await import('node:crypto');
+ const path=new URL('../supabase/functions/onedrive-auth/private-mail-notes-writer.js',import.meta.url);
+ let source=await readFile(path,'utf8');
+ for(const file of ['private-mail-briefing-model.js','private-mail-briefing.js'])source=source.replace("'./"+file+"'",JSON.stringify(new URL(file,path).href));
+ const {snapshot}=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {snapshot};').toString('base64'));
+ const marker='sajo-mail-daily-2026-10-31';
+ const inner='<table id="inner" data-id="'+marker+'"><tr><td><ol><li>업무<ul><li>세부</li></ul></li></ol></td></tr></table>';
+ const page=body=>'<html><body><div>'+body+'<div data-id="sajo-mail-manual"><p>개인 메모</p></div></div></body></html>';
+ const hash=async s=>createHash('sha256').update(s).digest('hex');
+ const wrapped='<table id="outer" data-id="'+marker+'"><tr><td>'+inner+'</td></tr></table>';
+ const checked=await snapshot({html:page(wrapped),marker,hash});
+ assert.equal(checked.needsManagedCollapse,true);
+ assert.equal(checked.managedTargets.length,1);
+ assert.equal(checked.managedTargets[0].attrs.id,'outer');
+ await assert.rejects(()=>snapshot({html:page(inner+inner.replace('id="inner"','id="other"')),marker,hash}),/PAGE_MANAGED_AMBIGUOUS/);
+ await assert.rejects(()=>snapshot({html:page(wrapped.replace('<td><table','<td><p>소유자 추가 내용</p><table')),marker,hash}),/PAGE_MANAGED_AMBIGUOUS/);
+ console.log('PASS recover only empty nested managed shells; reject independent duplicates and owner content outside inner region');
 }
