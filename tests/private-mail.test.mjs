@@ -4565,15 +4565,46 @@ console.log(
     },
   );
   assert.equal(items[0].serviceDate, '2026-11-02');
+  assert.deepEqual(items[0].details, ['하차 13:15', address]);
+  const ambiguous = normalizeManualItems(
+    {
+      items: [1, 2].map(() => ({
+        kind: 'dispatch',
+        text: '배차 준비',
+        evidence: original,
+        serviceOriginal: '11/2',
+        dueOriginal: null,
+        assignee: null,
+        needsConfirmation: false,
+      })),
+    },
+    {
+      text: original,
+      submittedAt: '2026-10-31T01:00:00Z',
+      referenceDate: '2026-10-31',
+      entryId,
+    },
+  );
+  assert.ok(
+    ambiguous.every((item) => item.details.length === 0),
+    'unassigned address/time must not cross-match multiple dispatch requests',
+  );
+
   assert.equal(items[0].dueAt, null);
   assert.equal(items[0].dueDate, null);
   assert.equal(items[0].assignee, null);
   assert.equal(items[0].evidence, original);
+  // Legacy operating records have no details and short evidence; recover only
+  // explicit lines from the preserved single-dispatch original, without AI.
+  delete items[0].details;
+  items[0].text = '쿠팡창원 4p 배차';
+  items[0].evidence = '11/2 월\n쿠팡창원 4p 배차입니다.';
   const entry = {
     entryId,
     submittedAt: '2026-10-31T01:00:00Z',
     referenceDate: '2026-10-31',
     status: 'ready',
+    text: original,
     items,
   };
   for (const day of ['2026-10-31', '2026-11-01', '2026-11-02']) {
@@ -4583,7 +4614,7 @@ console.log(
       analyses: [],
       manual,
     });
-    assert.ok(report.html.includes('쿠팡창원 배차 준비'));
+    assert.ok(report.html.includes('쿠팡창원 4p 배차'));
     assert.ok(report.html.includes('4p'));
     assert.ok(report.html.includes('하차 13:15'));
     assert.ok(report.html.includes(address));

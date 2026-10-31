@@ -185,6 +185,7 @@ export interface MailRulePreview {
   unresolved: { id: string; subject?: string; code: string; reason?: string }[];
 }
 export interface MailManualItem {
+  details?: string[];
   entryId?: string;
   itemId: string;
   ref: string;
