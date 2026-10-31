@@ -1,5 +1,5 @@
 import { modelCapabilities, diagnosticCapabilities } from './ai-providers.js';
-import { callHaiku } from './haiku.js';
+import { callHaiku, retryAfterSeconds } from './haiku.js';
 export const LUNA_MODEL = 'gpt-5.6-luna';
 export const OPENAI_LUNA_MODEL = 'gpt-6-luna';
 export function mailAiConfiguration(env, selected = {}) {
@@ -370,7 +370,7 @@ export async function callLuna({
         response.status === 429 ? 429 : 502,
         'http',
       ),
-      { providerStatus: response.status },
+      { providerStatus: response.status, retryAfterSeconds: retryAfterSeconds(response) },
     );
   }
   let value;

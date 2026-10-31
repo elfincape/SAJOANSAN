@@ -296,6 +296,7 @@ export async function verifyApiCompatibility(body, env, fetcher = fetch) {
         kind,
         providerStatus: status ?? providerStatus,
         diagnosticCode: error?.code ?? 'REQUEST_FAILED',
+        retryAfterSeconds: error?.retryAfterSeconds ?? null,
         responseReason: error?.reason ?? null,
         responseShape: error?.modelResponseShape ?? null,
         status:
