@@ -2,6 +2,7 @@ import { handleCharter } from './charter.js';
 import { handleOperations } from './operations.js';
 import { handleBackups } from './backups.js';
 import { handlePrivateMail } from './private-mail.js';
+import { mailAiConfiguration } from '../_shared/luna.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
 import { authorizeMailWork } from './private-mail-worker-auth.js';
 import {
@@ -774,7 +775,7 @@ export function makeHandler(
             ownerSync: true,
             background: true,
             workerKey: env.MAIL_COLLECTOR_KEY,
-            aiKey: env.AIAPIFLOW_API_KEY,
+            ...mailAiConfiguration(env),
           },
         );
       }
@@ -844,7 +845,7 @@ export function makeHandler(
           hash,
           fetcher,
           workerKey: env.MAIL_COLLECTOR_KEY,
-          aiKey: env.AIAPIFLOW_API_KEY,
+          ...mailAiConfiguration(env),
         });
       }
       if (action === 'backups-scheduled') {

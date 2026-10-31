@@ -368,6 +368,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
       intentOverride:
         current.automation_config?.intentOverrides?.[body.id]?.intent,
       key: ctx.aiKey,
+      provider: ctx.aiProvider,
       fetcher,
       loadMail,
       store: {

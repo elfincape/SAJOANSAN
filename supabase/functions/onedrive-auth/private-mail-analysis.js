@@ -922,6 +922,7 @@ export async function analyzePrivateMail({
   store,
   loadMail,
   key,
+  provider,
   fetcher,
   now,
   intentOverride,
@@ -1023,6 +1024,7 @@ export async function analyzePrivateMail({
     const related = relatedItems(loaded.related, thread, mail.id);
     phase = 'MODEL_FAILED';
     const response = await callLuna({
+      provider,
       schema: MAIL_ANALYSIS_SCHEMA,
       schemaName: 'private_mail_analysis',
       key,

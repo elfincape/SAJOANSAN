@@ -1,4 +1,15 @@
 export const LUNA_MODEL = 'gpt-5.6-luna';
+export const OPENAI_LUNA_MODEL = 'gpt-6-luna';
+export function mailAiConfiguration(env) {
+  if (env.PRIVATE_MAIL_AI_PROVIDER === 'openai')
+    return { aiProvider: 'openai', aiKey: env.OPENAI_API_KEY };
+  if (
+    env.PRIVATE_MAIL_AI_PROVIDER &&
+    env.PRIVATE_MAIL_AI_PROVIDER !== 'aiapiflow'
+  )
+    return { aiProvider: 'invalid', aiKey: undefined };
+  return { aiProvider: 'aiapiflow', aiKey: env.AIAPIFLOW_API_KEY };
+}
 
 function tokenUsage(value) {
   const usage = {};
@@ -62,6 +73,7 @@ function failure(code, status = 502, reason = 'response', shape) {
 
 export async function callLuna({
   key,
+  provider = 'aiapiflow',
   prompt,
   images = [],
   schema,
@@ -70,6 +82,9 @@ export async function callLuna({
   timeoutMs = 65000,
   fetcher = fetch,
 }) {
+  if (!['aiapiflow', 'openai'].includes(provider))
+    throw failure('AI_NOT_CONFIGURED', 503, 'configuration');
+  const model = provider === 'openai' ? OPENAI_LUNA_MODEL : LUNA_MODEL;
   if (!key) throw failure('AI_NOT_CONFIGURED', 503, 'configuration');
   const structured = schema !== undefined || schemaName !== undefined;
   if (
@@ -105,46 +120,53 @@ export async function callLuna({
   if (total > 4000000) throw failure('IMAGE_LIMIT', 400, 'image_limit');
   let response;
   try {
-    response = await fetcher('https://aiapiflow.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer ' + key,
-      },
-      body: JSON.stringify({
-        model: LUNA_MODEL,
-        store: false,
-        max_output_tokens: maxTokens,
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: prompt },
-              ...images.map((image) => ({
-                type: 'input_image',
-                image_url: 'data:' + image.mediaType + ';base64,' + image.data,
-              })),
-            ],
-          },
-        ],
-        ...(structured
-          ? {
-              text: {
-                format: {
-                  type: 'json_schema',
-                  name: schemaName,
-                  strict: true,
-                  schema,
+    response = await fetcher(
+      provider === 'openai'
+        ? 'https://api.openai.com/v1/responses'
+        : 'https://aiapiflow.com/v1/responses',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + key,
+        },
+        body: JSON.stringify({
+          model,
+          store: false,
+          max_output_tokens: maxTokens,
+          input: [
+            {
+              role: 'user',
+              content: [
+                { type: 'input_text', text: prompt },
+                ...images.map((image) => ({
+                  type: 'input_image',
+                  image_url:
+                    'data:' + image.mediaType + ';base64,' + image.data,
+                })),
+              ],
+            },
+          ],
+          ...(structured
+            ? {
+                text: {
+                  format: {
+                    type: 'json_schema',
+                    name: schemaName,
+                    strict: true,
+                    schema,
+                  },
                 },
-              },
-            }
-          : {}),
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+              }
+            : {}),
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'error',
+      },
+    );
   } catch (error) {
     console.warn('PRIVATE_MAIL_MODEL_FAILURE', {
-      model: LUNA_MODEL,
+      model,
       reason:
         error?.name === 'AbortError' || error?.name === 'TimeoutError'
           ? 'timeout'
@@ -163,7 +185,7 @@ export async function callLuna({
   }
   if (!response.ok) {
     console.warn('PRIVATE_MAIL_MODEL_FAILURE', {
-      model: LUNA_MODEL,
+      model,
       reason: 'http',
       providerStatus: response.status,
     });
@@ -233,6 +255,7 @@ export async function callLuna({
     reject('MODEL_RESPONSE', 'content_count');
   return {
     stop_reason: 'end_turn',
+    provider,
     content: [{ type: 'text', text: messages[0].content[0].text }],
     model: value.model,
     usage: tokenUsage(value.usage),
@@ -241,7 +264,7 @@ export async function callLuna({
 
 export function lunaInference(response) {
   return {
-    provider: 'aiapiflow',
+    provider: response.provider === 'openai' ? 'openai' : 'aiapiflow',
     model: response.model,
     usage: { ...response.usage },
   };

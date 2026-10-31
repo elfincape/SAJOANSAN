@@ -56,6 +56,87 @@ import assert from 'node:assert/strict';
   );
 }
 import { callLuna, LUNA_MODEL } from '../supabase/functions/_shared/luna.js';
+{
+  const { OPENAI_LUNA_MODEL, mailAiConfiguration, lunaInference } =
+    await import('../supabase/functions/_shared/luna.js');
+  const legacy = 'mock-legacy-key',
+    official = 'mock-official-key';
+  assert.deepEqual(mailAiConfiguration({ AIAPIFLOW_API_KEY: legacy }), {
+    aiKey: legacy,
+    aiProvider: 'aiapiflow',
+  });
+  assert.deepEqual(
+    mailAiConfiguration({
+      PRIVATE_MAIL_AI_PROVIDER: 'openai',
+      OPENAI_API_KEY: official,
+      AIAPIFLOW_API_KEY: legacy,
+    }),
+    { aiKey: official, aiProvider: 'openai' },
+  );
+  const missing = mailAiConfiguration({
+    PRIVATE_MAIL_AI_PROVIDER: 'openai',
+    AIAPIFLOW_API_KEY: legacy,
+  });
+  assert.equal(
+    missing.aiKey,
+    undefined,
+    'official configuration never falls back to another provider key',
+  );
+  assert.equal(
+    mailAiConfiguration({
+      PRIVATE_MAIL_AI_PROVIDER: 'arbitrary',
+      OPENAI_API_KEY: official,
+    }).aiKey,
+    undefined,
+  );
+  await assert.rejects(
+    () =>
+      callLuna({
+        provider: missing.aiProvider,
+        key: missing.aiKey,
+        prompt: 'fixture',
+        fetcher: () => assert.fail('missing official key must not transmit'),
+      }),
+    /AI_NOT_CONFIGURED/,
+  );
+  let requests = 0;
+  const response = await callLuna({
+    provider: 'openai',
+    key: official,
+    prompt: 'public fixture only',
+    images: [{ mediaType: 'image/png', data: 'AA==' }],
+    schemaName: 'fixture',
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      additionalProperties: false,
+    },
+    fetcher: async (url, options) => {
+      requests++;
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      assert.equal(options.headers.authorization, 'Bearer ' + official);
+      assert.equal(options.redirect, 'error');
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, OPENAI_LUNA_MODEL);
+      assert.equal(body.store, false);
+      assert.equal(body.text.format.strict, true);
+      assert.equal(body.input[0].content[1].type, 'input_image');
+      const result = await lunaResponseFixture([
+        { type: 'text', text: '{"ok":true}' },
+      ]).json();
+      result.model = OPENAI_LUNA_MODEL;
+      return Response.json(result);
+    },
+  });
+  assert.equal(requests, 1);
+  assert.equal(lunaInference(response).provider, 'openai');
+  assert.equal(lunaInference(response).model, 'gpt-6-luna');
+  assert.equal(response.content[0].text, '{"ok":true}');
+  console.log(
+    'PASS official OpenAI Responses: explicit server selection, separate key, fixed endpoint/model, text/image/schema, provenance, no fallback or live call',
+  );
+}
 function lunaResponseFixture(content, stopReason = 'end_turn') {
   return Response.json({
     model: LUNA_MODEL,

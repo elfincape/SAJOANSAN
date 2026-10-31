@@ -487,6 +487,7 @@ export async function handleManualMessage(action, body, user, ctx) {
       schema: MANUAL_MESSAGE_SCHEMA,
       schemaName: 'private_manual_message',
       key: ctx.aiKey,
+      provider: ctx.aiProvider,
       prompt: promptFor(entry),
       fetcher: ctx.fetcher,
       maxTokens: 5000,
