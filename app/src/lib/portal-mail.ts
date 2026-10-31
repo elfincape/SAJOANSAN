@@ -134,6 +134,8 @@ export interface DailyWork {
     ref: string;
     title: string | null;
     receivedAt: string | null;
+    dateBasis?: 'received' | 'sent' | 'input';
+    collectedAt?: string | null;
     evidence?: string | null;
     intentCorrected?: boolean;
   }[];

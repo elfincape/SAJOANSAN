@@ -218,6 +218,75 @@ try {
     "insert into public.private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled) values($1,$2,'jhs96@eangroup.kr','drive','private',true)",
     [autoBox, autoOwner],
   );
+  {
+    const historical = '99999999-1111-4111-8111-999999999999';
+    await db.exec(
+      "alter table public.private_mail_messages alter column report_day set expression as ((created_at at time zone 'Asia/Seoul')::date)",
+    );
+    await db.query(
+      "insert into public.private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,created_at,files) values($1,$2,$3,$4,$5,'8월18일 자료','sender@example.test','2026-08-19T00:42:28Z','2026-10-31T04:12:48Z','[]'::jsonb)",
+      [historical, autoBox, autoOwner, 'c'.repeat(64), 'd'.repeat(64)],
+    );
+    assert.equal(
+      (
+        await db.query(
+          'select report_day::text d from private_mail_messages where id=$1',
+          [historical],
+        )
+      ).rows[0].d,
+      '2026-10-31',
+    );
+    await db.exec(
+      await readFile(
+        new URL(
+          '../supabase/sql/private-mail-message-dates.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    assert.equal(
+      (
+        await db.query(
+          'select report_day::text d from private_mail_messages where id=$1',
+          [historical],
+        )
+      ).rows[0].d,
+      '2026-08-19',
+    );
+    await db.query(
+      "update private_mail_messages set received_at='2026-10-31T04:12:00Z' where id=$1",
+      [historical],
+    );
+    assert.equal(
+      (
+        await db.query(
+          'select report_day::text d from private_mail_messages where id=$1',
+          [historical],
+        )
+      ).rows[0].d,
+      '2026-10-31',
+    );
+    await db.query(
+      "update private_mail_messages set received_at=null,sent_at='2026-10-30T15:01:00Z' where id=$1",
+      [historical],
+    );
+    assert.equal(
+      (
+        await db.query(
+          'select report_day::text d from private_mail_messages where id=$1',
+          [historical],
+        )
+      ).rows[0].d,
+      '2026-10-31',
+    );
+    await db.query('delete from private_mail_messages where id=$1', [
+      historical,
+    ]);
+    console.log(
+      'PASS actual PostgreSQL date migration: collection-day misclassification reproduced and corrected, real receipt wins, KST midnight preserved',
+    );
+  }
   await db.exec('set role service_role;');
   const rpc = async (name, args = []) =>
     (

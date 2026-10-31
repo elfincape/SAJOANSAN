@@ -18,7 +18,8 @@ alter table public.private_mail_messages
  add column if not exists analysis_lease_until timestamptz,
  add column if not exists analysis_attempts integer not null default 0,
  add column if not exists analysis_next_at timestamptz default now(),
- add column if not exists report_day date generated always as ((created_at at time zone 'Asia/Seoul')::date) stored;
+ add column if not exists received_at timestamptz,
+ add column if not exists report_day date generated always as ((coalesce(received_at,sent_at) at time zone 'Asia/Seoul')::date) stored;
 create index if not exists private_mail_analysis_due on public.private_mail_messages(mailbox_id,analysis_next_at)
  where analysis_status in ('pending','processing','failed') and analysis_attempts<5;
 
@@ -251,7 +252,7 @@ $$;
 
 create or replace function public.private_mail_analysis_finish(p_message uuid,p_lease uuid,p_analysis jsonb)
 returns boolean language plpgsql security invoker set search_path='' as $$
-declare m public.private_mail_messages; b public.private_mailboxes; d text; page jsonb;
+declare m public.private_mail_messages; b public.private_mailboxes; d text; page jsonb; old_day date;
 begin
  if jsonb_typeof(p_analysis) is distinct from 'object' or octet_length(p_analysis::text)>65536 then raise exception 'ANALYSIS_VALUE'; end if;
  -- All operations touching both records lock mailbox first, including INSERT trigger.
@@ -260,11 +261,17 @@ begin
  if m.id is null or not public.private_mail_analysis_allowed(m.id)
  or m.analysis_lease is distinct from p_lease or m.analysis_status<>'processing'
  or m.analysis_lease_until is null or m.analysis_lease_until<=clock_timestamp() then return false; end if;
+ old_day=m.report_day;
  update public.private_mail_messages set analysis=p_analysis,analysis_status='ready',analysis_error=null,
- analysis_lease=null,analysis_lease_until=null,analysis_next_at=null where id=p_message;
- d=m.report_day::text;page=coalesce(b.briefing_pages->d,'{}'::jsonb);
- page=page||jsonb_build_object('revision',coalesce((page->>'revision')::integer,0)+1,'dirty',true);
- update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[d],page) where id=b.id;
+ sent_at=coalesce((p_analysis->'source'->>'sentAt')::timestamptz,sent_at),
+ received_at=(p_analysis->'source'->>'receivedAt')::timestamptz,
+ analysis_lease=null,analysis_lease_until=null,analysis_next_at=null where id=p_message returning * into m;
+ for d in select distinct x::text from unnest(array[m.report_day,old_day]) x where x is not null loop
+  if coalesce((b.briefing_pages->d->>'ownerPreviewHold')::boolean,false) then continue; end if;
+  page=coalesce(b.briefing_pages->d,'{}'::jsonb);
+  page=page||jsonb_build_object('revision',coalesce((page->>'revision')::integer,0)+1,'dirty',true);
+  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[d],page) where id=b.id returning * into b;
+ end loop;
  perform public.private_mail_dispatch_clear(b.id,'analyze',p_message::text);
  perform public.private_mail_dispatch(b.id);return true;
 end; $$;

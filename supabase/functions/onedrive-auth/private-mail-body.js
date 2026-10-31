@@ -48,3 +48,40 @@ export function emlHeaderText(bytes) {
       return new TextDecoder().decode(bytes.subarray(0, i));
   return '';
 }
+
+export function mailMessageTimes({ headers = '', sentAt, collectedAt }) {
+  const iso = (value) => {
+    const time = new Date(value);
+    if (!Number.isFinite(time.getTime())) throw Error('MAIL_DATE');
+    return time.toISOString();
+  };
+  const collected = iso(collectedAt),
+    fields = headers.replace(/\r?\n[\t ]+/g, ' ').split(/\r?\n/);
+  const headerDate = (value) => {
+    if (
+      typeof value !== 'string' ||
+      !/(?:[+-]\d{4}|\b(?:UT|UTC|GMT|[ECMP][SD]T))\b/i.test(value)
+    )
+      return null;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? new Date(time).toISOString() : null;
+  };
+  const declared = fields.find((line) => /^Date:/i.test(line));
+  const sent =
+    (declared &&
+      headerDate(declared.slice(declared.indexOf(':') + 1).trim())) ||
+    iso(sentAt);
+  const topReceived = fields.find((line) => /^Received:/i.test(line));
+  let received =
+    topReceived &&
+    headerDate(topReceived.slice(topReceived.lastIndexOf(';') + 1).trim());
+  if (received && Date.parse(received) > Date.parse(collected) + 300000)
+    received = null;
+  return {
+    sentAt: sent,
+    receivedAt: received || null,
+    collectedAt: collected,
+    reportAt: received || sent,
+    dateBasis: received ? 'received_header' : 'sent_header',
+  };
+}

@@ -201,7 +201,12 @@ export function DailyWorkList({
                           {ref.receivedAt ? (
                             <span>
                               {' '}
-                              · {ref.kind === 'mail' ? '수집' : '입력'}{' '}
+                              ·{' '}
+                              {ref.kind === 'mail'
+                                ? ref.dateBasis === 'received'
+                                  ? '수신'
+                                  : '발송'
+                                : '입력'}{' '}
                               {formatBriefingTimestamp(ref.receivedAt)}
                             </span>
                           ) : null}

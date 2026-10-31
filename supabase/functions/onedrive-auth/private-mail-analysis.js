@@ -1,3 +1,4 @@
+import { mailMessageTimes } from './private-mail-body.js';
 import { callLuna, LUNA_MODEL, lunaInference } from '../_shared/luna.js';
 import {
   normalizeMailAnalysis,
@@ -989,6 +990,14 @@ export async function analyzePrivateMail({
         typeof now === 'function' ? now() : (now ?? new Date()),
       ),
     };
+    const messageTimes = mailMessageTimes({
+      headers: loaded.headers,
+      sentAt: loaded.sent_at,
+      collectedAt: loaded.created_at,
+    });
+    mail.sent_at = messageTimes.sentAt;
+    mail.received_at = messageTimes.receivedAt;
+    mail.date_basis = messageTimes.dateBasis;
     const thread = extractMailThreadHeaders(loaded.headers);
     const context = mailOwnershipContext({
       text: mail.text,
@@ -1038,7 +1047,8 @@ export async function analyzePrivateMail({
           subject: mail.subject,
           sender: mail.sender,
           sent_at: mail.sent_at,
-          received_at: mail.created_at,
+          received_at: mail.received_at,
+          collected_at: mail.created_at,
         },
         related,
         images,
