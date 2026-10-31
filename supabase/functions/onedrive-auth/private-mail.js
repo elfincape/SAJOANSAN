@@ -568,6 +568,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     'private-mail-work-correction',
     'private-mail-analyze-one',
     'private-mail-remote-verify',
+    'private-mail-stress-verify',
     'private-mail-report-now',
   ];
   if ([...automationActions, ...filterActions].includes(action)) {
