@@ -12,6 +12,11 @@ export const PACKAGE_LIMIT = MAIL_METADATA_LIMIT;
 export const DATA_LIMIT = MAIL_DATA_LIMIT;
 export const DERIVED_FILE_LIMIT = MAIL_DERIVED_FILE_LIMIT;
 const digest = (data) => createHash('sha256').update(data).digest('hex');
+const databaseText = (value) =>
+  String(value || '')
+    .replaceAll('\0', '')
+    .slice(0, 500)
+    .toWellFormed();
 export function safeName(value) {
   const name =
     String(value || 'attachment')
@@ -85,8 +90,8 @@ export async function packageMessage(raw, uidl, { signal } = {}) {
   const result = {
     uidl: digest(uidl),
     hash: digest(raw),
-    subject: String(mail.subject || '').slice(0, 500),
-    sender: String(mail.from?.address || '').slice(0, 500),
+    subject: databaseText(mail.subject),
+    sender: databaseText(mail.from?.address),
     sent: new Date(sent).toISOString(),
     files,
   };
