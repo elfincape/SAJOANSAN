@@ -125,6 +125,9 @@ export function MailBriefingManualEntries({
       clearInterval(timer);
     };
   }, [hasPending, load, onChanged]);
+  useEffect(() => {
+    if (inputOpen) setFeedback('');
+  }, [inputOpen]);
   async function act(action: () => Promise<void>) {
     if (locked.current || disabled) return;
     locked.current = true;
