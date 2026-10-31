@@ -1,3 +1,7 @@
+import {
+  remoteMailImageManifest,
+  loadApprovedRemoteMailImages,
+} from './private-mail-remote-images.js';
 import { MAIL_RAW_LIMIT } from './private-mail-limits.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { mailBodyText, emlHeaderText } from './private-mail-body.js';
@@ -44,6 +48,7 @@ export function createMailSource({
   verify,
   privateDestination,
   privatePermissions,
+  remoteFetcher,
 }) {
   async function access(row, action) {
     sourceRow(row);
@@ -218,7 +223,13 @@ export function createMailSource({
       if (exclusion.excluded) return { ...base, exclusion };
       if (requiresMailPrivacyReview(row.subject + '\n' + text))
         throw Error('MAIL_PRIVACY_REVIEW');
+      const bodyHtml = row.files.find((file) => file.kind === 'html');
+      let remoteHtml = '';
+      if (!text.trim() && bodyHtml)
+        remoteHtml = new TextDecoder().decode(await bytes(bodyHtml));
       if (box.automation_config?.analysisScopes?.[row.id] === 'body_headers') {
+        if (!text.trim() && remoteMailImageManifest(remoteHtml).content.length)
+          throw Error('BODY_IMAGES_EXCLUDED');
         const eml = row.files.find((file) => file.kind === 'eml');
         const verifiedHeaders = eml ? await headers(eml) : '';
         return {
@@ -286,10 +297,25 @@ export function createMailSource({
           bytes: data,
         });
       }
+      if (!text.trim() && !images.length && remoteHtml) {
+        images.push(
+          ...(await loadApprovedRemoteMailImages({
+            html: remoteHtml,
+            sourceId: row.id,
+            approvedUrls:
+              box.automation_config?.remoteImages?.[row.id]?.approvedUrls,
+            fetcher: remoteFetcher,
+          })),
+        );
+      }
       if (verifiedHeaders === null)
         verifiedHeaders = eml ? await headers(eml) : '';
       return {
         ...base,
+        ...(box.automation_config?.analysisScopes?.[row.id] ===
+        'body_remote_images'
+          ? { analysisScope: 'body_remote_images' }
+          : {}),
         images,
         headers: verifiedHeaders,
         ...mailOwnershipContext({
@@ -300,7 +326,7 @@ export function createMailSource({
       };
     });
     if (source.exclusion?.excluded) return source;
-    if (source.analysisScope === 'body_headers')
+    if (['body_headers', 'body_remote_images'].includes(source.analysisScope))
       return { ...source, related: [] };
     const thread = extractMailThreadHeaders(source.headers);
     return {
@@ -323,6 +349,17 @@ export function createMailSource({
         row.analysis_filter_override !== 'include')
     )
       throw Error('NOTES_IMAGE_SOURCE');
+    if (descriptor.remoteUrl) {
+      const loaded = await loadMail(row);
+      const image = loaded.images?.find(
+        (item) =>
+          item.id === descriptor.id &&
+          item.remoteUrl === descriptor.remoteUrl &&
+          item.contentHash === descriptor.contentHash,
+      );
+      if (!image) throw Error('NOTES_IMAGE_SOURCE');
+      return { ...descriptor, bytes: image.bytes };
+    }
     const index = Number(descriptor.id.slice(descriptor.sourceId.length + 1)),
       file = row.files[index];
     if (!file || hexHash(file.content_hash) !== descriptor.contentHash)

@@ -2631,7 +2631,7 @@ console.log(
       !JSON.stringify(error).includes('PRIVATE_LUNA_TIMEOUT'),
   );
   for (const images of [
-    Array(4).fill({ mediaType: 'image/png', data: png }),
+    Array(6).fill({ mediaType: 'image/png', data: png }),
     [{ mediaType: 'image/png', data: 'A'.repeat(2800004) }],
   ])
     await assert.rejects(
@@ -5378,5 +5378,207 @@ console.log(
   );
   console.log(
     'PASS mail work continuity: request plus completion reply is one stable work, only latest progress, source history retained, owner status preserved',
+  );
+}
+
+{
+  const { remoteMailImageManifest, loadApprovedRemoteMailImages } =
+    await import('../supabase/functions/onedrive-auth/private-mail-remote-images.js');
+  const urls = Array.from(
+    { length: 5 },
+    (_, i) => 'https://cdn.vendor.com/static/uuid-' + i,
+  );
+  const html =
+    urls
+      .map((url) => '<img src="' + url + '" width="480" height="160">')
+      .join('') +
+    '<img src="https://cdn.vendor.com/open" width="0" height="0">';
+  const manifest = remoteMailImageManifest(html);
+  assert.equal(
+    remoteMailImageManifest('<img data-src="https://cdn.vendor.com/unused">')
+      .content.length,
+    0,
+  );
+  assert.equal(manifest.content.length, 5);
+  assert.equal(manifest.excluded.length, 1);
+  for (const url of [
+    'http://127.0.0.1/a',
+    'https://127.0.0.1/a',
+    'https://localhost/a',
+    'https://127.0.0.1.nip.io/a',
+    'https://safe.vendor.com/a?recipient=owner',
+    'https://user:pass@safe.vendor.com/a',
+  ])
+    assert.equal(
+      remoteMailImageManifest('<img src="' + url + '">').content.length,
+      0,
+    );
+  let calls = 0;
+  const bytes = Uint8Array.from(
+    atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAeAAAACgAQAAAAD8gILgAAADuklEQVR42u2Zz2skRRTHP1XTZHohMo0oTCAwrXjwJCMIxkumAwu7R/8Dc/S4HsRVYqYNIe5tB7yKzr+wtxzCbmfJIYKYuXlZ3N5lYebgoYcMbvfY3eUh86MTRao6CiL9TvOa+UxVvXqv37dqhKK8SSq4gv+3sHWa9Eai5vfFu+LtzMnEDZm0hK0FZ/l6Ei/8SQwwijRHTlNHQppC5+wsOP+1dj7Oh88Kv/d3sJArk3Thv7ABbEc7YCpcfte2DKNt2SsLf2AWbeXLD68+nWjSKq3nrW+HaU6L7tnwe6XO41rYSZSGSWpT4V79xeZAd80vQfrQ9Tv+xTOR1g+1M+wvHrsGuS2Cud8uURjh3I9TI3iaAv7cX48BBqHuPt+Yfz724JXXQMnxbU14ZQXw5v6qDdDWW7qoGl0FV3AF/zfg6agUnBW8zB377CtHl1apUkqpZKiUUnEj6CiR1pWeLRpVEyA5tEP1fvqkVMCkO/C5KXSnbQHj+/u/uz89GNaTj1eJ8r1PDwxGjh7l+YhR8AUAfbOtGoYv05DG040y+3z6iZU4OLs3gbZvCDueJW1gDxizbZhhhWbXDkzTM99Z+A3z3C4sdGAIR0Gax8AuqxOQuwdTA3ijd7cegTwiD8N+/0hF+rBYe7NnuSBOqd9+hvjBestkq7ZWZRM4wHLcgD1pa5fk0vKuMrNiVeWm6VlQQ2pavwZcy8u/PYW8xrSrdlPBFfwPwpNyskSSLU9kAJl3DPcSu9S0JwSe8s3X3ASo0QrZFjrXJH8+ea+yjdAc2QKyk/b4vvzyQpaYNnc2iYLuJVmiXG34M4bhzs5ClvSBkTa8z+mdvYUsGXtQCwyi7Xh7C1lCsI21brRVy0A1tgHHBFabBVFjXBheucLoAlGQz2TJzCI9WD70YKN3NJMlEAR94hd6sDjxYe2N05ksGZ8c99Ta555men4FON6tuAkcJOApsJummsRYllypZzNtcLm5G8qSK7CZLLk8bUNZUmmSCq7gfxHul4EfF/3esWcEz67y+8oH/OU9uQ6sNmft9OLI3rhjAudbhbGUZ9K0LPBb3fybnz94nn2N+5FvFrCMNmk8jUAE/bzEVtWe1A6/k3e5dEWlC1uO5QJPkRCYwtmFivC9mHHPFE6XylPzn5cCnFwIgXf85L2G0bRrDMqWhwTfn0uQ12n9aAbLR+7DPCw5sni8dVL34Dn3TGELgk79tzZ4v/CqKa1UutAh5+b3JLJwvjCOtgjKvsMuKQMnKv0CvObIVbup4Aqu4FL2B6tHQcCfFVUfAAAAAElFTkSuQmCC',
+    ),
+    (c) => c.charCodeAt(0),
+  );
+  const args = {
+    html,
+    sourceId: '11111111-1111-4111-8111-111111111111',
+    approvedUrls: urls,
+    fetcher: async (url, options) => {
+      calls++;
+      assert.ok(urls.includes(url));
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.credentials, 'omit');
+      assert.equal(options.referrerPolicy, 'no-referrer');
+      return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+    },
+  };
+  await assert.rejects(
+    () =>
+      loadApprovedRemoteMailImages({ ...args, approvedUrls: urls.slice(0, 4) }),
+    /REMOTE_IMAGE_REVIEW/,
+  );
+  assert.equal(calls, 0);
+  const images = await loadApprovedRemoteMailImages(args);
+  assert.equal(images.length, 1);
+  assert.equal(calls, 5);
+  assert.equal(images[0].id, args.sourceId + ':0');
+  await assert.rejects(
+    () => loadApprovedRemoteMailImages({ ...args, fetcher: undefined }),
+    /REMOTE_IMAGE_REVIEW/,
+  );
+  assert.ok(
+    images.every((x) => x.width === 480 && x.height === 160 && x.remoteUrl),
+  );
+  await assert.rejects(
+    () =>
+      loadApprovedRemoteMailImages({
+        ...args,
+        fetcher: async () =>
+          new Response('not image', {
+            headers: { 'content-type': 'text/html' },
+          }),
+      }),
+    /REMOTE_IMAGE_SOURCE/,
+  );
+  await assert.rejects(
+    () =>
+      loadApprovedRemoteMailImages({
+        ...args,
+        fetcher: async () =>
+          new Response(bytes, {
+            headers: {
+              'content-type': 'image/png',
+              'content-length': '5000000',
+            },
+          }),
+      }),
+    /IMAGE_LIMIT|REMOTE_IMAGE_SOURCE/,
+  );
+  assert.throws(
+    () =>
+      remoteMailImageManifest(html + '<img src="https://cdn.vendor.com/six">'),
+    /IMAGE_LIMIT/,
+  );
+  console.log(
+    'PASS image-only HTML fallback: five extensionless body images, tracking exclusion, exact per-message URL consent, no private/IP/query/credential URLs, no auth/referrer/redirects, MIME and byte bounds; mocked downloads only',
+  );
+}
+{
+  const { analyzePrivateMail } =
+    await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const source = {
+    id: '11111111-1111-4111-8111-111111111111',
+    uidl_hash: 'a'.repeat(64),
+    subject: '숙소 참고',
+    sender: 'sender@example.test',
+    sent_at: '2026-10-30T01:00:00Z',
+    created_at: '2026-10-30T02:00:00Z',
+    text: '숙소 지원 참고 자료입니다.',
+  };
+  let writes = 0,
+    code;
+  const result = await analyzePrivateMail({
+    messageId: source.id,
+    key: 'fixture-key',
+    loadMail: async () => source,
+    intentOverride: 'reference',
+    fetcher: async () =>
+      lunaResponseFixture([
+        {
+          type: 'text',
+          text: JSON.stringify({
+            intent: { kind: 'reference', evidence: source.text },
+            group: null,
+            summary: [],
+            issues: [],
+            tasks: [],
+            waiting: [],
+            updates: [],
+            imageFacts: [],
+            imageDecisions: [],
+            imageItems: { tasks: [], issues: [], waiting: [] },
+          }),
+        },
+      ]),
+    store: {
+      claim: async () => ({ row: source, lease: 'fixture-lease' }),
+      finish: async () => {
+        writes++;
+        return true;
+      },
+      fail: async (value) => {
+        code = value.code;
+        return true;
+      },
+    },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(code, 'ANALYSIS_SUMMARY_EMPTY');
+  assert.equal(writes, 0);
+  console.log(
+    'PASS empty reference summary is not stored as ready; previous analysis remains untouched and targeted retry stays available',
+  );
+}
+
+{
+  const { dailyWorkItems } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const id = '11111111-1111-4111-8111-111111111111';
+  const source = {
+    id,
+    subject: '이미지형 소식지',
+    sender: 'sender@example.test',
+    intent: 'reference',
+    sentAt: '2026-10-30T01:00:00Z',
+  };
+  const mail = {
+    source,
+    summary: [],
+    imageFacts: [
+      {
+        imageId: id + ':0',
+        text: '가상 서비스 기능 개선 안내입니다.',
+        confidence: 'readable',
+      },
+      { imageId: id + ':1', text: '제외할 서명 정보', confidence: 'readable' },
+    ],
+    imageDecisions: [
+      { imageId: id + ':0', kind: 'business_document', include: true },
+      { imageId: id + ':1', kind: 'signature', include: false },
+    ],
+  };
+  const items = dailyWorkItems({
+    groups: [{ name: '기타', threads: [{ mails: [mail] }] }],
+    tasks: [],
+    issues: [],
+    waiting: [],
+    resolvedWaiting: [],
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].category, 'reference');
+  assert.deepEqual(items[0].summary, ['가상 서비스 기능 개선 안내입니다.']);
+  console.log(
+    'PASS image-only reference uses readable included business-image summary, not subject-only output or signature text',
   );
 }

@@ -166,6 +166,28 @@ export function isRoutineMail(mail) {
       /점검|보고|실적/.test(mail.source?.subject ?? ''))
   );
 }
+function mailSummaryTexts(mail) {
+  if (mail.summary?.length) return mail.summary.map((item) => item.text);
+  const included = new Set(
+    (mail.imageDecisions ?? [])
+      .filter(
+        (item) =>
+          item.include &&
+          ['business_document', 'business_scene'].includes(item.kind),
+      )
+      .map((item) => item.imageId),
+  );
+  return [
+    ...new Set(
+      (mail.imageFacts ?? [])
+        .filter(
+          (item) =>
+            item.confidence === 'readable' && included.has(item.imageId),
+        )
+        .map((item) => item.text),
+    ),
+  ].slice(0, 6);
+}
 export function dailyWorkItems(
   view,
   manual = {},
@@ -180,13 +202,10 @@ export function dailyWorkItems(
       for (const mail of thread.mails ?? []) {
         const routine = isRoutineMail(mail);
         if (routine) routineIds.add(mail.source.id);
-        summaries.set(
-          mail.source.id,
-          (mail.summary ?? []).map((item) => item.text),
-        );
+        summaries.set(mail.source.id, mailSummaryTexts(mail));
         references.set(mail.source.id, {
           source: mail.source,
-          summary: (mail.summary ?? []).map((item) => item.text),
+          summary: mailSummaryTexts(mail),
           context: group.name,
           reportKind: routine
             ? 'routine'

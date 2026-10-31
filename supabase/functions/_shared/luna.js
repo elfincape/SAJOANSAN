@@ -220,7 +220,7 @@ export async function callLuna({
     maxTokens > 16000
   )
     throw failure('MODEL_FAILED', 500, 'configuration');
-  if (!Array.isArray(images) || images.length > 3)
+  if (!Array.isArray(images) || images.length > 5)
     throw failure('IMAGE_LIMIT', 400, 'image_limit');
   let total = 0;
   for (const image of images) {

@@ -130,7 +130,7 @@ export const MAIL_ANALYSIS_SCHEMA = schemaObject({
       },
       include: { type: 'boolean' },
     }),
-    3,
+    5,
   ),
   imageItems: schemaObject({
     tasks: schemaArray(schemaImageItem('pending'), 15),
@@ -163,6 +163,10 @@ const codes = new Set([
   'IMAGE_PRIVACY_REVIEW',
   'IMAGE_CONTEXT_REVIEW',
   'IMAGE_TYPE_UNSUPPORTED',
+  'REMOTE_IMAGE_REVIEW',
+  'REMOTE_IMAGE_SOURCE',
+  'BODY_IMAGES_EXCLUDED',
+  'ANALYSIS_SUMMARY_EMPTY',
 ]);
 const statuses = {
   tasks: ['pending', 'complete'],
@@ -427,7 +431,7 @@ function normalizeOwnership(parsed, context, intentOverride, sourceId) {
 }
 
 function normalizeImageDecisions(raw, images) {
-  if (!Array.isArray(raw) || raw.length !== images.length || raw.length > 3)
+  if (!Array.isArray(raw) || raw.length !== images.length || raw.length > 5)
     throw Error('IMAGE_EVIDENCE');
   const known = new Set(images.map((image) => image.source.id)),
     seen = new Set();
@@ -606,7 +610,7 @@ function normalizeUpdates(updates, related, mail) {
 
 async function prepareImages(images) {
   if (images == null) return [];
-  if (!Array.isArray(images) || images.length > 3) throw Error('IMAGE_LIMIT');
+  if (!Array.isArray(images) || images.length > 5) throw Error('IMAGE_LIMIT');
   const ids = new Set(),
     hashes = new Set();
   let total = 0;
@@ -666,6 +670,7 @@ async function prepareImages(images) {
         height: image.height,
         contentHash: hash,
         byteLength: bytes.length,
+        ...(image.remoteUrl ? { remoteUrl: image.remoteUrl } : {}),
       },
       content: { mediaType: image.mediaType, data: btoa(binary) },
     });
@@ -744,7 +749,7 @@ summary에는 전달 사실/핵심 조건/문서 내용만 쓰세요. 미승인�
 본문 기반 항목의 evidence/completionEvidence는 currentBody 또는 documentBody 또는 mail.subject의 연속된 정확한 인용이어야 합니다.
 group은 원문에서 명시한 업체/거래처 이름만 {name,evidence}로 쓰고 없으면 null입니다.
 summary(최대 3), issues(최대 10), tasks(최대 15), waiting(최대 10)은 배열입니다.
-summary는 원문 문장을 나열하지 말고, 읽는 사람이 바로 판단할 수 있게 1) 누가 어떤 상황/요청인지 2) 중요한 금액·수량·기간·변경 조건 3) 명시적으로 요청된 행동이 있다면 그 요청만 짧고 자연스럽게 통합하세요. 참고 자료에는 사용자 결정/행동을 덧붙이지 마세요. 의미가 겹치는 항목은 합치세요.
+참고·정기보고도 읽을 수 있는 내용이 있으면 summary를 최소1개 작성하세요. 사용자 할 일이 없다는 이유로 요약을 비우지 마세요. summary는 원문 문장을 나열하지 말고, 읽는 사람이 바로 판단할 수 있게 1) 누가 어떤 상황/요청인지 2) 중요한 금액·수량·기간·변경 조건 3) 명시적으로 요청된 행동이 있다면 그 요청만 짧고 자연스럽게 통합하세요. 참고 자료에는 사용자 결정/행동을 덧붙이지 마세요. 의미가 겹치는 항목은 합치세요.
 주소·중개업소 연락처·기안일·서명·명함·전화·팩스·인사말·회신 인용문은 핵심 업무 판단에 꼭 필요한 경우에만 사용하고 단순 상세 나열은 빼세요.
 승인 결과 근거가 없으면 '미승인/승인 대기 중'을 단정하지 마세요. 사용자를 향한 직접 승인 요청이 확인된 경우에만 그 요청을 tasks에 넣으세요. 참고문서에는 승인 여부를 확인하라는 업무를 덧붙이지 말고 같은 업무를 issues/tasks/waiting에 중복하지 마세요.
 정상적인 정기보고·일일점검·정기실적 자료는 intent.kind=routine으로 분류하고 별도 할 일을 만들지 마세요. 정기보고 안에 온도 이탈·사고 등 이상이 있으면 해당 문제와 상태·대응만 issues로 추출하세요. 같은 업무의 후속 메일은 related의 기존 ref에 updates로 최신 상태와 이번 변경점만 연결하고 같은 업무를 tasks에 다시 만들지 마세요. 요청 대상이 사용자임을 확인할 수 없으면 임의 할 일이 아니라 intent.kind=unknown으로 두세요.
@@ -769,7 +774,7 @@ updates.evidence는 현재 currentBody의 정확한 연속 인용이어야 합�
 각 사진마다 imageDecisions:[{imageId,kind:"business_document"|"business_scene"|"signature"|"business_card"|"logo"|"irrelevant"|"uncertain",include:boolean}]를 정확히 하나씩 반환하세요. include=true는 실제 업무 문서/유효 현장 사진만 허용합니다. 서명·명함·로고·불명확 사진은 include=false이고 상세 이름/주소/연락처 OCR을 imageFacts에 쓰지 마세요. 파일이 inline/image001이라는 이유만으로 유효 업무 사진을 제외하지 마세요.
 사진 정보는 본문 인용으로 꾸미지 말고 imageFacts:[{imageId,text,confidence:"readable"|"uncertain"}]에만 기록하세요.
 readable은 판독 가능이라는 뜻이며 검증 완료가 아닙니다. 흐린 숫자/수량/금액/날짜/필기/가려진 글자는 추측하지 말고 불명확한 부분을 명시하며 uncertain으로 두세요.
-업무 사진에서 보이는 문서 글자나 객관적 사실만 기록하세요. 사고 원인, 책임, 신원 또는 보이지 않는 내용을 추정하지 마세요.
+본문이 이미지로만 구성된 소식지·자료이면 imageFacts.text에 핵심 내용을 짧은 자연어로 정리하세요. 문서 글자 전체를 전사하거나 교육·홍보 안내를 사용자 할 일로 만들지 마세요. 업무 사진에서 보이는 문서 글자나 객관적 사실만 기록하세요. 사고 원인, 책임, 신원 또는 보이지 않는 내용을 추정하지 마세요.
 사진 근거 업무 항목은 imageItems:{tasks:[],issues:[],waiting:[]}에 {imageId,text,evidence,confidence,status}로 쓰세요.
 imageItems.evidence는 같은 imageId의 imageFacts.text와 정확히 같아야 합니다. 사진의 확실성이 낮으면 항목도 uncertain입니다.
 사진만 근거로 업무 완료/해결, 확정 담당자/기한을 판정하지 마세요. tasks status는 pending, issues는 needs_confirmation, waiting은 waiting만 허용합니다.
@@ -1071,8 +1076,8 @@ export async function analyzePrivateMail({
     evidenceContext = { parsed, mail };
     const analysis = normalizeMailAnalysis(parsed, mail);
     analysis.inference = lunaInference(response);
-    if (loaded.analysisScope === 'body_headers')
-      analysis.source.analysisScope = 'body_headers';
+    if (['body_headers', 'body_remote_images'].includes(loaded.analysisScope))
+      analysis.source.analysisScope = loaded.analysisScope;
     analysis.source.thread = thread;
     const ownership = normalizeOwnership(
       parsed,
@@ -1137,6 +1142,13 @@ export async function analyzePrivateMail({
     analysis.review.excludedImages = decisions.filter(
       (item) => !item.include,
     ).length;
+    if (
+      ['reference', 'routine'].includes(analysis.source.intent) &&
+      (mail.text.trim() || images.length) &&
+      !analysis.summary.length &&
+      !analysis.imageFacts.some((fact) => fact.confidence === 'readable')
+    )
+      throw Error('ANALYSIS_SUMMARY_EMPTY');
     reconcileMailItems(analysis, row.analysis);
     phase = 'STORE_FAILED';
     const saved = await store.finish({ messageId, lease, analysis });
