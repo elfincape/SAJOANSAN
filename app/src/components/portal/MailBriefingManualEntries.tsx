@@ -59,8 +59,10 @@ export function MailBriefingManualEntries({
   showItems = true,
   onChanged,
   inputOpen = false,
+  refreshKey = 0,
   onInputClose,
 }: {
+  refreshKey?: number;
   inputOpen?: boolean;
   onInputClose?: () => void;
   day: string;
@@ -107,7 +109,7 @@ export function MailBriefingManualEntries({
       mounted.current = false;
       request.current++;
     };
-  }, [load]);
+  }, [load, refreshKey]);
   const hasPending = data?.entries.some((entry) =>
     ['pending', 'processing'].includes(entry.status),
   );

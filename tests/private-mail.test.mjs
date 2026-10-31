@@ -6039,3 +6039,55 @@ console.log(
     'PASS image-only reference/routine evidence may use validated included readable facts; image evidence alone does not confirm personal request or create tasks',
   );
 }
+
+{
+  const { dailyBriefingView, renderDailyBriefing } =
+    await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const id = '11111111-1111-4111-8111-111111111111';
+  const image = (index) => ({
+    id: id + ':' + index,
+    name: '업무자료' + index + '.png',
+    mediaType: 'image/png',
+    width: 480,
+    height: 160,
+    byteLength: 1000,
+    contentHash: String(index + 1).repeat(64),
+  });
+  const mail = {
+    source: {
+      id,
+      uidl: 'a'.repeat(64),
+      subject: '과거 소식지',
+      sender: 'sender@example.test',
+      sentAt: '2026-10-30T01:00:00Z',
+      intent: 'reference',
+      images: [0, 1, 2, 3].map(image),
+    },
+    revision: 1,
+    summary: [{ text: '과거 참고 소식지 안내', evidence: '소식지 안내' }],
+    tasks: [],
+    issues: [],
+    waiting: [],
+    updates: [],
+    imageFacts: [],
+    imageItems: { tasks: [], issues: [], waiting: [] },
+  };
+  const options = { now: '2026-10-31T03:00:00Z', analyses: [mail] };
+  const view = dailyBriefingView(options);
+  assert.equal(
+    view.workItems.length,
+    0,
+    'past reference must not become today work',
+  );
+  assert.doesNotThrow(
+    () => renderDailyBriefing(options),
+    'four valid analyzed images must not block the next day report',
+  );
+  mail.source.images.push(image(4));
+  assert.doesNotThrow(() => renderDailyBriefing(options));
+  mail.source.images.push(image(5));
+  assert.throws(() => renderDailyBriefing(options), /IMAGE_SOURCE/);
+  console.log(
+    'PASS report image contract: four/five valid source images do not block later-day reports, past reference remains hidden, six still rejected',
+  );
+}

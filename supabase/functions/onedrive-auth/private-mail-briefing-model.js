@@ -765,7 +765,7 @@ export function dailyBriefingView({
     const images = mail.source.images ?? [];
     if (
       !Array.isArray(images) ||
-      images.length > 3 ||
+      images.length > 5 ||
       !Array.isArray(mail.imageFacts ?? []) ||
       (mail.imageFacts?.length ?? 0) > 30
     )

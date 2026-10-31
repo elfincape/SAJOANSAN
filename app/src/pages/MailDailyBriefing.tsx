@@ -90,6 +90,7 @@ function DailyOverview() {
   const [feedback, setFeedback] = useState('');
   const [filtersBusy, setFiltersBusy] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
+  const [manualRefresh, setManualRefresh] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
   const mounted = useRef(false);
   const request = useRef(0);
@@ -193,6 +194,7 @@ function DailyOverview() {
   function applyDate() {
     if (saving.current || loading || !validDay(dateInput)) return;
     if (dateInput === day) {
+      setManualRefresh((value) => value + 1);
       void load();
       return;
     }
@@ -476,6 +478,7 @@ function DailyOverview() {
       </div>
       <div id="manual-messages" tabIndex={-1}>
         <MailBriefingManualEntries
+          refreshKey={manualRefresh}
           inputOpen={messageOpen}
           onInputClose={() => setMessageOpen(false)}
           day={day}
