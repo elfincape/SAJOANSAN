@@ -749,7 +749,7 @@ export function renderBriefingWorkNote(items) {
     !item.needsConfirmation;
   const groups = [
     [
-      '오늘 챙길 일',
+      'To Do',
       visible.filter(
         (item) =>
           item.category === 'task' && !completed(item) && !progress(item),
