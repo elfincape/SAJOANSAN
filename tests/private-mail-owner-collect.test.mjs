@@ -13,6 +13,25 @@ const raw = Buffer.from(
   'Date: Sat, 17 Oct 2026 00:00:00 +0000\r\nFrom: Sample <sender@example.test>\r\nSubject: =?UTF-8?B?7YWM7Iqk7Yq4?=\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hello</p><script>evil()</script><img src="https://track.test">\r\n--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="../../evil.exe"\r\nContent-Transfer-Encoding: base64\r\n\r\nTVo=\r\n--b--\r\n',
 );
 const packaged = await packageMessage(raw, Buffer.from('uid-1'));
+for (const subject of ['업무\0자료', '가'.repeat(499) + '🚚배차']) {
+  const original = Buffer.from(
+    'Date: Sat, 17 Oct 2026 00:00:00 +0000\r\nFrom: sender@example.test\r\nSubject: =?UTF-8?B?' +
+      Buffer.from(subject).toString('base64') +
+      '?=\r\n\r\n원본 보존',
+  );
+  const result = await packageMessage(original, Buffer.from('unicode-case'));
+  assert.equal(
+    result.subject,
+    subject.replaceAll('\0', '').slice(0, 500).toWellFormed(),
+  );
+  assert.equal(result.subject.isWellFormed(), true);
+  assert.ok(!result.subject.includes('\0'));
+  assert.equal(result.files[0].bytes, original);
+  assert.equal(
+    result.hash,
+    createHash('sha256').update(original).digest('hex'),
+  );
+}
 const nativeTimeout = AbortSignal.timeout;
 let finishAcknowledged = false;
 try {
