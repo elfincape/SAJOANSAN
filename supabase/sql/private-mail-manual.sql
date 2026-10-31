@@ -76,7 +76,7 @@ $$;
 
 create or replace function public.private_mail_manual_finish(p_box uuid,p_user uuid,p_entry uuid,p_lease uuid,p_items jsonb,p_authored date default null,p_inference jsonb default '{}')
 returns jsonb language plpgsql security invoker set search_path='' as $$
-declare b public.private_mailboxes; e jsonb; item jsonb; candidate jsonb; n integer=0; d date; completed_day date; usage_value jsonb;
+declare b public.private_mailboxes; e jsonb; item jsonb; candidate jsonb; n integer=0; d date; completed_day date; usage_value jsonb; source_text text; source_value jsonb;
 begin
  select * into b from public.private_mailboxes where id=p_box for update;e=b.manual_entries->p_entry::text;
  if not public.private_mail_manual_allowed(p_box,p_user) or e is null or p_lease is null
@@ -87,7 +87,7 @@ begin
  if p_inference<>'{}'::jsonb then
   usage_value=p_inference->'usage';
   if exists(select 1 from jsonb_object_keys(p_inference) k where k not in ('provider','model','usage'))
-  or p_inference->>'provider' is distinct from 'aiapiflow'
+  or coalesce(p_inference->>'provider','') not in ('aiapiflow','openai')
   or jsonb_typeof(p_inference->'model') is distinct from 'string' or coalesce(p_inference->>'model','') !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'
   or jsonb_typeof(usage_value) is distinct from 'object' then raise exception 'MANUAL_INFERENCE'; end if;
   if exists(select 1 from jsonb_each(usage_value) u where u.key not in ('input_tokens','output_tokens','total_tokens','cached_input_tokens','reasoning_tokens')
@@ -96,14 +96,23 @@ begin
   then raise exception 'MANUAL_INFERENCE'; end if;
  end if;
  d=((e->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date;
+ source_text=e->>'text';
+ if left(ltrim(source_text),1)='{' then
+  begin source_value=source_text::jsonb;
+  exception when invalid_text_representation then source_value=null; end;
+  if source_value->>'schema'='sajo-daily-work-v1' then
+   if jsonb_typeof(source_value->'sourceText') is distinct from 'string' then raise exception 'MANUAL_FORMAT'; end if;
+   source_text=source_value->>'sourceText';
+  end if;
+ end if;
  for item in select value from jsonb_array_elements(p_items) loop
   n=n+1;
   if jsonb_typeof(item) is distinct from 'object' or item->>'itemId' is distinct from 'item-'||lpad(n::text,3,'0')
   or item->>'ref' is distinct from (p_entry::text||':manual:'||(item->>'itemId'))
-  or coalesce(item->>'kind','') not in ('task','dispatch','issue')
+  or coalesce(item->>'kind','') not in ('task','dispatch','issue','reference','waiting')
   or length(btrim(coalesce(item->>'text',''))) not between 1 and 500
   or length(btrim(coalesce(item->>'evidence',''))) not between 1 and 2000
-  or position((item->>'evidence') in (e->>'text'))=0
+  or source_text is null or position((item->>'evidence') in source_text)=0
   or item->>'visibleFrom' is distinct from d::text
   or (item->>'receivedAt')::timestamptz is distinct from (e->>'submittedAt')::timestamptz
   or (item->>'submittedAt')::timestamptz is distinct from (e->>'submittedAt')::timestamptz

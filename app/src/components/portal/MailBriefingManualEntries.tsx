@@ -55,10 +55,14 @@ export function MailBriefingManualEntries({
   day,
   disabled = false,
   onBusyChange,
+  showItems = true,
+  onChanged,
 }: {
   day: string;
   disabled?: boolean;
   onBusyChange: (busy: boolean) => void;
+  showItems?: boolean;
+  onChanged?: () => void;
 }) {
   const [text, setText] = useState('');
   const [referenceDate, setReferenceDate] = useState('');
@@ -159,13 +163,14 @@ export function MailBriefingManualEntries({
         return;
       }
       submission.current = null;
+      onChanged?.();
       if (draftVersion.current === version) {
         setText('');
         setReferenceDate('');
       }
       setFeedback(
         refreshed
-          ? '메시지를 분석해 추가했습니다. 미완료 업무는 접수일부터 계속 표시됩니다.'
+          ? '업무를 추가했습니다. 미완료 업무는 접수일부터 계속 표시됩니다.'
           : '메시지는 추가했지만 목록을 갱신하지 못했습니다. 목록을 새로고침해 주세요.',
       );
     });
@@ -295,7 +300,7 @@ export function MailBriefingManualEntries({
           }
           onClick={() => void add()}
         >
-          분석해서 추가
+          업무 추가
         </button>
         <button
           type="button"
@@ -303,7 +308,9 @@ export function MailBriefingManualEntries({
           disabled={busy || loading || disabled}
           onClick={() => {
             setFeedback('');
-            void load();
+            void load().then((refreshed) => {
+              if (refreshed) onChanged?.();
+            });
           }}
         >
           메시지 목록 새로고침
@@ -320,38 +327,40 @@ export function MailBriefingManualEntries({
             ? '메시지 업무를 불러오는 중…'
             : feedback}
       </p>
-      <div aria-busy={loading}>
-        {entries
-          .filter((entry) => entry.status !== 'ready')
-          .map((entry) => (
-            <p className="daily-task-meta" key={entry.entryId}>
-              {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
-              {entry.status === 'processing'
-                ? '분석 중'
-                : '분석 실패 · 메시지 내용을 확인해 다시 시도해 주세요.'}
-            </p>
-          ))}
-        <h3>
-          미완료 <span className="daily-count">{open.length}</span>
-        </h3>
-        {open.length ? (
-          <ul className="daily-items manual-open">
-            {open.map(({ entry, item }) => row(entry, item))}
-          </ul>
-        ) : !loading ? (
-          <p className="daily-empty">미완료 메시지 업무가 없습니다.</p>
-        ) : null}
-        <details className="manual-completed">
-          <summary>완료 기록 {completed.length}건</summary>
-          {completed.length ? (
-            <ul className="daily-items">
-              {completed.map(({ entry, item }) => row(entry, item))}
+      {showItems ? (
+        <div aria-busy={loading}>
+          {entries
+            .filter((entry) => entry.status !== 'ready')
+            .map((entry) => (
+              <p className="daily-task-meta" key={entry.entryId}>
+                {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
+                {entry.status === 'processing'
+                  ? '분석 중'
+                  : '분석 실패 · 메시지 내용을 확인해 다시 시도해 주세요.'}
+              </p>
+            ))}
+          <h3>
+            미완료 <span className="daily-count">{open.length}</span>
+          </h3>
+          {open.length ? (
+            <ul className="daily-items manual-open">
+              {open.map(({ entry, item }) => row(entry, item))}
             </ul>
-          ) : (
-            <p className="daily-empty">이 날짜의 완료 기록이 없습니다.</p>
-          )}
-        </details>
-      </div>
+          ) : !loading ? (
+            <p className="daily-empty">미완료 메시지 업무가 없습니다.</p>
+          ) : null}
+          <details className="manual-completed">
+            <summary>완료 기록 {completed.length}건</summary>
+            {completed.length ? (
+              <ul className="daily-items">
+                {completed.map(({ entry, item }) => row(entry, item))}
+              </ul>
+            ) : (
+              <p className="daily-empty">이 날짜의 완료 기록이 없습니다.</p>
+            )}
+          </details>
+        </div>
+      ) : null}
     </section>
   );
 }

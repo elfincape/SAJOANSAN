@@ -128,12 +128,16 @@ import assert from 'node:assert/strict';
     () =>
       handleApiManagement(
         'api-admin-default',
-        { provider: 'openai', model: 'gpt-6-absent-model', revision: 3 },
+        { provider: 'openai', model: 'gpt-6-luna', revision: 3 },
         { role: 'admin', id: 'owner' },
-        ctx,
+        { ...ctx, fetcher: async () => Response.json({ data: [] }) },
       ),
     /AI_MODEL_UNAVAILABLE/,
   );
+  assert.equal(modelCapabilities('openai', 'gpt-4o-search-preview'), null);
+  assert.equal(modelCapabilities('openai', 'gpt-4o-mini-search-preview'), null);
+  assert.equal(modelCapabilities('aiapiflow', 'claude-3-haiku-20240307'), null);
+  assert.equal(modelCapabilities('aiapiflow', 'claude-3-opus-20240229'), null);
   assert.equal(current.model, 'gpt-6-luna');
   assert.equal(writes, 2);
   console.log(
@@ -900,11 +904,15 @@ const report = briefing.renderDailyBriefing({
 });
 assert.equal(report.title, '261030 일일정리');
 assert.equal(report.sourceIds.length, 1);
-assert.equal((report.html.match(/<h3>/g) || []).length, 1);
+assert.equal(
+  (report.html.match(/<h3>/g) || []).length,
+  0,
+  'actionable work has no duplicate mail-summary section',
+);
 assert.ok(!report.html.includes('<img'));
 assert.ok(report.html.includes('&lt;img'));
 assert.ok(
-  report.html.includes('메일 요약') &&
+  !report.html.includes('메일 요약') &&
     !report.html.includes('정리된 이슈 없음') &&
     report.html.includes('할 일'),
 );
@@ -1394,13 +1402,11 @@ const approvedReport = briefing.renderDailyBriefing({
   analyses: [approvedAnalysis],
 });
 for (const label of [
-  '메일 요약',
-  '주요 이슈',
-  '회신·확인 대기',
+  '진행 이슈·회신 대기',
   '직접 메모',
   '최종 업데이트',
   '평택센터',
-  '확인 필요',
+  '진행 중',
   '김담당',
   '2026-10-30 15:22',
 ])
@@ -2746,7 +2752,8 @@ console.log(
   assert.ok(!report.html.includes('메일 요약'));
   assert.ok(!report.html.includes('정리된 메일 없음'));
   assert.ok(!report.html.includes(original));
-  assert.ok(!report.html.includes(entryId));
+  assert.ok(!report.html.replace(/<[^>]*>/g, '').includes(entryId));
+  assert.ok(report.html.includes('?entry=' + entryId));
   assert.ok(!report.html.includes('23:59'));
   assert.ok(report.sourceIds.includes(entryId));
   console.log(
@@ -3637,5 +3644,288 @@ console.log(
   assert.equal(calls, 0);
   console.log(
     'PASS Luna minimum output limit: invalid allocation rejected before provider',
+  );
+}
+{
+  const { dailyWorkItems, normalizeDailyWork, renderWorkSections } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const { readStructuredWorkInput } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const first = '11111111-1111-4111-8111-111111111111';
+  const second = '22222222-2222-4222-8222-222222222222';
+  const third = '33333333-3333-4333-8333-333333333333';
+  const ref = first + ':manual:item-001';
+  const base = { groups: [], tasks: [], issues: [], waiting: [] };
+  const original = {
+    entryId: first,
+    submittedAt: '2026-10-30T01:00:00Z',
+    items: [
+      {
+        ref,
+        kind: 'dispatch',
+        text: '11/2 운행 차량 배차',
+        serviceDate: '2026-11-02',
+        evidence: '11월 2일 배차 요청',
+        status: 'complete',
+        done: true,
+        completedAt: '2026-10-30T04:00:00Z',
+        ownerStateAt: '2026-10-30T04:00:00Z',
+      },
+    ],
+  };
+  const followup = {
+    entryId: second,
+    submittedAt: '2026-10-31T01:00:00Z',
+    items: [
+      {
+        ref: second + ':manual:item-001',
+        workRef: ref,
+        kind: 'reference',
+        text: '차량 정보 참고',
+        evidence: '차량 정보 참고',
+        status: 'pending',
+        done: false,
+      },
+    ],
+  };
+  const works = dailyWorkItems(base, {
+    workContext: [original],
+    entries: [followup],
+  });
+  assert.equal(works.length, 1);
+  assert.equal(works[0].workId, ref);
+  assert.equal(works[0].status, 'complete');
+  assert.equal(works[0].category, 'task');
+  assert.equal(works[0].serviceDate, '2026-11-02');
+  assert.equal(works[0].dueAt, null);
+  assert.equal(
+    works[0].requestedAt,
+    new Date(original.submittedAt).toISOString(),
+  );
+  assert.ok(works[0].sourceRefs.some((source) => source.id === second));
+  const pending = dailyWorkItems(base, {
+    entries: [
+      {
+        ...original,
+        items: [
+          {
+            ...original.items[0],
+            status: 'pending',
+            done: false,
+            completedAt: null,
+            ownerStateAt: null,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(pending[0].section, 'tasks');
+  assert.equal(pending[0].serviceDate, '2026-11-02');
+  const unrelated = dailyWorkItems(base, {
+    entries: [
+      original,
+      {
+        ...followup,
+        items: [
+          {
+            ...followup.items[0],
+            workRef: null,
+            kind: 'task',
+            text: original.items[0].text,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(
+    unrelated.length,
+    2,
+    'same title alone must not join unrelated work',
+  );
+  const html = renderWorkSections(works);
+  assert.ok(html.includes('완료'));
+  assert.ok(!html.includes('담당자: 미지정'));
+  assert.ok(html.includes('?entry=' + first));
+  const reference = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'assistant',
+      sourceText: '허 차장님이 참고하라고 전달한 숙소 자료',
+      items: [
+        {
+          category: 'reference',
+          title: '숙소 지원 참고자료',
+          evidence: '참고하라고 전달한 숙소 자료',
+        },
+      ],
+    }),
+  );
+  assert.equal(reference.items[0].kind, 'reference');
+  const direct = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'manual',
+      sourceText: '장희성님 검토 및 재가 요청드립니다',
+      items: [
+        {
+          category: 'task',
+          title: '숙소 지원 검토',
+          evidence: '장희성님 검토 및 재가 요청드립니다',
+        },
+      ],
+    }),
+  );
+  assert.equal(direct.items[0].kind, 'task');
+  assert.throws(
+    () =>
+      readStructuredWorkInput(JSON.stringify({ schema: 'sajo-daily-work-v2' })),
+    /MANUAL_FORMAT/,
+  );
+  assert.throws(
+    () =>
+      readStructuredWorkInput(
+        JSON.stringify({
+          schema: 'sajo-daily-work-v1',
+          origin: 'manual',
+          sourceText: '처리 예정',
+          items: [
+            {
+              category: 'task',
+              title: '처리',
+              evidence: '처리 예정',
+              status: 'complete',
+            },
+          ],
+        }),
+      ),
+    /MANUAL_EVIDENCE/,
+  );
+  assert.throws(
+    () =>
+      normalizeDailyWork({
+        ref,
+        category: 'task',
+        title: '배차',
+        status: 'pending',
+        serviceDate: '2026-02-30',
+        sourceRefs: [{ kind: 'manual', id: first, ref }],
+      }),
+    /WORK_DATE/,
+  );
+  console.log(
+    'PASS common daily work: stable identity, future service preparation, owner completion preservation, explicit links only, reference/direct request distinction and no fabricated completion',
+  );
+}
+{
+  const { dailyWorkItems } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const { manualDailyView, normalizeManualItems, readStructuredWorkInput } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const entryId = '44444444-4444-4444-8444-444444444444',
+    mailId = '55555555-5555-4555-8555-555555555555';
+  const mailRef = mailId + ':tasks:0';
+  const input = readStructuredWorkInput(
+    JSON.stringify({
+      schema: 'sajo-daily-work-v1',
+      origin: 'manual',
+      sourceText: '배차 처리했습니다',
+      items: [
+        {
+          category: 'task',
+          title: '배차 처리',
+          evidence: '배차 처리했습니다',
+          status: 'complete',
+          workRef: mailRef,
+        },
+      ],
+    }),
+  );
+  const items = normalizeManualItems(input, {
+    text: input.sourceText,
+    submittedAt: '2026-10-30T01:00:00Z',
+    referenceDate: null,
+    entryId,
+    allowLinks: true,
+    origin: 'manual',
+  });
+  const entry = {
+    entryId,
+    status: 'ready',
+    submittedAt: '2026-10-30T01:00:00Z',
+    referenceDate: null,
+    items,
+  };
+  const nextDay = manualDailyView({ [entryId]: entry }, '2026-10-31');
+  assert.equal(nextDay.entries.length, 0);
+  assert.equal(
+    nextDay.workContext.length,
+    1,
+    'hidden owner completion must survive as linked context',
+  );
+  const view = {
+    day: '2026-10-31',
+    groups: [],
+    tasks: [
+      {
+        ref: mailRef,
+        text: '배차 처리',
+        status: 'pending',
+        source: {
+          id: mailId,
+          subject: '배차 요청',
+          receivedAt: '2026-10-30T00:00:00Z',
+        },
+      },
+    ],
+    issues: [],
+    waiting: [],
+  };
+  assert.equal(
+    dailyWorkItems(view, nextDay).length,
+    0,
+    'closed linked mail task must not reappear pending next day',
+  );
+  const reopened = {
+    ...entry,
+    items: [
+      {
+        ...items[0],
+        completionEvents: [{ done: false, at: '2026-10-31T01:00:00Z' }],
+      },
+    ],
+  };
+  const open = dailyWorkItems(
+    view,
+    manualDailyView({ [entryId]: reopened }, '2026-10-31'),
+  );
+  assert.equal(open.length, 1);
+  assert.equal(open[0].status, 'pending');
+  const issue = dailyWorkItems(
+    { groups: [], tasks: [], issues: [], waiting: [] },
+    {
+      entries: [
+        {
+          entryId,
+          submittedAt: entry.submittedAt,
+          items: [
+            {
+              ref: entryId + ':manual:item-002',
+              kind: 'waiting',
+              text: '운수사 회신 대기',
+              status: 'pending',
+              done: false,
+            },
+          ],
+        },
+      ],
+    },
+  );
+  assert.equal(
+    issue[0].controlRef,
+    entryId + ':manual:item-002',
+    'manual issues retain owner completion control',
+  );
+  console.log(
+    'PASS linked owner-state carry: completed mail does not resurrect; explicit reopen wins; manual waiting remains completable',
   );
 }

@@ -80,6 +80,12 @@ export interface DailyMailItem {
   };
 }
 export interface DailyMailOverview {
+  workItems?: DailyWork[];
+  workSections?: {
+    id: 'tasks' | 'issues' | 'reference' | 'completed';
+    title: string;
+  }[];
+  workStatusLabels?: Record<string, string>;
   day: string;
   title: string;
   groups: {
@@ -97,6 +103,41 @@ export interface DailyMailOverview {
   waiting: DailyMailItem[];
   resolvedWaiting?: DailyMailItem[];
   sources: DailyMailSource[];
+}
+export interface DailyWork {
+  section: 'tasks' | 'issues' | 'reference' | 'completed';
+  schema: 'sajo-daily-work-v1';
+  workId: string;
+  portalTaskId: string | null;
+  controlRef: string | null;
+  category: 'task' | 'issue' | 'reference';
+  title: string;
+  summary: string[];
+  nextAction: string | null;
+  progress: string | null;
+  waitingFor: string | null;
+  center: string | null;
+  customer: string | null;
+  requester: string | null;
+  assignee: string | null;
+  requestedAt: string | null;
+  dueAt: string | null;
+  dueDate: string | null;
+  serviceDate: string | null;
+  status: 'pending' | 'in_progress' | 'waiting' | 'complete' | 'cancelled';
+  closedAt: string | null;
+  ownerStateAt: string | null;
+  sourceRefs: {
+    kind: 'mail' | 'manual' | 'assistant' | 'linked';
+    id: string;
+    ref: string;
+    title: string | null;
+    receivedAt: string | null;
+    evidence?: string | null;
+    intentCorrected?: boolean;
+  }[];
+  needsConfirmation: boolean;
+  originRef: string;
 }
 export interface MailAnalysisRule {
   id: string;
@@ -148,7 +189,7 @@ export interface MailManualItem {
   itemId: string;
   ref: string;
   text: string;
-  kind: 'task' | 'dispatch' | 'issue';
+  kind: 'task' | 'dispatch' | 'issue' | 'reference' | 'waiting';
   visibleFrom: string;
   receivedAt: string;
   submittedAt?: string;
@@ -183,6 +224,14 @@ export interface MailManualList {
   issues: MailManualItem[];
 }
 export const privateMail = {
+  manualSource: (entryId: string) =>
+    oneDriveCall<{
+      entryId: string;
+      text: string;
+      submittedAt: string;
+      referenceDate: string | null;
+      authoredDate: string | null;
+    }>('private-mail-manual-source', { entryId }),
   manualAdd: (body: {
     text: string;
     clientRequestId: string;

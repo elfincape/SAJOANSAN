@@ -42,17 +42,17 @@ export function modelCapabilities(provider, id) {
     )
   )
     return null;
-  if (/^gpt-(?:4\.1|4o|5|6)(?:[.-]|$)/.test(id))
+  if (
+    (provider === 'aiapiflow' && id === 'gpt-5.6-luna') ||
+    (provider === 'openai' && id === 'gpt-6-luna')
+  )
     return {
       protocol: 'responses',
       images: true,
       structured: 'json_schema',
       verification: 'protocol_only',
     };
-  if (
-    provider === 'aiapiflow' &&
-    /^claude-(?:haiku|sonnet|opus|[3-6])/.test(id)
-  )
+  if (provider === 'aiapiflow' && id === 'claude-haiku-4-5-20251001')
     return {
       protocol: 'anthropic',
       images: true,

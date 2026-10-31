@@ -652,7 +652,17 @@ export async function writeDailyBriefing({
   )
     throw Error('NOTES_IMAGE_LIMIT');
   const base = renderDailyBriefing({ now, analyses, overrides, manual });
-  const photos = describeImages(images, base.sourceIds);
+  // Validate every supplied descriptor before omitting sources absent from today's view.
+  const visiblePhotoSources = new Set(
+    [
+      ...base.managedHtml.matchAll(
+        /<div data-id="sajo-mail-photos-([0-9a-f-]+)"><\/div>/g,
+      ),
+    ].map((match) => match[1]),
+  );
+  const photos = describeImages(images, base.sourceIds).filter((image) =>
+    visiblePhotoSources.has(image.sourceId),
+  );
   for (const image of photos)
     if (image.bytes instanceof Uint8Array)
       await validateImageBytes(image, hash);

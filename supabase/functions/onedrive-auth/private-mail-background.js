@@ -135,6 +135,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         now: date + 'T12:00:00+09:00',
         analyses,
         overrides: current.briefing_overrides ?? {},
+        manual: manualDailyView(current.manual_entries ?? {}, date),
       }),
     );
   }
