@@ -6996,7 +6996,22 @@ console.log(
  assert.match(html,/<h2 style="[^"]*margin-top:18pt/);
  assert.match(html,/<p style="[^"]*margin-top:12pt/);
  assert.match(html,/line-height:150%/);
- assert.match(html,/<strong>기한 2026-11-01<\/strong>/);
+ assert.ok(html.includes('기한 2026-11-01'));
+ assert.ok(!html.includes('<strong>'));
  assert.ok(!html.includes('<table'));
  console.log('PASS explicit OneNote heading/item spacing, readable line height and restrained deadline emphasis');
+}
+
+{
+ const {renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const item={category:'task',title:'가상센터4P 배차 준비',status:'pending',summary:['하차13:15'],serviceDate:'2026-11-02',sourceRefs:[]};
+ const html=renderBriefingWorkNote([item,{...item,title:'두 번째 업무'}, {...item,category:'reference',title:'참고자료',summary:['품의 사례 참고']}, {...item,category:'reference',reportKind:'routine',title:'정기보고',summary:['온도점검 자료 수신']}]);
+ assert.ok(html.includes('1. 오늘 챙길 일') && html.includes('2. 참고사항'));
+ assert.ok(html.includes('① 가상센터4P 배차 준비') && html.includes('② 두 번째 업무'));
+ assert.ok(html.includes('① 품의 사례 참고') && html.includes('② 온도점검 자료 수신'));
+ assert.match(html,/margin-left:36pt[^>]*>- 하차13:15/);
+ assert.match(html,/margin-left:18pt[^>]*>① 가상센터4P 배차 준비/);
+ assert.ok(!html.includes('<strong>가상센터4P 배차 준비'));
+ assert.ok(html.includes('font-family:Malgun Gothic,Arial,sans-serif'));
+ console.log('PASS uniform report hierarchy: consecutive sections, circled items, indented hyphen detail, plain consistent body font');
 }
