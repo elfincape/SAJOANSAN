@@ -921,7 +921,7 @@ assert.ok(!report.html.includes('<h2>출처</h2>'));
 assert.ok(
   !report.html.includes('메일 요약') &&
     !report.html.includes('정리된 이슈 없음') &&
-    report.html.includes('오늘 챙길 일'),
+    report.html.includes('To Do'),
 );
 assert.throws(
   () =>
@@ -1421,7 +1421,7 @@ for (const label of [
 assert.ok(!approvedReport.html.includes('<blockquote>'));
 assert.ok(!approvedReport.html.includes('납품 지연으로 재확인 중입니다.'));
 assert.ok(
-  !approvedReport.html.includes('오늘 챙길 일'),
+  !approvedReport.html.includes('To Do'),
   'empty sections are omitted',
 );
 assert.equal(
@@ -2779,7 +2779,7 @@ console.log(
   });
   assert.ok(report.html.includes('운행 차량 섭외 및 배차'));
   assert.ok(report.html.includes('운행·납품 2026-11-02'));
-  assert.ok(report.html.includes('오늘 챙길 일'));
+  assert.ok(report.html.includes('To Do'));
   assert.ok(!report.html.includes('메일 요약'));
   assert.ok(!report.html.includes('정리된 메일 없음'));
   assert.ok(!report.html.includes(original));
@@ -4679,9 +4679,9 @@ console.log(
     });
     assert.ok(report.html.includes('쿠팡창원 4p 배차'));
     assert.ok(report.html.includes('4p'));
-    assert.ok(report.html.includes('하차 13:15'));
+    assert.ok(report.html.includes('2026.11.2(월) 13:15 하차'));
     assert.ok(report.html.includes(address));
-    assert.ok(report.html.includes('2026-11-02'));
+    assert.ok(report.html.includes('2026.11.2(월)'));
     assert.ok(!report.html.includes('4톤'));
     assert.ok(!report.html.includes('처리기한:'));
   }
@@ -6183,7 +6183,7 @@ console.log(
       serviceDate: '2026-11-02',
     },
   ]);
-  assert.ok(note.includes('오늘 챙길 일'));
+  assert.ok(note.includes('To Do'));
   assert.ok(note.includes('참고사항'));
   assert.ok(note.includes('직원 숙소 지원 품의 참고자료'));
   assert.ok(!note.includes('500만원'));
@@ -6191,7 +6191,7 @@ console.log(
   assert.ok(
     note.includes('4P') &&
       note.includes('13:15') &&
-      note.includes('2026-11-02'),
+      (note.includes('2026-11-02') || note.includes('2026.11.2(월)')),
   );
   assert.ok(!note.includes('미착수'));
   assert.ok(!note.includes('주요 이슈'));
@@ -7006,12 +7006,23 @@ console.log(
  const {renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
  const item={category:'task',title:'가상센터4P 배차 준비',status:'pending',summary:['하차13:15'],serviceDate:'2026-11-02',sourceRefs:[]};
  const html=renderBriefingWorkNote([item,{...item,title:'두 번째 업무'}, {...item,category:'reference',title:'참고자료',summary:['품의 사례 참고']}, {...item,category:'reference',reportKind:'routine',title:'정기보고',summary:['온도점검 자료 수신']}]);
- assert.ok(html.includes('1. 오늘 챙길 일') && html.includes('2. 참고사항'));
+ assert.ok(html.includes('1. To Do') && html.includes('2. 참고사항'));
  assert.ok(html.includes('① 가상센터4P 배차 준비') && html.includes('② 두 번째 업무'));
  assert.ok(html.includes('① 품의 사례 참고') && html.includes('② 온도점검 자료 수신'));
- assert.match(html,/<ul style="list-style-type:none"><li style="[^"]*">- 하차13:15/);
+ assert.match(html,/<ul style="list-style-type:none"><li style="[^"]*">- 2026\.11\.2\(월\) 13:15 하차/);
  assert.match(html,/<li style="[^"]*">① 가상센터4P 배차 준비<ul/);
  assert.ok(!html.includes('<strong>가상센터4P 배차 준비'));
  assert.ok(html.includes('font-family:Malgun Gothic,Arial,sans-serif'));
  console.log('PASS uniform report hierarchy: consecutive sections, circled items, indented hyphen detail, plain consistent body font');
+}
+
+{
+ const {workSummaryForDisplay}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const item={serviceDate:'2026-11-02',summary:['하차 13:15','경상남도 창원시 테스트로33']};
+ const original=structuredClone(item);
+ assert.deepEqual(workSummaryForDisplay(item),['2026.11.2(월) 13:15 하차','경상남도 창원시 테스트로33']);
+ assert.deepEqual(item,original);
+ assert.deepEqual(workSummaryForDisplay({summary:['하차 13:15']}),['하차 13:15']);
+ assert.deepEqual(workSummaryForDisplay({...item,summary:['11/3 하차13:15']}),['11/3 하차13:15']);
+ console.log('PASS Korean date-before-time display from confirmed service date, no source mutation or date inference');
 }

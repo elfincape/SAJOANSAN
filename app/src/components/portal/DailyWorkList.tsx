@@ -1,3 +1,4 @@
+import { workSummaryForDisplay } from '../../../../supabase/functions/onedrive-auth/private-mail-work.js';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
@@ -72,6 +73,7 @@ export function DailyWorkList({
   const item =
     all.find((row) => row.workId === activeId) ??
     (snapshot?.workId === activeId ? snapshot : null);
+  const itemSummary = item ? workSummaryForDisplay(item) : [];
   useEffect(() => {
     mounted.current = true;
     const pop = () => {
@@ -279,7 +281,7 @@ export function DailyWorkList({
                   : labels[item.status]}
             </p>
             <div className="daily-detail-summary">
-              {item.summary.map((text, index) => (
+              {itemSummary.map((text, index) => (
                 <p key={index}>{text}</p>
               ))}
             </div>
@@ -295,7 +297,7 @@ export function DailyWorkList({
                     ? formatBriefingTimestamp(item.dueAt)
                     : item.dueDate,
                 ],
-                ['운행·납품 대상일', item.serviceDate],
+                ['운행·납품 대상일', itemSummary.some((text,index)=>text!==item.summary[index]) ? null : item.serviceDate],
                 ['다음 조치', item.nextAction],
                 ['진행', item.progress],
                 ['회신 대기', item.waitingFor],
