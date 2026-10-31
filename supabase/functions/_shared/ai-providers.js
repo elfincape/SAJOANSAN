@@ -49,7 +49,7 @@ export function modelCapabilities(provider, id) {
     return {
       protocol: 'responses',
       images: true,
-      structured: 'json_schema',
+      structured: provider === 'openai' ? 'json_object' : 'json_schema',
       verification: 'protocol_only',
     };
   if (provider === 'aiapiflow' && id === 'claude-haiku-4-5-20251001')
