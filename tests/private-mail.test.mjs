@@ -4534,3 +4534,73 @@ console.log(
     'PASS historical declared progress: future owner completion does not rewrite prior-day workflow status',
   );
 }
+
+{
+  const { normalizeManualItems, manualDailyView } =
+    await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const entryId = 'c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0';
+  const original =
+    '11/2 월\n쿠팡창원 4p 배차입니다.\n하차 13:15\n경상남도 창원시 진해구 두동로 33 A동 5층';
+  const address = '경상남도 창원시 진해구 두동로 33 A동 5층';
+  // Synthetic extracted result: verifies the real normalizer/view/renderer, not a paid model call.
+  const items = normalizeManualItems(
+    {
+      items: [
+        {
+          kind: 'dispatch',
+          text: `11/2 쿠팡창원 배차 준비 · 4p · 하차 13:15 · ${address}`,
+          evidence: original,
+          serviceOriginal: '11/2',
+          dueOriginal: null,
+          assignee: null,
+          needsConfirmation: false,
+        },
+      ],
+    },
+    {
+      text: original,
+      submittedAt: '2026-10-31T01:00:00Z',
+      referenceDate: '2026-10-31',
+      entryId,
+    },
+  );
+  assert.equal(items[0].serviceDate, '2026-11-02');
+  assert.equal(items[0].dueAt, null);
+  assert.equal(items[0].dueDate, null);
+  assert.equal(items[0].assignee, null);
+  assert.equal(items[0].evidence, original);
+  const entry = {
+    entryId,
+    submittedAt: '2026-10-31T01:00:00Z',
+    referenceDate: '2026-10-31',
+    status: 'ready',
+    items,
+  };
+  for (const day of ['2026-10-31', '2026-11-01', '2026-11-02']) {
+    const manual = manualDailyView({ [entryId]: entry }, day);
+    const report = briefing.renderDailyBriefing({
+      now: day + 'T12:00:00+09:00',
+      analyses: [],
+      manual,
+    });
+    assert.ok(report.html.includes('쿠팡창원 배차 준비'));
+    assert.ok(report.html.includes('4p'));
+    assert.ok(report.html.includes('하차 13:15'));
+    assert.ok(report.html.includes(address));
+    assert.ok(report.html.includes('2026-11-02'));
+    assert.ok(!report.html.includes('4톤'));
+    assert.ok(!report.html.includes('처리기한:'));
+  }
+  const completed = structuredClone(entry);
+  completed.items[0].done = true;
+  completed.items[0].completedAt = '2026-10-31T02:00:00Z';
+  completed.items[0].completionEvents = [
+    { at: '2026-10-31T02:00:00Z', done: true },
+  ];
+  const following = manualDailyView({ [entryId]: completed }, '2026-11-01');
+  assert.equal(following.tasks.length, 0);
+  assert.equal(completed.items[0].serviceDate, '2026-11-02');
+  console.log(
+    'PASS supplied Kakao dispatch case: 4p/address/unloading time preserved; immediate preparation; no invented dispatch deadline; carry until preparation completed, service date unchanged',
+  );
+}
