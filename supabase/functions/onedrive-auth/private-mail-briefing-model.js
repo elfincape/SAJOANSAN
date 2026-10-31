@@ -55,13 +55,16 @@ export function mailItemIndex(item, fallback) {
   return index;
 }
 export function applyMailIntentOverride(analysis, correction) {
-  const projected = {
-    ...analysis,
-    summary: (analysis.summary ?? []).map((item) => ({
-      ...item,
-      text: mailSummaryText(item.text, analysis.source),
-    })),
-  };
+  const originalSummary = analysis.summary ?? [];
+  const summary = originalSummary.map((item) => ({
+    ...item,
+    text: mailSummaryText(item.text, analysis.source),
+  }));
+  const projected = summary.some(
+    (item, index) => item.text !== originalSummary[index].text,
+  )
+    ? { ...analysis, summary }
+    : analysis;
   if (correction?.intent !== 'reference') return projected;
   return {
     ...projected,
