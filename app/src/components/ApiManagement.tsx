@@ -67,7 +67,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
     provider?.catalogStatus === 'ready' &&
     model?.available &&
     !!model.capabilities;
-  const canVerify = editable && !busy && provider?.catalogStatus === 'ready' && model?.available && !!(model.capabilities || model.diagnosticCapabilities);
+  const canVerify = editable && !busy && provider?.catalogStatus === 'ready' && !!model?.available;
   async function save() {
     if (!canSave || !data) return;
     const request = ++sequence.current;
@@ -238,7 +238,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
                 <option
                   key={item.id}
                   value={item.id}
-                  disabled={!item.available || !(item.capabilities || item.diagnosticCapabilities)}
+                  disabled={!item.available}
                 >
                   {item.id}
                   {!item.available

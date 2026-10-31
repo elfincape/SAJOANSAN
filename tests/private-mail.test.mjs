@@ -6954,6 +6954,8 @@ console.log(
  assert.equal(diagnosticCapabilities('aiapiflow','claude-haiku-5-5').protocol,'anthropic');
  assert.equal(diagnosticCapabilities('openai','gpt-5-mini').protocol,'responses');
  assert.equal(diagnosticCapabilities('openai','text-embedding-3-small'),null);
+ const unsupported=await verifyApiCompatibility({provider:'aiapiflow',model:'gemini-test',confirmation:'synthetic-compatibility'}, {}, ()=>assert.fail('no supported protocol must not make a paid request'));
+ assert.equal(unsupported.checks[0].diagnosticCode,'ADAPTER_NOT_IMPLEMENTED');
  let n=0;
  const checked=await verifyApiCompatibility({provider:'aiapiflow',model:'claude-haiku-5-5',confirmation:'synthetic-compatibility'}, {AIAPIFLOW_API_KEY:'mock'}, async()=>Response.json({model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:++n===3?'```json\n{"ok":true}\n```':n===2?'4':'OK'}]}));
  assert.equal(checked.passed,true);

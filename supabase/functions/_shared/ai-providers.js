@@ -220,7 +220,8 @@ export async function verifyApiCompatibility(body, env, fetcher = fetch) {
     };
   }
   const capabilities = diagnosticCapabilities(body.provider, body.model);
-  if (!capabilities) throw coded('AI_MODEL_UNSUPPORTED');
+  if (!Object.hasOwn(AI_PROVIDERS, body.provider) || typeof body.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(body.model)) throw coded('AI_MODEL_UNSUPPORTED');
+  if (!capabilities) return {provider:body.provider,model:body.model,protocol:'unsupported',checkedAt:new Date().toISOString(),passed:false,checks:[{kind:'protocol',status:'unsupported',diagnosticCode:'ADAPTER_NOT_IMPLEMENTED',providerStatus:null}]};
   const key = env[AI_PROVIDERS[body.provider].secret];
   if (!key) throw coded('AI_NOT_CONFIGURED', 409);
   const { callLuna } = await import('./luna.js');
