@@ -6319,16 +6319,12 @@ console.log(
     assert.equal(failures, 1, 'failure must stop without fallback or retry');
     assert.ok(!JSON.stringify(result).includes('mock-only'));
   }
-  await assert.rejects(
-    () =>
-      handleApiManagement(
-        'api-admin-verify',
-        { ...body, model: 'unknown' },
-        { role: 'admin' },
-        ctx,
-      ),
-    /AI_MODEL_UNSUPPORTED/,
-  );
+  const unknownDiagnostic = await (await handleApiManagement(
+    'api-admin-verify', { ...body, model: 'unknown' }, {role:'admin'},
+    {...ctx, fetcher:()=>assert.fail('unknown protocol must not call provider')}
+  )).json();
+  assert.equal(unknownDiagnostic.checks[0].diagnosticCode,'ADAPTER_NOT_IMPLEMENTED');
+  assert.equal(unknownDiagnostic.passed,false);
   await assert.rejects(
     () =>
       handleApiManagement(
