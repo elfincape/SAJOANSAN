@@ -6319,16 +6319,12 @@ console.log(
     assert.equal(failures, 1, 'failure must stop without fallback or retry');
     assert.ok(!JSON.stringify(result).includes('mock-only'));
   }
-  await assert.rejects(
-    () =>
-      handleApiManagement(
-        'api-admin-verify',
-        { ...body, model: 'unknown' },
-        { role: 'admin' },
-        ctx,
-      ),
-    /AI_MODEL_UNSUPPORTED/,
-  );
+  const unknownDiagnostic = await (await handleApiManagement(
+    'api-admin-verify', { ...body, model: 'unknown' }, {role:'admin'},
+    {...ctx, fetcher:()=>assert.fail('unknown protocol must not call provider')}
+  )).json();
+  assert.equal(unknownDiagnostic.checks[0].diagnosticCode,'ADAPTER_NOT_IMPLEMENTED');
+  assert.equal(unknownDiagnostic.passed,false);
   await assert.rejects(
     () =>
       handleApiManagement(
@@ -6947,4 +6943,21 @@ console.log(
   console.log(
     'PASS owner corrections precede mail/manual carry filters; owner reopen survives AI completion and reference-to-task carry; prior-day state retained',
   );
+}
+
+{
+ const { diagnosticCapabilities, verifyApiCompatibility } = await import('../supabase/functions/_shared/ai-providers.js');
+ assert.equal(diagnosticCapabilities('aiapiflow','claude-haiku-5-5').protocol,'anthropic');
+ assert.equal(diagnosticCapabilities('openai','gpt-5-mini').protocol,'responses');
+ assert.equal(diagnosticCapabilities('openai','text-embedding-3-small'),null);
+ const unsupported=await verifyApiCompatibility({provider:'aiapiflow',model:'gemini-test',confirmation:'synthetic-compatibility'}, {}, ()=>assert.fail('no supported protocol must not make a paid request'));
+ assert.equal(unsupported.checks[0].diagnosticCode,'ADAPTER_NOT_IMPLEMENTED');
+ let n=0;
+ const checked=await verifyApiCompatibility({provider:'aiapiflow',model:'claude-haiku-5-5',confirmation:'synthetic-compatibility'}, {AIAPIFLOW_API_KEY:'mock'}, async()=>Response.json({model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:++n===3?'```json\n{"ok":true}\n```':n===2?'4':'OK'}]}));
+ assert.equal(checked.passed,true);
+ const jev=await verifyApiCompatibility({provider:'typesafe',model:'jev-1.14.0',confirmation:'synthetic-compatibility'}, {TYPESAFE_API_KEY:'mock'}, async()=>new Response('{}',{status:529}));
+ assert.equal(jev.checks[0].providerStatus,529);
+ assert.equal(jev.checks[0].diagnosticCode,'RATE_LIMIT');
+ assert.equal(jev.checks[0].status,'transient');
+ console.log('PASS independently test unverified model protocols, exact fenced JSON validation and JEV HTTP diagnostics');
 }

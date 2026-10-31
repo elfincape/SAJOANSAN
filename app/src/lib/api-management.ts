@@ -10,6 +10,7 @@ export interface AiModel {
   id: string;
   support: 'supported' | 'unsupported' | 'unknown';
   available: boolean;
+  diagnosticCapabilities?: AiModel['capabilities'];
   capabilities: null | {
     protocol: string;
     images: boolean;
@@ -52,6 +53,8 @@ export interface ApiCompatibilityResult {
     unsupportedProbability?: number;
     reviewRequired?: boolean;
     providerStatus?: number | null;
+    diagnosticCode?: string | null;
+    responseReason?: string | null;
   }[];
 }
 export const apiManagement = {

@@ -67,6 +67,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
     provider?.catalogStatus === 'ready' &&
     model?.available &&
     !!model.capabilities;
+  const canVerify = editable && !busy && provider?.catalogStatus === 'ready' && !!model?.available;
   async function save() {
     if (!canSave || !data) return;
     const request = ++sequence.current;
@@ -102,7 +103,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
     if (
       provider === 'typesafe'
         ? !editable || busy || !data?.judgment?.keyConfigured
-        : !canSave
+        : !canVerify
     )
       return;
     const request = ++sequence.current;
@@ -115,12 +116,15 @@ export function ApiManagement({ editable }: { editable: boolean }) {
       if (!alive.current || request !== sequence.current) return;
       setVerification(result);
       setFailed(!result.passed);
-    } catch {
+    } catch (error) {
       if (alive.current && request === sequence.current) {
         setFailed(true);
-        setFeedback(
-          '호환검증을 완료하지 못했습니다. 기본 설정은 변경되지 않았습니다.',
-        );
+        const code = error instanceof Error ? error.message : '';
+        setFeedback(code === 'AI_NOT_CONFIGURED'
+          ? '서버 API 키가 설정되지 않았습니다. 기본 설정은 변경되지 않았습니다.'
+          : code === 'AI_MODEL_UNSUPPORTED'
+            ? '이 모델의 요청 프로토콜은 아직 지원하지 않습니다. 기본 설정은 변경되지 않았습니다.'
+            : '호환검증을 완료하지 못했습니다. 기본 설정은 변경되지 않았습니다.');
       }
     } finally {
       if (alive.current && request === sequence.current) setBusy(false);
@@ -234,7 +238,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
                 <option
                   key={item.id}
                   value={item.id}
-                  disabled={!item.available || !item.capabilities}
+                  disabled={!item.available}
                 >
                   {item.id}
                   {!item.available
@@ -283,7 +287,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={!canSave}
+            disabled={!canVerify}
             onClick={() => void verify()}
           >
             합성 입력으로 호환검증 (유료 요청 최대 3회)
@@ -299,7 +303,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
               {verification.checks
                 .map(
                   (check) =>
-                    `${check.kind}: ${({ passed: '통과', auth: '인증/권한 확인 필요', model_missing: '모델 없음', unsupported: '요청 형식 미지원', transient: '일시 오류', model_mismatch: '반환 모델 불일치', invalid_response: '응답 검증 실패' } as Record<string, string>)[check.status] ?? check.status}${check.returnedModel ? ` (반환 ${check.returnedModel}, ${check.stopReason}, HTTP ${check.providerStatus}, 사용량 ${JSON.stringify(check.usage ?? {})}${check.unsupportedProbability !== undefined ? `, 검토 확률 ${check.unsupportedProbability}, 검토 대상 ${check.reviewRequired ? '포함' : '미포함'}` : ''})` : ''}`,
+                    `${check.kind}: ${({ passed: '통과', auth: '인증/권한 확인 필요', model_missing: '모델 없음', unsupported: '요청 형식 미지원', transient: '일시 오류', model_mismatch: '반환 모델 불일치', invalid_response: '응답 검증 실패' } as Record<string, string>)[check.status] ?? check.status}${` (HTTP ${check.providerStatus ?? '응답 없음'}${check.diagnosticCode ? ', ' + check.diagnosticCode : ''}${check.responseReason ? ', ' + check.responseReason : ''})`}${check.returnedModel ? ` (반환 ${check.returnedModel}, ${check.stopReason}, 사용량 ${JSON.stringify(check.usage ?? {})}${check.unsupportedProbability !== undefined ? `, 검토 확률 ${check.unsupportedProbability}, 검토 대상 ${check.reviewRequired ? '포함' : '미포함'}` : ''})` : ''}`,
                 )
                 .join(' / ')}{' '}
               · {verification.checkedAt}
