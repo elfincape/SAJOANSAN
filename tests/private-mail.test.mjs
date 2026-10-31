@@ -4679,9 +4679,9 @@ console.log(
     });
     assert.ok(report.html.includes('쿠팡창원 4p 배차'));
     assert.ok(report.html.includes('4p'));
-    assert.ok(report.html.includes('하차 13:15'));
+    assert.ok(report.html.includes('2026.11.2(월) 13:15 하차'));
     assert.ok(report.html.includes(address));
-    assert.ok(report.html.includes('2026-11-02'));
+    assert.ok(report.html.includes('2026.11.2(월)'));
     assert.ok(!report.html.includes('4톤'));
     assert.ok(!report.html.includes('처리기한:'));
   }
@@ -6191,7 +6191,7 @@ console.log(
   assert.ok(
     note.includes('4P') &&
       note.includes('13:15') &&
-      note.includes('2026-11-02'),
+      (note.includes('2026-11-02') || note.includes('2026.11.2(월)')),
   );
   assert.ok(!note.includes('미착수'));
   assert.ok(!note.includes('주요 이슈'));
@@ -7009,9 +7009,20 @@ console.log(
  assert.ok(html.includes('1. To Do') && html.includes('2. 참고사항'));
  assert.ok(html.includes('① 가상센터4P 배차 준비') && html.includes('② 두 번째 업무'));
  assert.ok(html.includes('① 품의 사례 참고') && html.includes('② 온도점검 자료 수신'));
- assert.match(html,/<ul style="list-style-type:none"><li style="[^"]*">- 하차13:15/);
+ assert.match(html,/<ul style="list-style-type:none"><li style="[^"]*">- 2026\.11\.2\(월\) 13:15 하차/);
  assert.match(html,/<li style="[^"]*">① 가상센터4P 배차 준비<ul/);
  assert.ok(!html.includes('<strong>가상센터4P 배차 준비'));
  assert.ok(html.includes('font-family:Malgun Gothic,Arial,sans-serif'));
  console.log('PASS uniform report hierarchy: consecutive sections, circled items, indented hyphen detail, plain consistent body font');
+}
+
+{
+ const {workSummaryForDisplay}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const item={serviceDate:'2026-11-02',summary:['하차 13:15','경상남도 창원시 테스트로33']};
+ const original=structuredClone(item);
+ assert.deepEqual(workSummaryForDisplay(item),['2026.11.2(월) 13:15 하차','경상남도 창원시 테스트로33']);
+ assert.deepEqual(item,original);
+ assert.deepEqual(workSummaryForDisplay({summary:['하차 13:15']}),['하차 13:15']);
+ assert.deepEqual(workSummaryForDisplay({...item,summary:['11/3 하차13:15']}),['11/3 하차13:15']);
+ console.log('PASS Korean date-before-time display from confirmed service date, no source mutation or date inference');
 }

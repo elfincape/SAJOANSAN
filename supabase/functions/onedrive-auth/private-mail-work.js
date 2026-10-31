@@ -721,6 +721,20 @@ export function renderWorkSections(items) {
   return chunks.join('');
 }
 
+// Presentation only: use the confirmed service day, never a collection or processing deadline.
+export function workSummaryForDisplay(item) {
+  const summary = item.summary ?? [];
+  const day = calendar(item.serviceDate);
+  if (!day) return [...summary];
+  const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));
+  const [year,month,date] = day.split('-');
+  const label = year+'.'+Number(month)+'.'+Number(date)+'('+weekday+')';
+  return summary.map(text => {
+    const time = /^(상차|하차)(?:\s*(?:예정|시간|시각))?\s*[:：]?\s*((?:[01]?\d|2[0-3]):[0-5]\d)\s*$/.exec(text);
+    return time ? label+' '+time[2]+' '+time[1] : text;
+  });
+}
+
 function briefingReferenceLine(item) {
   const text = item.summary[0] || item.title;
   const first = text.split(/[.!?](?=\s|$)|\n/)[0].trim();
@@ -794,6 +808,7 @@ export function renderBriefingWorkNote(items) {
     for (const item of rows) {
       const number = ordinal(++itemNumber) + ' ';
       const detailLines = [];
+      const displaySummary = workSummaryForDisplay(item);
       chunks.push('<li style="list-style-type:none;' + itemStyle + '">');
       if (item.category === 'reference')
         chunks.push(number + escape(briefingReferenceLine(item)));
@@ -802,7 +817,7 @@ export function renderBriefingWorkNote(items) {
           number + escape(item.title) +
             (item.status === 'cancelled' ? ' · 취소' : ''),
         );
-        for (const text of item.summary)
+        for (const text of displaySummary)
           if (!repeatsWorkTitle(text, item.title))
             detailLines.push('<li style="list-style-type:none;' + paragraph + '">- ' + escape(text) + '</li>');
         const details = [
@@ -818,7 +833,7 @@ export function renderBriefingWorkNote(items) {
                     hour12: false,
                   })
                 : item.dueDate),
-          item.serviceDate && '운행·납품 ' + item.serviceDate,
+          item.serviceDate && !displaySummary.some((text,index)=>text!==item.summary[index]) && '운행·납품 ' + item.serviceDate,
         ].filter(Boolean);
         if (details.length)
           detailLines.push('<li style="list-style-type:none;' + supporting + '">- ' + details.map(escape).join(' · ') + '</li>');
