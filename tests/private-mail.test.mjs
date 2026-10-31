@@ -4882,3 +4882,130 @@ console.log(
     'PASS dispatch assignment follow-up: same work identity, destination word-order alias, preserved request conditions, preparation complete only, no nextday revival, ambiguity/date/destination/incomplete guards',
   );
 }
+
+{
+  const { mailMessageTimes } =
+    await import('../supabase/functions/onedrive-auth/private-mail-body.js');
+  const collected = '2026-10-31T04:12:48.649933Z';
+  const old = mailMessageTimes({
+    headers:
+      'Date: Wed, 19 Aug 2026 09:42:28 +0900\r\nReceived: from example.test by inbox.example.test; Wed, 19 Aug 2026 09:42:30 +0900\r\nSubject: 8월18일 자료',
+    sentAt: '2026-08-19T00:42:28Z',
+    collectedAt: collected,
+  });
+  assert.equal(old.sentAt, '2026-08-19T00:42:28.000Z');
+  assert.equal(old.receivedAt, '2026-08-19T00:42:30.000Z');
+  assert.equal(old.reportAt, old.receivedAt);
+  assert.equal(old.collectedAt, '2026-10-31T04:12:48.649Z');
+  const deliveredToday = mailMessageTimes({
+    headers:
+      'Date: Wed, 19 Aug 2026 09:42:28 +0900\r\nReceived: by inbox.example.test; Sat, 31 Oct 2026 13:12:00 +0900',
+    sentAt: '2026-08-19T00:42:28Z',
+    collectedAt: collected,
+  });
+  assert.equal(deliveredToday.receivedAt, '2026-10-31T04:12:00.000Z');
+  assert.equal(deliveredToday.dateBasis, 'received_header');
+  const unknown = mailMessageTimes({
+    headers: 'Subject: 8월18일 자료',
+    sentAt: '2026-08-19T00:42:28Z',
+    collectedAt: collected,
+  });
+  assert.equal(unknown.receivedAt, null);
+  assert.equal(unknown.reportAt, unknown.sentAt);
+  assert.equal(unknown.dateBasis, 'sent_header');
+  const boundary = mailMessageTimes({
+    headers: 'Date: Fri, 30 Oct 2026 15:01:00 +0000',
+    sentAt: '2026-10-30T15:01:00Z',
+    collectedAt: '2026-10-31T12:00:00Z',
+  });
+  assert.equal(
+    briefing.dailyReportIdentity(boundary.reportAt).day,
+    '2026-10-31',
+  );
+  console.log(
+    'PASS mail message clocks: historical delivery versus later collection, current delivery of older material, missing receipt stays unknown, title ignored, KST boundary',
+  );
+}
+
+{
+  const id = '99999999-2222-4222-8222-999999999999';
+  const source = {
+    id,
+    uidl_hash: 'f'.repeat(64),
+    subject: '8월18일 자료',
+    sender: 'sender@example.test',
+    sent_at: '2026-08-19T00:42:28Z',
+    created_at: '2026-10-31T04:12:48Z',
+    text: '자료 공유합니다. 내일까지 확인해 주세요.',
+  };
+  const reference = briefing.normalizeMailAnalysis(
+    {
+      summary: [
+        { text: '8월18일 임시차 자료 공유.', evidence: '자료 공유합니다.' },
+      ],
+      tasks: [],
+      issues: [],
+      waiting: [],
+    },
+    source,
+  );
+  const projected = briefing.projectMailDates(reference, source);
+  const current = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [projected],
+  });
+  assert.equal(
+    current.workItems.length,
+    0,
+    'archived reference collected today is not today news',
+  );
+  const historical = briefing.dailyBriefingView({
+    now: '2026-08-19T12:00:00+09:00',
+    analyses: [projected],
+  });
+  assert.equal(historical.workItems.length, 1);
+  const receivedToday = briefing.projectMailDates(reference, {
+    ...source,
+    received_at: '2026-10-31T04:12:00Z',
+  });
+  assert.equal(
+    briefing.dailyBriefingView({
+      now: '2026-10-31T12:00:00+09:00',
+      analyses: [receivedToday],
+    }).workItems.length,
+    1,
+    'current delivery of older material remains current',
+  );
+  const task = briefing.normalizeMailAnalysis(
+    {
+      summary: [],
+      tasks: [
+        {
+          text: '자료 확인',
+          evidence: '내일까지 확인해 주세요.',
+          due: '내일까지',
+          assignee: null,
+        },
+      ],
+      issues: [],
+      waiting: [],
+    },
+    source,
+  );
+  const rebased = briefing.projectMailDates(task, source);
+  assert.equal(rebased.tasks[0].visibleFrom, '2026-08-19');
+  assert.equal(rebased.tasks[0].dueDate, '2026-08-20');
+  const carry = briefing.dailyBriefingView({
+    now: '2026-10-31T12:00:00+09:00',
+    analyses: [rebased],
+  });
+  assert.equal(
+    carry.workItems.length,
+    1,
+    'unresolved historical work carries independently of reference dates',
+  );
+  assert.equal(carry.workItems[0].dueDate, '2026-08-20');
+  console.log(
+    'PASS daily mail projection: backfilled reference stays historical, current arrival of older material stays current, pending work carries with original relative deadline',
+  );
+}

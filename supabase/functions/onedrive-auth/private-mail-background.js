@@ -12,6 +12,7 @@ import {
   dailyReportIdentity,
   dailyBriefingView,
   applyMailIntentOverride,
+  projectMailDates,
 } from './private-mail-briefing-model.js';
 const uuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -171,7 +172,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const analyses = [];
     for (let offset = 0; offset < 5000; offset += 100) {
       const rows = await db(
-        'private_mail_messages?select=analysis,report_day,analysis_status,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
+        'private_mail_messages?select=analysis,sent_at,received_at,created_at,report_day,analysis_status,analysis_excluded,analysis_filter_override&mailbox_id=eq.' +
           current.id +
           '&analysis=not.is.null&report_day=lte.' +
           enc(date) +
@@ -181,13 +182,13 @@ export async function handleMailAutomation(action, body, user, ctx) {
       analyses.push(
         ...rows.map((row) => ({
           ...applyMailIntentOverride(
-            row.analysis,
+            projectMailDates(row.analysis, row),
             current.automation_config?.intentOverrides?.[
               row.analysis.source.id
             ],
           ),
           source: {
-            ...row.analysis.source,
+            ...projectMailDates(row.analysis, row).source,
             analysisState: row.analysis_status,
             intentCorrected:
               current.automation_config?.intentOverrides?.[

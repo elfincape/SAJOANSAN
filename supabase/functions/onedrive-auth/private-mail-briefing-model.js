@@ -107,6 +107,43 @@ export function reconcileMailItems(analysis, previous) {
       ? previous.revision + 1
       : 1;
 }
+export function projectMailDates(analysis, row) {
+  const sentAt = date(row.sent_at ?? analysis.source.sentAt).toISOString();
+  const receivedAt = row.received_at
+    ? date(row.received_at).toISOString()
+    : null;
+  const collectedAt = date(
+    row.created_at ??
+      analysis.source.collectedAt ??
+      analysis.source.receivedAt ??
+      sentAt,
+  ).toISOString();
+  const reportAt = receivedAt ?? sentAt,
+    base = dailyReportIdentity(reportAt).day;
+  const rebase = (item) => ({
+    ...item,
+    visibleFrom: base,
+    ...(item.dueOriginal
+      ? deadline(item.dueOriginal, item.evidence, base)
+      : {}),
+    ...(item.serviceOriginal
+      ? { serviceDate: dateFrom(item.serviceOriginal, base) }
+      : {}),
+  });
+  return {
+    ...analysis,
+    source: {
+      ...analysis.source,
+      sentAt,
+      receivedAt,
+      collectedAt,
+      dateBasis: receivedAt ? 'received_header' : 'sent_header',
+    },
+    tasks: (analysis.tasks ?? []).map(rebase),
+    issues: (analysis.issues ?? []).map(rebase),
+    waiting: (analysis.waiting ?? []).map(rebase),
+  };
+}
 export function normalizeMailAnalysis(value, mail) {
   if (!mail || !uuid.test(mail.id) || !hex.test(mail.uidl_hash))
     throw Error('ANALYSIS_SOURCE');
@@ -177,7 +214,7 @@ export function normalizeMailAnalysis(value, mail) {
       if (dueOriginal && !item.evidence.includes(dueOriginal))
         throw Error('ANALYSIS_DEADLINE');
       const visibleFrom = dailyReportIdentity(
-        mail.created_at ?? mail.sent_at,
+        mail.received_at ?? mail.sent_at,
       ).day;
       const serviceOriginal =
         raw.serviceOriginal == null ? null : text(raw.serviceOriginal, 100);
@@ -259,7 +296,11 @@ export function normalizeMailAnalysis(value, mail) {
       subject,
       sender,
       sentAt,
-      receivedAt: date(mail.created_at ?? mail.sent_at).toISOString(),
+      receivedAt: mail.received_at
+        ? date(mail.received_at).toISOString()
+        : null,
+      collectedAt: date(mail.created_at ?? mail.sent_at).toISOString(),
+      dateBasis: mail.received_at ? 'received_header' : 'sent_header',
     },
     revision,
     updatedAt: date(
@@ -373,7 +414,22 @@ export function dailyBriefingView({
   manual = {},
 }) {
   const identity = dailyReportIdentity(now),
-    allRows = uniqueAnalyses(analyses),
+    allRows = uniqueAnalyses(analyses)
+      .filter(
+        (mail) =>
+          dailyReportIdentity(mail.source.receivedAt ?? mail.source.sentAt)
+            .day <= identity.day,
+      )
+      .map((mail) => ({
+        ...mail,
+        source: {
+          ...mail.source,
+          carryOnly:
+            mail.source.carryOnly === true ||
+            dailyReportIdentity(mail.source.receivedAt ?? mail.source.sentAt)
+              .day < identity.day,
+        },
+      })),
     rows = allRows.filter((mail) => mail.source.excluded !== true);
   const threads = new Map(
     allRows.map((mail) => [mail.source.id, sourceThread(mail.source)]),

@@ -47,6 +47,9 @@ function sourceRef(source, kind, ref) {
     ref,
     title: clean(source.subject, 500),
     receivedAt: stamp(source.receivedAt ?? source.sentAt),
+    dateBasis:
+      kind === 'mail' ? (source.receivedAt ? 'received' : 'sent') : 'input',
+    collectedAt: stamp(source.collectedAt),
     evidence: clean(source.evidence, 3000),
     intentCorrected: source.intentCorrected === true,
   };
@@ -79,6 +82,9 @@ export function normalizeDailyWork(input) {
       ref: source.ref,
       title: clean(source.title, 500),
       receivedAt: stamp(source.receivedAt),
+      dateBasis:
+        source.dateBasis ?? (source.kind === 'mail' ? 'sent' : 'input'),
+      collectedAt: stamp(source.collectedAt),
       evidence: clean(source.evidence, 3000),
       intentCorrected: source.intentCorrected === true,
     };
