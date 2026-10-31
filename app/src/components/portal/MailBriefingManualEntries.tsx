@@ -121,6 +121,27 @@ export function MailBriefingManualEntries({
       }
     }
   }
+  async function retryEntry(entry: MailManualEntry) {
+    await act(async () => {
+      const source = await privateMail.manualSource(entry.entryId);
+      const result = await privateMail.manualAdd({
+        text: source.text,
+        clientRequestId: source.clientRequestId,
+        referenceDate: source.requestedReference,
+        retry: true,
+      });
+      if (!mounted.current) return;
+      await load();
+      setFeedback(
+        result.status === 'ready'
+          ? '기존 메시지를 정리했습니다. 접수일과 원문은 유지됩니다.'
+          : result.status === 'processing'
+            ? '기존 메시지를 분석 중입니다. 목록 새로고침으로 확인해 주세요.'
+            : '기존 메시지를 정리하지 못했습니다. 접수된 원문을 유지합니다.',
+      );
+      onChanged?.();
+    });
+  }
   async function add() {
     const input = text.trim(),
       basis = referenceDate || null;
@@ -327,18 +348,32 @@ export function MailBriefingManualEntries({
             ? '메시지 업무를 불러오는 중…'
             : feedback}
       </p>
-      {showItems ? (
-        <div aria-busy={loading}>
-          {entries
-            .filter((entry) => entry.status !== 'ready')
-            .map((entry) => (
-              <p className="daily-task-meta" key={entry.entryId}>
+      <div aria-busy={loading} aria-label="접수 메시지 처리 상태">
+        {entries
+          .filter((entry) => entry.status !== 'ready')
+          .map((entry) => (
+            <div className="daily-task-meta" key={entry.entryId}>
+              <p>
                 {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
                 {entry.status === 'processing'
                   ? '분석 중'
-                  : '분석 실패 · 메시지 내용을 확인해 다시 시도해 주세요.'}
+                  : '분석 실패 · 원문이 보존되어 있습니다.'}
               </p>
-            ))}
+              {entry.status === 'failed' ? (
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={busy || disabled}
+                  onClick={() => void retryEntry(entry)}
+                >
+                  기존 메시지 다시 정리
+                </button>
+              ) : null}
+            </div>
+          ))}
+      </div>
+      {showItems ? (
+        <div aria-busy={loading}>
           <h3>
             미완료 <span className="daily-count">{open.length}</span>
           </h3>
