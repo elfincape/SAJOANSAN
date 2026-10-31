@@ -428,6 +428,32 @@ export function workSection(item) {
           ? 'issues'
           : 'reference';
 }
+function repeatsWorkTitle(summary, title) {
+  const words = (text) =>
+    text
+      .replace(/[^\p{L}\p{N}:.-]+/gu, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+  const stem = (word) =>
+    word.replace(/[.]$/, '').replace(/(?:에게|에서|으로|를|을|은|는|의)$/, '');
+  const titleWords = new Set(words(title).map(stem));
+  const extra = words(summary).filter((word) => !titleWords.has(stem(word)));
+  // Suppress only an otherwise identical sentence padded with delivery/request
+  // wording. Unknown extra facts, amounts, conditions and statuses stay visible.
+  return (
+    extra.length > 0 &&
+    extra.every(
+      (word) =>
+        /^(?:전달하며|전달했습니다[.]?|확인|확인을|요청했습니다[.]?|송부하며|공유하며)$/.test(
+          word,
+        ) || /(?:센터|공장|물류|담당자)에서$/.test(word),
+    ) &&
+    [...titleWords]
+      .filter((word) => !/확인합니다|처리합니다|요청합니다/.test(word))
+      .every((word) => words(summary).some((value) => stem(value) === word))
+  );
+}
 export function renderWorkSections(items) {
   const chunks = [],
     sources = new Map();
@@ -438,7 +464,9 @@ export function renderWorkSections(items) {
     for (const item of rows) {
       chunks.push(
         item.category === 'reference'
-          ? '<h3>' + escape(item.title) + '</h3>'
+          ? item.summary.length
+            ? ''
+            : '<p>' + escape(item.title) + '</p>'
           : '<p><strong>' +
               escape(item.title) +
               '</strong> · ' +
@@ -446,7 +474,11 @@ export function renderWorkSections(items) {
               '</p>',
       );
       for (const summary of item.summary)
-        chunks.push('<p>' + escape(summary) + '</p>');
+        if (
+          item.category === 'reference' ||
+          !repeatsWorkTitle(summary, item.title)
+        )
+          chunks.push('<p>' + escape(summary) + '</p>');
       const fields = [
         item.center && '센터: ' + item.center,
         item.customer && '거래처: ' + item.customer,
@@ -480,34 +512,9 @@ export function renderWorkSections(items) {
           sources.set(source.kind + ':' + source.id, source);
     }
   }
-  if (sources.size) chunks.push('<h2>출처</h2>');
+  // Source identity stays in the work ledger and portal. OneNote only needs
+  // invisible anchors for the separately verified business-photo writer.
   for (const source of sources.values()) {
-    const href =
-      source.kind === 'mail'
-        ? 'https://sajoansan.vercel.app/portal/?view=mail&amp;message=' +
-          encodeURIComponent(source.id)
-        : 'https://sajoansan.vercel.app/admin/mail-daily-briefing.html?entry=' +
-          source.id +
-          '#manual-messages';
-    chunks.push(
-      '<p><a href="' +
-        href +
-        '">' +
-        escape(source.title || '입력 메시지') +
-        '</a>' +
-        (source.receivedAt
-          ? ' · ' +
-            escape(
-              new Date(source.receivedAt)
-                .toLocaleString('sv-SE', {
-                  timeZone: 'Asia/Seoul',
-                  hour12: false,
-                })
-                .slice(0, 16),
-            )
-          : '') +
-        '</p>',
-    );
     if (source.kind === 'mail')
       chunks.push('<div data-id="sajo-mail-photos-' + source.id + '"></div>');
   }
