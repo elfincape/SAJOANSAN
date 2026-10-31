@@ -184,3 +184,62 @@ export async function verifyMailExtraction({
     clearTimeout(timer);
   }
 }
+
+// This adapter is not enabled by a client payload or by key presence alone.
+// A server caller must supply both explicit enablement and exact approved IDs.
+export async function reviewNormalizedMail({ analysis, mail, config }) {
+  if (
+    config?.enabled !== true ||
+    !Array.isArray(config.approvedSourceIds) ||
+    !config.approvedSourceIds.includes(mail?.id)
+  )
+    return null;
+  const metadata = {
+    sourceRevision: analysis?.revision ?? null,
+    policyVersion: 'mail-semantics-v1',
+  };
+  if (analysis?.source?.id !== mail?.id || typeof mail?.text !== 'string')
+    return { ...metadata, status: 'unavailable', code: 'INVALID_INPUT' };
+  if (!mail.text.trim())
+    return { ...metadata, status: 'unavailable', code: 'BODY_ONLY_REQUIRED' };
+  const items = [];
+  for (const kind of ['summary', 'tasks', 'issues', 'waiting', 'updates']) {
+    for (const [offset, item] of (analysis[kind] ?? []).entries()) {
+      const index = item.itemIndex ?? offset;
+      items.push({
+        id: `${mail.id}:${kind}:${index}`,
+        text: JSON.stringify({
+          kind,
+          text: item.text,
+          status: item.status ?? null,
+          assignee: item.assignee ?? null,
+          dueOriginal: item.dueOriginal ?? null,
+          serviceOriginal: item.serviceOriginal ?? null,
+          serviceDate: item.serviceDate ?? null,
+          due: item.due ?? null,
+          dueDate: item.dueDate ?? null,
+          dueAt: item.dueAt ?? null,
+          duePrecision: item.duePrecision ?? null,
+          ref: item.ref ?? null,
+          evidence: item.evidence ?? null,
+          completionEvidence: item.completionEvidence ?? null,
+        }),
+      });
+    }
+  }
+  if (!items.length) return { ...metadata, status: 'no_items', reviewIds: [] };
+  const source = JSON.stringify({
+    subject: mail.subject ?? '',
+    body: mail.text,
+    sentAt: mail.sent_at ?? null,
+    receivedAt: mail.received_at ?? null,
+  });
+  const result = await verifyMailExtraction({
+    source,
+    items,
+    key: config.key,
+    fetcher: config.fetcher,
+    timeoutMs: config.timeoutMs,
+  });
+  return { ...metadata, ...result };
+}
