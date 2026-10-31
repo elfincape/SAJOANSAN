@@ -75,6 +75,8 @@ export async function handleMailAutomation(action, body, user, ctx) {
         byteLength: bytes.length,
         fixture: 'synthetic-480x160',
         transport: 'scoped-capability',
+        legacyBridgeConfigured:
+          typeof ctx.workerKey === 'string' && ctx.workerKey.length >= 32,
         stored: false,
         modelCalled: false,
       });
