@@ -1429,3 +1429,196 @@ console.log(
     'PASS collector bridge diagnostics: upload-session 409 fixed code/operation/status survive batch boundary without provider text, IDs, filenames or credentials',
   );
 }
+
+{
+  const { downloadPublicMailImage, isPublicMailImageAddress } =
+    await import('../server/private-mail-public-image.mjs');
+  const { Readable } = await import('node:stream');
+  const { EventEmitter } = await import('node:events');
+  for (const address of [
+    '0.0.0.0',
+    '10.0.0.1',
+    '100.64.0.1',
+    '127.0.0.1',
+    '169.254.169.254',
+    '172.16.0.1',
+    '192.168.1.1',
+    '198.18.0.1',
+    '224.0.0.1',
+    '::1',
+    'fc00::1',
+    'fe80::1',
+    '::ffff:127.0.0.1',
+    '2001::1',
+    '2002:7f00:1::',
+    '2001:db8::1',
+  ])
+    assert.equal(isPublicMailImageAddress(address), false, address);
+  for (const address of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'])
+    assert.equal(isPublicMailImageAddress(address), true, address);
+  const image = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAeAAAACgAQAAAAD8gILgAAADuklEQVR42u2Zz2skRRTHP1XTZHohMo0oTCAwrXjwJCMIxkumAwu7R/8Dc/S4HsRVYqYNIe5tB7yKzr+wtxzCbmfJIYKYuXlZ3N5lYebgoYcMbvfY3eUh86MTRao6CiL9TvOa+UxVvXqv37dqhKK8SSq4gv+3sHWa9Eai5vfFu+LtzMnEDZm0hK0FZ/l6Ei/8SQwwijRHTlNHQppC5+wsOP+1dj7Oh88Kv/d3sJArk3Thv7ABbEc7YCpcfte2DKNt2SsLf2AWbeXLD68+nWjSKq3nrW+HaU6L7tnwe6XO41rYSZSGSWpT4V79xeZAd80vQfrQ9Tv+xTOR1g+1M+wvHrsGuS2Cud8uURjh3I9TI3iaAv7cX48BBqHuPt+Yfz724JXXQMnxbU14ZQXw5v6qDdDWW7qoGl0FV3AF/zfg6agUnBW8zB377CtHl1apUkqpZKiUUnEj6CiR1pWeLRpVEyA5tEP1fvqkVMCkO/C5KXSnbQHj+/u/uz89GNaTj1eJ8r1PDwxGjh7l+YhR8AUAfbOtGoYv05DG040y+3z6iZU4OLs3gbZvCDueJW1gDxizbZhhhWbXDkzTM99Z+A3z3C4sdGAIR0Gax8AuqxOQuwdTA3ijd7cegTwiD8N+/0hF+rBYe7NnuSBOqd9+hvjBestkq7ZWZRM4wHLcgD1pa5fk0vKuMrNiVeWm6VlQQ2pavwZcy8u/PYW8xrSrdlPBFfwPwpNyskSSLU9kAJl3DPcSu9S0JwSe8s3X3ASo0QrZFjrXJH8+ea+yjdAc2QKyk/b4vvzyQpaYNnc2iYLuJVmiXG34M4bhzs5ClvSBkTa8z+mdvYUsGXtQCwyi7Xh7C1lCsI21brRVy0A1tgHHBFabBVFjXBheucLoAlGQz2TJzCI9WD70YKN3NJMlEAR94hd6sDjxYe2N05ksGZ8c99Ta555men4FON6tuAkcJOApsJummsRYllypZzNtcLm5G8qSK7CZLLk8bUNZUmmSCq7gfxHul4EfF/3esWcEz67y+8oH/OU9uQ6sNmft9OLI3rhjAudbhbGUZ9K0LPBb3fybnz94nn2N+5FvFrCMNmk8jUAE/bzEVtWe1A6/k3e5dEWlC1uO5QJPkRCYwtmFivC9mHHPFE6XylPzn5cCnFwIgXf85L2G0bRrDMqWhwTfn0uQ12n9aAbLR+7DPCw5sni8dVL34Dn3TGELgk79tzZ4v/CqKa1UutAh5+b3JLJwvjCOtgjKvsMuKQMnKv0CvObIVbup4Aqu4FL2B6tHQcCfFVUfAAAAAElFTkSuQmCC',
+    'base64',
+  );
+  let dnsCalls = 0,
+    requestCalls = 0;
+  const options = {
+    lookup: async () => {
+      dnsCalls++;
+      return [{ address: '8.8.8.8', family: 4 }];
+    },
+    requester: (url, settings, done) => {
+      requestCalls++;
+      assert.equal(settings.servername, 'cdn.vendor.com');
+      assert.equal(settings.rejectUnauthorized, true);
+      assert.equal(settings.autoSelectFamily, false);
+      assert.equal(settings.agent, false);
+      assert.equal(settings.headers.Authorization, undefined);
+      settings.lookup('cdn.vendor.com', {}, (error, address, family) => {
+        assert.equal(error, null);
+        assert.equal(address, '8.8.8.8');
+        assert.equal(family, 4);
+      });
+      const request = new EventEmitter();
+      request.end = () =>
+        queueMicrotask(() => {
+          const response = Readable.from([image]);
+          response.statusCode = 200;
+          response.socket = { authorized: true, remoteAddress: '8.8.8.8' };
+          response.headers = { 'content-type': 'image/png' };
+          done(response);
+        });
+      return request;
+    },
+  };
+  const response = await downloadPublicMailImage(
+    'https://cdn.vendor.com/uuid',
+    options,
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.arrayBuffer()).byteLength, image.length);
+  assert.equal(dnsCalls, 1);
+  assert.equal(requestCalls, 1);
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage('https://cdn.vendor.com/uuid', {
+        ...options,
+        lookup: async () => [
+          { address: '8.8.8.8', family: 4 },
+          { address: '127.0.0.1', family: 4 },
+        ],
+      }),
+    /REMOTE_IMAGE_SOURCE/,
+  );
+  assert.equal(requestCalls, 1);
+  for (const url of [
+    'https://169.254.169.254/a',
+    'http://cdn.vendor.com/a',
+    'https://user:pass@cdn.vendor.com/a',
+    'https://cdn.vendor.com/a?recipient=owner',
+  ])
+    await assert.rejects(
+      () => downloadPublicMailImage(url, options),
+      /REMOTE_IMAGE_SOURCE/,
+    );
+  const bad = (change) => ({
+    ...options,
+    requester: (_url, _settings, done) => {
+      requestCalls++;
+      const request = new EventEmitter();
+      request.end = () =>
+        queueMicrotask(() => {
+          const response = Readable.from([image]);
+          Object.assign(response, {
+            statusCode: 200,
+            socket: { authorized: true, remoteAddress: '8.8.8.8' },
+            headers: { 'content-type': 'image/png' },
+            ...change,
+          });
+          done(response);
+        });
+      return request;
+    },
+  });
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage(
+        'https://cdn.vendor.com/uuid',
+        bad({ statusCode: 302, headers: { location: 'https://127.0.0.1/a' } }),
+      ),
+    /REMOTE_IMAGE_SOURCE/,
+  );
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage(
+        'https://cdn.vendor.com/uuid',
+        bad({ socket: { authorized: true, remoteAddress: '127.0.0.1' } }),
+      ),
+    /REMOTE_IMAGE_SOURCE/,
+  );
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage(
+        'https://cdn.vendor.com/uuid',
+        bad({ headers: { 'content-type': 'text/html' } }),
+      ),
+    /REMOTE_IMAGE_SOURCE/,
+  );
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage('https://cdn.vendor.com/uuid', {
+        ...options,
+        maxBytes: 10,
+      }),
+    /IMAGE_LIMIT/,
+  );
+  await assert.rejects(
+    () =>
+      downloadPublicMailImage('https://cdn.vendor.com/uuid', {
+        ...options,
+        timeoutMs: 10,
+        lookup: () => new Promise(() => {}),
+      }),
+    /REMOTE_IMAGE_TIMEOUT/,
+  );
+  let downloads = 0;
+  const request = (auth = workerKey) =>
+    new Request('https://sajoansan.vercel.app/api/private-mail-worker', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + auth },
+      body: JSON.stringify({
+        kind: 'remote-image',
+        mailboxId: '39045005-313e-42e1-b50c-2394b3b6ff26',
+        messageId: '11111111-1111-4111-8111-111111111111',
+        url: 'https://cdn.vendor.com/uuid',
+      }),
+    });
+  const remoteOptions = {
+    env: { MAIL_COLLECTOR_KEY: workerKey },
+    downloadImage: async () => {
+      downloads++;
+      return new Response(image, { headers: { 'content-type': 'image/png' } });
+    },
+    fetcher: async () =>
+      assert.fail('remote binary relay must not call model or collection'),
+    collect: () => assert.fail('no collection'),
+  };
+  assert.equal(
+    (await handlePrivateMailWorker(request(), remoteOptions)).status,
+    200,
+  );
+  assert.equal(downloads, 1);
+  assert.equal(
+    (
+      await handlePrivateMailWorker(
+        request('pmjob_' + 'a'.repeat(64)),
+        remoteOptions,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(downloads, 1);
+  console.log(
+    'PASS public image downloader: DNS all-address checks and pinned lookup/TLS/socket verification; private/mixed DNS, metadata, rebinding, redirect, MIME, bytes and timeout rejected; server-only existing key relay, no model or POP calls',
+  );
+}

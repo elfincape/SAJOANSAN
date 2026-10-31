@@ -98,6 +98,7 @@ export async function loadApprovedRemoteMailImages({
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetcher(item.url, {
+        sourceId,
         redirect: 'error',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',

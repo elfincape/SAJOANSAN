@@ -1,3 +1,4 @@
+import { downloadPublicMailImage } from './private-mail-public-image.mjs';
 import { timingSafeEqual } from 'node:crypto';
 import { handleOwnerCollect } from './private-mail-owner-collect.mjs';
 const BRIDGE =
@@ -37,6 +38,7 @@ export async function handlePrivateMailWorker(
     fetcher = fetch,
     collect = handleOwnerCollect,
     logger = (entry) => console.warn(entry),
+    downloadImage = downloadPublicMailImage,
   } = {},
 ) {
   const json = (value, status = 200) =>
@@ -83,6 +85,22 @@ export async function handlePrivateMailWorker(
         !/[\r\n\0]/.test(env.MAIL_POP_PASSWORD),
     });
   if (!authorizedCandidate) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
+  if (body?.kind === 'remote-image') {
+    if (!staticKey) return json({ error: 'WORKER_AUTH_REQUIRED' }, 403);
+    if (
+      body.mailboxId !== BOX ||
+      !UUID.test(body.messageId ?? '') ||
+      typeof body.url !== 'string' ||
+      body.url.length > 2000
+    )
+      return json({ error: 'WORKER_TARGET_REJECTED' }, 400);
+    try {
+      return await downloadImage(body.url);
+    } catch {
+      return json({ error: 'REMOTE_IMAGE_SOURCE' }, 422);
+    }
+  }
+
   if (
     !body ||
     typeof body !== 'object' ||
