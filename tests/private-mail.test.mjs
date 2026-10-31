@@ -6059,6 +6059,12 @@ console.log(
     assert.equal(options.redirect, 'error');
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'jev-1.14.0');
+    assert.ok(
+      body.state.interpretationRules.some((rule) =>
+        rule.includes('운행 대상일'),
+      ),
+    );
+    assert.equal(body.state.source, source);
     assert.equal(body.questions.q0.type, 'noul');
     assert.equal(body.questions.q1.type, 'noul');
     return Response.json({

@@ -4,6 +4,14 @@ export const JEV_VERIFIER_MODEL = 'jev-1.14.0';
 const ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const MAX_RESPONSE = 65536;
 
+export const MAIL_INTERPRETATION_RULES = Object.freeze([
+  '배차 요청의 X일 배차는 운행 대상일이다. 준비 업무는 요청받은 현재부터 표시한다. X일을 배차 처리마감으로 바꾸지 않는다.',
+  '하차 HH:mm은 하차 예정시각이며, 별도 명시 없이는 배차 처리마감이 아니다.',
+  'P는 팔레트 수량이며 차량 톤수가 아니다.',
+  '차량 배정 완료는 배차 준비의 완료일 수 있지만 실제 운행·하차 완료를 뜻하지 않는다.',
+  '현재 발신자의 직접 요청과 참고로 전달한 문서 속 타인의 요청을 구분한다.',
+]);
+
 async function boundedJson(response) {
   if (!response.body) throw Error('INVALID_RESPONSE');
   const reader = response.body.getReader();
@@ -65,6 +73,7 @@ export async function verifyMailExtraction({
     return { status: 'unavailable', code: 'INVALID_INPUT' };
   }
   const state = {
+    interpretationRules: MAIL_INTERPRETATION_RULES,
     source,
     proposed: items.map((item, index) => ({
       ref: 'q' + index,

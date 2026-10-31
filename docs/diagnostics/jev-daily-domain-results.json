@@ -1,0 +1,213 @@
+{
+  "model": "jev-1.14.0",
+  "rulesVersion": "mail-semantics-v1",
+  "runs": [
+    {
+      "status": "review",
+      "model": "jev-1.14.0",
+      "findings": [
+        {
+          "id": "reference",
+          "unsupportedProbability": 0.03
+        },
+        {
+          "id": "wrong_owner",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "service",
+          "unsupportedProbability": 0.05
+        },
+        {
+          "id": "wrong_tons",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "wrong_due",
+          "unsupportedProbability": 0.99
+        },
+        {
+          "id": "dispatch_done",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_unload",
+          "unsupportedProbability": 0.98
+        }
+      ],
+      "reviewIds": ["wrong_owner", "wrong_tons", "wrong_due", "wrong_unload"],
+      "latencyMs": 303,
+      "usage": {
+        "inputTokens": 1965,
+        "outputTokens": 123
+      }
+    },
+    {
+      "status": "review",
+      "model": "jev-1.14.0",
+      "findings": [
+        {
+          "id": "reference",
+          "unsupportedProbability": 0.03
+        },
+        {
+          "id": "wrong_owner",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "service",
+          "unsupportedProbability": 0.06
+        },
+        {
+          "id": "wrong_tons",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "wrong_due",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "dispatch_done",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_unload",
+          "unsupportedProbability": 0.98
+        }
+      ],
+      "reviewIds": ["wrong_owner", "wrong_tons", "wrong_due", "wrong_unload"],
+      "latencyMs": 268,
+      "usage": {
+        "inputTokens": 1965,
+        "outputTokens": 123
+      }
+    },
+    {
+      "status": "review",
+      "model": "jev-1.14.0",
+      "findings": [
+        {
+          "id": "reference",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_owner",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "service",
+          "unsupportedProbability": 0.08
+        },
+        {
+          "id": "wrong_tons",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "wrong_due",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "dispatch_done",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_unload",
+          "unsupportedProbability": 0.99
+        }
+      ],
+      "reviewIds": ["wrong_owner", "wrong_tons", "wrong_due", "wrong_unload"],
+      "latencyMs": 263,
+      "usage": {
+        "inputTokens": 1965,
+        "outputTokens": 123
+      }
+    },
+    {
+      "status": "review",
+      "model": "jev-1.14.0",
+      "findings": [
+        {
+          "id": "reference",
+          "unsupportedProbability": 0.03
+        },
+        {
+          "id": "wrong_owner",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "service",
+          "unsupportedProbability": 0.07
+        },
+        {
+          "id": "wrong_tons",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "wrong_due",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "dispatch_done",
+          "unsupportedProbability": 0.03
+        },
+        {
+          "id": "wrong_unload",
+          "unsupportedProbability": 0.98
+        }
+      ],
+      "reviewIds": ["wrong_owner", "wrong_tons", "wrong_due", "wrong_unload"],
+      "latencyMs": 282,
+      "usage": {
+        "inputTokens": 1965,
+        "outputTokens": 123
+      }
+    },
+    {
+      "status": "review",
+      "model": "jev-1.14.0",
+      "findings": [
+        {
+          "id": "reference",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_owner",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "service",
+          "unsupportedProbability": 0.05
+        },
+        {
+          "id": "wrong_tons",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "wrong_due",
+          "unsupportedProbability": 0.98
+        },
+        {
+          "id": "dispatch_done",
+          "unsupportedProbability": 0.02
+        },
+        {
+          "id": "wrong_unload",
+          "unsupportedProbability": 0.99
+        }
+      ],
+      "reviewIds": ["wrong_owner", "wrong_tons", "wrong_due", "wrong_unload"],
+      "latencyMs": 274,
+      "usage": {
+        "inputTokens": 1965,
+        "outputTokens": 123
+      }
+    }
+  ],
+  "sampleCount": 5,
+  "p50Ms": 274,
+  "p95NearestRankMs": 303,
+  "provisionalReviewThreshold": 0.3,
+  "falsePositiveCount": 0,
+  "falseNegativeCount": 0,
+  "caveat": "기존고정세트에업무해석규칙추가. 구버전Luna결과와직접우열비교금지. 실사용정확도보장아님."
+}
