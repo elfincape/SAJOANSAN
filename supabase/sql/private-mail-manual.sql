@@ -54,12 +54,17 @@ begin
  if e->>'status'='ready' or (e->>'leaseUntil')::timestamptz>received
  or (e->>'nextAt')::timestamptz>received then return jsonb_build_object('entry',e,'claimed',false); end if;
  attempts=coalesce((e->>'attempts')::integer,0);
+ if attempts>=3 and e->>'status'='processing' and coalesce((e->>'leaseUntil')::timestamptz,'-infinity')<=received then
+  e=(e-'lease'-'leaseUntil')||jsonb_build_object('status','failed','error','RETRY_LIMIT','nextAt',received,'updatedAt',received);
+  entries=jsonb_set(entries,array[entry_id::text],e);
+  update public.private_mailboxes set manual_entries=entries where id=p_box;
+ end if;
  -- Only an explicit owner retry can begin another batch after a confirmed terminal failure.
  if attempts>=3 and coalesce(p_retry,false) and e->>'status'='failed'
  and e->>'lease' is null and e->>'leaseUntil' is null
  and (e->>'nextAt')::timestamptz<=received then attempts=0; end if;
  if attempts>=3 then return jsonb_build_object('entry',e||jsonb_build_object('status','failed','error','RETRY_LIMIT'),'claimed',false); end if;
- e=e||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '2 minutes',
+ e=e||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
  'attempts',attempts+1,'error',null,'updatedAt',received);
  candidate=jsonb_set(entries,array[entry_id::text],e);
  if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;

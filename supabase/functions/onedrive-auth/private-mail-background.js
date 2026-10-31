@@ -1,6 +1,6 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
-import { manualDailyView } from './private-mail-manual.js';
+import { manualDailyView, handleManualMessage } from './private-mail-manual.js';
 import { selectBriefingImages } from './private-mail-images.js';
 import { restoreMailHistoryDocument } from './private-mail-history.js';
 import { writeDailyBriefing } from './private-mail-notes-writer.js';
@@ -371,6 +371,27 @@ export async function handleMailAutomation(action, body, user, ctx) {
     return json({ job: { id: job.id, status: job.status, error: job.error } });
   }
   if (body.operation === 'analyze') {
+    const manual = current.manual_entries?.[body.id];
+    if (manual) {
+      return handleManualMessage(
+        'private-mail-manual-add',
+        {
+          text: manual.text,
+          clientRequestId: manual.clientRequestId,
+          referenceDate: manual.requestedReference ?? null,
+          retry: manual.status === 'failed',
+        },
+        { id: current.owner_id },
+        {
+          ...ctx,
+          enqueueManualReport: (date) =>
+            rpc('private_mail_dispatch_report', {
+              p_box: current.id,
+              p_report_day: date,
+            }),
+        },
+      );
+    }
     const ai = ctx.resolveAiConfiguration
       ? await ctx.resolveAiConfiguration()
       : ctx;

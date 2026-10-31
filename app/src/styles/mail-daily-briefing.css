@@ -52,11 +52,14 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--theme-border-soft);
+  display: grid;
+  gap: 10px;
 }
 .mail-daily-briefing .daily-items > li {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--theme-border-soft);
+  padding: 14px 16px;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: var(--ean-panel-radius);
+  background: var(--theme-panel);
   overflow-wrap: anywhere;
 }
 .mail-daily-briefing .daily-items > li > p {
@@ -222,9 +225,8 @@
   overflow: auto;
 }
 .mail-daily-briefing .daily-manual {
-  margin: 12px 0 28px;
-  padding: 16px 0 24px;
-  border-bottom: 1px solid var(--theme-border-soft);
+  margin: 8px 0 16px;
+  padding: 0;
 }
 .mail-daily-briefing .daily-manual > h2 {
   margin: 0 0 14px;
@@ -285,4 +287,39 @@
 .mail-daily-briefing .daily-mail-summary-points {
   margin: 0;
   padding-inline-start: 20px;
+}
+
+.daily-message-dialog {
+  padding: 24px;
+  color: var(--theme-text);
+}
+.daily-message-dialog h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+.daily-message-dialog .manual-message-label {
+  display: grid;
+  gap: 8px;
+}
+.daily-message-dialog textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+}
+.daily-message-dialog .daily-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 16px;
+}
+.daily-message-dialog .manual-reference {
+  display: grid;
+  gap: 6px;
+  margin-right: auto;
+}
+.daily-message-dialog .daily-task-meta {
+  color: var(--theme-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }

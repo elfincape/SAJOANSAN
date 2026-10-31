@@ -4,6 +4,7 @@ import {
   renderWorkSections,
   WORK_SECTIONS,
   WORK_STATUS_LABELS,
+  needsOwnerReview,
 } from './private-mail-work.js';
 
 export const BRIEFING_TARGET = Object.freeze({
@@ -502,7 +503,7 @@ export function dailyBriefingView({
   }
   const components = new Map();
   for (const mail of rows) {
-    if (mail.source.carryOnly === true) continue;
+    if (mail.source.carryOnly === true && !needsOwnerReview(mail)) continue;
     const id = find(mail.source.id);
     components.set(id, [...(components.get(id) ?? []), mail]);
   }
