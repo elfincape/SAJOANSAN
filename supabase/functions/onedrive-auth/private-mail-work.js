@@ -736,8 +736,8 @@ function briefingReferenceLine(item) {
 }
 export function renderBriefingWorkNote(items) {
   const font = 'font-family:Malgun Gothic,Arial,sans-serif;font-size:11pt;font-weight:normal;line-height:150%';
-  const paragraph = font + ';margin-top:0pt;margin-bottom:4pt;margin-left:36pt';
-  const itemStyle = font + ';margin-top:12pt;margin-bottom:4pt;margin-left:18pt';
+  const paragraph = font + ';margin-top:0pt;margin-bottom:4pt';
+  const itemStyle = font + ';margin-top:12pt;margin-bottom:4pt';
   const supporting = paragraph;
   const ordinal = n => n <= 20 ? String.fromCodePoint(0x2460+n-1) : n <= 35 ? String.fromCodePoint(0x3251+n-21) : n <= 50 ? String.fromCodePoint(0x32b1+n-36) : '('+n+')';
   let sectionNumber = 0;
@@ -790,20 +790,21 @@ export function renderBriefingWorkNote(items) {
     if (!rows.length && !(heading === '참고사항' && routine.length)) continue;
     chunks.push('<h2 style="font-family:Malgun Gothic,Arial,sans-serif;font-size:14pt;font-weight:bold;color:#222222;margin-top:18pt;margin-bottom:8pt">' + (++sectionNumber) + '. ' + heading + '</h2>');
     let itemNumber = 0;
+    if (rows.length) chunks.push('<ul style="list-style-type:none">');
     for (const item of rows) {
       const number = ordinal(++itemNumber) + ' ';
+      const detailLines = [];
+      chunks.push('<li style="list-style-type:none;' + itemStyle + '">');
       if (item.category === 'reference')
-        chunks.push('<p style="' + itemStyle + '">' + number + escape(briefingReferenceLine(item)) + '</p>');
+        chunks.push(number + escape(briefingReferenceLine(item)));
       else {
         chunks.push(
-          '<p style="' + itemStyle + '">' +
-            number + escape(item.title) +
-            (item.status === 'cancelled' ? ' · 취소' : '') +
-            '</p>',
+          number + escape(item.title) +
+            (item.status === 'cancelled' ? ' · 취소' : ''),
         );
         for (const text of item.summary)
           if (!repeatsWorkTitle(text, item.title))
-            chunks.push('<p style="' + paragraph + '">- ' + escape(text) + '</p>');
+            detailLines.push('<li style="list-style-type:none;' + paragraph + '">- ' + escape(text) + '</li>');
         const details = [
           item.center && !item.title.includes(item.center) && item.center,
           item.customer && !item.title.includes(item.customer) && item.customer,
@@ -820,22 +821,27 @@ export function renderBriefingWorkNote(items) {
           item.serviceDate && '운행·납품 ' + item.serviceDate,
         ].filter(Boolean);
         if (details.length)
-          chunks.push('<p style="' + supporting + '">- ' + details.map(escape).join(' · ') + '</p>');
+          detailLines.push('<li style="list-style-type:none;' + supporting + '">- ' + details.map(escape).join(' · ') + '</li>');
         for (const [label, text] of [
           ['진행', item.progress],
           ['다음 조치', item.nextAction],
           ['회신 대기', item.waitingFor],
         ])
           if (text && text !== item.title && !item.summary.includes(text))
-            chunks.push('<p style="' + paragraph + '">- ' + label + ': ' + escape(text) + '</p>');
+            detailLines.push('<li style="list-style-type:none;' + paragraph + '">- ' + label + ': ' + escape(text) + '</li>');
       }
+      if (detailLines.length) chunks.push('<ul style="list-style-type:none">' + detailLines.join('') + '</ul>');
+      chunks.push('</li>');
       for (const source of item.sourceRefs)
         if (source.kind === 'mail') sources.set(source.id, source);
     }
+    if (rows.length) chunks.push('</ul>');
     if (heading === '참고사항' && routine.length) {
       chunks.push('<h3 style="font-family:Malgun Gothic,Arial,sans-serif;font-size:11pt;font-weight:bold;color:#222222;margin-top:10pt;margin-bottom:5pt;margin-left:0pt">정기보고메일</h3>');
+      chunks.push('<ul style="list-style-type:none">');
       for (const item of routine)
-        chunks.push('<p style="' + itemStyle + '">' + ordinal(++itemNumber) + ' ' + escape(briefingReferenceLine(item)) + '</p>');
+        chunks.push('<li style="list-style-type:none;' + itemStyle + '">' + ordinal(++itemNumber) + ' ' + escape(briefingReferenceLine(item)) + '</li>');
+      chunks.push('</ul>');
       // Normal recurring reports intentionally have no photos in the note.
     }
   }
