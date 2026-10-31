@@ -712,7 +712,11 @@ export function makeHandler(
         return await callback(url);
       if (req.method !== 'POST')
         return json({ error: 'POST 요청이 필요합니다.' }, 405);
-      if (['api-admin-status', 'api-admin-default'].includes(action)) {
+      if (
+        ['api-admin-status', 'api-admin-default', 'api-admin-verify'].includes(
+          action,
+        )
+      ) {
         const administrator = await caller(req, true);
         return await handleApiManagement(
           action,

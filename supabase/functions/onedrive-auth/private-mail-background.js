@@ -228,6 +228,32 @@ export async function handleMailAutomation(action, body, user, ctx) {
       });
     }
   }
+  if (action === 'private-mail-work-correction') {
+    if (
+      typeof body.workId !== 'string' ||
+      !day(body.day) ||
+      !body.patch ||
+      typeof body.patch !== 'object' ||
+      Array.isArray(body.patch)
+    )
+      throw fail('WORK_CORRECTION_INVALID');
+    try {
+      const saved = await rpc('private_mail_work_correct', {
+        p_box: current.id,
+        p_user: user.id,
+        p_work: body.workId,
+        p_day: body.day,
+        p_patch: body.patch,
+        p_expected: body.expectedUpdatedAt ?? null,
+      });
+      if (saved?.saved !== true) throw fail('WORK_CORRECTION_NOT_SAVED', 409);
+      return json(saved);
+    } catch (error) {
+      if (String(error.message).includes('WORK_CORRECTION_CONFLICT'))
+        throw fail('WORK_CORRECTION_CONFLICT', 409);
+      throw error;
+    }
+  }
   if (action === 'private-mail-intent-correction') {
     if (!uuid(body.id) || typeof body.reference !== 'boolean')
       throw fail('CORRECTION_INVALID');
@@ -327,7 +353,11 @@ export async function handleMailAutomation(action, body, user, ctx) {
         now: date + 'T12:00:00+09:00',
         analyses,
         overrides: current.briefing_overrides ?? {},
-        manual: manualDailyView(current.manual_entries ?? {}, date),
+        manual: manualDailyView(
+          current.manual_entries ?? {},
+          date,
+          current.briefing_overrides ?? {},
+        ),
       }),
     );
   }
@@ -591,6 +621,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const lease = crypto.randomUUID();
     const result = await analyzePrivateMail({
       messageId: body.id,
+      resolveJevConfiguration: ctx.resolveJevConfiguration,
       intentOverride:
         current.automation_config?.intentOverrides?.[body.id]?.intent,
       key: ai.aiKey,
@@ -693,7 +724,11 @@ export async function handleMailAutomation(action, body, user, ctx) {
       );
 
       reportStage = 'notes_writer';
-      const manual = manualDailyView(fresh.manual_entries ?? {}, body.day);
+      const manual = manualDailyView(
+        fresh.manual_entries ?? {},
+        body.day,
+        fresh.briefing_overrides ?? {},
+      );
       const relevantEntries = new Set(
         manual.entries.map((entry) => entry.entryId),
       );

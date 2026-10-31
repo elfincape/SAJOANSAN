@@ -1,10 +1,11 @@
 import { dateFrom, deadline } from './private-mail-manual.js';
 import {
   dailyWorkItems,
-  renderWorkSections,
+  renderBriefingWorkNote,
   WORK_SECTIONS,
   WORK_STATUS_LABELS,
   needsOwnerReview,
+  ownerWorkCorrection,
 } from './private-mail-work.js';
 
 export const BRIEFING_TARGET = Object.freeze({
@@ -503,7 +504,20 @@ export function dailyBriefingView({
   }
   const components = new Map();
   for (const mail of rows) {
-    if (mail.source.carryOnly === true && !needsOwnerReview(mail)) continue;
+    const ownerCategory = ownerWorkCorrection(
+      overrides,
+      'source:' + mail.source.id,
+      identity.day,
+    );
+    const ownerAction =
+      ownerCategory?.actor === 'owner' &&
+      ['task', 'issue', 'review'].includes(ownerCategory.category);
+    if (
+      mail.source.carryOnly === true &&
+      !needsOwnerReview(mail) &&
+      !ownerAction
+    )
+      continue;
     const id = find(mail.source.id);
     components.set(id, [...(components.get(id) ?? []), mail]);
   }
@@ -754,6 +768,7 @@ export function dailyBriefingView({
     ),
   );
   const visible = (item) =>
+    ownerWorkCorrection(overrides, item.ref, identity.day)?.done === false ||
     linkedRefs.has(item.ref) ||
     item.source.carryOnly !== true ||
     !['complete', 'resolved'].includes(item.status) ||
@@ -823,7 +838,12 @@ export function dailyBriefingView({
   };
   return {
     ...view,
+    excludedWorkItems: dailyWorkItems(view, manual, {
+      workOverrides: overrides,
+      includeExcluded: true,
+    }).filter((item) => item.excluded),
     workItems: dailyWorkItems(view, manual, {
+      workOverrides: overrides,
       excludedSourceIds: new Set(
         allRows
           .filter((mail) => mail.source.excluded === true)
@@ -853,8 +873,12 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
       (item) => item.updatedAt ?? item.source.receivedAt ?? item.source.sentAt,
     ),
     ...(manual.entries ?? []).map((item) => item.updatedAt ?? item.submittedAt),
-    ...view.workItems
-      .flatMap((item) => [item.ownerStateAt, item.closedAt])
+    ...[...view.workItems, ...(view.excludedWorkItems ?? [])]
+      .flatMap((item) => [
+        item.ownerStateAt,
+        item.closedAt,
+        item.correction?.updatedAt,
+      ])
       .filter(Boolean),
   ];
   const updatedAt =
@@ -869,7 +893,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
     '"><p>최종 업데이트: ' +
     escape(localTime(updatedAt)) +
     ' (한국시간)</p>' +
-    renderWorkSections(view.workItems) +
+    renderBriefingWorkNote(view.workItems) +
     '</div>';
   const html =
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +

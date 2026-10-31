@@ -72,7 +72,7 @@ export interface DailyMailItem {
   duePrecision?: 'time' | 'day' | null;
   resolution?: {
     manual: boolean;
-    done?: boolean;
+    done?: boolean | null;
     actor?: string;
     updatedAt?: string;
     evidence?: string;
@@ -81,6 +81,7 @@ export interface DailyMailItem {
 }
 export interface DailyMailOverview {
   workItems?: DailyWork[];
+  excludedWorkItems?: DailyWork[];
   workSections?: {
     id: 'tasks' | 'issues' | 'reference' | 'completed';
     title: string;
@@ -104,7 +105,32 @@ export interface DailyMailOverview {
   resolvedWaiting?: DailyMailItem[];
   sources: DailyMailSource[];
 }
+export type WorkCategory =
+  'task' | 'reference' | 'routine' | 'issue' | 'review';
+export interface WorkPatch {
+  category?: WorkCategory | null;
+  excluded?: boolean;
+  reason?: 'spam' | 'manual' | null;
+  done?: boolean | null;
+}
+export interface WorkCorrection extends WorkPatch {
+  currentDone?: boolean | null;
+  updatedAt?: string;
+}
 export interface DailyWork {
+  correction?: WorkCorrection;
+  uncorrected?: Pick<
+    DailyWork,
+    | 'category'
+    | 'reportKind'
+    | 'status'
+    | 'closedAt'
+    | 'ownerStateAt'
+    | 'controlRef'
+    | 'needsConfirmation'
+  >;
+  excluded?: boolean;
+
   section:
     'tasks' | 'issues' | 'reference' | 'routine' | 'review' | 'completed';
   schema: 'sajo-daily-work-v1';
@@ -271,6 +297,17 @@ export const privateMail = {
 
   dailyOverview: (day?: string) =>
     oneDriveCall<DailyMailOverview>('private-mail-daily-overview', { day }),
+  correctWork: (body: {
+    workId: string;
+    day: string;
+    patch: WorkPatch;
+    expectedUpdatedAt?: string | null;
+  }) =>
+    oneDriveCall<{
+      saved: boolean;
+      workId: string;
+      correction: WorkCorrection;
+    }>('private-mail-work-correction', body),
   correctIntent: (id: string, reference: boolean) =>
     oneDriveCall<{ saved: boolean }>('private-mail-intent-correction', {
       id,

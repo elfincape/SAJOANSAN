@@ -132,7 +132,8 @@ begin
   'eventAt',to_char(event_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   'model',p_entry_value->'inference'->>'model','rulesVersion','manual-v1',
   'structuredResult',jsonb_build_object('items',p_entry_value->'items','submittedAt',p_entry_value->'submittedAt',
-   'referenceDate',p_entry_value->'referenceDate','referenceSource',p_entry_value->'referenceSource','authoredDate',p_entry_value->'authoredDate'),
+   'referenceDate',p_entry_value->'referenceDate','referenceSource',p_entry_value->'referenceSource','authoredDate',p_entry_value->'authoredDate',
+   'jevReview',p_entry_value->'jevReview'),
   'correction',null,'completionEvents',events);
  payload=record::text;
  return public.private_mail_history_enqueue(encode(sha256(convert_to(payload,'UTF8')),'hex'),payload);

@@ -28,11 +28,40 @@ export interface AiProvider {
   models: AiModel[];
 }
 export interface ApiManagementStatus {
+  judgment?: {
+    provider: string;
+    keyConfigured: boolean;
+    liveVerified: boolean;
+  };
   scope: string;
   default: AiDefault;
   providers: AiProvider[];
 }
+export interface ApiCompatibilityResult {
+  provider: string;
+  model: string;
+  protocol: string;
+  checkedAt: string;
+  passed: boolean;
+  checks: {
+    kind: string;
+    status: string;
+    returnedModel?: string;
+    stopReason?: string;
+    usage?: Record<string, number | null>;
+    unsupportedProbability?: number;
+    reviewRequired?: boolean;
+    providerStatus?: number | null;
+  }[];
+}
 export const apiManagement = {
+  verify: (provider: string, model: string) =>
+    oneDriveCall<ApiCompatibilityResult>(
+      'api-admin-verify',
+      { provider, model, confirmation: 'synthetic-compatibility' },
+      false,
+      75000,
+    ),
   status: () =>
     oneDriveCall<ApiManagementStatus>('api-admin-status', {}, false, 30000),
   save: (provider: string, model: string, revision: number) =>

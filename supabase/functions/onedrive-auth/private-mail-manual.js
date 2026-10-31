@@ -1,3 +1,4 @@
+import { reviewNormalizedManual } from './private-mail-jev-verifier.js';
 import { callLuna, lunaInference } from '../_shared/luna.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { requiresMailPrivacyReview } from './private-mail-images.js';
@@ -5,6 +6,7 @@ import {
   WORK_FORMAT,
   validWorkRef,
   dailyWorkItems,
+  ownerWorkCorrection,
 } from './private-mail-work.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -618,7 +620,7 @@ function publicEntry(entry, items) {
     items,
   };
 }
-export function manualDailyView(entries, day) {
+export function manualDailyView(entries, day, workOverrides = {}) {
   if (!validDay(day)) throw Error('REPORT_DATE');
   const rows = Array.isArray(entries)
     ? entries
@@ -760,6 +762,16 @@ export function manualDailyView(entries, day) {
   }
   for (const entry of selected)
     for (const item of entry.items) addContext(item.workRef);
+  for (const [ref] of allItems) {
+    const correction = ownerWorkCorrection(workOverrides, ref, day);
+    if (
+      correction?.actor === 'owner' &&
+      (correction.done === false ||
+        correction.excluded === true ||
+        ['task', 'issue', 'review'].includes(correction.category))
+    )
+      addContext(ref);
+  }
   // Hidden linked owner decisions still govern the underlying mail/work on later days.
   for (const [ref, context] of allItems)
     if (
@@ -1074,6 +1086,37 @@ export async function handleManualMessage(action, body, user, ctx) {
     });
     if (!failed) throw fail('MANUAL_ITEM_CONFLICT', 409);
     return json({ ...publicEntry(failed, []), reportQueued: false });
+  }
+  if (typeof ctx.resolveJevConfiguration === 'function') {
+    try {
+      const config = await ctx.resolveJevConfiguration(finished.entryId);
+      const related = Object.values(current.manual_entries).flatMap((prior) =>
+        prior.status === 'ready'
+          ? (prior.items ?? []).map((item) => ({
+              ref: item.ref,
+              kind: item.kind,
+              text: item.text,
+              status: item.done ? 'complete' : 'pending',
+            }))
+          : [],
+      );
+      const review = await reviewNormalizedManual({
+        entry: finished,
+        related,
+        config,
+      });
+      if (review) {
+        const saved = await rpc('private_mail_manual_jev_review', {
+          p_entry: finished.entryId,
+          p_source_hash: entry.textHash,
+          p_items: finished.items,
+          p_review: review,
+        });
+        if (saved) finished.jevReview = review;
+      }
+    } catch {
+      /* Advisory review must never turn a completed registration into a failure. */
+    }
   }
   const reportQueued =
     finished.items.length > 0

@@ -188,10 +188,89 @@ function mailSummaryTexts(mail) {
     ),
   ].slice(0, 6);
 }
+export function ownerWorkCorrection(overrides, workId, day) {
+  const current = overrides?.['work:' + workId];
+  if (!current || current.actor !== 'owner' || !day) return current;
+  const end = Date.parse(day + 'T00:00:00+09:00') + 86400000;
+  const snapshots = Array.isArray(current.events) ? current.events : [current];
+  const historical = snapshots
+    .filter(
+      (value) =>
+        Number.isFinite(Date.parse(value.updatedAt)) &&
+        Date.parse(value.updatedAt) < end,
+    )
+    .at(-1);
+  return {
+    ...current,
+    currentDone: current.done ?? null,
+    done: historical?.done ?? null,
+    doneAt: historical?.doneAt ?? historical?.updatedAt ?? null,
+  };
+}
+export function applyOwnerWorkCorrection(item, overrides = {}, day) {
+  const correction = ownerWorkCorrection(overrides, item.workId, day);
+  if (!correction || correction.actor !== 'owner') return item;
+  const category = correction.category;
+  const uncorrected =
+    item.uncorrected ??
+    Object.fromEntries(
+      [
+        'category',
+        'reportKind',
+        'status',
+        'closedAt',
+        'ownerStateAt',
+        'controlRef',
+        'needsConfirmation',
+      ].map((key) => [key, item[key] ?? null]),
+    );
+  item = { ...item, ...uncorrected };
+  const result = {
+    uncorrected,
+    ...item,
+    correction: {
+      category: category ?? null,
+      excluded: correction.excluded === true,
+      reason: correction.reason ?? null,
+      done: typeof correction.done === 'boolean' ? correction.done : null,
+      updatedAt: correction.updatedAt,
+      currentDone: correction.currentDone ?? correction.done ?? null,
+    },
+    excluded: correction.excluded === true,
+  };
+  if (['task', 'issue', 'reference', 'routine', 'review'].includes(category)) {
+    result.category = ['routine', 'review'].includes(category)
+      ? 'reference'
+      : category;
+    result.reportKind = ['routine', 'review'].includes(category)
+      ? category
+      : null;
+    result.needsConfirmation = category === 'review';
+    if (result.category === 'reference') {
+      result.status = 'pending';
+      result.closedAt = null;
+    }
+  }
+  if (typeof correction.done === 'boolean' && result.category !== 'reference') {
+    result.status = correction.done ? 'complete' : 'pending';
+    result.closedAt = correction.done
+      ? (correction.doneAt ?? correction.updatedAt)
+      : null;
+    result.ownerStateAt = correction.doneAt ?? correction.updatedAt;
+  }
+  if (result.category !== 'reference')
+    result.controlRef ??= 'work:' + item.workId;
+  return { ...result, section: workSection(result) };
+}
+
 export function dailyWorkItems(
   view,
   manual = {},
-  { excludedSourceIds = new Set() } = {},
+  {
+    excludedSourceIds = new Set(),
+    workOverrides = {},
+    includeExcluded = false,
+  } = {},
 ) {
   const result = [],
     summaries = new Map(),
@@ -481,6 +560,25 @@ export function dailyWorkItems(
     merged.set(key, combined);
   }
   return [...merged.values()]
+    .map((item) => applyOwnerWorkCorrection(item, workOverrides, view.day))
+    .filter((item) => includeExcluded || !item.excluded)
+    .filter(
+      (item) =>
+        !(
+          view.day &&
+          item.correction &&
+          item.category === 'reference' &&
+          item.reportKind !== 'review' &&
+          !item.excluded &&
+          item.correction.updatedAt &&
+          new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date(item.correction.updatedAt)) < view.day
+        ),
+    )
     .filter(
       (item) =>
         !(
@@ -620,5 +718,121 @@ export function renderWorkSections(items) {
     if (source.kind === 'mail')
       chunks.push('<div data-id="sajo-mail-photos-' + source.id + '"></div>');
   }
+  return chunks.join('');
+}
+
+function briefingReferenceLine(item) {
+  const text = item.summary[0] || item.title;
+  const first = text.split(/[.!?](?=\s|$)|\n/)[0].trim();
+  const detail = first.search(
+    /(?:[,，;·]\s*|\s)(?:보증금|월세|관리비|계약\s*기간|월\s*지원|지원금|계약\s*조건)/,
+  );
+  const lead = (detail >= 0 ? first.slice(0, detail) : first).replace(
+    /[,:;·\s]+$/,
+    '',
+  );
+  const line = lead && lead.length <= 120 ? lead : item.title;
+  return line.replace(/(?:안내합니다|안내드립니다)[.]?$/, '안내');
+}
+export function renderBriefingWorkNote(items) {
+  const visible = items.filter((item) => !item.excluded);
+  const completed = (item) => ['complete', 'cancelled'].includes(item.status);
+  const progress = (item) =>
+    !completed(item) &&
+    (item.status === 'waiting' || item.status === 'in_progress') &&
+    !item.needsConfirmation;
+  const groups = [
+    [
+      '오늘 챙길 일',
+      visible.filter(
+        (item) =>
+          item.category === 'task' && !completed(item) && !progress(item),
+      ),
+    ],
+    ['진행·회신 대기', visible.filter(progress)],
+    [
+      '주요 이슈',
+      visible.filter(
+        (item) =>
+          !completed(item) &&
+          !progress(item) &&
+          (item.category === 'issue' || item.reportKind === 'review'),
+      ),
+    ],
+    [
+      '참고사항',
+      visible.filter(
+        (item) =>
+          item.category === 'reference' &&
+          item.reportKind !== 'review' &&
+          item.reportKind !== 'routine',
+      ),
+    ],
+    [
+      '완료',
+      visible.filter(
+        (item) => completed(item) && item.category !== 'reference',
+      ),
+    ],
+  ];
+  const routine = visible.filter(
+    (item) => item.category === 'reference' && item.reportKind === 'routine',
+  );
+  const chunks = [],
+    sources = new Map();
+  for (const [heading, rows] of groups) {
+    if (!rows.length && !(heading === '참고사항' && routine.length)) continue;
+    chunks.push('<h2>' + heading + '</h2>');
+    for (const item of rows) {
+      if (item.category === 'reference')
+        chunks.push('<p>' + escape(briefingReferenceLine(item)) + '</p>');
+      else {
+        chunks.push(
+          '<p><strong>' +
+            escape(item.title) +
+            '</strong>' +
+            (item.status === 'cancelled' ? ' · 취소' : '') +
+            '</p>',
+        );
+        for (const text of item.summary)
+          if (!repeatsWorkTitle(text, item.title))
+            chunks.push('<p>' + escape(text) + '</p>');
+        const details = [
+          item.center && !item.title.includes(item.center) && item.center,
+          item.customer && !item.title.includes(item.customer) && item.customer,
+          item.status === 'in_progress' && '진행 중',
+          item.assignee && '담당 ' + item.assignee,
+          (item.dueAt || item.dueDate) &&
+            '기한 ' +
+              (item.dueAt
+                ? new Date(item.dueAt).toLocaleString('sv-SE', {
+                    timeZone: 'Asia/Seoul',
+                    hour12: false,
+                  })
+                : item.dueDate),
+          item.serviceDate && '운행·납품 ' + item.serviceDate,
+        ].filter(Boolean);
+        if (details.length)
+          chunks.push('<p>' + details.map(escape).join(' · ') + '</p>');
+        for (const [label, text] of [
+          ['진행', item.progress],
+          ['다음 조치', item.nextAction],
+          ['회신 대기', item.waitingFor],
+        ])
+          if (text && text !== item.title && !item.summary.includes(text))
+            chunks.push('<p>' + label + ': ' + escape(text) + '</p>');
+      }
+      for (const source of item.sourceRefs)
+        if (source.kind === 'mail') sources.set(source.id, source);
+    }
+    if (heading === '참고사항' && routine.length) {
+      chunks.push('<h3>정기보고메일</h3>');
+      for (const item of routine)
+        chunks.push('<p>' + escape(briefingReferenceLine(item)) + '</p>');
+      // Normal recurring reports intentionally have no photos in the note.
+    }
+  }
+  for (const source of sources.values())
+    chunks.push('<div data-id="sajo-mail-photos-' + source.id + '"></div>');
   return chunks.join('');
 }
