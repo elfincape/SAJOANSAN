@@ -684,6 +684,8 @@ export async function handleManualMessage(action, body, user, ctx) {
     return json({
       entryId: entry.entryId,
       text: entry.text,
+      clientRequestId: entry.clientRequestId,
+      requestedReference: entry.requestedReference ?? null,
       submittedAt: entry.submittedAt,
       referenceDate: entry.referenceDate,
       authoredDate: entry.authoredDate ?? null,

@@ -228,6 +228,8 @@ export const privateMail = {
     oneDriveCall<{
       entryId: string;
       text: string;
+      clientRequestId: string;
+      requestedReference: string | null;
       submittedAt: string;
       referenceDate: string | null;
       authoredDate: string | null;
