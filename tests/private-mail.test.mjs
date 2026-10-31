@@ -6049,6 +6049,8 @@ console.log(
     { id: 'service', text: '운행일11월2일' },
     { id: 'tons', text: '차량4톤' },
   ];
+  items.forEach(Object.freeze);
+  Object.freeze(items);
   const original = JSON.stringify(items);
   let calls = 0;
   const fetcher = async (url, options) => {
@@ -6127,7 +6129,7 @@ console.log(
       Response.json({
         model: 'jev-1.14.0',
         answers: {
-          q0: { type: 'noul', noul: 0.5 },
+          q0: { type: 'noul', noul: 0.31 },
           q1: { type: 'noul', noul: 0.1 },
         },
       }),
