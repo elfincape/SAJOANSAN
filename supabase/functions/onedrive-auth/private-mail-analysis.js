@@ -1071,6 +1071,8 @@ export async function analyzePrivateMail({
     evidenceContext = { parsed, mail };
     const analysis = normalizeMailAnalysis(parsed, mail);
     analysis.inference = lunaInference(response);
+    if (loaded.analysisScope === 'body_headers')
+      analysis.source.analysisScope = 'body_headers';
     analysis.source.thread = thread;
     const ownership = normalizeOwnership(
       parsed,

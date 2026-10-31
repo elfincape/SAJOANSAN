@@ -3237,6 +3237,55 @@ console.log(
   assert.ok(!loaded.headers.includes('ORIGINAL_EML_BODY_SENTINEL'));
   assert.equal(loaded.text, bodyText);
   assert.equal(row.files.length, 2);
+  files.push({
+    kind: 'attachment',
+    item_id: 'blocked-image',
+    file_name: 'image001.png',
+    original_name: 'image001.png',
+    byte_size: 100,
+  });
+  const scoped = createMailSource({
+    db: async () => {
+      throw Error('related mail must not be loaded');
+    },
+    withLock: async (fn) => fn(),
+    mailbox: async () => ({
+      account,
+      drive_id: 'drive',
+      folder_id: 'folder',
+      analysis_rules: [],
+      automation_config: { analysisScopes: { [row.id]: 'body_headers' } },
+    }),
+    environment: async () => ({ access: 'fixture-access' }),
+    privateDestination: async () => ({}),
+    privatePermissions: async () => {},
+    verify: async (file) => {
+      assert.equal(file.item_id, 'body');
+      return new TextEncoder().encode(bodyText);
+    },
+    graph: async (path) => {
+      if (path === '/drives/drive/items/eml/content')
+        return new Response(emlBytes);
+      const file = files.find(
+        (value) => path === '/drives/drive/items/' + value.item_id,
+      );
+      assert.ok(file);
+      assert.notEqual(file.item_id, 'blocked-image');
+      return Response.json({
+        id: file.item_id,
+        name: file.file_name,
+        size: file.byte_size,
+        file: {},
+        parentReference: { driveId: 'drive', id: 'folder' },
+      });
+    },
+  });
+  const limited = await scoped.loadMail(row);
+  assert.equal(limited.analysisScope, 'body_headers');
+  assert.deepEqual(limited.images, []);
+  assert.deepEqual(limited.related, []);
+  assert.equal(limited.text, bodyText);
+  assert.equal(limited.ownerContext.recipientRole, 'cc');
   console.log(
     'PASS readonly mail source: verified EML header-only owner To/Cc role, current/forwarded bodies separated and original source preserved',
   );
