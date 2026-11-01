@@ -107,11 +107,11 @@ export function parseAnswer(data, mode) {
           ? row.sourceText.normalize('NFKC').trim()
           : '';
       const matches = [
-        ...source.matchAll(
-          /(?:^|[^\d.])(\d+(?:\.\d+)?)\s*(?:톤|tons?\b|t\b)/gi,
-        ),
+        ...source.matchAll(/(?<![\d.,])(\d+(?:\.\d+)?)\s*(?:톤|tons?\b|t\b)/gi),
       ];
-      const tons = matches.length === 1 ? Number(matches[0][1]) : null;
+      const ambiguous = /[-−+]\s*\d|\d\s*[~∼〜–—]\s*\d/.test(source);
+      const tons =
+        !ambiguous && matches.length === 1 ? Number(matches[0][1]) : null;
       if (!(tons > 0) || !Number.isFinite(tons))
         throw fail(
           '차량요청 문구에서 톤수를 확인하지 못했습니다. 차량요청 칸이 선명한 사진으로 다시 분석해 주세요.',
