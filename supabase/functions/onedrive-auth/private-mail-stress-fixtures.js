@@ -282,6 +282,20 @@ cases.push(
     expected: { taskCount: 0, link: { mode: 'none', refs: [] }, items: [{ kind: 'reference' }], targetFacts: replacementFacts,
       mustNot: ['historical_vehicle_replaces_current_assignment', 'new_duplicate_dispatch_task', 'reopen_completed_preparation'] } },
 );
+const knownCargoText = '월요일 가상쿠팡\n구름 160박스 4p 1.7톤\n별 288박스 6p 2.6톤 입니다.';
+const knownCargoId = 'c3333333-3333-4333-8333-333333333333';
+const knownCargoReceipt = { entryId: knownCargoId, status: 'ready', text: knownCargoText,
+  submittedAt: '2026-11-02T00:30:00.000Z', referenceDate: REFERENCE_DATE,
+  items: cargoPrior.items.map((item, index) => ({ ...item, ref: knownCargoId + ':manual:item-00' + (index + 1), workRef: item.ref,
+    evidence: knownCargoText.split('\n')[index + 1], serviceDate: null, serviceOriginal: null,
+    resolution: 'dispatch_followup_v1', visibleFrom: REFERENCE_DATE, declaredAt: '2026-11-02T00:30:00.000Z',
+    submittedAt: '2026-11-02T00:30:00.000Z', receivedAt: '2026-11-02T00:30:00.000Z',
+    details: [index ? '화물 288박스 · 6P · 화물 중량 2.6톤' : '화물 160박스 · 4P · 화물 중량 1.7톤'] })) };
+cases.push({ id: 'manual-cargo-weight-only-preserves-known-fields', kind: 'manual', ...common,
+  related: [cargoPrior, knownCargoReceipt], text: '월요일 가상쿠팡\n구름 1.8톤',
+  expected: { taskCount: 0, link: { mode: 'exact', refs: [cargoRefs[0]] }, dueDate: null, dueAt: null, expectedStatus: 'pending',
+    targetFacts: [{ ...cargoExpected.targetFacts[0], summaryIncludes: ['160박스', '4P', '1.8톤', '하차 13:15', '테스트로 33'], summaryExcludes: ['1.7톤'] }, cargoExpected.targetFacts[1]],
+    mustNot: ['weight_only_drops_known_boxes_or_pallets', 'changes_other_destination', 'converts_cargo_weight_to_vehicle_class', 'completes_preparation', 'changes_deadline'] } });
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {
   return STRESS_FIXTURES.find((fixture) => fixture.id === id) ?? null;
