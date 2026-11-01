@@ -8,11 +8,12 @@ import { cancelBrowserJob } from '../lib/naver-browser';
 
 const labels = { valid: '정상', ambiguous: '후보 확인 필요', not_found: '후보 없음', network_error: '통신·검색 장애', unverified: '미검증' };
 const text = (error: unknown) => error instanceof Error ? error.message : String(error);
-export function NaverAddressValidation({ center, courses, disabled, resetKey, onCoursesChange, onJobChange, onRunningChange }: {
+export function NaverAddressValidation({restoreJobId, center, courses, disabled, resetKey, onCoursesChange, onJobChange, onRunningChange }: {
   center: string; courses: NaverCourse[]; disabled: boolean; resetKey: number;
   onCoursesChange: (courses: NaverCourse[]) => void;
   onJobChange: (job: AddressValidationJob | null) => void;
   onRunningChange: (running: boolean) => void;
+  restoreJobId?: string;
 }) {
   const [job, setJob] = useState<AddressValidationJob | null>(null),
     [busy, setBusy] = useState(false), [message, setMessage] = useState(''),
@@ -28,9 +29,9 @@ export function NaverAddressValidation({ center, courses, disabled, resetKey, on
     counts = Object.fromEntries(Object.keys(labels).map(status => [status, rows.filter(row => (resultFor(row.address)?.status ?? 'unverified') === status).length]));
   useEffect(() => {
     let active = true;setJob(null);setDrafts({});setMessage('');
-    void getAddressValidation(center).then(next => { if (active) setJob(next); }).catch(error => { if (active) setMessage(text(error)); });
+    void getAddressValidation(center,restoreJobId).then(next => { if (active) setJob(next); }).catch(error => { if (active) setMessage(text(error)); });
     return () => { active = false; };
-  }, [center]);
+  }, [center,restoreJobId]);
   useEffect(() => { setDrafts({}); }, [resetKey]);
   useEffect(() => { onJobChange(job);onRunningChange(running || busy); }, [job, running, busy, onJobChange, onRunningChange]);
   useEffect(() => {

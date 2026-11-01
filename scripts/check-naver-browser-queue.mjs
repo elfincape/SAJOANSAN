@@ -54,6 +54,8 @@ do $checkpoint$ declare actor uuid; previous uuid; resumed uuid; fixture jsonb; 
  update public.naver_browser_jobs set status='attention',results='{"row-2":{"optimization":{"version":1,"policy":"naver-all-driving-options-meters-v2","completed":1}}}'::jsonb where id=previous;
  resumed:=public.naver_capture_enqueue('002',fixture,previous);
  if not exists(select 1 from public.naver_browser_jobs where id=resumed and results->'row-2'->'optimization'->>'completed'='1' and addresses @> '["row-2"]'::jsonb) then raise exception 'Exact-meter retry checkpoint was dropped or treated as a completed image';end if;
+ if public.naver_capture_resume(previous,'002',fixture,'full')<>previous then raise exception 'Frozen capture resume created a different job';end if;
+ if not exists(select 1 from public.naver_browser_jobs where id=previous and status='queued' and cursor=0 and results->'row-2'->'optimization'->>'completed'='1') then raise exception 'Frozen resume lost the existing comparison checkpoint';end if;
 end $checkpoint$;
 rollback;`);
 console.log('Exact-meter retry checkpoint survives queue resubmission; transactional fixture rolled back');

@@ -66,3 +66,52 @@ assert.equal(providerQueries,1,'A common search rejection must not poison every 
  await runWorker({jobId:job.id,db,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),capture:async(_p,stops,o)=>{measured++;const r={distanceKm:10,distanceMeters:10000,distanceText:'10km',routeLabel:'free',method:'naver-map-display',requestedStops:stops,sourceUrl:'https://map.naver.com/p/directions/a/b/c/car'};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('winner')}:{})};},saveCapture:async()=>{stored++;return'winner.png';},log:()=>{}});
  assert.equal(measured,3);assert.equal(stored,1);assert(changes.some(s=>s.includes('naver-api-top3-web-meters-v1')&&s.includes('globalMinimumGuaranteed')));assert(!changes.some(s=>/set results\s*=\s*'/.test(s)));
 }
+
+{
+ let heartbeat=0,measures=0,claims=0;const pauses=[];
+ await runWorker({jobId:job.id,sleep:async ms=>pauses.push(ms),browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),
+  db:async sql=>{if(sql.startsWith('with next')){claims++;return[{...job,kind:'capture',courses:[rotated[0]],addresses:[rotated[0].id],results:{}}];}if(sql.startsWith('select status'))return[{status:'running'}];if(sql.endsWith('returning status')){if(++heartbeat===1)throw Object.assign(Error('synthetic queue502'),{status:502});return[{status:'running'}];}return[];},
+  capture:async(_p,stops,o)=>{measures++;const result={distanceKm:10,distanceText:'10km',method:'naver-map-display',routeLabel:'거리우선',requestedStops:stops};return{...result,...(o.screenshot||o.captureIf?.(result)?{png:Buffer.from('winner')}:{})};},saveCapture:async()=> 'synthetic.png',log:()=>{}});
+ assert.equal(claims,1);assert.equal(measures,2);assert.equal(pauses.length,1,'queue retry reuses the current comparison, not the whole route job');
+}
+{
+ const {optimizeCourseCapture}=await import('../scripts/lib/naver-course-optimizer.mjs');
+ const c=rotated[0],proof=await optimizeCourseCapture({},c,{measure:async(_p,stops,o)=>{const r={distanceKm:10,distanceText:'10km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,sourceUrl:'https://map.naver.com/p/directions/a/b/c/car'};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('winner')}:{})};}});
+ const {png,...saved}=proof;saved.imagePath='already-saved.png';let repeatedQueries=0,repeatedUploads=0;
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>sql.startsWith('with next')?[{...job,kind:'capture',courses:[c],addresses:[c.id],cursor:0,results:{[c.id]:saved}}]:sql.startsWith('select status')||sql.endsWith('returning status')?[{status:'running'}]:[],capture:async()=>{repeatedQueries++;throw Error('Unexpected query');},saveCapture:async()=>{repeatedUploads++;return'repeated.png';},log:()=>{}});
+ assert.equal(repeatedQueries,0,'confirmed capture must not be queried again after lost cursor acknowledgment');assert.equal(repeatedUploads,0);
+}
+{
+ let attempts=0,advanced=false,measured=0;const sleeps=[];
+ await assert.rejects(()=>runWorker({jobId:job.id,sleep:async ms=>sleeps.push(ms),browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),
+  db:async sql=>{if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:[rotated[0]],addresses:[rotated[0].id],results:{}}];if(sql.startsWith('select status'))return[{status:'running'}];if(sql.endsWith('returning status')){attempts++;throw Object.assign(Error('synthetic queue502'),{status:502});}if(sql.includes('cursor='))advanced=true;return[];},capture:async()=>{measured++;return{};},log:()=>{}}),/queue502/);
+ assert.equal(attempts,3);assert.equal(sleeps.length,2);assert.equal(advanced,false,'persistent queue outage is not recorded as a route failure or completed cursor');assert.equal(measured,0);
+ let claims=0;await assert.rejects(()=>runWorker({jobId:job.id,sleep:async()=>assert.fail('ambiguous claims must not be replayed'),browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async()=>{claims++;throw Object.assign(Error('claim acknowledgment lost'),{status:502});},log:()=>{}}),/acknowledgment/);assert.equal(claims,1);
+}
+{
+ const {saveCourseCapture}=await import('../scripts/lib/naver-capture-storage.mjs');
+ const previous={ref:process.env.SUPABASE_PROJECT_REF,token:process.env.SUPABASE_ACCESS_TOKEN};
+ process.env.SUPABASE_PROJECT_REF='abcdefghijklmnopqrst';process.env.SUPABASE_ACCESS_TOKEN='SYNTHETIC_MANAGEMENT_TOKEN';
+ let posts=0;const paths=[];
+ try{
+  const fetcher=async(url,options)=>{if(url.includes('/api-keys'))return Response.json([{name:'service_role',api_key:'SYNTHETIC_STORAGE_KEY'}]);paths.push(url);posts++;return new Response(null,{status:posts===1?502:200});};
+  const c={id:'row-2'},j={owner_id:'owner',id:'frozen-job'};
+  const first=await saveCourseCapture(j,c,'worker-one',Buffer.from('png'),fetcher,{sleep:async()=>{}});
+  const second=await saveCourseCapture(j,c,'worker-two',Buffer.from('png'),fetcher,{sleep:async()=>{}});
+  assert.equal(first,second);assert.equal(new Set(paths).size,1,'same frozen output has one object path after retry/worker reconnect');assert.equal(posts,3);
+  const newer=await saveCourseCapture(j,c,'worker-new',Buffer.from('newer-png'),fetcher,{sleep:async()=>{}});assert.notEqual(first,newer,'late stale upload cannot overwrite a different verified image');
+ }finally{for(const [name,value]of [['SUPABASE_PROJECT_REF',previous.ref],['SUPABASE_ACCESS_TOKEN',previous.token]])if(value===undefined)delete process.env[name];else process.env[name]=value;}
+}
+{
+ let uploads=0;const writes=[];
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:rotated,addresses:rotated.map(c=>c.id),results:{}}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return[{status:'running'}];writes.push(sql);return[];},capture:async(_p,stops,o)=>{const r={distanceKm:10,distanceText:'10km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('winner')}:{})};},saveCapture:async()=>{uploads++;throw Object.assign(Error('synthetic storage outage'),{code:'CAPTURE_STORAGE_UNAVAILABLE'});},log:()=>{}});
+ assert.equal(uploads,1,'storage outage pauses before starting another independent rotation');assert.ok(writes.some(s=>s.includes("status='attention'")));assert.ok(!writes.some(s=>s.includes('cursor=1')));assert.ok(writes.some(s=>s.includes('"complete":true')),'completed route proof remains durable before storage retry');
+}
+
+{
+ let beats=0,advanced=false;
+ await assert.rejects(()=>runWorker({jobId:job.id,sleep:async()=>{},browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{
+  if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:[rotated[0]],addresses:[rotated[0].id],results:{}}];if(sql.startsWith('select status'))return[{status:'running'}];if(sql.endsWith('returning status')){beats++;if(beats>=3&&beats<=5)throw Object.assign(Error('queue failed inside capture'),{status:502});return[{status:'running'}];}if(sql.includes('cursor=1'))advanced=true;return[];
+ },capture:async(_p,stops,options)=>{await options.checkActive();return{distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,png:Buffer.from('png')};},saveCapture:async()=> 'unexpected.png',log:()=>{}}),/inside capture/);
+ assert.equal(advanced,false,'queue failures inside browser measurement stay infrastructure failures');
+}

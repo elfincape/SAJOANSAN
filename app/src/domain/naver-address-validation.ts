@@ -64,3 +64,18 @@ export function sameRoutingCourse(a: NaverCourse, b: NaverCourse) {
   return a.id === b.id && a.name === b.name && (a.rotation ?? 0) === (b.rotation ?? 0)
     && JSON.stringify(a.stops) === JSON.stringify(b.stops);
 }
+
+export function sameCaptureInput(first: NaverCourse[], second: NaverCourse[]) {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])) : value;
+  return JSON.stringify(canonical(first))===JSON.stringify(canonical(second));
+}
+
+export function canResumeCapture(job: {
+  courses: NaverCourse[];addresses?: string[];results: Record<string,{imagePath?: string}>;
+  validation_job_id?: string | null;shortlist_job_id?: string | null;
+} | null, courses: NaverCourse[], strategy: 'api3'|'full', validationId?: string) {
+  return !!job && sameCaptureInput(courses,job.courses) && !!job.shortlist_job_id===(strategy==='api3')
+    && (!job.validation_job_id || job.validation_job_id===validationId)
+    && !!job.addresses?.some(id=>!job.results[id]?.imagePath);
+}

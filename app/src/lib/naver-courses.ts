@@ -69,8 +69,13 @@ export interface CaptureJob {
   results: Record<string, CourseCapture>;
   center_code: string;
   updated_at: string;
+  created_at?: string;
+  validation_job_id?: string | null;
+  shortlist_job_id?: string | null;
+  cursor?: number;
+  addresses?: string[];
 }
-const columns = 'id,status,courses,results,center_code,updated_at';
+const columns = 'id,status,courses,results,center_code,updated_at,created_at,validation_job_id,shortlist_job_id,cursor,addresses';
 export async function enqueueCapture(
   center: string,
   courses: NaverCourse[],
@@ -86,6 +91,13 @@ export async function enqueueCapture(
     ...(shortlistJob ? {p_shortlist_job:shortlistJob} : {}),
   });
   if (error) throw Error(error.message);
+  return data as string;
+}
+export async function resumeCapture(job: CaptureJob, courses: NaverCourse[], strategy: 'api3'|'full') {
+  const {data,error}=await supabase.rpc('naver_capture_resume',{
+    p_job:job.id,p_center:job.center_code,p_courses:courses,p_strategy:strategy,
+  });
+  if(error)throw Error(error.message);
   return data as string;
 }
 export async function getCapture(id?: string, center?: string) {

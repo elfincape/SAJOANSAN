@@ -4,7 +4,7 @@ alter table public.naver_browser_jobs add column if not exists candidate_plans j
 create or replace function public.naver_capture_shortlist_enqueue(p_center text,p_courses jsonb,p_validation_job uuid,p_shortlist_job uuid,p_previous_job uuid default null) returns uuid
 language plpgsql security definer set search_path=public as $$
 declare api public.naver_api_jobs;job uuid;c jsonb;source_course jsonb;plan jsonb;pending jsonb;prior_result jsonb;selected jsonb:='[]'::jsonb;plans jsonb:='{}'::jsonb;begin
- -- capture-shortlist-v1
+ -- capture-shortlist-recovery-v2
  if auth.uid() is null or p_center is null or p_center not in ('001','002') or public.operations_resource_allowed('delivery_points','read',p_center) is not true then raise exception '해당 센터 납품처 조회 권한이 없습니다.';end if;
  select * into api from public.naver_api_jobs where id=p_shortlist_job and owner_id=auth.uid() and center_code=p_center and status in ('completed','attention') and state->>'kind'='capture-shortlist' and state->>'validationJob'=p_validation_job::text;
  if not found then raise exception '같은 주소 검증 작업의 API 후보 선정을 먼저 완료해 주세요.';end if;
@@ -19,7 +19,11 @@ declare api public.naver_api_jobs;job uuid;c jsonb;source_course jsonb;plan json
    and plan->>'policy'='naver-directed-leg-meter-shortlist-v2' and plan->>'scoreScope'='center-through-deliveries' and plan->>'completeMatrix'='true' and plan->>'globalMinimumGuaranteed'='false' and plan->>'webEligible'='true' and jsonb_typeof(plan->'candidates')='array' and jsonb_array_length(plan->'candidates') between 1 and 3
    and jsonb_typeof(plan->'timestamps')='array' and not exists(select 1 from jsonb_array_elements(plan->'timestamps') t where t->>'measuredAt' is null or (t->>'measuredAt')::timestamptz not between clock_timestamp()-interval '30 minutes' and clock_timestamp()) then
    plans:=plans||jsonb_build_object(c->>'id',plan);
-   select h.results->(c->>'id') into prior_result from public.naver_browser_jobs h where h.owner_id=auth.uid() and h.center_code=p_center and h.kind='capture' and h.status not in ('queued','running') and h.candidate_plans->(c->>'id')=plan
+   select h.results->(c->>'id') into prior_result from public.naver_browser_jobs h where h.owner_id=auth.uid() and h.center_code=p_center and h.kind='capture' and h.status not in ('queued','running') and (h.candidate_plans->(c->>'id')=plan or (
+     plan->>'inputKey' is not null and h.candidate_plans->(c->>'id')->>'inputKey'=plan->>'inputKey'
+     and h.candidate_plans->(c->>'id')->>'policy'=plan->>'policy'
+     and (select jsonb_agg(x->'index' order by (x->>'index')::integer) from jsonb_array_elements(case when jsonb_typeof(h.candidate_plans->(c->>'id')->'candidates')='array' then h.candidate_plans->(c->>'id')->'candidates' else '[]'::jsonb end) x)
+       =(select jsonb_agg(x->'index' order by (x->>'index')::integer) from jsonb_array_elements(plan->'candidates') x)))
     and (h.results->(c->>'id')->>'imagePath' is not null or h.results->(c->>'id')->'optimization'->>'policy'='naver-api-top3-web-meters-v1')
     and exists(select 1 from jsonb_array_elements(h.courses) old where old->>'id'=c->>'id' and old->>'name'=c->>'name' and old->'stops'=c->'stops' and coalesce(old->>'rotation','0')=coalesce(c->>'rotation','0')) order by h.created_at desc limit 1;
    if found then update public.naver_browser_jobs set results=results||jsonb_build_object(c->>'id',prior_result) where id=job;end if;

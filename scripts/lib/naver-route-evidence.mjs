@@ -1,3 +1,4 @@
+export const routeSettingsKey = value => JSON.stringify(Object.entries(value ?? {}).sort(([a],[b])=>a.localeCompare(b)));
 import {createHash} from 'node:crypto';
 // The browser's existing directions response, not an extra route/API request.
 // Observed wire contract: pcweb_navermap_v5/261025-5059ff3. Unknown formats fail closed.
