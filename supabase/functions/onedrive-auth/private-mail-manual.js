@@ -1073,8 +1073,9 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,submittedAt:entry.submit
   const evidence=sourceQuote(value.evidence,entry.text),details=value.details.map(text=>sourceQuote(text,entry.text,500));
   const service=value.serviceOriginal==null?null:sourceQuote(value.serviceOriginal,evidence,100);
   const serviceDay=dateFrom(service,entry.referenceDate);
+  const targetKind=['task','dispatch','issue','waiting','reference'].includes(target.kind)?target.kind:'task';
   const mixedCargo=palletQuantities(entry.text).length>1&&!/(정정|수량.{0,20}맞)/.test(entry.text);
-  let conflict=mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
+  let conflict=(targetKind==='reference'&&value.action==='complete')||mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
   if(value.action==='complete'){
     const quote=typeof value.completionEvidence==='string'?sourceQuote(value.completionEvidence,entry.text,1000):'';
     const declared=/(완료|마쳤|확정|보냈|발송했|전달했|처리했)/.test(quote)&&!/(아직|미완료|예정|않|못|취소|[?？])/.test(quote);
@@ -1084,7 +1085,7 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,submittedAt:entry.submit
   if(value.action==='cancel'&&!/(취소|철회)/.test(evidence))conflict=true;
   if(value.action==='reopen'&&!/(재개|미완료|다시|완료\s*취소)/.test(evidence))conflict=true;
   const status=conflict?'pending':value.action==='complete'?'complete':value.action==='cancel'?'cancelled':value.action==='reopen'?'pending':'pending';
-  return {response,reply:{origin:'manual',sourceText:entry.text,authoredDate:null,resolution:'targeted_update_v1',items:[{kind:conflict?'issue':target.kind==='dispatch'?'dispatch':'task',text:conflict?'선택 업무의 추가 내용 확인':required(value.text,500),evidence,details,assignee:null,serviceOriginal:service,dueOriginal:value.dueOriginal??null,needsConfirmation:!!conflict,...(!conflict?{workRef:target.workId}:{}),workflowStatus:status,stateDeclared:!conflict&&['reopen','cancel'].includes(value.action)}]}};
+  return {response,reply:{origin:'manual',sourceText:entry.text,authoredDate:null,resolution:'targeted_update_v1',items:[{kind:conflict?'issue':targetKind,text:conflict?'선택 업무의 추가 내용 확인':required(value.text,500),evidence,details,assignee:null,serviceOriginal:service,dueOriginal:value.dueOriginal??null,needsConfirmation:!!conflict,...(!conflict?{workRef:target.workId}:{}),workflowStatus:status,stateDeclared:!conflict&&['reopen','cancel'].includes(value.action)}]}};
 }
 export async function handleManualMessage(action, body, user, ctx) {
   const { db, json, fail } = ctx;
@@ -1272,7 +1273,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         if(typeof item?.text==='string'&&item.text)target={workId:entry.targetWorkId,title:item.text,serviceDate:item.serviceDate??null,kind:'task'};
       }
       if(!target)throw Error('MANUAL_SOURCE');
-      const result=await analyzeTargetedManual({entry,target:{workId:target.workId,title:target.title,serviceDate:target.serviceDate,status:target.status,summary:target.summary??[],verifiedCompletionAt:target.verifiedCompletionAt??null,ownerStateAt:target.ownerStateAt??null,kind:current.manual_entries[entry.targetWorkId.slice(0,36)]?.items?.find(item=>item.ref===entry.targetWorkId)?.kind==='dispatch'?'dispatch':'task'},ai,fetcher:ctx.fetcher});reply=result.reply;targetResponse=result.response;
+      const result=await analyzeTargetedManual({entry,target:{workId:target.workId,title:target.title,serviceDate:target.serviceDate,status:target.status,summary:target.summary??[],verifiedCompletionAt:target.verifiedCompletionAt??null,ownerStateAt:target.ownerStateAt??null,kind:current.manual_entries[entry.targetWorkId.slice(0,36)]?.items?.find(item=>item.ref===entry.targetWorkId)?.kind??(target.category==='reference'?'reference':target.category==='issue'?'issue':'task')},ai,fetcher:ctx.fetcher});reply=result.reply;targetResponse=result.response;
       if(reply.items[0]?.workRef===entry.targetWorkId){
         const scoped=Object.fromEntries(Object.entries(current.manual_entries).map(([id,prior])=>[id,{...prior,items:(prior.items??[]).filter(item=>item.ref===entry.targetWorkId||item.workRef===entry.targetWorkId)}]).filter(([,prior])=>prior.items.length));
         const canonical=resolveExistingManualWork(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{})??resolveDispatchAssignment(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{});
