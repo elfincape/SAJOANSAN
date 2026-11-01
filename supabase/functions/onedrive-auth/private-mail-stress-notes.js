@@ -1,6 +1,6 @@
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { BRIEFING_TARGET } from './private-mail-briefing-model.js';
-import { writeDailyBriefing } from './private-mail-notes-writer.js';
+import { writeDailyBriefing, readDiagnosticPage } from './private-mail-notes-writer.js';
 import { fixtureById } from './private-mail-stress-fixtures.js';
 
 const CASE = 'mail-old-sent-collected-today';
@@ -65,7 +65,7 @@ export async function writeStressNote({ proof, stored }, ctx) {
       throw error;
     }
     if (first.pageId !== repeat.pageId || repeat.status !== 'skipped') throw Error('STRESS_NOTE_REPEAT');
-    const page = await (await checkedGraph('/me/onenote/pages/' + enc(first.pageId) + '?$select=id,title,links&$expand=parentSection($select=id)', connection.accessToken)).json();
+    const page = await readDiagnosticPage({ graph: checkedGraph, access: connection.accessToken, pageId: first.pageId, title });
     if (page.id !== first.pageId || page.title !== title || page.parentSection?.id !== BRIEFING_TARGET.sectionId) throw Error('STRESS_NOTE_TARGET');
     let pageUrl = null;
     try { const url = new URL(page.links?.oneNoteWebUrl?.href); if (url.protocol === 'https:' && ['onedrive.live.com', 'www.onenote.com'].includes(url.hostname)) pageUrl = url.href; } catch {}

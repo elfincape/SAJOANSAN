@@ -7587,12 +7587,40 @@ for(const bad of [{...body,proof:'broken.token'},{...body,stored:{...saved,summa
 const expired=await ctx.sealDiagnostic({...proofs.get(proof),expiresAt:Date.now()-1});await assert.rejects(()=>writeStressNote({...body,proof:expired},ctx),/STRESS_NOTE_PROOF/);assert.equal(locks,0);
 await assert.rejects(()=>handleMailAutomation('private-mail-stress-verify',{confirmation:'isolated-stress',operation:'notes',...body},{id:'other-owner'},ctx),/OWNER_REQUIRED/);assert.equal(locks,0);
 const result=await writeStressNote(body,ctx);assert.equal(result.status,'passed');assert.equal(result.firstStatus,'created');assert.equal(result.repeatStatus,'skipped');assert.equal(result.readBackVerified,true);assert.equal(result.productionBusinessWritten,false);assert.equal(result.modelCalled,false);assert.equal(writes,1);assert.equal(markers.size,1);assert.ok(graphReads>0);
+// Graph can acknowledge creation and return the HTML title while its metadata title remains blank.
+const visibleTitle=pages[0].title;pages[0].title='';
+const graphBeforeBlank=protectedGraph;
+ctx.diagnosticNotes=async action=>action({accessToken:'MOCK_NOTES',notesGranted:true},async(path,...args)=>{
+ const response=await graphBeforeBlank(path,...args);
+ if(path.includes('/sections/')&&path.includes('/pages')&&path.includes('?')){
+  const data=await response.json();if(new URL('https://graph.microsoft.com'+path).searchParams.has('$filter'))data.value=data.value.filter(page=>page.title===visibleTitle);return Response.json(data);
+ }return response;
+});
+const recoveredBlank=await writeStressNote(body,ctx);assert.equal(recoveredBlank.status,'passed');assert.equal(writes,1,'blank indexed title must recover exact HTML title without another create');
+const originalHtml=contents.get(result.pageId);contents.set(result.pageId,originalHtml.replace(/(<title[^>]*>)[^<]*(<\/title>)/,'$1OTHER PAGE$2'));
+await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_CREATE_UNCERTAIN|PAGE_REFERENCE_CONFLICT/);assert.equal(writes,1,'unrelated blank page must never be adopted or cause another create');
+contents.set(result.pageId,originalHtml);pages[0].title=visibleTitle;ctx.diagnosticNotes=async action=>{locks++;return action({accessToken:'MOCK_NOTES',notesGranted:true},protectedGraph)};
 contents.set(result.pageId,contents.get(result.pageId).replace('data-id="sajo-mail-manual">','data-id="sajo-mail-manual"><p>OWNER MEMO</p>'));
 const repeat=await writeStressNote(body,ctx);assert.equal(repeat.firstStatus,'skipped');assert.equal(repeat.diagnosticStateWritten,false);assert.equal(writes,1);assert.ok(contents.get(result.pageId).includes('OWNER MEMO'));
 contents.set(result.pageId,contents.get(result.pageId).replace('가상별창고 6P 배차 준비','OWNER CHANGED TASK'));await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_MANAGED_CONFLICT/);assert.equal(writes,1);
 // Separate simulations keep the same signed receipt but reset only local fake state.
 markers.clear();pages.length=0;contents.clear();failure='lost-create';await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_CREATE_UNCERTAIN/);const afterLost=writes;assert.equal((await writeStressNote(body,ctx)).status,'passed');assert.equal(writes,afterLost,'accepted-but-lost response must not duplicate a page');
 markers.clear();pages.length=0;contents.clear();failure='rejected';await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_CREATE_UNCERTAIN/);assert.equal(markers.size,0,'confirmed rejected create can retry the same proof');assert.equal((await writeStressNote(body,ctx)).status,'passed');
+markers.clear();pages.length=0;contents.clear();
+ctx.diagnosticNotes=async action=>action({accessToken:'MOCK_NOTES',notesGranted:true},async(path,...args)=>{
+ const response=await protectedGraph(path,...args);
+ if(args[1]?.method==='POST'&&path.includes('/sections/'))pages.at(-1).title='';
+ if(path.includes('/sections/')&&path.includes('/pages')&&path.includes('?')){
+  const data=await response.json();if(new URL('https://graph.microsoft.com'+path).searchParams.has('$filter'))data.value=data.value.filter(page=>page.title===visibleTitle);return Response.json(data);
+ }return response;
+});
+const beforeBlankCreate=writes;const createdBlank=await writeStressNote(body,ctx);assert.equal(createdBlank.status,'passed');assert.equal(createdBlank.firstStatus,'created');assert.equal(writes,beforeBlankCreate+1);assert.equal(createdBlank.repeatStatus,'skipped');
+assert.equal((await writeStressNote(body,ctx)).status,'passed');assert.equal(writes,beforeBlankCreate+1);
+const duplicate={...pages[0],id:'duplicate-blank-page'};pages.push(duplicate);contents.set(duplicate.id,contents.get(pages[0].id));
+await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_AMBIGUOUS/);assert.equal(writes,beforeBlankCreate+1,'two exact blank-title HTML pages require review, never another create');pages.pop();contents.delete(duplicate.id);
+const {readDiagnosticPage}=await import('../supabase/functions/onedrive-auth/private-mail-notes-writer.js');
+await assert.rejects(()=>readDiagnosticPage({graph:async()=>Response.json({...pages[0],parentSection:{id:'other-section'}}),access:'MOCK_NOTES',pageId:pages[0].id,title:visibleTitle}),/PAGE_REFERENCE_CONFLICT/);
+
 assert.equal(await issueStressNoteProof({caseId:CASE,automatedChecksPassed:false,saved},id,ctx),null);
 console.log('PASS owner proof binding, exact SQL result, actual writer/Graph readback, durable attempt fence, cold retry, lost ACK, definite rejection retry, owner memo/conflict; simulated external Graph only');
 
