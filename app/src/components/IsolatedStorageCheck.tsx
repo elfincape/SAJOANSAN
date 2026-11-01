@@ -70,7 +70,7 @@ export function IsolatedStorageCheck({
     if (
       !Array.isArray(input) ||
       !input.length ||
-      input.length > 20 ||
+      input.length > 40 ||
       input.some(
         (row) => !row || typeof row.caseId !== 'string' || !row.saved,
       ) ||
