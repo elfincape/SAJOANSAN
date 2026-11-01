@@ -24,13 +24,13 @@ const day = (value) =>
   new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
 const enc = encodeURIComponent;
 // The same projection used by the portal decides carry; SQL never guesses from immutable pending rows.
-export function hasMailCarryWork({ day: reportDay, analyses, overrides = {}, manual = {} }) {
+export function hasBriefingCarryWork({ day: reportDay, analyses, overrides = {}, manual = {}, includeMail = true }) {
   const view = dailyBriefingView({ now: reportDay + 'T12:00:00+09:00', analyses, overrides, manual });
   return view.workItems.some((item) => !item.excluded &&
     !['complete', 'cancelled', 'resolved'].includes(item.status) &&
     (item.category === 'task' || item.category === 'issue' ||
       (item.category === 'reference' && item.reportKind === 'review')) &&
-    item.sourceRefs.some((source) => source.kind === 'mail'));
+    item.sourceRefs.some((source) => source.kind === 'manual' || (includeMail && source.kind === 'mail')));
 }
 
 export async function handleMailAutomation(action, body, user, ctx) {
@@ -370,7 +370,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         .slice(0, 14)
         .map(([date, value]) => ({
           day: date,
-          dirty: value.dirty === true,
+          dirty: value.dirty === true || value.mailRolloverPending === true,
           error: value.error ?? null,
           pageId: value.pageId ?? null,
         })),
@@ -740,7 +740,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         const decision = await rpc('private_mail_mail_rollover_finish', {
           p_box: current.id, p_day: body.day, p_lease: lease,
           p_token: state.mailRolloverInput,
-          p_has_work: hasMailCarryWork({ day: body.day, analyses,
+          p_has_work: hasBriefingCarryWork({ day: body.day, analyses, includeMail: state.mailRolloverMailAllowed !== false,
             overrides: fresh.briefing_overrides ?? {}, manual }),
         });
         if (!decision) return json({ status: 'waiting', code: 'ROLLOVER_SNAPSHOT_CHANGED' });
