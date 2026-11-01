@@ -7853,6 +7853,7 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  const run=async(overrides={},text=entry.text)=>analyzeTargetedManual({entry:{...entry,text},target,ai,fetcher:async(url,options)=>{assert.equal(url,'https://api.openai.com/v1/responses');assert.ok(options.body.includes(target.workId));return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'update',text:target.title,evidence:text,details:[text],completionEvidence:null,serviceOriginal:null,dueOriginal:null,...overrides})}]}]});}});
  const saved=await run();assert.equal(saved.reply.items[0].workRef,target.workId);assert.equal(saved.reply.items[0].workflowStatus,'pending');assert.deepEqual(saved.reply.items[0].details,[entry.text]);
  const badComplete=await run({action:'complete'});assert.equal(badComplete.reply.items[0].workRef,undefined);assert.equal(badComplete.reply.items[0].needsConfirmation,true);
+ const mixed=await run({},'월요일 쿠팡\n창원 160박스 4p 1.7톤\n시흥 288박스 6p 2.6톤 입니다.');assert.equal(mixed.reply.items[0].workRef,undefined,'mixed quantities cannot be forced onto selected task even if model claims a match');
  const conflict=await run({matchesTarget:false,action:'conflict'});assert.equal(conflict.reply.items[0].workRef,undefined);
  const complete=await run({action:'complete',completionEvidence:'차량 배정 완료했습니다.'},'차량 배정 완료했습니다.');assert.equal(complete.reply.items[0].workRef,target.workId);assert.equal(complete.reply.items[0].workflowStatus,'complete');
  const historical=await run({action:'complete',completionEvidence:'강원80바1234 가상인 010-1234-5678'},'이전 회신입니다. 현재 차량은 변경 없습니다. 강원80바1234 가상인 010-1234-5678');assert.equal(historical.reply.items[0].workRef,undefined);
@@ -7872,4 +7873,11 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   const saved=await response.json();assert.equal(saved.status,'ready');assert.equal(paid,1,'targeted handler must actually invoke configured model transport');assert.equal(JSON.stringify(seed),before);assert.ok(saved.items.every(item=>!item.workRef||item.workRef===target));
   const work=dailyWorkItems({day:f.referenceDate,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(current.manual_entries,f.referenceDate));assert.equal(work.find(item=>item.workId===seed.items[1].ref).status,'pending');assert.equal(work.find(item=>item.workId===target).status,scenario==='vehicle'?'complete':'pending');
  }
+}
+
+{
+ const {applyOwnerWorkCorrection}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const item={workId:'selected',title:'검토',category:'task',status:'pending',ownerStateAt:'2026-11-01T12:21:00Z',summary:[],sourceRefs:[]};
+ const earlier={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:19:00Z',updatedAt:'2026-11-01T12:19:00Z'}};assert.equal(applyOwnerWorkCorrection(item,earlier,'2026-11-01').status,'pending','new explicit source reopen supersedes older checkbox completion');
+ const later={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:22:00Z',updatedAt:'2026-11-01T12:22:00Z'}};assert.equal(applyOwnerWorkCorrection(item,later,'2026-11-01').status,'complete','subsequent explicit checkbox still wins');
 }

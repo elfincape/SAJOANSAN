@@ -1073,7 +1073,8 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,submittedAt:entry.submit
   const evidence=sourceQuote(value.evidence,entry.text),details=value.details.map(text=>sourceQuote(text,entry.text,500));
   const service=value.serviceOriginal==null?null:sourceQuote(value.serviceOriginal,evidence,100);
   const serviceDay=dateFrom(service,entry.referenceDate);
-  let conflict=/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
+  const mixedCargo=palletQuantities(entry.text).length>1&&!/(정정|수량.{0,20}맞)/.test(entry.text);
+  let conflict=mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
   if(value.action==='complete'){
     const quote=typeof value.completionEvidence==='string'?sourceQuote(value.completionEvidence,entry.text,1000):'';
     const declared=/(완료|마쳤|확정|보냈|발송했|전달했|처리했)/.test(quote)&&!/(아직|미완료|예정|않|못|취소|[?？])/.test(quote);
