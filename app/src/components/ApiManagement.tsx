@@ -11,7 +11,11 @@ const catalogLabels = {
   access_denied: '목록 조회 권한 확인 필요',
   unavailable: '목록 조회 실패',
 };
-export function ApiManagement({ editable }: { editable: boolean }) {
+export function ApiManagement({ editable, stressEnabled = false }: { editable: boolean; stressEnabled?: boolean }) {
+  const [stressResults, setStressResults] = useState<Record<string,unknown>[]>([]);
+  const [stressProgress, setStressProgress] = useState('');
+  const [stressRunning, setStressRunning] = useState(false);
+  const stressActive = useRef(false), stressStop = useRef(false);
   const [verification, setVerification] =
     useState<ApiCompatibilityResult | null>(null);
   const [data, setData] = useState<ApiManagementStatus | null>(null);
@@ -52,6 +56,7 @@ export function ApiManagement({ editable }: { editable: boolean }) {
     void load();
     return () => {
       alive.current = false;
+      stressStop.current = true;
       sequence.current++;
     };
   }, []);
@@ -129,6 +134,46 @@ export function ApiManagement({ editable }: { editable: boolean }) {
     } finally {
       if (alive.current && request === sequence.current) setBusy(false);
     }
+  }
+  async function runStress() {
+    if (!stressEnabled || !editable || busy || stressActive.current) return;
+    stressActive.current = true;
+    stressStop.current = false;
+    setBusy(true);
+    setStressRunning(true);
+    setStressResults([]);
+    setStressProgress('고정 합성 사례를 확인하고 있습니다.');
+    try {
+      const {cases} = await apiManagement.stressCases();
+      if (cases.length !== 20 || new Set(cases.map(item=>item.id)).size !== 20)
+        throw Error('STRESS_CATALOGUE_INVALID');
+      for (const [index,item] of cases.entries()) {
+        if (stressStop.current || !alive.current) break;
+        setStressProgress(`${index + 1}/20 · ${item.id}`);
+        try {
+          const result = await apiManagement.stressCase(item.id);
+          if (alive.current) setStressResults(prior=>[...prior,{...result,caseId:item.id}]);
+        } catch {
+          // A lost response does not prove that the paid request never ran.
+          if (alive.current) setStressResults(prior=>[...prior,{caseId:item.id,status:'response_unknown',code:'RESPONSE_NOT_CONFIRMED'}]);
+          stressStop.current = true;
+        }
+      }
+      if (alive.current) setStressProgress(stressStop.current ? '중지했습니다. 실행된 건의 결과를 다운로드할 수 있습니다.' : '실행이 끝났습니다. 실패와 미검증 항목은 결과에서 확인하세요.');
+    } catch {
+      if (alive.current) setStressProgress('사례 목록을 확인하지 못해 실행하지 않았습니다.');
+    } finally {
+      stressActive.current = false;
+      if (alive.current) { setBusy(false); setStressRunning(false); }
+    }
+  }
+  function downloadStress() {
+    const blob = new Blob([JSON.stringify(stressResults,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'daily-stress-results.json';
+    anchor.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   return (
     <section aria-label="API 관리" className="api-management">
@@ -339,6 +384,17 @@ export function ApiManagement({ editable }: { editable: boolean }) {
           </p>
         </>
       ) : null}
+      {stressEnabled ? <details className="feature-panel">
+        <summary>일일정리 격리 검증</summary>
+        <p className="feature-help">고정 합성 20건을 순서대로 실행합니다. 실제 메일·카톡을 전송하거나 운영 업무·원노트에 저장하지 않습니다. 모델 호출은 과금될 수 있습니다. 화면을 닫으면 다음 건은 실행하지 않습니다.</p>
+        <div className="feature-toolbar">
+          <button type="button" className="btn btn-ghost" disabled={busy || !editable} onClick={()=>void runStress()}>고정 20건 실행</button>
+          {stressRunning ? <button type="button" className="btn btn-ghost" onClick={()=>{stressStop.current=true;setStressProgress('현재 건을 마친 뒤 중지합니다.');}}>현재 건 이후 중지</button> : null}
+          <button type="button" className="btn btn-ghost" disabled={!stressResults.length || stressRunning} onClick={downloadStress}>검증 결과 다운로드</button>
+        </div>
+        <p role="status" aria-live="polite">{stressProgress}</p>
+        {stressResults.length ? <ul>{stressResults.map(result=><li key={String(result.caseId)}>{String(result.caseId)} · {result.automatedChecksPassed === true ? '자동 검사 통과 · 수동 검토 별도' : result.status === 'failed' ? `실패 · ${String(result.code ?? '원인 확인 필요')}` : result.status === 'response_unknown' ? '응답 미확인' : '기대값 불일치·검토 필요'}</li>)}</ul> : null}
+      </details> : null}
       <p
         className="api-management-status"
         aria-live="polite"
