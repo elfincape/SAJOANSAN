@@ -136,6 +136,7 @@ export function normalizeDailyWork(input) {
     closedAt: stamp(input.closedAt),
     ownerStateAt: stamp(input.ownerStateAt),
     inferredStateAt: stamp(input.inferredStateAt),
+    verifiedCompletionAt: stamp(input.verifiedCompletionAt),
     sourceRefs: refs,
     needsConfirmation: input.needsConfirmation === true,
     confirmationReasons: (input.confirmationReasons ?? []).map(value => clean(value,300)).filter(Boolean).slice(0,4),
@@ -208,6 +209,12 @@ export function ownerWorkCorrection(overrides, workId, day) {
     doneAt: historical?.doneAt ?? historical?.updatedAt ?? null,
   };
 }
+function completionAfterReopen(item, ownerAt) {
+  return item.status === 'complete' && item.needsConfirmation !== true &&
+    typeof ownerAt === 'string' && Number.isFinite(Date.parse(ownerAt)) &&
+    typeof item.verifiedCompletionAt === 'string' && Number.isFinite(Date.parse(item.verifiedCompletionAt)) &&
+    Date.parse(item.verifiedCompletionAt) > Date.parse(ownerAt);
+}
 export function applyOwnerWorkCorrection(item, overrides = {}, day) {
   const correction = ownerWorkCorrection(overrides, item.workId, day);
   if (!correction || correction.actor !== 'owner') return item;
@@ -254,7 +261,8 @@ export function applyOwnerWorkCorrection(item, overrides = {}, day) {
       result.closedAt = null;
     }
   }
-  if (typeof correction.done === 'boolean' && result.category !== 'reference') {
+  if (typeof correction.done === 'boolean' && result.category !== 'reference' &&
+      !(correction.done === false && completionAfterReopen(item, correction.doneAt ?? correction.updatedAt))) {
     result.status = correction.done ? 'complete' : 'pending';
     result.closedAt = correction.done
       ? (correction.doneAt ?? correction.updatedAt)
@@ -516,6 +524,7 @@ export function dailyWorkItems(
               ? item.completedAt
               : null,
           inferredStateAt: item.inferredStateAt,
+          verifiedCompletionAt: item.verifiedCompletionAt,
           sourceRefs: refs,
           needsConfirmation: item.needsConfirmation,
           confirmationReasons: manualConfirmationReasons(item,entry),
@@ -548,8 +557,11 @@ export function dailyWorkItems(
       .filter((row) => row.ownerStateAt)
       .sort((a, b) => a.ownerStateAt.localeCompare(b.ownerStateAt))
       .at(-1);
+    const verified = owner?.status === 'pending' ? [previous, item]
+      .filter(row => completionAfterReopen(row, owner.ownerStateAt))
+      .sort((a,b)=>Date.parse(a.verifiedCompletionAt)-Date.parse(b.verifiedCompletionAt)).at(-1) : null;
     const state =
-      owner ??
+      verified ?? owner ??
       [previous, item]
         .filter((row) => row.inferredStateAt)
         .sort((a, b) => a.inferredStateAt.localeCompare(b.inferredStateAt))
@@ -596,6 +608,7 @@ export function dailyWorkItems(
       combined.status = state.status;
       combined.ownerStateAt = state.ownerStateAt;
       combined.inferredStateAt = state.inferredStateAt ?? null;
+      combined.verifiedCompletionAt = state.verifiedCompletionAt ?? null;
       combined.closedAt = state.closedAt;
     }
     merged.set(key, combined);

@@ -940,6 +940,8 @@ export function manualDailyView(entries, day, workOverrides = {}) {
           ['dispatch_assignment_v1','dispatch_followup_v1'].includes(item.resolution) && !events.length
             ? state.at
             : null;
+        publicValue.verifiedCompletionAt = publicValue.inferredStateAt && item.workRef &&
+          item.needsConfirmation !== true && state.done ? publicValue.inferredStateAt : null;
         publicValue.ownerStateAt =
           events.at(-1)?.at ??
           (item.ownerStateDeclared

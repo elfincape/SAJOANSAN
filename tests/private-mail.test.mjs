@@ -4859,11 +4859,11 @@ console.log(
   assert.equal(ownerWins.length, 1);
   assert.equal(
     ownerWins[0].status,
-    'pending',
-    'inferred assignment must not override an explicit owner reopen',
+    'complete',
+    'verified newly received assignment advances an earlier owner reopen',
   );
-  assert.equal(ownerWins[0].ownerStateAt, '2026-10-31T07:00:00.000Z');
-  assert.equal(ownerWins[0].closedAt, null);
+  assert.equal(ownerWins[0].verifiedCompletionAt, '2026-10-31T08:00:00.345Z');
+  assert.equal(ownerWins[0].closedAt, '2026-10-31T08:00:00.345Z');
   assert.ok(!html.includes('운행 완료'));
   assert.ok(!html.includes('하차 완료'));
   const next = dailyWorkItems(
@@ -7151,7 +7151,7 @@ function save(entries,result,id){const items=normalizeManualItems(result,{text:r
 for(const[name,test]of[
 ['correction then another supplement retains latest quantity and stable work',()=>{const entries=seed();save(entries,resolveExistingManualWork(f.text,entries,day,now),'ffffffff-1111-4111-8111-000000000001');const second=resolveExistingManualWork('11월 3일 가상구름센터 10P 요청 건 추가정보입니다. 출발은 가상별창고입니다.',entries,day,now);assert.equal(second.items[0].workRef,base.ref);assert.ok(second.items[0].text.includes('10P'))}],
 ['conflicting known loading place never completes',()=>{const entries=seed();entries[base.entryId].text+='\n상차지: 가상달창고';const result=resolveExistingManualWork('11월 3일 가상구름센터 12P 차량 배정 완료했습니다. 출발지: 가상별창고',entries,day,now);assert.equal(result.items[0].workRef,undefined);assert.equal(result.items[0].needsConfirmation,true)}],
-['explicit owner reopen survives inferred completion',()=>{const entries=seed();entries[base.entryId].items[0].completionEvents=[{done:true,at:'2026-11-01T03:00:00Z'},{done:false,at:'2026-11-02T00:30:00Z'}];entries[base.entryId].items[0].ownerUpdatedAt='2026-11-02T00:30:00Z';const result=resolveExistingManualWork('11월 3일 가상구름센터 12P 차량 배정 완료했습니다.',entries,day,now);save(entries,result,'ffffffff-1111-4111-8111-000000000002');const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day)).find(x=>x.workId===base.ref);assert.equal(work.status,'pending');assert.equal(work.ownerStateAt,'2026-11-02T00:30:00.000Z')}],
+['new verified preparation completion advances an earlier owner reopen',()=>{const entries=seed();entries[base.entryId].items[0].completionEvents=[{done:true,at:'2026-11-01T03:00:00Z'},{done:false,at:'2026-11-02T00:30:00Z'}];entries[base.entryId].items[0].ownerUpdatedAt='2026-11-02T00:30:00Z';const result=resolveExistingManualWork('11월 3일 가상구름센터 12P 차량 배정 완료했습니다.',entries,day,now);save(entries,result,'ffffffff-1111-4111-8111-000000000002');const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day)).find(x=>x.workId===base.ref);assert.equal(work.status,'complete');assert.equal(work.verifiedCompletionAt,new Date(now).toISOString())}],
 ['multiple independent requests use full extraction',()=>assert.equal(resolveExistingManualWork('별도 신규 요청입니다. 11월 3일 가상구름센터 12P 배차 부탁드립니다. 11월 4일 가상구름센터 8P 배차 부탁드립니다.',seed(),day,now),null)],
 ['completion negation never becomes completion',()=>{const r=resolveExistingManualWork('11월 3일 가상구름센터 12P 차량 배정 완료가 아닙니다.',seed(),day,now);assert.ok(!r||r.items.every(x=>x.workflowStatus!=='complete'))}],
 ])try{test();console.log('PASS',name)}catch(e){failures++;console.log('FAIL',name,e.message)}if(failures)process.exitCode=1;
@@ -7671,12 +7671,12 @@ test('cancelled original stays cancelled and explicit re-request creates a new r
  const reply=resolveExistingManualWork(text,{[prior.entryId]:prior},day,at);assert.ok(reply);assert.equal(reply.items[0].workRef,undefined);
  const work=view({[prior.entryId]:prior,[idA]:save(reply,idA,at)});assert.equal(work.find(w=>w.workId===a).status,'cancelled');assert.equal(work.find(w=>w.workId===idA+':manual:item-001').status,'pending');assert.equal(JSON.stringify(prior),before);
 });
-test('replacement preserves owner reopen, source refs and receipt-order latest details',()=>{
+test('new replacement advances earlier reopen while preserving sources and receipt-order details',()=>{
  const entries={[seed.entryId]:seed,[idA]:old},newText='차량 교체\n11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상34나0002 가상을 01000000002';
  const reply=resolveDispatchAssignment(newText,entries,day,day+'T02:00:00.000Z');const replacement=save(reply,idB,day+'T02:00:00.000Z');
  const reopened=structuredClone(seed);reopened.items[0].completionEvents=[{done:true,at:day+'T00:20:00.000Z'},{done:false,at:day+'T00:30:00.000Z'}];reopened.items[0].ownerUpdatedAt=day+'T00:30:00.000Z';
  const before=JSON.stringify([reopened,old,replacement]),work=view({[idB]:replacement,[idA]:old,[reopened.entryId]:reopened});const target=work.find(w=>w.workId===a);
- assert.equal(target.status,'pending');assert.ok(target.summary.some(t=>t.includes('가상34나0002')));assert.ok(!target.summary.some(t=>t.includes('가상12가0001')));
+ assert.equal(target.status,'complete');assert.ok(target.summary.some(t=>t.includes('가상34나0002')));assert.ok(!target.summary.some(t=>t.includes('가상12가0001')));
  assert.ok(target.sourceRefs.some(r=>r.id===idA&&r.evidence===oldText));assert.ok(target.sourceRefs.some(r=>r.id===idB&&r.evidence===newText));assert.equal(target.serviceDate,'2026-11-02');assert.equal(target.dueAt,null);
  const note=renderBriefingWorkNote(work);assert.ok(note.includes('가상34나0002'));assert.ok(!note.includes('가상12가0001'));assert.equal(JSON.stringify([reopened,old,replacement]),before);
  const excluded={['work:'+a]:{actor:'owner',excluded:true,updatedAt:at}};
@@ -7805,4 +7805,30 @@ const projected=work(),snapshot=JSON.stringify(projected);renderBriefingWorkNote
  const notes=[{id:'first',text:'차량 정보 전달 완료\n메일 원문 전체는 상세에서 보존',at:'2026-11-01T01:00:00Z'},{id:'future',text:'다음날 추가 기록',at:'2026-11-02T01:00:00Z'}];
  const overrides={'work:test-owner-notes':{actor:'owner',done:true,updatedAt:'2026-11-01T01:00:00Z',processingNotes:notes}};
  const result=applyOwnerWorkCorrection(item,overrides,'2026-11-01');assert.equal(result.status,'complete');assert.equal(result.correction.processingNotes.length,2,'detail preserves full history even on older viewed day');assert.equal(result.correction.reportNotes.length,1);const html=renderBriefingWorkNote([result]);assert.ok(html.includes('차량 정보 전달 완료'));assert.ok(!html.includes('메일 원문 전체'));assert.ok(!html.includes('다음날 추가'));assert.deepEqual(overrides['work:test-owner-notes'].processingNotes,notes);
+}
+
+{
+const {normalizeManualItems,resolveDispatchAssignment,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const day='2026-11-01',id='11111111-2222-4333-8444-555555555555',followId='aaaaaaaa-1111-4111-8111-222222222222',text='11/2 월\n쿠팡시흥 6P 배차입니다.\n하차 15:00\n경기도 가상시 테스트로 33',submittedAt=day+'T00:00:00Z';
+const seed={entryId:id,status:'ready',text,submittedAt,referenceDate:day,items:normalizeManualItems({items:[{kind:'dispatch',text:'쿠팡시흥 6P 배차',evidence:text,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}]},{text,entryId:id,submittedAt,referenceDate:day})};
+const ref=seed.items[0].ref,replyText='11/02 (월)\n가상공장(09:00상)~시흥쿠팡\n강원80바1234 가상인 010-1234-5678';
+for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11-01T12:18:00Z','2026-11-01T12:19:08Z'],['new-confirmation-after-reopen','2026-11-01T12:21:05Z','2026-11-01T12:19:08Z'],['same-message-retry','2026-11-01T12:21:05Z','2026-11-01T12:19:08Z']]){
+ const overrides={['work:'+ref]:{actor:'owner',done:false,doneAt:ownerAt,updatedAt:ownerAt}},entries={[id]:structuredClone(seed)},before=JSON.stringify(entries);
+ const reply=resolveDispatchAssignment(replyText,entries,day,receivedAt,overrides);assert.equal(reply.items[0].workRef,ref);assert.equal(reply.items[0].workflowStatus,'complete');
+ const items=normalizeManualItems(reply,{text:replyText,entryId:followId,submittedAt:receivedAt,referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetails:reply.details});for(const item of items)item.resolution='dispatch_assignment_v1';
+ const all={...entries,[followId]:{entryId:followId,status:'ready',text:replyText,submittedAt:receivedAt,referenceDate:day,items}},manual=manualDailyView(all,day,overrides),work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manual,{workOverrides:overrides});
+ assert.equal(work.length,1);assert.equal(work[0].status,label==='old-message-late-reanalysis'?'pending':'complete');assert.equal(JSON.stringify(entries),before);
+ if(label==='new-confirmation-after-reopen'){
+  for(const at of [receivedAt,'2026-11-01T12:22:00Z']){
+   const later={['work:'+ref]:{actor:'owner',done:false,doneAt:at,updatedAt:at}};
+   const projected=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(all,day,later),{workOverrides:later});assert.equal(projected[0].status,'pending','equal-time or later explicit reopen wins');
+  }
+  const nextDay='2026-11-02',next=dailyWorkItems({day:nextDay,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(all,nextDay,overrides),{workOverrides:overrides});assert.ok(!next.some(row=>row.workId===ref&&row.status==='pending'),'confirmed completion does not return as next-day pending');
+  const {applyOwnerWorkCorrection}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  for(const invalid of [null,'not-a-time'])assert.equal(applyOwnerWorkCorrection({...work[0],uncorrected:null,verifiedCompletionAt:invalid},overrides,day).status,'pending','missing or invalid immutable completion time does not defeat owner state');
+  assert.equal(applyOwnerWorkCorrection({...work[0],uncorrected:null,needsConfirmation:true},overrides,day).status,'pending','uncertain matching cannot override owner reopen');
+ }
+ console.log(JSON.stringify({label,receivedAt,ownerAt,linked:true,parsedStatus:items[0].workflowStatus,inferredAt:manual.entries.find(e=>e.entryId===followId)?.items?.[0]?.inferredStateAt??null,actual:work[0].status,expected:label==='old-message-late-reanalysis'?'pending':'complete',sourceUnchanged:true}));
+}
+
 }

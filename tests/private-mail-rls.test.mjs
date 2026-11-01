@@ -2081,7 +2081,9 @@ try{
  const retried=await call({...note(2,'기사 정보 전달 완료'),done:true},first.correction.updatedAt);assert.deepEqual(retried,completed);assert.equal((await db.query('select count(*)::int n from test_history')).rows[0].n,2);
  await assert.rejects(()=>call({...note(2,'기사 정보 전달 완료'),done:false},completed.correction.updatedAt),/CONFLICT/);
  await assert.rejects(()=>call({...note(3,'다른 수정'),done:false},first.correction.updatedAt),/CONFLICT/);
- const reopened=await call({done:false},completed.correction.updatedAt);assert.equal(reopened.correction.done,false);assert.deepEqual(reopened.correction.processingNotes,completed.correction.processingNotes);
+ let reopened=await call({done:false},completed.correction.updatedAt);assert.equal(reopened.correction.done,false);assert.deepEqual(reopened.correction.processingNotes,completed.correction.processingNotes);
+ const oldReopen=reopened;reopened=await call({done:false},oldReopen.correction.updatedAt);assert.notEqual(reopened.correction.doneAt,oldReopen.correction.doneAt,'fresh explicit reopen records a new timestamp even if old override was already false');
+ const sameRetry=await call({done:false},oldReopen.correction.updatedAt);assert.deepEqual(sameRetry,reopened,'lost-ack retry reuses the acknowledged reopen event');
  const later=await call(note(4,'추가 회신 내용'),reopened.correction.updatedAt);assert.equal(later.correction.done,false);assert.equal(later.correction.processingNotes.length,3);
  await assert.rejects(()=>call({...note(5,''),done:true},later.correction.updatedAt),/INVALID/);
  const before=JSON.stringify((await db.query('select * from private_mailboxes')).rows);
