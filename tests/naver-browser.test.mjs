@@ -190,7 +190,15 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  assert.deepEqual(result.legEvidence.logicalPointMapping.logicalToMap,[0,1,2,2,3,4]);
  assert.deepEqual(result.legEvidence.logicalPointMapping.mapDistancesMeters,[43594,50828,42665,74713]);
  assert.equal(result.legEvidence.pathIdentity,evidence.routes[0].pathIdentity);assert(!listeners.size);
+
+ const jsonDenied={...r,ok:()=>false,status:()=>400,text:async()=>JSON.stringify({error:{code:400,message:'Access denied'}}),json:async()=>({error:{code:400,message:'Access denied'}}),headers:()=>({'content-type':'application/json'})};
+ await assert.rejects(()=>map.browserCourseCapture({...page,waitForResponse:async()=>jsonDenied,goto:async()=>listeners.get('response')?.(jsonDenied)},stops,{addressCache:cache,screenshot:false}),e=>{assert.equal(map.courseLocalRouteFailure(e),false,'JSON access markers must never enter independent-course continuation');return true;});
  const denied={...r,ok:()=>false,status:()=>429,text:async()=>'',headers:()=>({})};
+ const rejected={...r,ok:()=>false,status:()=>400,text:async()=>'',headers:()=>({})};
+ await assert.rejects(()=>map.browserCourseCapture({...page,waitForResponse:async()=>rejected,goto:async()=>listeners.get('response')?.(rejected)},stops,{addressCache:cache,screenshot:false}),e=>{
+  const shape=e.routeDiagnostics.requestShape;assert.equal(shape.queryLength,null,'route requests do not use the search query field');assert(shape.paramKeys.includes('start')&&shape.paramKeys.includes('goal')&&shape.paramKeys.includes('waypoints'));assert.equal(shape.pointCount,mapStops.length);assert.equal(shape.coordinatesValid,true);return true;
+ });
+
  const absentCards={...cards,first:()=>({waitFor:async()=>{throw Object.assign(Error('route panel timeout'),{name:'TimeoutError'});}})};
  const deniedPage={...page,waitForResponse:async predicate=>{assert(predicate(denied));return denied;},goto:async()=>listeners.get('response')?.(denied),locator:()=>absentCards};
  await assert.rejects(()=>map.browserCourseCapture(deniedPage,stops,{addressCache:cache,screenshot:false}),e=>e.code==='NAVER_ROUTE_UNAVAILABLE'&&e.reason==='PROVIDER_ACCESS_RESTRICTED'&&e.routeDiagnostics.responseEvidence.status===429);

@@ -12,7 +12,7 @@ await runWorker({
  lookup:async()=>({distanceKm:15,distanceText:'15km',method:'naver-map-display',routeLabel:'거리우선'}),log:()=>{}
 });
 assert(served,'An initially empty queue must accept new work without restarting');
-assert(polls>=3);assert.equal(closed,1);assert(saved.some(sql=>sql.includes("status='completed'")));assert(saved.some(sql=>sql.includes('15km')));
+assert(polls>=3);assert.equal(closed,1);assert(saved.some(sql=>/status=(?:'completed'|case .*else 'completed' end)/.test(sql)));assert(saved.some(sql=>sql.includes('15km')));
 let lookups=0,writes=[];
 await runWorker({
  jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),
@@ -24,7 +24,7 @@ console.log('Idle worker accepts later jobs, persists progress, stops on access 
 {
  const calls=[],writes=[];const validateJob={...job,kind:'validation',addresses:['A','B','C'],results:{old:{query:'old',status:'valid'}}};
  await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return [validateJob];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];writes.push(sql);return [];},validate:async(_page,address)=>{calls.push(address);return {query:address,status:address==='B'?'not_found':'valid'};},lookup:async()=>{throw Error('Validation must not run a road-distance query');},log:()=>{}});
- assert.deepEqual(calls,['A','B','C']);assert(writes.some(sql=>sql.includes("status='completed'")));assert(writes.some(sql=>sql.includes('not_found')));
+ assert.deepEqual(calls,['A','B','C']);assert(writes.some(sql=>/status=(?:'completed'|case .*else 'completed' end)/.test(sql)));assert(writes.some(sql=>sql.includes('not_found')));
  const paused=[];calls.length=0;
  await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return [validateJob];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];paused.push(sql);return [];},validate:async(_page,address)=>{calls.push(address);return {query:address,status:'network_error',reason:'PROVIDER_ACCESS_RESTRICTED'};},lookup:async()=>{throw Error('No distance requests');},log:()=>{}});
  assert.deepEqual(calls,['A']);assert(paused.some(sql=>sql.includes("status='attention'")));assert(!paused.some(sql=>/cursor=1/.test(sql)));
@@ -32,7 +32,7 @@ console.log('Idle worker accepts later jobs, persists progress, stops on access 
 
 let addressAttempts=0,addressWrites=[];
 await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{addressWrites.push(sql);if(sql.startsWith('with next'))return [{...job,addresses:['A','B','C','D']}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];return [];},lookup:async()=>{addressAttempts++;throw Object.assign(Error('Missing address'),{code:'ADDRESS_NOT_FOUND'});},log:()=>{}});
-assert.equal(addressAttempts,4);assert(addressWrites.some(sql=>sql.includes("status='completed'")));assert(!addressWrites.some(sql=>sql.includes("status='attention'")));console.log('Individual missing addresses do not halt the remaining destinations');
+assert.equal(addressAttempts,4);assert(addressWrites.some(sql=>/status=(?:'completed'|case .*else 'completed' end)/.test(sql)));assert(!addressWrites.some(sql=>sql.includes("status='attention'")));console.log('Individual missing addresses do not halt the remaining destinations');
 
 const rotated=[{id:'row-10',rotation:1,stops:['G','C','A','B','C']},{id:'row-11',rotation:2,stops:['C','D','E','G']}];
 let captureWrites=[],measuredRoutes=[],storedCourses=[];
@@ -42,10 +42,10 @@ assert.equal(measuredRoutes.filter(r=>r.screenshot===false&&!r.stops.includes('E
 assert(captureWrites.some(s=>s.includes('"complete":true')),'A complete permutation proof is persisted');
 assert(captureWrites.some(s=>s.includes('"completed":1')),'Permutation progress is persisted before the final image');
 assert(captureWrites.some(s=>s.includes('row-11')&&s.includes('ADDRESS_NOT_FOUND')));
-assert(captureWrites.some(s=>s.includes("status='completed'")),'One address error preserves the successful other rotation');
+assert(captureWrites.some(s=>/status=(?:'completed'|case .*else 'completed' end)/.test(s)),'One address error preserves the successful other rotation');
 let cancelled=false,cancelWrites=[],cancelCaptures=0;
 await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{cancelWrites.push(sql);if(sql.startsWith('with next'))return [{...job,kind:'capture',courses:[rotated[0]],addresses:['row-10'],results:{}}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:cancelled?'cancelled':'running'}];return [];},capture:async()=>{cancelCaptures++;cancelled=true;return {distanceKm:10,distanceText:'10km',routeLabel:'거리우선',method:'naver-map-display'};},saveCapture:async()=>{throw Error('A cancelled comparison must not upload');},log:()=>{}});
-assert.equal(cancelCaptures,1);assert(!cancelWrites.some(s=>s.includes('cursor=1')));assert(!cancelWrites.some(s=>s.includes("status='completed'")));
+assert.equal(cancelCaptures,1);assert(!cancelWrites.some(s=>s.includes('cursor=1')));assert(!cancelWrites.some(s=>/status=(?:'completed'|case .*else 'completed' end)/.test(s)));
 console.log('Permutation checkpoints, per-rotation image isolation, partial success and cancellation without cursor advancement passed');
 
 let ownsLease=true,leaseMeasures=0,leaseUploads=0,leaseWrites=[];
@@ -54,7 +54,7 @@ assert.equal(leaseMeasures,1,'A reclaimed running job must stop at its next leas
 
 let providerQueries=0,providerWrites=[];
 await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{providerWrites.push(sql);if(sql.startsWith('with next'))return [{...job,kind:'capture',courses:rotated,addresses:rotated.map(c=>c.id),results:{'previous-success':{imagePath:'keep.png'}}}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return [{status:'running'}];return [];},capture:async()=>{providerQueries++;throw Object.assign(Error('네이버 검색 요청 HTTP400'),{code:'NAVER_SEARCH_UNAVAILABLE',httpStatus:400});},saveCapture:async()=>{throw Error('No incomplete upload');},log:()=>{}});
-assert.equal(providerQueries,1,'A common search rejection must not poison every permutation and rotation');assert(providerWrites.some(s=>s.includes("status='attention'")));assert(!providerWrites.some(s=>s.includes('cursor=1')||s.includes('cursor=2')));assert(!providerWrites.some(s=>s.includes("status='completed'")));assert(!providerWrites.some(s=>/set results\s*=\s*'/.test(s)),'Only merge current issue/checkpoint; preserve previous success');
+assert.equal(providerQueries,1,'A common search rejection must not poison every permutation and rotation');assert(providerWrites.some(s=>s.includes("status='attention'")));assert(!providerWrites.some(s=>s.includes('cursor=1')||s.includes('cursor=2')));assert(!providerWrites.some(s=>/status=(?:'completed'|case .*else 'completed' end)/.test(s)));assert(!providerWrites.some(s=>/set results\s*=\s*'/.test(s)),'Only merge current issue/checkpoint; preserve previous success');
 
 {
  const {naverPointFromUrl}=await import('../scripts/lib/naver-map-browser.mjs'),{createShortlistPlan,rankShortlist}=await import('../scripts/lib/naver-candidate-shortlist.mjs');
@@ -114,4 +114,29 @@ assert.equal(providerQueries,1,'A common search rejection must not poison every 
   if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:[rotated[0]],addresses:[rotated[0].id],results:{}}];if(sql.startsWith('select status'))return[{status:'running'}];if(sql.endsWith('returning status')){beats++;if(beats>=3&&beats<=5)throw Object.assign(Error('queue failed inside capture'),{status:502});return[{status:'running'}];}if(sql.includes('cursor=1'))advanced=true;return[];
  },capture:async(_p,stops,options)=>{await options.checkActive();return{distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,png:Buffer.from('png')};},saveCapture:async()=> 'unexpected.png',log:()=>{}}),/inside capture/);
  assert.equal(advanced,false,'queue failures inside browser measurement stay infrastructure failures');
+}
+
+// One rejected route must not block independent rotations or become a false minimum.
+{
+ const calls=[],writes=[],saved=[];
+ const execute=async previous=>runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{
+  if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:rotated,addresses:previous?['row-10']:rotated.map(c=>c.id),cursor:0,results:previous?{'row-10':{optimization:previous}}:{}}];
+  if(sql.startsWith('select status')||sql.endsWith('returning status'))return[{status:'running'}];writes.push(sql);return[];
+ },capture:async(_p,stops,o)=>{calls.push(stops);if(!previous&&stops.includes('A')&&calls.filter(s=>s.includes('A')).length===2)throw Object.assign(Error('individual route400'),{code:'NAVER_ROUTE_UNAVAILABLE',reason:'PROVIDER_HTTP_ERROR',httpStatus:400,routeDiagnostics:{responseEvidence:{restrictionConfirmed:false}}});const r={distanceKm:10,distanceText:'10km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('png')}:{})};},saveCapture:async(_j,c)=>{saved.push(c.id);return c.id+'.png';},log:()=>{}});
+ await execute();
+ assert(saved.includes('row-11'),'independent second rotation continues after individual HTTP400');assert(!saved.includes('row-10'),'partial comparison is never uploaded as minimum');
+ assert(writes.some(s=>s.includes('cursor=2')));assert(writes.some(s=>s.includes('"retryRequired":true')));
+ const partial=writes.find(s=>s.includes('"retryRequired":true'));const raw=partial.match(/,'((?:[^']|'')*)'::jsonb/)[1].replaceAll("''", "'");const checkpoint=JSON.parse(raw).optimization;
+ assert.equal(checkpoint.completed,1);assert.equal(checkpoint.complete,false);
+ assert(writes.at(-1).includes('retryRequired'),'terminal status retains unresolved work across worker handoff');
+ calls.length=0;saved.length=0;await execute(checkpoint);
+ assert.equal(calls.filter(s=>s.includes('A')&&JSON.stringify(s)===JSON.stringify(rotated[0].stops)).length,1,'saved successful candidate is only revisited if its winning image needs recapture');
+ assert(saved.includes('row-10'));
+}
+
+{
+ const {courseLocalRouteFailure}=await import('../scripts/lib/naver-map-browser.mjs');
+ const isolated={code:'NAVER_ROUTE_UNAVAILABLE',reason:'PROVIDER_HTTP_ERROR',httpStatus:400,routeDiagnostics:{responseEvidence:{restrictionConfirmed:false}}};
+ assert(courseLocalRouteFailure(isolated));
+ for(const error of [{...isolated,httpStatus:429},{...isolated,httpStatus:403},{...isolated,code:'NAVER_SEARCH_UNAVAILABLE'},{...isolated,reason:'PROVIDER_ACCESS_RESTRICTED'},{...isolated,routeDiagnostics:undefined},{...isolated,routeDiagnostics:{responseEvidence:{restrictionConfirmed:true}}}])assert.equal(courseLocalRouteFailure(error),false);
 }
