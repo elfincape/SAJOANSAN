@@ -261,7 +261,7 @@ function SettingsWorkspace() {
           tabIndex={-1}
           className="app-main max-w-3xl w-full mx-auto px-4 py-8"
         >
-          <ApiManagement editable={editable} />
+          <ApiManagement editable={editable} stressEnabled={owner} />
         </main>
       </Tabs.Content>
     </Tabs.Root>
