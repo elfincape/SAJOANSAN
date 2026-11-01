@@ -7855,6 +7855,7 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  const badComplete=await run({action:'complete'});assert.equal(badComplete.reply.items[0].workRef,undefined);assert.equal(badComplete.reply.items[0].needsConfirmation,true);
  const conflict=await run({matchesTarget:false,action:'conflict'});assert.equal(conflict.reply.items[0].workRef,undefined);
  const complete=await run({action:'complete',completionEvidence:'차량 배정 완료했습니다.'},'차량 배정 완료했습니다.');assert.equal(complete.reply.items[0].workRef,target.workId);assert.equal(complete.reply.items[0].workflowStatus,'complete');
+ const historical=await run({action:'complete',completionEvidence:'강원80바1234 가상인 010-1234-5678'},'이전 회신입니다. 현재 차량은 변경 없습니다. 강원80바1234 가상인 010-1234-5678');assert.equal(historical.reply.items[0].workRef,undefined);
  const wrongDay=await run({serviceOriginal:'11월 3일'},'11월 3일 시흥 배차입니다.');assert.equal(wrongDay.reply.items[0].workRef,undefined);
 }
 

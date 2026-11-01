@@ -1073,7 +1073,7 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,submittedAt:entry.submit
   const evidence=sourceQuote(value.evidence,entry.text),details=value.details.map(text=>sourceQuote(text,entry.text,500));
   const service=value.serviceOriginal==null?null:sourceQuote(value.serviceOriginal,evidence,100);
   const serviceDay=dateFrom(service,entry.referenceDate);
-  let conflict=!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
+  let conflict=/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
   if(value.action==='complete'){
     const quote=typeof value.completionEvidence==='string'?sourceQuote(value.completionEvidence,entry.text,1000):'';
     const declared=/(완료|마쳤|확정|보냈|발송했|전달했|처리했)/.test(quote)&&!/(아직|미완료|예정|않|못|취소|[?？])/.test(quote);
@@ -1271,7 +1271,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         if(typeof item?.text==='string'&&item.text)target={workId:entry.targetWorkId,title:item.text,serviceDate:item.serviceDate??null,kind:'task'};
       }
       if(!target)throw Error('MANUAL_SOURCE');
-      const result=await analyzeTargetedManual({entry,target:{workId:target.workId,title:target.title,serviceDate:target.serviceDate,kind:current.manual_entries[entry.targetWorkId.slice(0,36)]?.items?.find(item=>item.ref===entry.targetWorkId)?.kind==='dispatch'?'dispatch':'task'},ai,fetcher:ctx.fetcher});reply=result.reply;targetResponse=result.response;
+      const result=await analyzeTargetedManual({entry,target:{workId:target.workId,title:target.title,serviceDate:target.serviceDate,status:target.status,summary:target.summary??[],verifiedCompletionAt:target.verifiedCompletionAt??null,ownerStateAt:target.ownerStateAt??null,kind:current.manual_entries[entry.targetWorkId.slice(0,36)]?.items?.find(item=>item.ref===entry.targetWorkId)?.kind==='dispatch'?'dispatch':'task'},ai,fetcher:ctx.fetcher});reply=result.reply;targetResponse=result.response;
       if(reply.items[0]?.workRef===entry.targetWorkId){
         const scoped=Object.fromEntries(Object.entries(current.manual_entries).map(([id,prior])=>[id,{...prior,items:(prior.items??[]).filter(item=>item.ref===entry.targetWorkId||item.workRef===entry.targetWorkId)}]).filter(([,prior])=>prior.items.length));
         const canonical=resolveExistingManualWork(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{})??resolveDispatchAssignment(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{});
