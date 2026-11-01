@@ -161,7 +161,12 @@ export function MailBriefingConnection() {
             : '자동화 일시정지';
   return (
     <details style={{ width: '100%', minWidth: 0, color: 'var(--theme-text)' }}>
-      <summary style={{ cursor: 'pointer', padding: '8px 0' }}>
+      <summary
+        style={{
+          cursor: 'pointer',
+          padding: 'var(--daily-settings-summary-padding, 8px 0)',
+        }}
+      >
         <strong>메일 자동화</strong> ·{' '}
         {data?.notesConnected && !notesNeedsReconnect ? (
           <>

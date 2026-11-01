@@ -11,12 +11,34 @@
   overflow: auto;
   background: var(--theme-soft);
   border: 1px solid var(--theme-border);
+  border-radius: var(--ean-control-radius);
 }
 .mail-daily-briefing .daily-toolbar {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
   gap: 10px;
+  padding: 16px 20px;
+  border: 1px solid var(--ean-rim);
+}
+.daily-date-controls,
+.daily-toolbar-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.daily-toolbar-actions {
+  margin-left: auto;
+}
+.daily-toolbar .btn {
+  gap: 8px;
+}
+.mail-daily-briefing .daily-overview {
+  margin-top: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--ean-rim);
+  min-height: 200px;
 }
 .mail-daily-briefing .daily-toolbar label {
   display: grid;
@@ -28,12 +50,18 @@
   padding: 6px 10px;
 }
 .mail-daily-briefing .daily-feedback {
-  min-height: 24px;
-  margin: 10px 0;
+  min-height: 0;
+  margin: 0;
   color: var(--theme-muted);
+  font-size: 13px;
+}
+.mail-daily-briefing .daily-feedback:not(:empty) {
+  margin-block: 12px;
 }
 .mail-daily-briefing .daily-title {
-  margin: 20px 0 12px;
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--theme-border-soft);
   font-size: 20px;
 }
 .mail-daily-briefing .daily-section {
@@ -53,13 +81,14 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 .mail-daily-briefing .daily-items > li {
-  padding: 14px 16px;
-  border: 1px solid var(--theme-border-soft);
-  border-radius: var(--ean-panel-radius);
-  background: var(--theme-panel);
+  padding: 14px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--theme-border-soft);
+  border-radius: 0;
+  background: transparent;
   overflow-wrap: anywhere;
 }
 .mail-daily-briefing .daily-items > li > p {
@@ -117,8 +146,9 @@
   margin-top: 26px;
 }
 .mail-daily-briefing .daily-settings {
-  border-top: 1px solid var(--theme-border-soft);
-  padding-top: 12px;
+  border: 1px solid var(--ean-rim);
+  padding: 0 20px;
+  --daily-settings-summary-padding: 16px 12px;
 }
 .mail-daily-briefing summary {
   cursor: pointer;
@@ -141,9 +171,20 @@
   opacity: 0.55;
 }
 .mail-daily-briefing .daily-filters {
-  margin-top: 26px;
-  border-top: 1px solid var(--theme-border-soft);
-  padding-top: 16px;
+  margin-top: 20px;
+  padding: 0 20px 20px;
+  border: 1px solid var(--ean-rim);
+}
+.mail-daily-briefing .daily-filters:not([open]) {
+  padding-bottom: 0;
+}
+.mail-daily-briefing .daily-filters > summary {
+  padding: 16px 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mail-daily-briefing .daily-filters[open] > summary {
+  border-bottom: 1px solid var(--theme-border-soft);
 }
 .mail-daily-briefing .daily-filter-fields {
   border: 0;
@@ -294,7 +335,7 @@
   color: var(--theme-text);
 }
 .daily-message-dialog h2 {
-  margin: 0 0 20px;
+  margin: 0;
   font-size: 20px;
 }
 .daily-message-dialog .manual-message-label {
@@ -340,8 +381,8 @@
   justify-content: space-between;
   gap: 16px;
   width: 100%;
-  min-height: 48px;
-  padding: 10px 14px;
+  min-height: 56px;
+  padding: 14px 12px;
   border: 0;
   border-radius: 10px;
   text-align: left;
@@ -349,12 +390,10 @@
   background: transparent;
   cursor: pointer;
 }
-.daily-work-trigger:hover {
-  background: var(--ean-interaction-surface);
-}
 .daily-work-title {
   min-width: 0;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 550;
   line-height: 1.45;
 }
 .daily-work-trailing {
@@ -367,6 +406,27 @@
 }
 .daily-work-state {
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--ean-badge-radius);
+  background: var(--theme-hover);
+  color: var(--theme-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.daily-work-state[data-status='complete']:not([data-excluded]),
+.daily-work-state[data-status='resolved']:not([data-excluded]) {
+  background: var(--theme-success-bg);
+  color: var(--theme-success);
+}
+.daily-work-state[data-status='in_progress']:not([data-excluded]) {
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
+}
+.daily-work-state[data-status='needs_confirmation']:not([data-excluded]) {
+  background: var(--theme-warn-bg);
+  color: var(--theme-warn);
 }
 .daily-work-detail {
   max-height: 76vh;
@@ -383,6 +443,16 @@
 }
 .daily-detail-top {
   justify-content: space-between;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--theme-border-soft);
+}
+.daily-detail-top .btn {
+  flex: none;
+}
+.daily-detail-status {
+  margin: 16px 0 0;
 }
 .daily-detail-summary {
   margin: 16px 0;
@@ -395,7 +465,8 @@
   display: grid;
   grid-template-columns: 7.5rem minmax(0, 1fr);
   gap: 12px;
-  margin: 8px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--theme-border-soft);
 }
 .daily-detail-fields dt {
   color: var(--theme-muted);
@@ -416,6 +487,42 @@
 .daily-detail-secondary {
   padding-top: 16px;
   border-top: 1px solid var(--theme-border);
+}
+.daily-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--theme-border-soft);
+}
+:is(.daily-work-detail, .daily-message-dialog) :is(.app-input, .app-select) {
+  padding: 9px 12px;
+  border: 1px solid var(--theme-control-border);
+  border-radius: var(--ean-control-radius);
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  font: inherit;
+}
+.daily-work-detail .daily-feedback {
+  margin: 12px 0;
+  color: var(--theme-muted);
+  font-size: 13px;
+}
+.daily-work-detail .daily-sources {
+  margin-top: 20px;
+}
+.daily-work-detail .daily-sources > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+}
+@media (prefers-reduced-transparency: reduce) {
+  html[data-theme] body.workspace-ui .mail-daily-briefing .work-surface {
+    background: var(--theme-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 .daily-excluded {
   margin-top: 20px;
@@ -442,6 +549,8 @@
 
 .daily-detail-title {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 20px;
   line-height: 1.4;
 }

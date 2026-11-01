@@ -410,7 +410,7 @@ export function MailFilterControls({
   }
   return (
     <details
-      className="daily-filters"
+      className="daily-filters work-surface"
       onToggle={(event) => {
         if (event.currentTarget.open && !requested.current && !disabled) {
           requested.current = true;
