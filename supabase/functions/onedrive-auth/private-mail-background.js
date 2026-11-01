@@ -38,9 +38,10 @@ export async function handleMailAutomation(action, body, user, ctx) {
   };
   if (action === 'private-mail-stress-verify') {
     if (body.confirmation !== 'isolated-stress') throw fail('STRESS_CONFIRMATION_REQUIRED',400);
+    if (body.receiptId != null && (body.caseId !== 'mail-old-sent-collected-today' || !uuid(body.receiptId))) throw fail('STRESS_RECEIPT_INVALID',400);
     const { stressCatalogue, runStressCase } = await import('./private-mail-stress-verify.js');
     if (body.list === true) return json({cases:stressCatalogue(),productionBusinessWritten:false,oneNoteWritten:false});
-    try { return json(await runStressCase(body.caseId,ctx)); }
+    try { return json(await runStressCase(body.caseId,{...ctx,stressReceiptId:body.receiptId})); }
     catch (error) { return json({status:'failed',code:/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_VERIFY_FAILED',productionBusinessWritten:false,oneNoteWritten:false}); }
   }
   const current = await box();

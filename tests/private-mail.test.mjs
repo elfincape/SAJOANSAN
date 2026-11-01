@@ -7457,3 +7457,15 @@ let failed=0;for(const[name,test]of[
  const dueTitle='내일 17시까지 11월 3일 배차 회신';assert.ok(renderBriefingWorkNote([{...item,title:dueTitle}]).includes(dueTitle),'relative processing deadline must not become service day');
  console.log('PASS relative service date anchored to confirmed day in note title; raw source and processing deadlines preserved');
 }
+
+{
+ const {handleMailAutomation}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+ const {APPROVED_MAIL_TARGET:t}=await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+ const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const ctx={db:()=>assert.fail('invalid receipt must fail before storage'),json:Response.json,fail:message=>Error(message)};
+ for(const body of [{caseId:'manual-split-supplement-exact',receiptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},{caseId:'mail-old-sent-collected-today',receiptId:'not-uuid'}]) await assert.rejects(()=>handleMailAutomation('private-mail-stress-verify',{confirmation:'isolated-stress',...body},{id:t.owner_id},ctx),/STRESS_RECEIPT_INVALID/);
+ const f=fixtureById('mail-old-sent-collected-today'),normal=await parseStressMail(f),bound=await parseStressMail(f,undefined,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+ assert.equal(bound.source.id,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');assert.equal(normal.source.uidl_hash,bound.source.uidl_hash);assert.equal(normal.source.text,bound.source.text);assert.equal(normal.source.headers,bound.source.headers);
+ console.log('PASS virtual receipt binding restricted to one frozen mail; source bytes/headers immutable');
+}

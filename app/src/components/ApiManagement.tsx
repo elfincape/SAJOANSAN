@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiManagement } from '../lib/api-management';
+import { IsolatedStorageCheck } from './IsolatedStorageCheck';
 import type {
   ApiManagementStatus,
   ApiCompatibilityResult,
@@ -409,6 +410,7 @@ export function ApiManagement({ editable, stressEnabled = false }: { editable: b
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={()=>{void apiManagement.stressCases().then(({cases})=>{if(alive.current){setStressCases(cases);setStressChoice(cases[0]?.id??'');}}).catch(()=>{if(alive.current)setStressProgress('사례 목록을 확인하지 못했습니다.');});}}>검증 사례 조회</button>
           {stressCases.length ? <><label style={{minWidth:0,flex:'1 1 20rem'}}>재시험 사례<select style={{width:'100%',minWidth:0}} className="app-input" value={stressChoice} disabled={busy} onChange={event=>setStressChoice(event.target.value)}><option value="">사례 선택</option>{stressCases.map(item=><option key={item.id} value={item.id}>{item.id}</option>)}</select></label><button type="button" className="btn btn-ghost" disabled={busy || !editable || !stressChoice} onClick={()=>void runStress(stressChoice)}>선택 1건 재시험</button></> : null}
         </div>
+        <IsolatedStorageCheck results={stressResults} disabled={busy || !editable} onBusyChange={setBusy} />
         <p role="status" aria-live="polite">{stressProgress}</p>
         {stressResults.length ? <ul>{stressResults.map(result=><li key={String(result.caseId)}>{String(result.caseId)} · {result.automatedChecksPassed === true ? '자동 검사 통과 · 수동 검토 별도' : result.status === 'failed' ? `실패 · ${String(result.code ?? '원인 확인 필요')}` : result.status === 'response_unknown' ? '응답 미확인' : '기대값 불일치·검토 필요'}</li>)}</ul> : null}
       </details> : null}
