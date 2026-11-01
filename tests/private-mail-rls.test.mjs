@@ -1870,3 +1870,149 @@ try {
  console.log('PASS virtual reception: real MIME -> intake RPC/UIDL/queue/normalizer/finish/history -> daily view -> SQL-leased Notes writer; duplicate/timeout/expiry/carry/completion/reopen and mocked Graph lost acknowledgments preserve original source and owner memo');
 } finally {await db.close();}
 }
+
+// Mail-only midnight preflight uses the canonical JS work projection, not raw pending SQL flags.
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+const {hasMailCarryWork,handleMailAutomation}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+const {dailyBriefingView,renderDailyBriefing,BRIEFING_TARGET:T}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const {writeDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-notes-writer.js');
+const BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc';
+const hash=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):value))].map(n=>n.toString(16).padStart(2,'0')).join('');
+const db=new PGlite({extensions:{pgcrypto}});
+const rpc=async(name,args)=>(await db.query('select public.'+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') result',args)).rows[0].result;
+const row=async id=>(await db.query('select * from private_mail_messages where id=$1',[id])).rows[0];
+const snapshot=async id=>{const r=await row(id);return {id:r.id,mailbox:r.mailbox_id,owner:r.owner_id,uidl:r.uidl_hash,hash:r.content_hash,subject:r.subject,sender:r.sender,sent:r.sent_at.toISOString(),created:r.created_at.toISOString(),files:r.files,analysis:r.analysis};};
+try {
+ await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;grant usage on schema auth to authenticated;
+ create table auth.users(id uuid primary key);create table public.user_profiles(id uuid primary key,active boolean);
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ grant select on public.user_profiles to authenticated,service_role;`);
+ const migrations=['repo-root/sql/private-mail.sql','supabase/sql/private-mail-automation.sql','supabase/sql/private-mail-filters.sql','supabase/sql/private-mail-manual.sql','supabase/sql/private-mail-history.sql','supabase/sql/private-mail-message-dates.sql'];
+ for(const p of migrations)await db.exec(await readFile(new URL('../'+p,import.meta.url),'utf8'));
+ await db.query('insert into auth.users values($1)',[OWNER]);await db.query('insert into user_profiles values($1,true)',[OWNER]);
+ await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled,automation_config) values($1,$2,'jhs96@eangroup.kr','isolated-drive','isolated-folder',true,$3)",[BOX,OWNER,{enabled:true,readStateVerified:true,analysisConsent:true,analysisConsentAt:'2020-01-01T00:00:00Z'}]);
+ // Instrument only the network-dispatch boundary. Trigger/receipt/claims remain the repository SQL.
+ await db.exec(`create table public.isolated_dispatch_calls(box uuid,at timestamptz default clock_timestamp());grant all on public.isolated_dispatch_calls to service_role;
+ create or replace function public.private_mail_dispatch(p_box uuid) returns boolean language plpgsql security invoker set search_path='' as $$begin insert into public.isolated_dispatch_calls(box) values(p_box);return true;end;$$;set role service_role;`);
+ const f=fixtureById('mail-old-sent-collected-today'),parsed=await parseStressMail(f);
+ const raw=new TextEncoder().encode(f.mime),rawHash=await hash(raw),uidl=await hash('VIRTUAL_POP_UIDL:'+f.id);
+ const drive=new Map([['isolated-original',raw],['isolated-body',new TextEncoder().encode(parsed.source.text)]]);
+ const manifest=await Promise.all([...drive].map(async([item_id,bytes],index)=>({kind:index?'text':'eml',item_id,file_name:index?'body.txt':'original.eml',original_name:index?'body.txt':'original.eml',byte_size:bytes.length,content_hash:await hash(bytes)})));
+ assert.equal(await hash(drive.get('isolated-original')),rawHash);
+ const lease=crypto.randomUUID(),otherLease=crypto.randomUUID();
+ const begins=await Promise.all([db.query('select * from private_mail_begin($1,$2)',[BOX,lease]),db.query('select * from private_mail_begin($1,$2)',[BOX,otherLease])]);
+ assert.equal(begins[0].rows.length,1);assert.equal(begins[1].rows.length,0);
+ const publishArgs=[BOX,lease,uidl,rawHash,parsed.source.subject,parsed.source.sender,parsed.source.sent_at,manifest];
+ const messages=await Promise.all([rpc('private_mail_publish',publishArgs),rpc('private_mail_publish',publishArgs)]);
+ assert.equal(messages[0],messages[1]);const id=messages[0];assert.equal((await db.query('select count(*)::int n from private_mail_messages')).rows[0].n,1);
+ assert.equal((await db.query('select id from private_mail_messages where mailbox_id=$1 and uidl_hash=any($2::text[])',[BOX,[uidl]])).rows[0].id,id);
+ await assert.rejects(()=>rpc('private_mail_publish',[BOX,otherLease,...publishArgs.slice(2)]),/lease expired/);
+ const received=await row(id);assert.equal(received.analysis_status,'pending');assert.equal(received.analysis,null);assert.equal(received.content_hash,rawHash);
+ assert.equal((await db.query('select count(*)::int n from isolated_dispatch_calls')).rows[0].n,1,'one INSERT-trigger network-dispatch boundary for duplicate receipts');
+ const selected=await rpc('private_mail_analysis_select',[BOX,id,OWNER]);assert.equal(selected.id,id);assert.equal(selected.reportDay,'2026-10-29');
+ const source={...parsed.source,id,uidl_hash:received.uidl_hash,created_at:received.created_at.toISOString(),files:received.files};
+ let providerCalls=0;
+ const value={"intent":{"kind":"request","evidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."},"group":{"name":"가상별창고","evidence":"가상별창고"},"summary":[{"text":"가상별창고 6P의 내일 배차 준비 요청이며, 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다."}],"issues":[],"tasks":[{"text":"가상별창고 6P의 내일 배차를 준비합니다. 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다.","status":"pending","assignee":"테스트담당자","due":null,"completionEvidence":null,"serviceOriginal":"내일","forOwner":true,"recipientScope":"owner_direct","selfRequestEvidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."}],"waiting":[],"updates":[],"imageFacts":[],"imageDecisions":[],"imageItems":{"tasks":[],"issues":[],"waiting":[]}};
+ const run=(timeout=false)=>{const analysisLease=crypto.randomUUID();return analyzePrivateMail({messageId:id,provider:'openai',model:'gpt-6-luna',key:'LOCAL_MOCK_ONLY',ownerName:'테스트담당자',now:f.now,loadMail:async()=>source,
+ fetcher:async()=>{providerCalls++;if(timeout)throw new DOMException('simulated provider timeout','AbortError');return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});},
+ store:{claim:async()=>{const claim=(await db.query('select * from private_mail_analysis_claim($1,$2)',[id,analysisLease])).rows[0];return claim?{row:claim,lease:analysisLease}:null;},finish:({analysis})=>rpc('private_mail_analysis_finish',[id,analysisLease,analysis]),fail:({code})=>rpc('private_mail_analysis_fail',[id,analysisLease,code])}});};
+ const timeoutResult=await run(true);assert.equal(timeoutResult.status,'failed');assert.equal((await row(id)).analysis,null);
+ assert.equal((await db.query('select * from private_mail_analysis_claim($1,$2)',[id,crypto.randomUUID()])).rows.length,0,'failed provider cooldown blocks immediate competing work');
+ await rpc('private_mail_analysis_select',[BOX,id,OWNER]);
+ const before=providerCalls,results=await Promise.all([run(),run()]);assert.equal(results.filter(x=>x.status==='done').length,1);assert.equal(results.filter(x=>x.status==='skipped').length,1);assert.equal(providerCalls-before,1);
+ const saved=(await row(id)).analysis;assert.equal(saved.source.id,id);assert.equal(saved.source.uidl,uidl);assert.equal(saved.tasks[0].serviceDate,'2026-10-30');assert.equal(saved.tasks[0].dueAt,null);
+ assert.equal((await row(id)).report_day.toISOString().slice(0,10),'2026-10-29');
+ const originalSource=await snapshot(id),historyBefore=(await db.query('select history_id,payload from private_mail_analysis_history where source_id=$1',[id])).rows;
+ assert.ok(historyBefore.length);assert.equal((await run()).status,'skipped');assert.deepEqual(await snapshot(id),originalSource);
+ const queryView=async(day)=>{const rows=(await db.query('select analysis,report_day::text report_day from private_mail_messages where mailbox_id=$1 and analysis is not null and report_day<=$2::date',[BOX,day])).rows;
+ const analyses=rows.map(r=>({...r.analysis,source:{...r.analysis.source,carryOnly:r.report_day<day}}));const overrides=(await db.query('select briefing_overrides from private_mailboxes where id=$1',[BOX])).rows[0].briefing_overrides;
+ return {analyses,overrides,view:dailyBriefingView({now:day+'T01:00:00Z',analyses,overrides}),render:renderDailyBriefing({now:day+'T01:00:00Z',analyses,overrides})};};
+ const initial=await queryView('2026-10-29'),later=await queryView('2026-11-02');assert.equal(initial.view.tasks.length,1);assert.equal(later.view.tasks.length,1);assert.equal(later.view.tasks[0].serviceDate,'2026-10-30');assert.ok(later.render.managedHtml.includes('가상별창고'));
+
+ const today=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text target_day")).rows[0].target_day;
+ const carrySource=(await queryView(today)).analyses[0],ref=id+':tasks:'+saved.tasks[0].itemIndex;
+ // RED baseline: canonical carry exists but the existing manual-only rollover does not prepare its day.
+ assert.equal(hasMailCarryWork({day:today,analyses:[carrySource]}),true);
+ assert.equal(await rpc('private_mail_manual_rollover',[BOX,today]),false);
+ assert.equal((await db.query('select briefing_pages->$2 state from private_mailboxes where id=$1',[BOX,today])).rows[0].state,null);
+ await db.exec(`reset role;create schema extensions;create extension pgcrypto with schema extensions;grant usage on schema extensions to service_role;
+ create schema net;grant usage on schema net to service_role;create table net.calls(body jsonb);grant select,insert,delete on net.calls to service_role;
+ create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language plpgsql as $$begin insert into net.calls values(body);return 1;end;$$;
+ create table public.onedrive_connection(id boolean primary key,encrypted_notes_tokens text);grant select on public.onedrive_connection to service_role;insert into public.onedrive_connection values(true,'LOCAL_ONLY');`);
+ for(const path of ['supabase/sql/private-mail-report-dispatch.sql','supabase/sql/private-mail-manual-background.sql','supabase/sql/private-mail-image-transport.sql','supabase/sql/private-mail-mail-rollover.sql'])await db.exec(await readFile(new URL('../'+path,import.meta.url),'utf8'));
+ await db.exec('set role service_role');
+ const state=async()=>(await db.query('select briefing_pages->$2 value from private_mailboxes where id=$1',[BOX,today])).rows[0].value;
+ const reset=async(page={})=>{await db.query('update private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[$2],$3),automation_dispatch=\'{}\' where id=$1',[BOX,today,page]);await db.exec('delete from net.calls');};
+ const reports=async()=>(await db.query("select body from net.calls where body->>'kind'='report' and body->>'day'=$1",[today])).rows;
+ await rpc('private_mail_automation_tick',[]);
+ assert.equal((await state()).mailRolloverPending,true);assert.notEqual((await state()).dirty,true,'scheduler never decides unfinished work from SQL pending status');
+ assert.equal((await reports()).length,1);assert.equal((await reports())[0].body.day,today);
+ await rpc('private_mail_automation_tick',[]);assert.equal((await reports()).length,1,'recent capability prevents duplicate minute dispatch');
+ const lease1=crypto.randomUUID(),lease2=crypto.randomUUID();
+ const claims=await Promise.all([rpc('private_mail_briefing_claim',[BOX,today,lease1]),rpc('private_mail_briefing_claim',[BOX,today,lease2])]);
+ assert.ok(claims[0]);assert.equal(claims[1],null);const token=claims[0].mailRolloverInput;
+ assert.equal(await rpc('private_mail_mail_rollover_finish',[BOX,today,lease2,token,true]),null);
+ const pending=await rpc('private_mail_mail_rollover_finish',[BOX,today,lease1,token,hasMailCarryWork({day:today,analyses:[carrySource]})]);
+ assert.equal(pending.write,true);assert.equal((await state()).dirty,true);assert.equal((await state()).mailRolloverCheckedDay,today);
+ assert.equal(await rpc('private_mail_briefing_complete',[BOX,today,lease1]),true);await rpc('private_mail_briefing_release',[BOX,today,lease1]);
+ const reportCount=(await reports()).length;await rpc('private_mail_automation_tick',[]);assert.equal((await reports()).length,reportCount,'checked day does not redispatch after completion');
+ // An already running or acknowledged normal daily report must not receive a redundant preflight.
+ const running={revision:1,dirty:true,lease:crypto.randomUUID(),leaseUntil:new Date(Date.now()+60000).toISOString()};
+ await reset(running);assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),false);assert.deepEqual(await state(),running);
+ await reset({revision:1,dirty:true});const normalLease=crypto.randomUUID();
+ assert.ok(await rpc('private_mail_briefing_claim',[BOX,today,normalLease]));
+ assert.equal(await rpc('private_mail_briefing_complete',[BOX,today,normalLease]),true);await rpc('private_mail_briefing_release',[BOX,today,normalLease]);
+ assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),false,'a successful full daily report already covered carry');
+ // Guards must leave the exact held page JSON unchanged, including the preserved 261030 page.
+ const preserved={ownerPreviewHold:true,notBefore:'2036-01-01T00:00:00Z',pageId:'DO_NOT_TOUCH',revision:7,dirty:true};
+ await db.query('update private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[\'2026-10-30\'],$2) where id=$1',[BOX,preserved]);
+ assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,'2026-10-30']),false);
+ for(const hold of [{hold:true,dirty:true},{ownerPreviewHold:true,dirty:true},{notBefore:'2036-01-01T00:00:00Z',dirty:true}]){
+  await reset(hold);assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),false);assert.equal(await rpc('private_mail_briefing_claim',[BOX,today,crypto.randomUUID()]),null);assert.equal(await rpc('private_mail_dispatch_target_allowed',[BOX,'report',today]),false);assert.deepEqual(await state(),hold);
+ }
+ assert.deepEqual((await db.query("select briefing_pages->'2026-10-30' value from private_mailboxes where id=$1",[BOX])).rows[0].value,preserved);
+ await reset();await db.query("update private_mailboxes set automation_config=jsonb_set(automation_config,'{analysisConsent}','false') where id=$1",[BOX]);assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),false);await db.query("update private_mailboxes set automation_config=jsonb_set(automation_config,'{analysisConsent}','true') where id=$1",[BOX]);
+ await db.query("update private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','false') where id=$1",[BOX]);assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),false);await db.query("update private_mailboxes set automation_config=jsonb_set(automation_config,'{enabled}','true') where id=$1",[BOX]);
+ // Owner changes between claim and JS decision cannot commit a stale projection.
+ await reset();assert.equal(await rpc('private_mail_mail_rollover_prepare',[BOX,today]),true);
+ const staleLease=crypto.randomUUID(),stale=await rpc('private_mail_briefing_claim',[BOX,today,staleLease]);
+ await rpc('private_mail_item_override',[BOX,id,ref,true,'2026-10-29']);
+ assert.equal(await rpc('private_mail_mail_rollover_finish',[BOX,today,staleLease,stale.mailRolloverInput,true]),null);
+ await rpc('private_mail_briefing_release',[BOX,today,staleLease]);
+ // Run the real report handler: completed mail alone must acknowledge the check without a Graph call.
+ let graphCalls=0,notesConnections=0;
+ const dbAdapter=async(path,options={})=>{
+  if(path.startsWith('private_mailboxes?'))return JSON.parse(JSON.stringify((await db.query('select * from private_mailboxes where id=$1',[BOX])).rows));
+  if(path.startsWith('private_mail_messages?'))return JSON.parse(JSON.stringify((await db.query('select analysis,sent_at,received_at,created_at,report_day::text report_day,analysis_status,analysis_excluded,analysis_filter_override from private_mail_messages where mailbox_id=$1 and analysis is not null and report_day<=$2::date order by created_at,id',[BOX,today])).rows));
+  if(path.startsWith('rpc/')){const entries=Object.entries(options.body);return(await db.query('select public.'+path.slice(4)+'('+entries.map(([key],index)=>key+' => $'+(index+1)).join(',')+') result',entries.map(([,value])=>value))).rows[0].result;}
+  throw Error('UNEXPECTED_DB_ADAPTER_PATH');
+ };
+ const ctx={db:dbAdapter,json:Response.json,fail:(code)=>Error(code),background:true,graph:async()=>{graphCalls++;throw Error('GRAPH_MUST_NOT_BE_CALLED');},connectedNotes:async()=>{notesConnections++;throw Error('NOTES_MUST_NOT_BE_CALLED');}};
+ const response=await handleMailAutomation('private-mail-background-work',{operation:'report',mailbox:BOX,day:today},{id:OWNER},ctx);
+ assert.equal((await response.json()).code,'NO_CARRY_WORK');assert.equal(graphCalls,0);assert.equal(notesConnections,0);
+ assert.equal((await state()).dirty,false);assert.equal((await state()).mailRolloverCheckedDay,today);
+ const noWorkCount=(await reports()).length;await rpc('private_mail_automation_tick',[]);assert.equal((await reports()).length,noWorkCount,'no-work check does not loop each minute');
+ // Reopening and exact RFC completion use the same canonical projection, not source.pending.
+ const actual=(await row(id)).analysis,openedAt=today+'T00:00:00Z';
+ const ownerComplete={[ref]:{actor:'owner',done:true,updatedAt:openedAt}};
+ assert.equal(actual.tasks[0].status,'pending');assert.equal(hasMailCarryWork({day:today,analyses:[carrySource],overrides:ownerComplete}),false);
+ assert.equal(hasMailCarryWork({day:today,analyses:[carrySource],overrides:{[ref]:{actor:'owner',done:false,updatedAt:openedAt}}}),true);
+ assert.equal(hasMailCarryWork({day:today,analyses:[{...carrySource,source:{...carrySource.source,excluded:true}}]}),false);
+ const replyId='eeeeeeee-2222-4222-8222-eeeeeeeeeeee';
+ const reply={source:{id:replyId,uidl:'b'.repeat(64),subject:'Re: '+actual.source.subject,sender:'가상회신 <reply@example.test>',sentAt:today+'T00:00:00Z',thread:{messageId:'<completion@thread.example.test>',inReplyTo:[actual.source.thread.messageId],references:[actual.source.thread.messageId]}},revision:1,summary:[],issues:[],tasks:[],waiting:[],updates:[{ref,status:'complete',evidence:'가상별창고 배차 준비 완료했습니다.',sourceId:replyId}]};
+ assert.equal(hasMailCarryWork({day:today,analyses:[carrySource,reply]}),false);
+ assert.equal(hasMailCarryWork({day:today,analyses:[carrySource,reply],overrides:{[ref]:{actor:'owner',done:false,updatedAt:openedAt}}}),true);
+ const entryId='cccccccc-3333-4333-8333-cccccccccccc';
+ const cancelled={entryId,status:'ready',submittedAt:openedAt,referenceDate:today,text:'가상별창고 배차 취소',items:[{itemId:'item-001',ref:entryId+':manual:item-001',workRef:ref,kind:'dispatch',text:'가상별창고 배차 취소',evidence:'가상별창고 배차 취소',workflowStatus:'cancelled',declaredAt:openedAt,submittedAt:openedAt,visibleFrom:today,done:false,completionEvents:[]}]};
+ assert.equal(hasMailCarryWork({day:today,analyses:[carrySource],manual:manualDailyView({[entryId]:cancelled},today)}),false,'canonical linked cancellation does not queue');
+ const beforeSource=await snapshot(id);assert.deepEqual(beforeSource,originalSource,'rollover never rewrites source/analysis');
+ for(const role of ['anon','authenticated']){await db.exec('reset role;set role '+role);await assert.rejects(()=>rpc('private_mail_mail_rollover_prepare',[BOX,today]),/permission denied/);await assert.rejects(()=>rpc('private_mail_mail_rollover_finish',[BOX,today,crypto.randomUUID(),'x',true]),/permission denied/);}
+ await db.exec('reset role;set role service_role');
+ assert.deepEqual((await db.query("select briefing_pages->'2026-10-30' value from private_mailboxes where id=$1",[BOX])).rows[0].value,preserved);
+ console.log('PASS mail-only rollover RED->GREEN: real scheduler/report capabilities, one daily preflight, canonical owner/reply/cancellation/exclusion, input-version fence, no-work Graph zero, holds/261030/consent/service-only protection, no source rewrite');
+} finally {await db.close();}
+}

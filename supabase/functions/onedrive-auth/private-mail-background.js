@@ -23,6 +23,16 @@ const day = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value ?? '') &&
   new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
 const enc = encodeURIComponent;
+// The same projection used by the portal decides carry; SQL never guesses from immutable pending rows.
+export function hasMailCarryWork({ day: reportDay, analyses, overrides = {}, manual = {} }) {
+  const view = dailyBriefingView({ now: reportDay + 'T12:00:00+09:00', analyses, overrides, manual });
+  return view.workItems.some((item) => !item.excluded &&
+    !['complete', 'cancelled', 'resolved'].includes(item.status) &&
+    (item.category === 'task' || item.category === 'issue' ||
+      (item.category === 'reference' && item.reportKind === 'review')) &&
+    item.sourceRefs.some((source) => source.kind === 'mail'));
+}
+
 export async function handleMailAutomation(action, body, user, ctx) {
   const { db, json, fail, fetcher, graph, connectedNotes, loadMail } = ctx;
   if (user.id !== TARGET.owner_id) throw fail('OWNER_REQUIRED', 403);
@@ -397,7 +407,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
       { ...ctx, background: true },
     );
   }
-  async function reportAnalyses(date) {
+  async function reportAnalyses(date, snapshot = current) {
     const analyses = [];
     for (let offset = 0; offset < 5000; offset += 100) {
       const rows = await db(
@@ -412,7 +422,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         ...rows.map((row) => ({
           ...applyMailIntentOverride(
             projectMailDates(row.analysis, row),
-            current.automation_config?.intentOverrides?.[
+            snapshot.automation_config?.intentOverrides?.[
               row.analysis.source.id
             ],
           ),
@@ -420,10 +430,10 @@ export async function handleMailAutomation(action, body, user, ctx) {
             ...projectMailDates(row.analysis, row).source,
             analysisState: row.analysis_status,
             intentCorrected:
-              current.automation_config?.intentOverrides?.[
+              snapshot.automation_config?.intentOverrides?.[
                 row.analysis.source.id
               ]?.source === 'owner_feedback',
-            ...(current.automation_config?.intentOverrides?.[
+            ...(snapshot.automation_config?.intentOverrides?.[
               row.analysis.source.id
             ]?.intent === 'reference'
               ? { intent: 'reference' }
@@ -672,7 +682,8 @@ export async function handleMailAutomation(action, body, user, ctx) {
   }
   if (body.operation === 'report') {
     if (!day(body.day)) throw fail('REPORT_DATE');
-    if (current.briefing_pages?.[body.day]?.ownerPreviewHold === true)
+    if (current.briefing_pages?.[body.day]?.ownerPreviewHold === true ||
+        current.briefing_pages?.[body.day]?.hold === true)
       return json({ status: 'waiting', code: 'OWNER_REVIEW' });
     const lease = crypto.randomUUID();
     let claim = null;
@@ -704,7 +715,22 @@ export async function handleMailAutomation(action, body, user, ctx) {
       reportStage = 'snapshot';
       const fresh = await box();
       reportStage = 'analyses';
-      const analyses = await reportAnalyses(body.day);
+      const analyses = await reportAnalyses(body.day, fresh);
+      const manual = manualDailyView(
+        fresh.manual_entries ?? {}, body.day, fresh.briefing_overrides ?? {},
+      );
+      if (state.mailRolloverPending === true) {
+        reportStage = 'rollover';
+        const decision = await rpc('private_mail_mail_rollover_finish', {
+          p_box: current.id, p_day: body.day, p_lease: lease,
+          p_token: state.mailRolloverInput,
+          p_has_work: hasMailCarryWork({ day: body.day, analyses,
+            overrides: fresh.briefing_overrides ?? {}, manual }),
+        });
+        if (!decision) return json({ status: 'waiting', code: 'ROLLOVER_SNAPSHOT_CHANGED' });
+        claim.state = decision.state;
+        if (!decision.write) return json({ status: 'skipped', code: 'NO_CARRY_WORK' });
+      }
       reportStage = 'images';
       const images = analyses
         .filter((item) => !item.source.excluded && !item.source.carryOnly)
@@ -732,11 +758,6 @@ export async function handleMailAutomation(action, body, user, ctx) {
       );
 
       reportStage = 'notes_writer';
-      const manual = manualDailyView(
-        fresh.manual_entries ?? {},
-        body.day,
-        fresh.briefing_overrides ?? {},
-      );
       const relevantEntries = new Set(
         manual.entries.map((entry) => entry.entryId),
       );
