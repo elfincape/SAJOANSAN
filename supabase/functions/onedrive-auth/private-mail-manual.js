@@ -266,6 +266,7 @@ export function resolveDispatchAssignment(
   entries,
   referenceDate,
   receivedAt = referenceDate + 'T12:00:00+09:00',
+  workOverrides = {},
 ) {
   if (
     typeof text !== 'string' ||
@@ -277,6 +278,7 @@ export function resolveDispatchAssignment(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+  if (lines.length === 4 && /^차량\s*(?:교체|변경)(?:\s*(?:안내|회신))?[.!。]?$/.test(lines[0])) lines.shift();
   if (lines.length !== 3) return null;
   const dateOriginal = lines[0],
     serviceDate = dateFrom(dateOriginal, referenceDate);
@@ -297,10 +299,11 @@ export function resolveDispatchAssignment(
     );
   if (!route || !vehicle) return null;
   const destination = route[3].replace(/\s/g, '');
-  const manual = manualDailyView(entries, kstDay(receivedAt));
+  const manual = manualDailyView(entries, kstDay(receivedAt), workOverrides);
   const work = dailyWorkItems(
-    { groups: [], tasks: [], issues: [], waiting: [] },
+    { day: kstDay(receivedAt), groups: [], tasks: [], issues: [], waiting: [] },
     manual,
+    { workOverrides },
   );
   const byRef = new Map(
     Object.values(entries)
@@ -425,6 +428,24 @@ export function resolveExistingManualWork(text, entries, referenceDate, received
   const completed = value => /(?:차량\s*배정|배차\s*준비)(?:을|를)?\s*(?:완료(?:했|하였|됐|되었)|마쳤)/.test(value)
     && !/(?:미완료|아직|대기|예정|않|못|[?？])/.test(value);
   if (!separate && !supplement && !clauses.some(completed)) return null;
+  const identified = clauses.filter(value => { const key = identity(value); return key.date && key.center; });
+  const targets = new Set(identified.map(value => { const key = identity(value); return [key.date,key.center,key.quantity].join(':'); }));
+  if (!separate && targets.size > 1) {
+    // A status-only sibling must not steal the actionable row just because it appeared first.
+    // Unsupported mutations still go through full extraction instead of silently dropping a clause.
+    const pending = value => /(?:아직|미배정|미완료|배정\s*대기)/.test(value) && !/(?:완료했|완료하였|완료됐|완료되었)/.test(value);
+    const unchanged = value => /(?:변경\s*(?:없|하지)|그대로\s*유지)/.test(value);
+    const correction = value => /수량(?:은|이)?\s*\d+(?:\.\d+)?\s*[pP]\s*(?:가|이)?\s*(?:맞|정정|변경)/.test(value);
+    if (/취소|철회|교체|대신/.test(text) || explicitLoadingPlaces(text).size ||
+        !identified.every(value => completed(value) || pending(value) || unchanged(value) || (supplement && correction(value)))) return null;
+    const header = clauses.filter(value => !identified.includes(value) && /추가\s*정보|보충|정정/.test(value)).join('\n');
+    const resolved = identified.filter(value => completed(value) || (supplement && correction(value)))
+      .map(value => resolveExistingManualWork(header ? header+'\n'+value : value,entries,referenceDate,receivedAt,workOverrides));
+    if (!resolved.length || resolved.some(value => !value)) return null;
+    return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_followup_v1',
+      details:[...new Set(resolved.flatMap(value => value.details ?? []))],
+      items:resolved.flatMap(value => value.items.map(item => ({...item,details:item.details ?? value.details ?? []})))};
+  }
   const targetClause = clauses.find(value => { const key = identity(value); return key.date && key.center; });
   if (!targetClause) return null;
   const target = identity(targetClause);
@@ -433,7 +454,7 @@ export function resolveExistingManualWork(text, entries, referenceDate, received
   const requests = clauses.filter(value => /(?:부탁|해주세요|요청드립니다|요청합니다)/.test(value)).map(identity).filter(key => key.date && key.center);
   if (new Set(requests.map(key => [key.date,key.center,key.quantity].join(':'))).size > 1) return null;
   const originals = Object.values(entries).filter(entry => entry.status === 'ready').flatMap(entry => (entry.items ?? []).filter(item => item.kind === 'dispatch').map(item => ({ entry, item })));
-  const projected = dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,kstDay(receivedAt)));
+  const projected = dailyWorkItems({day:kstDay(receivedAt),groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,kstDay(receivedAt),workOverrides),{workOverrides});
   const incomingOrigins = explicitLoadingPlaces(text);
   const candidates = projected.map(work => ({work,...originals.find(({item}) => item.ref === work.workId)})).filter(candidate => candidate.item);
   const matching = candidates.filter(({entry,item,work}) => {
@@ -458,7 +479,10 @@ export function resolveExistingManualWork(text, entries, referenceDate, received
     return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_followup_review_v1',details,items:[{kind:'issue',text:'기존 배차 요청 연결 확인',evidence:text,serviceOriginal:target.original,dueOriginal:null,assignee:null,needsConfirmation:true,workflowStatus:'pending',stateDeclared:false}]};
   const quantityCorrection = supplement && /수량(?:은|이)?\s*(\d+(?:\.\d+)?)\s*[pP]\s*(?:가|이)?\s*(?:맞|정정|변경)/.exec(targetClause);
   let title = publicWork.title;
-  if (quantityCorrection) title = title.replace(/\d+(?:\.\d+)?\s*[pP]/,quantityCorrection[1]+'P');
+  if (quantityCorrection) {
+    title = /\d+(?:\.\d+)?\s*[pP]/.test(title) ? title.replace(/\d+(?:\.\d+)?\s*[pP]/,quantityCorrection[1]+'P') : title+' · '+quantityCorrection[1]+'P';
+    details.push('물량 '+quantityCorrection[1]+'P');
+  }
   const completedPreparation = completed(targetClause) && /(?:배차|배정|차량.*준비)/.test(publicWork.title);
   return {origin:'manual',sourceText:text,authoredDate:null,resolution:'dispatch_followup_v1',details,items:[{kind:'dispatch',text:title,evidence:targetClause,serviceOriginal:target.original,dueOriginal:null,assignee:null,needsConfirmation:completed(targetClause)&&!completedPreparation,workRef:publicWork.workId,workflowStatus:completedPreparation?'complete':'pending',stateDeclared:false}]};
 }
@@ -488,7 +512,7 @@ function resolveDispatchCargoSupplement(text, entries, referenceDate, receivedAt
       quantities.set(unit, Number(token[1]));
     }
     if (quantities.has('톤') && quantities.has('kg')) conflicting = true;
-    return { line, destination: match[1], quantities, conflicting };
+    return { line, destination: match[1], quantities, conflicting, palletValues: [...new Set(tokens.filter(token => /^p$/i.test(token[2])).map(token => Number(token[1])))] };
   });
   if (rows.some(row => !row)) return null;
   rows = rows.filter((row, index) => rows.findIndex(other => other.destination === row.destination && JSON.stringify([...other.quantities]) === JSON.stringify([...row.quantities])) === index);
@@ -497,15 +521,22 @@ function resolveDispatchCargoSupplement(text, entries, referenceDate, receivedAt
     (entry.items ?? []).filter(item => item.kind === 'dispatch').map(item => [item.ref, item])));
   const used = new Set();
   const items = rows.map(row => {
-    const matching = view.filter(work => {
+    const workPallets = work => {
+      const title = palletQuantities(work.title);
+      const summary = palletQuantities(work.summary.join(' '));
+      const original = palletQuantities(originals.get(work.workId)?.evidence);
+      return (title.length === 1 ? title : summary.length === 1 ? summary : original.length === 1 ? original : [])[0];
+    };
+    const candidates = view.filter(work => {
       if (!originals.has(work.workId) || work.status === 'cancelled' || !work.serviceDate || !work.title.includes(customer)) return false;
       if (serviceDate && work.serviceDate !== serviceDate) return false;
       if (header && new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date(work.serviceDate + 'T00:00:00+09:00')) !== header[1]) return false;
-      const destination = /([가-힣A-Za-z0-9_-]+)\s*\d+(?:\.\d+)?\s*[pP]/.exec(work.title)?.[1];
+      const destination = /([가-힣A-Za-z0-9_-]+)\s*\d+(?:\.\d+)?\s*[pP]/.exec(work.title)?.[1]
+        ?? /([가-힣A-Za-z0-9_-]+)\s+배차/.exec(work.title)?.[1];
       const name = value => value?.startsWith(customer) ? value.slice(customer.length) : value?.endsWith(customer) ? value.slice(0, -customer.length) : value;
-      const pallets = /([0-9]+(?:\.[0-9]+)?)\s*[pP]/.exec(work.title)?.[1];
-      return name(destination) === name(row.destination) && (!row.quantities.has('p') || Number(pallets) === row.quantities.get('p'));
+      return name(destination) === name(row.destination);
     });
+    const matching = candidates.filter(work => !row.quantities.has('p') || workPallets(work) === row.quantities.get('p'));
     const target = !row.conflicting && rows.filter(other => other.destination === row.destination).length === 1 && matching.length === 1 && !used.has(matching[0].workId) ? matching[0] : null;
     if (target) used.add(target.workId);
     const detail = [row.quantities.has('박스') ? row.quantities.get('박스') + '박스' : null,
@@ -515,7 +546,15 @@ function resolveDispatchCargoSupplement(text, entries, referenceDate, receivedAt
     return { kind: target ? 'dispatch' : 'issue', text: target?.title ?? row.destination + ' 배차 물량 연결 확인', evidence: row.line,
       serviceOriginal: null, dueOriginal: null, assignee: null, needsConfirmation: !target,
       ...(target ? { workRef: target.workId } : {}), workflowStatus: 'pending', stateDeclared: false,
-      details: target ? ['화물 ' + detail] : ['착지·운행일·물량이 일치하는 기존 요청 확인 필요'] };
+      details: target ? ['화물 ' + detail] : [
+        '착지 ' + (row.destination.startsWith(customer) ? row.destination : customer+row.destination),
+        ...(row.palletValues.length > 1 ? ['물량 충돌 ' + row.palletValues.map(value => value+'P').join(' / ')] : detail ? ['화물 '+detail] : []),
+        ...candidates.slice(0,3).map(work => ['후보 '+work.serviceDate,
+          workPallets(work) != null ? workPallets(work)+'P' : null,
+          ...work.summary.filter(value => /^(?:상차|하차) (?:[01]?\d|2[0-3]):[0-5]\d$/.test(value)),
+        ].filter(Boolean).join(' · ')),
+        ...(!candidates.length ? ['일치하는 기존 착지·운행일·물량 확인 필요'] : []),
+      ].slice(0,6) };
   });
   return { origin: 'manual', sourceText: text, authoredDate: null, resolution: 'dispatch_followup_v1', items };
 }
@@ -556,6 +595,10 @@ function unresolvedManualRequest(value) {
   // A promise to send the missing material later is not an antecedent.
   const later = /^(?:자료|내용|정보|상세(?:내용|정보)?)(?:는|을|를)?\s*(?:뒤에|나중에|추후에?)\s*(?:보내|보낼|전달|공유)/u;
   return parts.some(part => request.test(part)) && parts.every(part => request.test(part) || later.test(part));
+}
+function palletQuantities(value) {
+  return [...new Set([...String(value ?? '').matchAll(/(?:^|[^0-9.])(\d+(?:\.\d+)?)\s*[pP](?=$|[^A-Za-z0-9])/g)]
+    .map(match => Number(match[1])).filter(number => Number.isFinite(number) && number > 0 && number <= Number.MAX_SAFE_INTEGER))];
 }
 export function normalizeManualItems(
   value,
@@ -657,6 +700,14 @@ export function normalizeManualItems(
           /(?:^|[\n.,。])\s*담당(?:자)?\s*[:：]\s*([^\n.,。]+)/g,
         ),
       ].some((match) => match[1].trim().replace(/님$/, '') === mentioned);
+    const evidencePallets = raw.kind === 'dispatch' ? palletQuantities(evidence) : [];
+    const labelPallets = palletQuantities(label);
+    const quantityScopeAmbiguous = !verifiedDispatchReply && raw.kind === 'dispatch' && sourceItems.filter(other =>
+      other.kind === 'dispatch' && typeof other.evidence === 'string' &&
+      (evidence.includes(other.evidence.trim()) || other.evidence.trim().includes(evidence))).length > 1;
+    const representedPallets = [...labelPallets, ...(verifiedDispatchReply ? palletQuantities((replyDetailsByItem[index] ?? replyDetails).join(' ')) : [])];
+    const palletDetail = !quantityScopeAmbiguous && evidencePallets.length === 1 && !representedPallets.includes(evidencePallets[0])
+      ? '물량 '+evidencePallets[0]+'P' : null;
     const itemId = 'item-' + String(index + 1).padStart(3, '0');
     if (raw.workRef != null && (!allowLinks || !validWorkRef(raw.workRef)))
       throw Error('MANUAL_SOURCE');
@@ -704,13 +755,12 @@ export function normalizeManualItems(
               : 'dispatch_assignment_review_v1',
           }
         : {}),
-      details:
-        verifiedDispatchReply ||
-        (raw.workRef === verifiedReplyRef && verifiedReplyRef)
+      details: [...new Set([
+        ...(palletDetail ? [palletDetail] : []),
+        ...(verifiedDispatchReply || (raw.workRef === verifiedReplyRef && verifiedReplyRef)
           ? replyDetailsByItem[index] ?? replyDetails
-          : raw.kind === 'dispatch'
-            ? dispatchDetails(text, value.items, raw)
-            : [],
+          : raw.kind === 'dispatch' ? dispatchDetails(text, value.items, raw) : []),
+      ])].slice(0,6),
       evidence,
       visibleFrom,
       receivedAt,
@@ -725,6 +775,8 @@ export function normalizeManualItems(
       needsConfirmation:
         unclearItem ||
         raw.needsConfirmation === true ||
+        (!verifiedDispatchReply && (quantityScopeAmbiguous || evidencePallets.length > 1 ||
+        (evidencePallets.length === 1 && labelPallets.some(number => number !== evidencePallets[0])))) ||
         due.uncertain ||
         (!!serviceOriginal && !serviceDate) ||
         (!!mentioned && !confirmed),
@@ -1177,6 +1229,7 @@ export async function handleManualMessage(action, body, user, ctx) {
           current.manual_entries,
           entry.referenceDate,
           entry.submittedAt,
+          current.briefing_overrides ?? {},
         );
     const resolved = structured ?? reply;
     const response = resolved

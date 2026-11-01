@@ -883,6 +883,8 @@ export function makeHandler(
           workerKey: env.MAIL_COLLECTOR_KEY,
           ...mailAiConfiguration(env),
           resolveAiConfiguration: dailyAiConfiguration,
+          sealDiagnostic: seal,
+          openDiagnostic: open,
         });
       }
       if (action === 'backups-scheduled') {

@@ -48,10 +48,26 @@ export async function handleMailAutomation(action, body, user, ctx) {
   };
   if (action === 'private-mail-stress-verify') {
     if (body.confirmation !== 'isolated-stress') throw fail('STRESS_CONFIRMATION_REQUIRED',400);
+    if (body.operation === 'notes') {
+      const { writeStressNote } = await import('./private-mail-stress-notes.js');
+      try { return json(await writeStressNote(body, ctx)); }
+      catch (error) { const code = error?.code ?? error?.message; return json({status:'failed',code:/^[A-Z_]{1,64}$/.test(code??'')?code:'STRESS_NOTE_FAILED',
+        stage:['notebook','section','list','create','readback','update','metadata'].includes(error?.stressNoteStage)?error.stressNoteStage:null,
+        providerStatus:Number.isInteger(error?.providerStatus)?error.providerStatus:null,
+        productionBusinessWritten:false,oneNoteWritten:null,oneNoteWriteStatus:'unconfirmed'}); }
+    }
     if (body.receiptId != null && (body.caseId !== 'mail-old-sent-collected-today' || !uuid(body.receiptId))) throw fail('STRESS_RECEIPT_INVALID',400);
     const { stressCatalogue, runStressCase } = await import('./private-mail-stress-verify.js');
     if (body.list === true) return json({cases:stressCatalogue(),productionBusinessWritten:false,oneNoteWritten:false});
-    try { return json(await runStressCase(body.caseId,{...ctx,stressReceiptId:body.receiptId})); }
+    try {
+      const result = await runStressCase(body.caseId,{...ctx,stressReceiptId:body.receiptId});
+      if (body.receiptId) {
+        const { issueStressNoteProof } = await import('./private-mail-stress-notes.js');
+        const noteProof = await issueStressNoteProof(result, body.receiptId, ctx);
+        if (noteProof) result.noteProof = noteProof;
+      }
+      return json(result);
+    }
     catch (error) { return json({status:'failed',code:/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_VERIFY_FAILED',productionBusinessWritten:false,oneNoteWritten:false}); }
   }
   const current = await box();
