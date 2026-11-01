@@ -235,6 +235,7 @@ export function applyOwnerWorkCorrection(item, overrides = {}, day) {
       reason: correction.reason ?? null,
       done: typeof correction.done === 'boolean' ? correction.done : null,
       updatedAt: correction.updatedAt,
+      processingNotes: (correction.processingNotes ?? []).filter(note=>!day || Date.parse(note.at)<Date.parse(day+'T00:00:00+09:00')+86400000),
       currentDone: correction.currentDone ?? correction.done ?? null,
     },
     excluded: correction.excluded === true,
@@ -939,6 +940,8 @@ export function renderBriefingWorkNote(items) {
           if (text && text !== item.title && !item.summary.includes(text))
             detailLines.push('<li style="list-style-type:disc;' + paragraph + '">' + label + ': ' + escape(text) + '</li>');
       }
+      const latestNote = item.correction?.processingNotes?.at(-1);
+      if (latestNote) detailLines.push('<li style="list-style-type:disc;' + paragraph + '">처리 기록: ' + escape(latestNote.text.split(/\r?\n/).find(line=>line.trim())?.slice(0,180) ?? '') + '</li>');
       if (detailLines.length) chunks.push('<ul style="list-style-type:disc">' + detailLines.join('') + '</ul>');
       chunks.push('</li>');
       for (const source of item.sourceRefs)

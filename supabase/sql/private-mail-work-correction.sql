@@ -12,8 +12,9 @@ begin
  or not b.enabled or not exists(select 1 from public.user_profiles where id=p_user and active)
  then raise exception 'WORK_CORRECTION_OWNER'; end if;
  if p_work is null or length(p_work)>160 or p_day is null or p_day>(now_at at time zone 'Asia/Seoul')::date
- or jsonb_typeof(p_patch) is distinct from 'object' or octet_length(p_patch::text)>4096
- or p_patch='{}'::jsonb or exists(select 1 from jsonb_object_keys(p_patch) k where k not in ('category','excluded','reason','done'))
+ or jsonb_typeof(p_patch) is distinct from 'object' or octet_length(p_patch::text)>16384
+ or p_patch='{}'::jsonb or exists(select 1 from jsonb_object_keys(p_patch) k where k not in ('category','excluded','reason','done','activity'))
+ or (p_patch ? 'activity' and (jsonb_typeof(p_patch->'activity') is distinct from 'object' or coalesce(p_patch->'activity'->>'id','') !~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' or jsonb_typeof(p_patch->'activity'->'text') is distinct from 'string' or length(btrim(p_patch->'activity'->>'text')) not between 1 and 3000 or exists(select 1 from jsonb_object_keys(p_patch->'activity') k where k not in ('id','text'))))
  or (p_patch ? 'category' and p_patch->'category'<>'null'::jsonb and coalesce(p_patch->>'category','') not in ('task','reference','routine','issue','review'))
  or (p_patch ? 'excluded' and jsonb_typeof(p_patch->'excluded')<>'boolean')
  or (p_patch ? 'done' and p_patch->'done'<>'null'::jsonb and jsonb_typeof(p_patch->'done')<>'boolean')
@@ -43,15 +44,26 @@ begin
  end if;
  if not coalesce(valid_source,false) then raise exception 'WORK_CORRECTION_SOURCE'; end if;
  old=coalesce(b.briefing_overrides->('work:'||p_work),'{}');
+ if p_patch ? 'activity' then
+  select value into candidate from jsonb_array_elements(coalesce(old->'processingNotes','[]')) where value->>'id'=p_patch->'activity'->>'id';
+  if found then
+   if candidate->>'text' is distinct from p_patch->'activity'->>'text' or candidate->'requestedDone' is distinct from coalesce(p_patch->'done','null'::jsonb) then raise exception 'WORK_CORRECTION_CONFLICT'; end if;
+   return jsonb_build_object('saved',true,'workId',p_work,'correction',old);
+  end if;
+  if jsonb_array_length(coalesce(old->'processingNotes','[]'))>=200 then raise exception 'WORK_ACTIVITY_LIMIT'; end if;
+ end if;
  if (old-'actor'-'updatedAt'-'revision'-'events'-'doneAt') @> p_patch then return jsonb_build_object('saved',true,'workId',p_work,'correction',old); end if;
  if coalesce(old->>'updatedAt','') is distinct from coalesce(p_expected,'') then raise exception 'WORK_CORRECTION_CONFLICT'; end if;
- revised=old||p_patch||jsonb_build_object('actor','owner','updatedAt',now_at,'revision',coalesce((old->>'revision')::integer,0)+1);
+ revised=old||(p_patch-'activity')||jsonb_build_object('actor','owner','updatedAt',now_at,'revision',coalesce((old->>'revision')::integer,0)+1);
+ if p_patch ? 'activity' then
+  revised=revised||jsonb_build_object('processingNotes',coalesce(old->'processingNotes','[]')||jsonb_build_array(p_patch->'activity'||jsonb_build_object('at',now_at,'requestedDone',coalesce(p_patch->'done','null'::jsonb))));
+ end if;
  if p_patch ? 'done' and p_patch->'done' is distinct from old->'done' then
   revised=revised||jsonb_build_object('doneAt',case when jsonb_typeof(p_patch->'done')='boolean' then to_jsonb(now_at) else 'null'::jsonb end);
  end if;
  if revised->'excluded'='false'::jsonb then revised=revised||'{"reason":null}'::jsonb; end if;
  if revised->>'reason'='spam' and revised->'excluded' is distinct from 'true'::jsonb then raise exception 'WORK_CORRECTION_INVALID'; end if;
- revised=revised||jsonb_build_object('events',coalesce(old->'events',case when old='{}'::jsonb then '[]'::jsonb else jsonb_build_array(old) end)||jsonb_build_array(revised-'events'));
+ revised=revised||jsonb_build_object('events',coalesce(old->'events',case when old='{}'::jsonb then '[]'::jsonb else jsonb_build_array(old) end)||jsonb_build_array(revised-'events'-'processingNotes'));
  update public.private_mailboxes set briefing_overrides=jsonb_set(briefing_overrides,array['work:'||p_work],revised) where id=p_box;
  -- Dirty only relevant existing days and the viewed day; never release a held page.
  for day_key in select key from jsonb_each(b.briefing_pages) where key>=p_day::text and key<=(now_at at time zone 'Asia/Seoul')::date::text

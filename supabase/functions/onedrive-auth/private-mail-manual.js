@@ -284,13 +284,13 @@ export function resolveDispatchAssignment(
     serviceDate = dateFrom(dateOriginal, referenceDate);
   if (
     !serviceDate ||
-    !/^(?:\d{1,2}월\s*\d{1,2}일|\d{1,2}\/\d{1,2})(?:\s*[월화수목금토일](?:요일)?)?$/.test(
+    !/^(?:\d{1,2}월\s*\d{1,2}일|\d{1,2}\/\d{1,2})(?:\s*(?:\([월화수목금토일](?:요일)?\)|[월화수목금토일](?:요일)?))?$/.test(
       dateOriginal,
     )
   )
     return null;
   const route =
-    /^([^()\n]{1,100})\(((?:[01]?\d|2[0-3]):[0-5]\d)\s*상(?:차)?\)\s*[-–—→ㅡ]\s*([^()\n]{1,100})$/.exec(
+    /^([^()\n]{1,100})\(((?:[01]?\d|2[0-3]):[0-5]\d)\s*상(?:차)?\)\s*[-–—→ㅡ~～]\s*([^()\n]{1,100})$/.exec(
       lines[1],
     );
   const vehicle =

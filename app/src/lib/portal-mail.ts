@@ -108,12 +108,14 @@ export interface DailyMailOverview {
 export type WorkCategory =
   'task' | 'reference' | 'routine' | 'issue' | 'review';
 export interface WorkPatch {
+  activity?: {id:string;text:string};
   category?: WorkCategory | null;
   excluded?: boolean;
   reason?: 'spam' | 'manual' | null;
   done?: boolean | null;
 }
 export interface WorkCorrection extends WorkPatch {
+  processingNotes?: {id:string;text:string;at:string}[];
   currentDone?: boolean | null;
   updatedAt?: string;
 }

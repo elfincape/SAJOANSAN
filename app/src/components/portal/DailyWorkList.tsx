@@ -48,6 +48,7 @@ export function DailyWorkList({
   const [snapshot, setSnapshot] = useState<DailyWork | null>(null);
   const [saving, setSaving] = useState(false),
     [feedback, setFeedback] = useState('');
+  const [drafts,setDrafts]=useState<Record<string,{id:string;text:string}>>({});
   const [undo, setUndo] = useState<WorkPatch | null>(null);
   const [source, setSource] = useState<{
     text: string;
@@ -156,7 +157,8 @@ export function DailyWorkList({
         correction: result.correction,
         excluded: result.correction.excluded === true,
       });
-      setUndo(restoring ? null : previous);
+      if(patch.activity) setDrafts(current=>{const next={...current};delete next[item.workId];return next;});
+      setUndo(restoring || patch.activity ? null : previous);
       setFeedback(
         result.refreshed === false
           ? '저장했습니다. 목록은 다시 조회해 주세요.'
@@ -313,6 +315,14 @@ export function DailyWorkList({
             {item.needsConfirmation && (
               <p className="daily-task-meta">날짜·담당·내용을 확인해 주세요.</p>
             )}
+            <label>처리 내용 · 보낸 메시지/메일
+              <textarea className="app-input" rows={4} maxLength={3000} disabled={disabled}
+                value={drafts[item.workId]?.text ?? ''}
+                onChange={event=>{const text=event.target.value;setDrafts(current=>({...current,[item.workId]:{id:crypto.randomUUID(),text}}));}} />
+            </label>
+            <button type="button" className="btn btn-ghost" disabled={disabled || !drafts[item.workId]?.text.trim()}
+              onClick={()=>void save({activity:drafts[item.workId]})}>진행 기록 저장</button>
+            {item.correction?.processingNotes?.map(note=><div key={note.id}><small>{formatBriefingTimestamp(note.at)}</small><p style={{whiteSpace:'pre-wrap'}}>{note.text}</p></div>)}
             <div className="daily-detail-actions">
               {item.category !== 'reference' && (
                 <button
@@ -320,10 +330,10 @@ export function DailyWorkList({
                   className="btn btn-primary"
                   disabled={disabled}
                   onClick={() =>
-                    void save({ done: item.status !== 'complete' })
+                    void save({ done: item.status !== 'complete', ...(drafts[item.workId]?.text.trim() ? {activity:drafts[item.workId]} : {}) })
                   }
                 >
-                  {item.status === 'complete' ? '완료 취소' : '완료'}
+                  {item.status === 'complete' ? '완료 취소' : drafts[item.workId]?.text.trim() ? '기록 저장 및 완료' : '완료'}
                 </button>
               )}
               <label className="daily-classification">
