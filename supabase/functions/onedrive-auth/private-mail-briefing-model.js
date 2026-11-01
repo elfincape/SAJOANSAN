@@ -247,7 +247,21 @@ export function normalizeMailAnalysis(value, mail) {
           : text(raw.assignee, 100);
       // A short action quote may omit the addressee from the same explicit request.
       // Accept that name only from its exact current-message request proof, never the whole body or headers.
-      const requestProof = raw.selfRequestEvidence;
+      let requestProof = raw.selfRequestEvidence;
+      if (assignee === mail.ownerContext?.ownerName &&
+          ['to', 'both'].includes(mail.ownerContext?.recipientRole) &&
+          raw.forOwner === true && raw.recipientScope === 'owner_direct' &&
+          typeof mail.currentBody === 'string' && typeof requestProof === 'string' &&
+          requestProof === item.evidence && mail.currentBody.indexOf(requestProof) === mail.currentBody.lastIndexOf(requestProof)) {
+        const at = mail.currentBody.indexOf(requestProof);
+        if (at >= 0) {
+          const before = mail.currentBody.slice(0, at);
+          const prefix = before.slice(Math.max(...['.', '!', '?', '。', '\n'].map(mark=>before.lastIndexOf(mark))) + 1);
+          const escaped = assignee.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (new RegExp('^\\s*' + escaped + '(?:님|씨|께)\\s*[,，:：]\\s*$').test(prefix))
+            requestProof = prefix + requestProof;
+        }
+      }
       let namedRequest = false;
       if (assignee && raw.forOwner === true &&
           ['owner_direct', 'owner_cc'].includes(raw.recipientScope) &&
@@ -891,6 +905,26 @@ export function dailyBriefingView({
   };
 }
 
+// Note presentation only: a recurring report needs its topic, not a model's observation of a title.
+function routineNoteItems(items) {
+  const observation = (value) =>
+    !/(?:이탈|초과|미달|누락|오류|불일치|사고|취소|변경|미완료|완료|승인|마감|기한)/u.test(value) && (
+    /^.{0,80}(?:제목|표제|파일명|표지)(?:만|은|는|이|가)?\s*(?:확인됩니다|확인되었습니다|확인됨|보입니다|보임|식별됩니다|판독됩니다)[.!。]?$/u.test(value) ||
+    /^(?:첨부(?:된)?\s*)?(?:이미지|사진|문서|자료|표|파일)(?:이|가)\s*(?:확인됩니다|보입니다|존재합니다|있습니다)[.!。]?$/u.test(value));
+  return items.map((item) => {
+    if (item.category !== 'reference' || item.reportKind !== 'routine') return item;
+    const summary = (item.summary ?? []).flatMap((value) => {
+      const sentences = value.split(/(?<=[.!?。！？])\s+|\n+/u).map((part) => part.trim()).filter(Boolean);
+      return sentences.filter((part) => !observation(part)).join(' ');
+    }).filter(Boolean);
+    if (JSON.stringify(summary) === JSON.stringify(item.summary)) return item;
+    const subject = (item.sourceRefs.find((source) => source.kind === 'mail')?.title ?? item.title ?? '')
+      .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/gi, '').replace(/[.。]+$/, '').trim();
+    const topic = subject && !/^(?:\(제목 없음\)|제목 없음)$/.test(subject) ? subject : '정기보고';
+    return { ...item, summary: summary.length ? summary : [topic + (/자료$/.test(topic) ? '' : ' 자료')] };
+  });
+}
+
 const localTime = (value) =>
   new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -929,7 +963,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
     '"><p style="font-size:9pt;color:#666666;margin-top:0pt;margin-bottom:10pt">최종 업데이트: ' +
     escape(localTime(updatedAt)) +
     ' (한국시간)</p>' +
-    renderBriefingWorkNote(view.workItems) +
+    renderBriefingWorkNote(routineNoteItems(view.workItems)) +
     '</div>';
   const html =
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +

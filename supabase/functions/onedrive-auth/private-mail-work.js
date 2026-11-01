@@ -138,6 +138,7 @@ export function normalizeDailyWork(input) {
     inferredStateAt: stamp(input.inferredStateAt),
     sourceRefs: refs,
     needsConfirmation: input.needsConfirmation === true,
+    confirmationReasons: (input.confirmationReasons ?? []).map(value => clean(value,300)).filter(Boolean).slice(0,4),
     originRef: input.ref,
   };
 }
@@ -478,6 +479,7 @@ export function dailyWorkItems(
           inferredStateAt: item.inferredStateAt,
           sourceRefs: refs,
           needsConfirmation: item.needsConfirmation,
+          confirmationReasons: manualConfirmationReasons(item,entry),
         }),
       );
     }
@@ -654,6 +656,31 @@ function repeatsWorkTitle(summary, title) {
       .every((word) => words(summary).some((value) => stem(value) === word))
   );
 }
+function manualConfirmationReasons(item, entry) {
+  if (!item.needsConfirmation) return [];
+  const reasons = [];
+  const original = item.serviceOriginal ?? '';
+  const weekdayDate = /(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\(([월화수목금토일])(?:요일)?\)|([월화수목금토일])요일)/;
+  const stated = weekdayDate.exec(original) ?? weekdayDate.exec(entry.text ?? '');
+  if (!item.serviceDate && stated) {
+    const year = Number((entry.referenceDate ?? entry.submittedAt).slice(0,4));
+    const date = new Date(Date.UTC(year,Number(stated[1])-1,Number(stated[2])));
+    if (date.getUTCMonth()===Number(stated[1])-1 && date.getUTCDate()===Number(stated[2]) && '일월화수목금토'[date.getUTCDay()] !== (stated[3]??stated[4]))
+      reasons.push('날짜·요일 불일치: ' + stated[0] + ' — 확인 필요');
+  }
+  if (!item.serviceDate && item.serviceOriginal && !reasons.length) reasons.push('대상 날짜 확인 필요: ' + item.serviceOriginal);
+  if (item.text === '요청 내용 확인') reasons.push('요청 대상·자료 확인 필요');
+  const source = item.evidence ?? '';
+  const unknown = [
+    [/(?:수량|물량)[^.!?。\n]{0,15}미정(?=이며|이고|입니다|[\s.,。]|$)/, '수량'],
+    [/하차\s*(?:시각|시간)[^.!?。\n]{0,8}미정(?=이며|이고|입니다|[\s.,。]|$)/, '하차 시각'],
+  ].filter(([pattern])=>pattern.test(source)).map(([,label])=>label);
+  if (unknown.length) reasons.push(unknown.join('·') + ' 미정');
+  return reasons;
+}
+function briefingWorkTitle(title) {
+  return String(title ?? '').replace(/^[^,，\n]{1,40}님[,，]\s*/,'').replace(/\s*(?:부탁드립니다|부탁드려요|부탁합니다|부탁해요|요청드립니다|요청합니다|해\s*주세요|해\s*주시기\s*바랍니다)[.!?。]*$/,'').trim();
+}
 export function renderWorkSections(items) {
   const chunks = [],
     sources = new Map();
@@ -662,23 +689,25 @@ export function renderWorkSections(items) {
     if (!rows.length) continue;
     chunks.push('<h2>' + section.title + '</h2>');
     for (const item of rows) {
+      const title = briefingWorkTitle(item.title);
       chunks.push(
         item.category === 'reference'
           ? item.summary.length
             ? ''
-            : '<p>' + escape(item.title) + '</p>'
+            : '<p>' + escape(title) + '</p>'
           : '<p><strong>' +
-              escape(item.title) +
+              escape(title) +
               '</strong> · ' +
-              WORK_STATUS_LABELS[item.status] +
+              (item.needsConfirmation && !['complete','cancelled'].includes(item.status) ? '확인 필요' : WORK_STATUS_LABELS[item.status]) +
               '</p>',
       );
-      for (const summary of item.summary)
+      for (const summary of workSummaryForDisplay(item))
         if (
           item.category === 'reference' ||
           !repeatsWorkTitle(summary, item.title)
         )
           chunks.push('<p>' + escape(summary) + '</p>');
+      if (item.needsConfirmation) chunks.push('<p>' + (item.confirmationReasons?.length ? item.confirmationReasons : ['확인 필요']).map(escape).join(' · ') + '</p>');
       const fields = [
         item.center && '센터: ' + item.center,
         item.customer && '거래처: ' + item.customer,
@@ -722,8 +751,20 @@ export function renderWorkSections(items) {
 }
 
 // Presentation only: use the confirmed service day, never a collection or processing deadline.
+function compactWorkSummary(item) {
+  const title = briefingWorkTitle(item.title);
+  const titleQuantity = /\d+(?:\.\d+)?\s*[pP](?:\b|(?=[^A-Za-z]))/.exec(title);
+  return (item.summary ?? []).filter(value => {
+    const text = value.trim();
+    if (item.category === 'reference' || !title) return true;
+    if (title.includes(text)) return false;
+    if (titleQuantity && /^\d+(?:\.\d+)?\s*[pP]$/.test(text)) return false;
+    const date = /^(?:대상|운행·납품|운행|납품)?\s*(20\d{2}-\d{2}-\d{2})$/.exec(text);
+    return !(date && item.serviceDate === date[1]);
+  });
+}
 export function workSummaryForDisplay(item) {
-  const summary = item.summary ?? [];
+  const summary = compactWorkSummary(item);
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];
   const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));
@@ -804,6 +845,7 @@ export function renderBriefingWorkNote(items) {
     chunks.push('<h2 style="font-family:Malgun Gothic,Arial,sans-serif;font-size:14pt;font-weight:bold;color:#222222;margin-top:18pt;margin-bottom:8pt">' + (++sectionNumber) + '. ' + heading + '</h2>');
     if (rows.length) chunks.push('<ol style="list-style-type:decimal">');
     for (const item of rows) {
+      const title = briefingWorkTitle(item.title);
       const detailLines = [];
       const displaySummary = workSummaryForDisplay(item);
       chunks.push('<li style="list-style-type:decimal;' + itemStyle + '">');
@@ -811,7 +853,7 @@ export function renderBriefingWorkNote(items) {
         chunks.push(escape(briefingReferenceLine(item)));
       else {
         chunks.push(
-          escape(item.title) +
+          escape(title) +
             (item.status === 'cancelled' ? ' · 취소' : ''),
         );
         for (const text of displaySummary)
@@ -820,7 +862,8 @@ export function renderBriefingWorkNote(items) {
         const details = [
           item.center && !item.title.includes(item.center) && item.center,
           item.customer && !item.title.includes(item.customer) && item.customer,
-          item.status === 'in_progress' && '진행 중',
+          item.status === 'in_progress' && (!item.needsConfirmation || item.progress) && '진행 중',
+          item.needsConfirmation && (item.confirmationReasons?.length ? item.confirmationReasons.join(' · ') : '확인 필요'),
           item.assignee && '담당 ' + item.assignee,
           (item.dueAt || item.dueDate) &&
             '기한 ' +
@@ -830,7 +873,7 @@ export function renderBriefingWorkNote(items) {
                     hour12: false,
                   })
                 : item.dueDate),
-          item.serviceDate && !displaySummary.some((text,index)=>text!==item.summary[index]) && '운행·납품 ' + item.serviceDate,
+          item.serviceDate && !title.includes(item.serviceDate) && !displaySummary.some(text=>/^\d{4}\.\d{1,2}\.\d{1,2}\(/.test(text)) && '운행·납품 ' + item.serviceDate,
         ].filter(Boolean);
         if (details.length)
           detailLines.push('<li style="list-style-type:disc;' + supporting + '">' + details.map(escape).join(' · ') + '</li>');

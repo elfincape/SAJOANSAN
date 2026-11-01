@@ -1107,6 +1107,7 @@ export async function analyzePrivateMail({
     });
     const parsed = parseResponse(response);
     mail.currentBody = context.currentBody;
+    mail.ownerContext = context.ownerContext;
     evidenceContext = { parsed, mail };
     let analysis;
     const separatedImageSummary = [];
