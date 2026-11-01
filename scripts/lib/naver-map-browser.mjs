@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {decodeNaverDirections,matchNaverRouteOptions,routeSettingsKey} from './naver-route-evidence.mjs';
 export function distanceFromCard(text){
  if(!/거리\s*우선/.test(text))throw Error('거리우선 항목을 확인하지 못했습니다.');
@@ -116,7 +117,7 @@ export function courseLocalRouteFailure(error){
 }
 function providerRequestShape(response){
  const url=new URL(response.url()),q=url.searchParams,route=url.pathname==='/p/api/directions/car';
- const shape={path:url.pathname,requestKind:route?'route':'search',queryLength:route?null:q.get('query')?.length??0,queryEncodingValid:decodeURIComponent((url.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??''),paramKeys:[...q.keys()].filter(k=>/^(query|coords|types|searchCoord|boundary|x|y|longitude|latitude|start|goal|waypoints|crs|respversion|output|cartype|fueltype|mileage|mainoption|restrictvolume|departuretime|rptype)$/.test(k)).sort()};
+ const shape={path:url.pathname,urlBytes:Buffer.byteLength(url.href),queryBytes:Buffer.byteLength(url.search),...(route?{settingsFingerprint:createHash('sha256').update(routeSettingsKey(routeSettings(url.href))).digest('hex')}:{}),requestKind:route?'route':'search',queryLength:route?null:q.get('query')?.length??0,queryEncodingValid:decodeURIComponent((url.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??''),paramKeys:[...q.keys()].filter(k=>/^(query|coords|types|searchCoord|boundary|x|y|longitude|latitude|start|goal|waypoints|crs|respversion|output|cartype|fueltype|mileage|mainoption|restrictvolume|departuretime|rptype)$/.test(k)).sort()};
  if(route){const points=[q.get('start'),...(q.get('waypoints')?.split('|')??[]),q.get('goal')];shape.pointCount=points.length;shape.coordinatesValid=points.every(value=>{const pair=value?.split(',').slice(0,2);return pair?.length===2&&pair.every((n,i)=>n.trim()&&Number.isFinite(Number(n))&&Math.abs(Number(n))<=(i===0?180:90));});}
  else shape.types=q.get('types')?.split(',').filter(v=>/^(place|address|bus)$/.test(v));
  const method=response.request?.()?.method?.();if(['GET','POST'].includes(method))shape.method=method;

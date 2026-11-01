@@ -2,6 +2,7 @@ export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
 export const SHORTLIST_WEB_POLICY='naver-api-top3-web-meters-v1';
 
 import {routeSettingsKey} from './naver-route-evidence.mjs';
+import {naverCourseUrl,consecutivePointPlan,addressSearch,addressCandidateMatches} from './naver-map-browser.mjs';
 import {coursePermutations} from '../../supabase/functions/naver-relations/course-permutations.js';
 export {coursePermutations};
 
@@ -35,21 +36,41 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
  const savedSettings=Object.values(evaluations).map(value=>value.requestSettings).filter(Boolean);
  if(savedSettings.length){if(savedSettings.length!==Object.keys(evaluations).length||savedSettings.some(value=>routeSettingsKey(value)!==routeSettingsKey(savedSettings[0]))||(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(savedSettings[0])))throw Object.assign(changedSettings(),{optimization:structuredClone(previous)});expectedSettings=structuredClone(savedSettings[0]);routeContext.settings??=structuredClone(savedSettings[0]);}
+ const nativeRoute=stops=>{
+  try{const points=stops.map(stop=>addressCache.get(stop)??addressCache.get(addressSearch(stop).original));if(points.some(p=>!p))return null;const plan=consecutivePointPlan(stops,points),url=naverCourseUrl(plan.mapStops,addressCache);return url?{...plan,url,points}:null;}catch{return null;}
+ };
+ const cacheKeyFor=stops=>{const route=nativeRoute(stops);return JSON.stringify([COMPARISON_POLICY,route?['native',route.url,route.logicalToMap]:['logical',stops],routeSettingsKey(expectedSettings)]);};
+ const nativeProofMatches=(result,stops,native=nativeRoute(stops))=>{
+  if(!native||JSON.stringify(result.requestedStops)!==JSON.stringify(stops)||JSON.stringify(result.resolvedStops)!==JSON.stringify(native.points.map(p=>p.label))||JSON.stringify(pointKey(result.sourceUrl))!==JSON.stringify(pointKey(native.url)))return false;
+  const saved=result.legEvidence?.logicalPointMapping;
+  if(native.mapStops.length!==stops.length&&!saved)return false;
+  return !saved||JSON.stringify(saved.logicalToMap)===JSON.stringify(native.logicalToMap)&&JSON.stringify(saved.mapStops)===JSON.stringify(native.mapStops)&&JSON.stringify(saved.coordinates)===JSON.stringify(native.points.map(p=>p.coordinates));
+ };
+ const cachedFor=(result,stops)=>{
+  if(!validDistance(result))return null;if(nativeRoute(stops)&&!nativeProofMatches(result,result.requestedStops??[]))return null;if(JSON.stringify(result.requestedStops)===JSON.stringify(stops))return result;
+  const target=nativeRoute(stops),source=nativeRoute(result.requestedStops??[]);
+  if(!target||!source||target.url!==source.url||JSON.stringify(target.logicalToMap)!==JSON.stringify(source.logicalToMap)||JSON.stringify(pointKey(result.sourceUrl))!==JSON.stringify(pointKey(target.url)))return null;
+  const copy=structuredClone(result);copy.requestedStops=[...stops];copy.resolvedStops=target.points.map(p=>p.label);copy.confirmedAddresses=target.points.map((p,i)=>p.text.split('\n').map(line=>line.trim()).find(line=>addressCandidateMatches(addressSearch(stops[i]),line))||p.text);
+  if(copy.legEvidence?.logicalPointMapping)copy.legEvidence.logicalPointMapping={...copy.legEvidence.logicalPointMapping,mapStops:target.mapStops,logicalToMap:target.logicalToMap,coordinates:target.points.map(p=>p.coordinates)};
+  return copy;
+ };
+ // Equivalent address aliases keep separate original visits but share the exact native route proof.
+ for(const stops of routes){const value=evaluations[JSON.stringify(stops)],native=nativeRoute(stops);if(value&&native&&nativeProofMatches(value,stops,native))cache.set(cacheKeyFor(stops),value);}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};
  await checkActive();await report();let consecutiveFailures=0,bestCapture;
  for(const [index,stops] of routes.entries()) {
-  await checkActive();const key=JSON.stringify(stops),cacheKey=JSON.stringify([COMPARISON_POLICY,stops,routeSettingsKey(expectedSettings)]);
+  await checkActive();const key=JSON.stringify(stops),cacheKey=cacheKeyFor(stops);
   state.current=index+1;
   if(evaluations[key])continue;
   try {
-   let result=cache.get(cacheKey);
+   let result=cachedFor(cache.get(cacheKey),stops);
    if(!validDistance(result))result=await lookup(stops,{screenshot:false,checkActive,captureIf:candidate=>validDistance(candidate)&&Object.values(evaluations).every(other=>candidate.distanceKm<other.distanceKm)});else metrics.routeCacheHits++;
    if(!validDistance(result))throw Error('거리우선 주행거리 확인 필요');
    const {png,...details}=result;
    // Keep only the current winning image, from the exact lookup used in the comparison.
    // Buffers never enter checkpoints/cache; a resumed winner without an image is revalidated below.
    if(png?.length&&Object.values(evaluations).every(other=>result.distanceKm<other.distanceKm))bestCapture={key,result};
-   evaluations[key]=details;cache.set(JSON.stringify([COMPARISON_POLICY,stops,routeSettingsKey(expectedSettings)]),details);consecutiveFailures=0;
+   evaluations[key]=details;cache.set(cacheKeyFor(stops),details);consecutiveFailures=0;
   }catch(e){
    if(e.queueFailure||e.code==='CAPTURE_PAUSED')throw e;
    state.failed.push({index:index+1,code:e.code??(e.name==='TimeoutError'?'BROWSER_TIMEOUT':'ROUTE_LOOKUP_FAILED'),message:String(e.message).split('\n')[0].slice(0,160),...(e.routeDiagnostics?{routeDiagnostics:e.routeDiagnostics}:{})});
@@ -70,7 +91,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
  const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await lookup(selected,{screenshot:true,checkActive});
  await checkActive();
  if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||evidenceKey(captured)!==evidenceKey(expected)||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
-  delete evaluations[JSON.stringify(selected)];cache.delete(JSON.stringify([COMPARISON_POLICY,selected,routeSettingsKey(expectedSettings)]));await report();
+  delete evaluations[JSON.stringify(selected)];cache.delete(cacheKeyFor(selected));await report();
   throw Object.assign(Error('최종 캡처의 순서·거리가 비교 결과와 달라 최단 검증을 완료하지 못했습니다. 재시도해 주세요.'),{code:'CAPTURE_DISTANCE_CHANGED',optimization:structuredClone(state)});
  }
  state.complete=true;state.failed=[];await report();
