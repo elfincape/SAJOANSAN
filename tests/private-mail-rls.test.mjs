@@ -1732,3 +1732,141 @@ const prior=await row(current);assert.equal(await save(current,v2),false);assert
 console.log('PASS local PGlite JEV SQL: v1/v2 save/read, tightly typed coverage and entry identity, malformed flags rejected, prior v1 immutable, original items/history preserved; network disabled');
 } finally {await db.close();}
 }
+
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+const {dailyBriefingView,renderDailyBriefing,BRIEFING_TARGET:T}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const {writeDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-notes-writer.js');
+const BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc';
+const hash=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):value))].map(n=>n.toString(16).padStart(2,'0')).join('');
+const db=new PGlite({extensions:{pgcrypto}});
+const rpc=async(name,args)=>(await db.query('select public.'+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') result',args)).rows[0].result;
+const row=async id=>(await db.query('select * from private_mail_messages where id=$1',[id])).rows[0];
+const snapshot=async id=>{const r=await row(id);return {id:r.id,mailbox:r.mailbox_id,owner:r.owner_id,uidl:r.uidl_hash,hash:r.content_hash,subject:r.subject,sender:r.sender,sent:r.sent_at.toISOString(),created:r.created_at.toISOString(),files:r.files,analysis:r.analysis};};
+// POP, OneDrive upload, provider transport and Microsoft Graph remain isolated mocks.
+// PGlite Promise.all races exercise atomic function fences, not independent-session deadlocks.
+// A later report is explicitly marked dirty; unattended mail-only midnight scheduling is not asserted.
+try {
+ await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;grant usage on schema auth to authenticated;
+ create table auth.users(id uuid primary key);create table public.user_profiles(id uuid primary key,active boolean);
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ grant select on public.user_profiles to authenticated,service_role;`);
+ const migrations=['repo-root/sql/private-mail.sql','supabase/sql/private-mail-automation.sql','supabase/sql/private-mail-filters.sql','supabase/sql/private-mail-manual.sql','supabase/sql/private-mail-history.sql','supabase/sql/private-mail-message-dates.sql'];
+ for(const p of migrations)await db.exec(await readFile(new URL('../'+p,import.meta.url),'utf8'));
+ await db.query('insert into auth.users values($1)',[OWNER]);await db.query('insert into user_profiles values($1,true)',[OWNER]);
+ await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled,automation_config) values($1,$2,'jhs96@eangroup.kr','isolated-drive','isolated-folder',true,$3)",[BOX,OWNER,{enabled:true,readStateVerified:true,analysisConsent:true,analysisConsentAt:'2020-01-01T00:00:00Z'}]);
+ // Instrument only the network-dispatch boundary. Trigger/receipt/claims remain the repository SQL.
+ await db.exec(`create table public.isolated_dispatch_calls(box uuid,at timestamptz default clock_timestamp());grant all on public.isolated_dispatch_calls to service_role;
+ create or replace function public.private_mail_dispatch(p_box uuid) returns boolean language plpgsql security invoker set search_path='' as $$begin insert into public.isolated_dispatch_calls(box) values(p_box);return true;end;$$;set role service_role;`);
+ const f=fixtureById('mail-old-sent-collected-today'),parsed=await parseStressMail(f);
+ const raw=new TextEncoder().encode(f.mime),rawHash=await hash(raw),uidl=await hash('VIRTUAL_POP_UIDL:'+f.id);
+ const drive=new Map([['isolated-original',raw],['isolated-body',new TextEncoder().encode(parsed.source.text)]]);
+ const manifest=await Promise.all([...drive].map(async([item_id,bytes],index)=>({kind:index?'text':'eml',item_id,file_name:index?'body.txt':'original.eml',original_name:index?'body.txt':'original.eml',byte_size:bytes.length,content_hash:await hash(bytes)})));
+ assert.equal(await hash(drive.get('isolated-original')),rawHash);
+ const lease=crypto.randomUUID(),otherLease=crypto.randomUUID();
+ const begins=await Promise.all([db.query('select * from private_mail_begin($1,$2)',[BOX,lease]),db.query('select * from private_mail_begin($1,$2)',[BOX,otherLease])]);
+ assert.equal(begins[0].rows.length,1);assert.equal(begins[1].rows.length,0);
+ const publishArgs=[BOX,lease,uidl,rawHash,parsed.source.subject,parsed.source.sender,parsed.source.sent_at,manifest];
+ const messages=await Promise.all([rpc('private_mail_publish',publishArgs),rpc('private_mail_publish',publishArgs)]);
+ assert.equal(messages[0],messages[1]);const id=messages[0];assert.equal((await db.query('select count(*)::int n from private_mail_messages')).rows[0].n,1);
+ assert.equal((await db.query('select id from private_mail_messages where mailbox_id=$1 and uidl_hash=any($2::text[])',[BOX,[uidl]])).rows[0].id,id);
+ await assert.rejects(()=>rpc('private_mail_publish',[BOX,otherLease,...publishArgs.slice(2)]),/lease expired/);
+ const received=await row(id);assert.equal(received.analysis_status,'pending');assert.equal(received.analysis,null);assert.equal(received.content_hash,rawHash);
+ assert.equal((await db.query('select count(*)::int n from isolated_dispatch_calls')).rows[0].n,1,'one INSERT-trigger network-dispatch boundary for duplicate receipts');
+ const selected=await rpc('private_mail_analysis_select',[BOX,id,OWNER]);assert.equal(selected.id,id);assert.equal(selected.reportDay,'2026-10-29');
+ const source={...parsed.source,id,uidl_hash:received.uidl_hash,created_at:received.created_at.toISOString(),files:received.files};
+ let providerCalls=0;
+ // Original parsed synthetic-mail business values; response envelope is a mock, not a new provider call.
+ const value={"intent":{"kind":"request","evidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."},"group":{"name":"가상별창고","evidence":"가상별창고"},"summary":[{"text":"가상별창고 6P의 내일 배차 준비 요청이며, 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다."}],"issues":[],"tasks":[{"text":"가상별창고 6P의 내일 배차를 준비합니다. 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다.","status":"pending","assignee":"테스트담당자","due":null,"completionEvidence":null,"serviceOriginal":"내일","forOwner":true,"recipientScope":"owner_direct","selfRequestEvidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."}],"waiting":[],"updates":[],"imageFacts":[],"imageDecisions":[],"imageItems":{"tasks":[],"issues":[],"waiting":[]}};
+ const run=(timeout=false)=>{const analysisLease=crypto.randomUUID();return analyzePrivateMail({messageId:id,provider:'openai',model:'gpt-6-luna',key:'LOCAL_MOCK_ONLY',ownerName:'테스트담당자',now:f.now,loadMail:async()=>source,
+ fetcher:async()=>{providerCalls++;if(timeout)throw new DOMException('simulated provider timeout','AbortError');return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});},
+ store:{claim:async()=>{const claim=(await db.query('select * from private_mail_analysis_claim($1,$2)',[id,analysisLease])).rows[0];return claim?{row:claim,lease:analysisLease}:null;},finish:({analysis})=>rpc('private_mail_analysis_finish',[id,analysisLease,analysis]),fail:({code})=>rpc('private_mail_analysis_fail',[id,analysisLease,code])}});};
+ const timeoutResult=await run(true);assert.equal(timeoutResult.status,'failed');assert.equal((await row(id)).analysis,null);
+ assert.equal((await db.query('select * from private_mail_analysis_claim($1,$2)',[id,crypto.randomUUID()])).rows.length,0,'failed provider cooldown blocks immediate competing work');
+ await rpc('private_mail_analysis_select',[BOX,id,OWNER]);
+ const before=providerCalls,results=await Promise.all([run(),run()]);assert.equal(results.filter(x=>x.status==='done').length,1);assert.equal(results.filter(x=>x.status==='skipped').length,1);assert.equal(providerCalls-before,1);
+ const saved=(await row(id)).analysis;assert.equal(saved.source.id,id);assert.equal(saved.source.uidl,uidl);assert.equal(saved.tasks[0].serviceDate,'2026-10-30');assert.equal(saved.tasks[0].dueAt,null);
+ assert.equal((await row(id)).report_day.toISOString().slice(0,10),'2026-10-29');
+ const originalSource=await snapshot(id),historyBefore=(await db.query('select history_id,payload from private_mail_analysis_history where source_id=$1',[id])).rows;
+ assert.ok(historyBefore.length);assert.equal((await run()).status,'skipped');assert.deepEqual(await snapshot(id),originalSource);
+ const queryView=async(day)=>{const rows=(await db.query('select analysis,report_day::text report_day from private_mail_messages where mailbox_id=$1 and analysis is not null and report_day<=$2::date',[BOX,day])).rows;
+ const analyses=rows.map(r=>({...r.analysis,source:{...r.analysis.source,carryOnly:r.report_day<day}}));const overrides=(await db.query('select briefing_overrides from private_mailboxes where id=$1',[BOX])).rows[0].briefing_overrides;
+ return {analyses,overrides,view:dailyBriefingView({now:day+'T01:00:00Z',analyses,overrides}),render:renderDailyBriefing({now:day+'T01:00:00Z',analyses,overrides})};};
+ const initial=await queryView('2026-10-29'),later=await queryView('2026-11-02');assert.equal(initial.view.tasks.length,1);assert.equal(later.view.tasks.length,1);assert.equal(later.view.tasks[0].serviceDate,'2026-10-30');assert.ok(later.render.managedHtml.includes('가상별창고'));
+ let seq=0,posts=0,patches=0,graphFailure=null;
+ const pages=[],contents=new Map(),payloads=[];
+ const canonical=html=>html.replace(/(<[a-z][a-z0-9]*)(?=[\s>])/g,(_,tag)=>tag+' id="'+tag.slice(1)+':{local}{'+(++seq)+'}"');
+ const fakeGraph=async(path,access,options={})=>{
+  assert.equal(access,'FAKE_GRAPH_LOCAL_ONLY');const method=options.method??'GET';
+  if(path.startsWith('/me/onenote/notebooks/'))return Response.json({id:T.notebookId,userRole:'Owner',isShared:false});
+  if(path.startsWith('/me/onenote/sections/')&&!path.includes('/pages'))return Response.json({id:T.sectionId,parentNotebook:{id:T.notebookId}});
+  if(path.includes('/sections/')&&path.includes('/pages')) {
+   if(method==='POST') {
+    const id='isolated-page-'+(++posts),title=/<title>([^<]+)<\/title>/.exec(options.body)[1];
+    pages.push({id,title,parentSection:{id:T.sectionId}});contents.set(id,canonical(options.body));payloads.push({path,method,body:options.body});
+    if(graphFailure==='create-lost-ack'){graphFailure=null;throw Error('SIMULATED_LOST_CREATE_ACK');}
+    return Response.json({id});
+   }
+   return Response.json({value:pages});
+  }
+  if(path.includes('/pages/')&&path.includes('/content')) {
+   const id=decodeURIComponent(path.split('/pages/')[1].split('/')[0]);let html=contents.get(id);assert.ok(html);
+   if(method==='PATCH') {
+    patches++;const [change]=JSON.parse(options.body);payloads.push({path,method,body:options.body});
+    if(change.action==='replace') {
+     assert.ok(html.includes('id="'+change.target+'"'));const targetAt=html.indexOf('id="'+change.target+'"'),start=html.lastIndexOf('<',targetAt),tag=/^<([a-z][a-z0-9]*)\b/i.exec(html.slice(start))[1];let at=html.indexOf('>',start)+1,depth=1;
+     while(depth){const open=html.indexOf('<'+tag+' ',at),close=html.indexOf('</'+tag+'>',at);assert.ok(close>=0);if(open!==-1&&open<close){depth++;at=open+tag.length+1;}else{depth--;at=close+tag.length+3;}}
+     html=html.slice(0,start)+canonical(change.content)+html.slice(at);
+    }else {assert.equal(change.action,'append');html=html.replace('</div></body>',canonical(change.content)+'</div></body>');}
+    contents.set(id,html);
+    if(graphFailure==='patch-lost-ack'){graphFailure=null;throw Error('SIMULATED_LOST_PATCH_ACK');}
+    return new Response(null,{status:204});
+   }
+   return new Response(html,{headers:{ETag:'"isolated-etag-'+seq+'"'}});
+  }
+  throw Error('UNEXPECTED_FAKE_GRAPH_PATH');
+ };
+ const requestDay=day=>rpc('private_mail_manual_dirty',[BOX,day]);
+ const write=async(day)=>{
+  const projection=await queryView(day),lease=crypto.randomUUID();let claimed=false,successful=false;
+  try {
+   const result=await writeDailyBriefing({now:day+'T01:00:00Z',analyses:projection.analyses,overrides:projection.overrides,hash,graph:fakeGraph,connected:async()=>({accessToken:'FAKE_GRAPH_LOCAL_ONLY',notesGranted:true}),
+    store:{claim:async()=>{const state=await rpc('private_mail_briefing_claim',[BOX,day,lease]);claimed=!!state;return state?{lease,state}:null;},save:async({value})=>assert.equal(await rpc('private_mail_briefing_save',[BOX,day,lease,value]),true),release:async()=>{}}});
+   if(claimed&&result.status!=='busy'){assert.equal(await rpc('private_mail_briefing_complete',[BOX,day,lease]),true);successful=true;}
+   return {...result,acknowledged:successful};
+  } finally {if(claimed)assert.equal(await rpc('private_mail_briefing_release',[BOX,day,lease]),true);}
+ };
+ graphFailure='create-lost-ack';await assert.rejects(()=>write('2026-10-29'),/PAGE_CREATE_UNCERTAIN/);assert.equal(posts,1);
+ const afterLostCreate=(await db.query("select briefing_pages->'2026-10-29' state from private_mailboxes where id=$1",[BOX])).rows[0].state;assert.ok(afterLostCreate.pendingWrite);assert.equal(afterLostCreate.dirty,true);
+ const recovered=await write('2026-10-29');assert.equal(recovered.status,'reconciled');assert.equal(posts,1);assert.equal(recovered.acknowledged,true);
+ // Refresh the acknowledged report through the actual dirty/lease RPCs, without another page POST/PATCH.
+ await requestDay('2026-10-29');const count=payloads.length;const repeated=await write('2026-10-29');assert.equal(repeated.status,'skipped');assert.equal(payloads.length,count);
+ await requestDay('2026-11-02');const roll=await Promise.all([write('2026-11-02'),write('2026-11-02')]);assert.equal(roll.filter(x=>x.status==='busy').length,1);assert.equal(roll.filter(x=>x.acknowledged).length,1);assert.equal(posts,2);
+ const completionDay=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text report_day")).rows[0].report_day;
+ await requestDay(completionDay);
+ const ref=id+':tasks:'+saved.tasks[0].itemIndex;assert.equal(await rpc('private_mail_item_override',[BOX,id,ref,true,completionDay]),true);
+ const completed=await queryView(completionDay);assert.ok(completed.view.workItems.some(w=>w.workId===ref&&w.status==='complete'));
+ const next=new Date(completionDay+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+1);const nextDay=next.toISOString().slice(0,10);
+ assert.equal((await queryView(nextDay)).view.tasks.length,0,'completed prior source does not revive tomorrow');
+ // Ensure a baseline page exists, then simulate an applied PATCH with a lost acknowledgment on reopening.
+ await write(completionDay);
+ const page=(await db.query('select briefing_pages->$2 state from private_mailboxes where id=$1',[BOX,completionDay])).rows[0].state;
+ const memo='LOCAL OWNER MEMO PRESERVED';contents.set(page.pageId,contents.get(page.pageId).replace(/(<div[^>]*data-id="sajo-mail-manual"[^>]*>)/,'$1<p>'+memo+'</p>'));
+ assert.ok(contents.get(page.pageId).includes(memo),'fake memo insertion must precede update');
+ assert.equal(await rpc('private_mail_item_override',[BOX,id,ref,false,completionDay]),true);
+ const beforePatch=patches;graphFailure='patch-lost-ack';await assert.rejects(()=>write(completionDay),/PAGE_WRITE_UNCERTAIN/);assert.equal(patches,beforePatch+1);
+ const patchRecovered=await write(completionDay);assert.equal(patchRecovered.status,'reconciled');assert.equal(patches,beforePatch+1);assert.ok(contents.get(page.pageId).includes(memo));
+ assert.ok((await queryView(nextDay)).view.tasks.some(t=>t.ref===ref&&t.status==='pending'));
+ assert.deepEqual(await snapshot(id),originalSource,'completion, reopening, rollover and note errors never rewrite mail/source/analysis');
+ const historyAfter=(await db.query('select history_id,payload from private_mail_analysis_history where source_id=$1',[id])).rows;
+ for(const old of historyBefore)assert.ok(historyAfter.some(h=>h.history_id===old.history_id&&h.payload===old.payload));
+ await db.query("update private_mailboxes set lease_until=clock_timestamp()-interval '1 second' where id=$1",[BOX]);
+ await assert.rejects(()=>rpc('private_mail_publish',publishArgs),/lease expired/);
+ const renewed=crypto.randomUUID();assert.equal((await db.query('select * from private_mail_begin($1,$2)',[BOX,renewed])).rows.length,1);
+ assert.equal(await rpc('private_mail_publish',[BOX,renewed,...publishArgs.slice(2)]),id);assert.deepEqual(await snapshot(id),originalSource);
+
+ console.log('PASS virtual reception: real MIME -> intake RPC/UIDL/queue/normalizer/finish/history -> daily view -> SQL-leased Notes writer; duplicate/timeout/expiry/carry/completion/reopen and mocked Graph lost acknowledgments preserve original source and owner memo');
+} finally {await db.close();}
+}

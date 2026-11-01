@@ -14,7 +14,7 @@ const syntheticId = fixture => fixture.remoteUrls?.length ? '11111111-1111-4111-
 export function stressCatalogue() {
   return STRESS_FIXTURES.map(({id,kind,expected})=>({id,kind,expected}));
 }
-export async function parseStressMail(fixture, remoteFetcher) {
+export async function parseStressMail(fixture, remoteFetcher, receiptId) {
   const raw = new TextEncoder().encode(fixture.mime);
   const parsed = await PostalMime.parse(raw,{forceRfc822Attachments:true,maxNestingDepth:20,maxPartCount:60});
   const headers = emlHeaderText(raw);
@@ -27,7 +27,7 @@ export async function parseStressMail(fixture, remoteFetcher) {
     files.push({index,name:attachment.filename||'image.png',mediaType:attachment.mimeType,byte_size:data.length,content_hash:await digest(data),contentId:attachment.contentId,disposition:attachment.disposition,...shape});
   }
   const photos = selectMailPhotos({subject:parsed.subject,text,html:parsed.html??'',files});
-  const id = syntheticId(fixture);
+  const id = receiptId ?? syntheticId(fixture);
   const images = photos.selected.map(file=>({id:id+':'+file.index,name:file.name,mediaType:file.mediaType,contentHash:file.content_hash,width:file.width,height:file.height,bytes:bytes.get(file.index)}));
   if (fixture.remoteUrls?.length) images.push(...await loadApprovedRemoteMailImages({html:parsed.html??'',approvedUrls:fixture.remoteUrls,sourceId:id,fetcher:remoteFetcher}));
   const times = mailMessageTimes({headers,sentAt:parsed.date,collectedAt:fixture.now});
@@ -69,7 +69,8 @@ function evaluate(fixture, saved, normalized, parser) {
 export async function runStressCase(caseId,ctx) {
   const fixture = fixtureById(caseId);
   if(!fixture) throw Error('STRESS_CASE_INVALID');
-  const id = syntheticId(fixture), trace = [], replay = [], requests = [];
+  if (ctx.stressReceiptId != null && (caseId !== 'mail-old-sent-collected-today' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(ctx.stressReceiptId))) throw Error('STRESS_RECEIPT_INVALID');
+  const id = ctx.stressReceiptId ?? syntheticId(fixture), trace = [], replay = [], requests = [];
   // Frozen synthetic input is available even when source validation fails before a provider request.
   const input = structuredClone({kind:fixture.kind,referenceDate:fixture.referenceDate,now:fixture.now,
     ...(fixture.mime ? {mime:fixture.mime} : {text:fixture.text}), related:fixture.related??[],remoteUrls:fixture.remoteUrls??[]});
@@ -113,7 +114,7 @@ export async function runStressCase(caseId,ctx) {
   if(preconditions.errors.length) {preconditions.checked=true;preconditions.valid=false;return failedResult('STRESS_FIXTURE_PRECONDITION');}
   if(fixture.kind==='mail') {
     stage='mail_parse';
-    const parsed = await parseStressMail(fixture,ctx.remoteFetcher);
+    const parsed = await parseStressMail(fixture,ctx.remoteFetcher,id);
     parser=parsed.parser;
     parsed.source.related=prior;
     const thread=extractMailThreadHeaders(parsed.source.headers);

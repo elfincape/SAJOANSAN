@@ -61,8 +61,8 @@ export interface ApiCompatibilityResult {
 export const apiManagement = {
   stressCases: () => oneDriveCall<{cases:{id:string;kind:string}[]}>(
     'private-mail-stress-verify', {confirmation:'isolated-stress',list:true}, false, 30000),
-  stressCase: (caseId:string) => oneDriveCall<Record<string,unknown>>(
-    'private-mail-stress-verify', {confirmation:'isolated-stress',caseId}, false, 180000),
+  stressCase: (caseId:string,receiptId?:string) => oneDriveCall<Record<string,unknown>>(
+    'private-mail-stress-verify', {confirmation:'isolated-stress',caseId,...(receiptId?{receiptId}:{})}, false, 180000),
   verify: (provider: string, model: string) =>
     oneDriveCall<ApiCompatibilityResult>(
       'api-admin-verify',
