@@ -14,7 +14,7 @@ export function shiftPeriod(value,unit,direction){
 }
 export function taskState(task,now=new Date()){
  if(['completed','not_applicable'].includes(task.status))return 'completed';
- return (task.due_at?new Date(task.due_at)<now:taskEnd(task)<koreaDate(now))?'delayed':'active';
+ return (task.due_at?new Date(task.due_at)<now:!task.inputs?.personal_work&&taskEnd(task)<koreaDate(now))?'delayed':'active';
 }
 export const taskEnd=task=>task.work_end_date||task.work_date;
 export const taskPeriod=task=>task.work_date+(taskEnd(task)===task.work_date?'':' ~ '+taskEnd(task));

@@ -23,3 +23,5 @@ assert.equal(taskState({status:'in_progress',work_date:'2026-10-11',due_at:'2026
 assert.equal(taskState({status:'completed',work_date:'2026-10-01',due_at:'2026-10-01T00:00:00Z'},now),'completed');
 assert.equal(taskState({status:'not_applicable',work_date:'2026-10-01'},now),'completed');
 console.log('PASS: KST status, completion precedence, Monday weeks, leap months, period navigation, calendar coverage.');
+assert.equal(taskState({status:'pending',work_date:'2026-10-01',inputs:{personal_work:{serviceDate:'2026-11-04'}}},now),'active','personal receipt date is not a deadline');
+assert.equal(taskState({status:'pending',work_date:'2026-10-01',due_at:'2026-10-10T15:00:00Z',inputs:{personal_work:{}}},now),'delayed','explicit deadlines remain meaningful');

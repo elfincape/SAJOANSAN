@@ -54,6 +54,79 @@ function sourceRef(source, kind, ref) {
     intentCorrected: source.intentCorrected === true,
   };
 }
+export function normalizeWorkScope(value, sourceKind) {
+  if (sourceKind === 'mail' && value == null)
+    return {kind:'delivery_team',centerCode:null,workCategory:null};
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('WORK_SCOPE_REQUIRED');
+  if (!['center','delivery_team'].includes(value.kind) ||
+      (sourceKind === 'mail' && value.kind !== 'delivery_team')) throw Error('WORK_SCOPE');
+  if (value.kind === 'delivery_team') {
+    if (value.centerCode != null || value.workCategory != null) throw Error('WORK_SCOPE');
+    return {kind:'delivery_team',centerCode:null,workCategory:null};
+  }
+  if (typeof value.centerCode !== 'string' || !/^[a-zA-Z0-9_-]{1,50}$/.test(value.centerCode) || !clean(value.workCategory,100))
+    throw Error('WORK_SCOPE');
+  return {kind:'center',centerCode:value.centerCode,workCategory:value.workCategory.trim()};
+}
+function sameWorkScope(first, second) {
+  return first.kind === second.kind && first.centerCode === second.centerCode && first.workCategory === second.workCategory;
+}
+export function portalWorkInput(work, {ownerId, scope, visibleFrom}) {
+  if (!uuid.test(ownerId ?? '') || !validWorkRef(work?.workId)) throw Error('WORK_SOURCE');
+  if (!['task','issue'].includes(work.category)) throw Error('WORK_NOT_ACTIONABLE');
+  if(!clean(work.title,200))throw Error('WORK_FORMAT');
+  const sourceKind=work.sourceRefs?.[0]?.kind;
+  const selected=normalizeWorkScope(scope ?? work.workScope,sourceKind);
+  if (work.workScope && !sameWorkScope(selected,normalizeWorkScope(work.workScope))) throw Error('WORK_SCOPE_CONFLICT');
+  if(work.portalTaskId && (!Number.isSafeInteger(work.portalVersion)||work.portalVersion<1))throw Error('WORK_PORTAL_STALE');
+  const checked=normalizeDailyWork({...work,assigneeConfirmed:!!work.assignee,ref:work.originRef ?? work.workId,linkedWorkRef:work.workId});
+  const day=calendar(visibleFrom);
+  if (!day) throw Error('WORK_DATE');
+  return {
+    id:checked.portalTaskId,expected_version:work.portalVersion ?? null,
+    owner_id:ownerId,center_code:selected.centerCode,work_scope:selected.kind,
+    title:checked.title,work_date:day,work_end_date:null,due_at:checked.dueAt,
+    status:({complete:'completed',cancelled:'not_applicable',waiting:'in_progress'})[checked.status] ?? checked.status,
+    inputs:{personal_work:{
+      schema:WORK_FORMAT,workId:checked.workId,ownerId,scope:selected,
+      sourceKeys:[...new Set(checked.sourceRefs.map(source=>source.ref))],
+      category:checked.category,reportKind:checked.reportKind,status:checked.status,
+      summary:checked.summary,nextAction:checked.nextAction,progress:checked.progress,waitingFor:checked.waitingFor,
+      customer:checked.customer,requester:checked.requester,requestedAt:checked.requestedAt,
+      dueDate:checked.dueDate,serviceDate:checked.serviceDate,needsConfirmation:checked.needsConfirmation,
+      confirmationReasons:checked.confirmationReasons,ownerStateAt:checked.ownerStateAt,
+      verifiedCompletionAt:checked.verifiedCompletionAt,inferredStateAt:checked.inferredStateAt,closedAt:checked.closedAt,
+    }},
+  };
+}
+export function applyPortalWorkSnapshot(work, task, {ownerId}) {
+  const current=task?.inputs?.personal_work;
+  if (!uuid.test(ownerId ?? '') || task?.owner_id !== ownerId || current?.ownerId !== ownerId)
+    throw Error('WORK_PORTAL_OWNER');
+  if (!uuid.test(task.id ?? '') || current.schema !== WORK_FORMAT || current.workId !== work.workId ||
+      (work.portalTaskId && task.id !== work.portalTaskId) || task.deleted_at) throw Error('WORK_LINK_CONFLICT');
+  if (!Number.isSafeInteger(task.version) || task.version < 1 || task.version < (work.portalVersion ?? 0))
+    throw Error('WORK_PORTAL_STALE');
+  const selected=normalizeWorkScope(current.scope);
+  if (task.center_code !== selected.centerCode || task.work_scope !== selected.kind ||
+      (work.workScope && !sameWorkScope(selected,work.workScope))) throw Error('WORK_SCOPE_CONFLICT');
+  const status=({pending:'pending',in_progress:current.status==='waiting'?'waiting':'in_progress',completed:'complete',not_applicable:'cancelled'})[task.status];
+  if (!status) throw Error('WORK_STATUS');
+  const updatedAt=stamp(task.updated_at);
+  if (!updatedAt) throw Error('WORK_DATE');
+  const projected=normalizeDailyWork({
+    ...work,ref:work.originRef ?? work.workId,linkedWorkRef:work.workId,
+    portalTaskId:task.id,assigneeConfirmed:!!work.assignee,workScope:selected,title:task.title,category:current.category,reportKind:current.reportKind,
+    summary:current.summary,nextAction:current.nextAction,progress:current.progress,waitingFor:current.waitingFor,
+    customer:current.customer,requester:current.requester,dueAt:task.due_at ?? null,dueDate:current.dueDate,serviceDate:current.serviceDate,
+    needsConfirmation:current.needsConfirmation,confirmationReasons:current.confirmationReasons,
+    status,closedAt:status==='complete'?stamp(task.completed_at):status==='cancelled'?updatedAt:null,
+    ownerStateAt:stamp(current.ownerStateAt),inferredStateAt:stamp(current.inferredStateAt),
+    verifiedCompletionAt:status==='complete'?stamp(current.verifiedCompletionAt):null,
+  });
+  return {...work,...projected,portalVersion:task.version};
+}
 export function normalizeDailyWork(input) {
   if (
     !input ||
@@ -98,6 +171,7 @@ export function normalizeDailyWork(input) {
     schema: WORK_FORMAT,
     workId,
     portalTaskId,
+    workScope: input.workScope == null ? null : normalizeWorkScope(input.workScope),
     controlRef:
       input.category === 'task' ||
       (input.ref.includes(':manual:') && input.category === 'issue')
@@ -321,6 +395,8 @@ export function dailyWorkItems(
     excludedSourceIds = new Set(),
     workOverrides = {},
     includeExcluded = false,
+    portalTasks = [],
+    portalOwnerId,
   } = {},
 ) {
   const result = [],
@@ -497,6 +573,7 @@ export function dailyWorkItems(
           ref: item.ref,
           linkedWorkRef: item.workRef,
           portalTaskId: item.portalTaskId,
+          workScope: item.workScope ?? entry.workScope,
           category:
             item.kind === 'reference'
               ? 'reference'
@@ -551,6 +628,8 @@ export function dailyWorkItems(
       previous.portalTaskId !== item.portalTaskId
     )
       throw Error('WORK_LINK_CONFLICT');
+    if (previous?.workScope && item.workScope && !sameWorkScope(previous.workScope,item.workScope))
+      throw Error('WORK_SCOPE_CONFLICT');
     aliases.set(item.originRef, key);
     if (!previous) {
       merged.set(key, { ...item, workId: key });
@@ -574,6 +653,7 @@ export function dailyWorkItems(
       ...item,
       workId: key,
       portalTaskId: previous.portalTaskId ?? item.portalTaskId,
+      workScope: previous.workScope ?? item.workScope,
       summary: mergeCurrentSummary(previous.summary, item.summary),
       sourceRefs: [...previous.sourceRefs, ...item.sourceRefs].filter(
         (source, index, all) =>
@@ -616,8 +696,23 @@ export function dailyWorkItems(
     }
     merged.set(key, combined);
   }
-  return [...merged.values()]
-    .map((item) => applyOwnerWorkCorrection(item, workOverrides, view.day))
+  const projected = new Map([...merged.values()]
+    .map(item=>applyOwnerWorkCorrection(item,workOverrides,view.day)).map(item=>[item.workId,item]));
+  const portalIds=new Set();
+  for(const task of portalTasks){
+    const marker=task.inputs?.personal_work;
+    if(!marker || portalIds.has(marker.workId))throw Error('WORK_LINK_CONFLICT');
+    portalIds.add(marker.workId);
+    if(view.day && task.work_date>view.day)continue;
+    const ref=marker.workId;
+    const sourceId=ref?.startsWith('source:')?ref.slice(7):ref?.slice(0,36);
+    const original=projected.get(ref) ?? normalizeDailyWork({
+      ref,category:marker.category,title:task.title,status:'pending',workScope:marker.scope,
+      requestedAt:marker.requestedAt,sourceRefs:[{kind:'linked',id:sourceId,ref}],
+    });
+    projected.set(ref,applyPortalWorkSnapshot(original,task,{ownerId:portalOwnerId}));
+  }
+  return [...projected.values()]
     .filter((item) => includeExcluded || !item.excluded)
     .filter(
       (item) =>
