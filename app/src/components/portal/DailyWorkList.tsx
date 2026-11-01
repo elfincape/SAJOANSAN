@@ -1,5 +1,6 @@
 import { workSummaryForDisplay } from '../../../../supabase/functions/onedrive-auth/private-mail-work.js';
 import { useEffect, useRef, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
 import type {
@@ -201,7 +202,7 @@ export function DailyWorkList({
       <li key={value.workId}>
         <button
           type="button"
-          className="daily-work-trigger"
+          className="daily-work-trigger ean-interactive-row"
           data-work-id={value.workId}
           onClick={() => open(value)}
           aria-haspopup="dialog"
@@ -216,7 +217,11 @@ export function DailyWorkList({
                   : value.dueDate}
               </span>
             )}
-            <span className="daily-work-state">
+            <span
+              className="daily-work-state"
+              data-status={value.status}
+              data-excluded={value.excluded || undefined}
+            >
               {value.excluded
                 ? '제외'
                 : value.category === 'reference'
@@ -227,6 +232,7 @@ export function DailyWorkList({
                       : '참고'
                   : labels[value.status] || '확인 필요'}
             </span>
+            <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </span>
         </button>
       </li>
@@ -275,7 +281,11 @@ export function DailyWorkList({
                 닫기
               </ModalClose>
             </div>
-            <p className="daily-task-meta">
+            <p
+              className="daily-detail-status daily-work-state"
+              data-status={item.status}
+              data-excluded={item.excluded || undefined}
+            >
               {item.excluded
                 ? item.correction?.reason === 'spam'
                   ? '스팸 평가 · 정리 제외'
@@ -301,7 +311,14 @@ export function DailyWorkList({
                     ? formatBriefingTimestamp(item.dueAt)
                     : item.dueDate,
                 ],
-                ['운행·납품 대상일', itemSummary.some((text,index)=>text!==item.summary[index]) ? null : item.serviceDate],
+                [
+                  '운행·납품 대상일',
+                  itemSummary.some(
+                    (text, index) => text !== item.summary[index],
+                  )
+                    ? null
+                    : item.serviceDate,
+                ],
                 ['다음 조치', item.nextAction],
                 ['진행', item.progress],
                 ['회신 대기', item.waitingFor],
@@ -385,6 +402,7 @@ export function DailyWorkList({
                   ref.kind === 'mail' ? (
                     <a
                       key={ref.ref}
+                      className="btn btn-ghost"
                       href={
                         '/portal/?view=mail&message=' +
                         encodeURIComponent(ref.id)

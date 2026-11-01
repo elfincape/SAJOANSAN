@@ -308,7 +308,12 @@ export function MailBriefingManualEntries({
           width="xl"
         >
           <div className="daily-message-dialog">
-            <h2>메시지 입력</h2>
+            <div className="daily-dialog-heading">
+              <h2>메시지 입력</h2>
+              <ModalClose className="btn btn-ghost" disabled={busy}>
+                닫기
+              </ModalClose>
+            </div>
             {targetWorkId && <p className="daily-task-meta">선택한 업무에 반영합니다. 대상이 다른 내용은 확인이 필요합니다.</p>}
             <label className="manual-message-label" htmlFor="manual-message">
               카톡 메시지·직접 입력

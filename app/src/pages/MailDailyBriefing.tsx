@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Inbox, MessageSquarePlus } from 'lucide-react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import {
   MailBriefingManualEntries,
@@ -331,45 +332,51 @@ function DailyOverview() {
   }
   return (
     <main id="work-main" tabIndex={-1} className="app-main mail-daily-briefing">
-      <div className="daily-toolbar">
-        <label htmlFor="briefing-day">
-          날짜 (한국 시간)
-          <input
-            id="briefing-day"
-            className="app-input"
-            type="date"
-            value={dateInput}
-            disabled={pending !== null || filtersBusy || manualBusy}
-            onChange={(event) => setDateInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') applyDate();
-            }}
-          />
-        </label>
-        <button
-          className="btn btn-primary"
-          type="button"
-          disabled={
-            loading ||
-            pending !== null ||
-            filtersBusy ||
-            manualBusy ||
-            !validDay(dateInput)
-          }
-          onClick={applyDate}
-        >
-          조회
-        </button>
-        <a className="btn btn-ghost" href="/portal/?view=mail">
-          개인 메일함
-        </a>
-        <button
-          className="btn btn-ghost"
-          type="button"
-          onClick={() => {setMessageDraft(undefined);setMessageOpen(true);}}
-        >
-          메시지 입력
-        </button>
+      <div className="daily-toolbar work-surface">
+        <div className="daily-date-controls">
+          <label htmlFor="briefing-day">
+            날짜
+            <input
+              id="briefing-day"
+              className="app-input"
+              type="date"
+              value={dateInput}
+              disabled={pending !== null || filtersBusy || manualBusy}
+              onChange={(event) => setDateInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') applyDate();
+              }}
+            />
+          </label>
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={
+              loading ||
+              pending !== null ||
+              filtersBusy ||
+              manualBusy ||
+              !validDay(dateInput)
+            }
+            onClick={applyDate}
+          >
+            조회
+          </button>
+        </div>
+        <div className="daily-toolbar-actions">
+          <a className="btn btn-ghost" href="/portal/?view=mail">
+            <Inbox size={18} strokeWidth={1.5} aria-hidden="true" />
+            개인 메일함
+          </a>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {setMessageDraft(undefined);setMessageOpen(true);}}
+          >
+            <MessageSquarePlus size={18} strokeWidth={1.5} aria-hidden="true" />
+            메시지 입력
+          </button>
+        </div>
       </div>
       <p className="daily-feedback" role="status" aria-live="polite">
         {pending
@@ -378,8 +385,14 @@ function DailyOverview() {
             ? '일일정리를 불러오는 중…'
             : feedback}
       </p>
-      <div aria-busy={loading}>
-        <h2 className="daily-title">{overview?.title || `${day} 일일정리`}</h2>
+      <section
+        className="daily-overview work-surface"
+        aria-busy={loading}
+        aria-labelledby="daily-overview-title"
+      >
+        <h2 id="daily-overview-title" className="daily-title">
+          {overview?.title || `${day} 일일정리`}
+        </h2>
         {overview ? (
           <>
             {!overview.sources.length && !overview.workItems ? (
@@ -510,7 +523,7 @@ function DailyOverview() {
         ) : !loading ? (
           <p>표시할 일일정리를 확인하지 못했습니다.</p>
         ) : null}
-      </div>
+      </section>
       <div id="manual-messages" tabIndex={-1}>
         <MailBriefingManualEntries
           refreshKey={manualRefresh}
@@ -529,7 +542,7 @@ function DailyOverview() {
         onBusyChange={setFiltersBusy}
         onChanged={() => void load()}
       />
-      <div className="daily-settings">
+      <div className="daily-settings work-surface">
         <MailBriefingConnection />
       </div>
     </main>

@@ -23,8 +23,13 @@ export function promptFor(mode, year) {
 날짜에 연도가 없으면 ${year}년을 사용한다. 날짜가 안 보이면 null. 요일로 날짜를 변경하지 않는다.
 차량요청 1대와 도크 2개는 차량 1대 요청이다. 도크 목록으로 차량을 추가하지 않는다.
 냉장&냉동/냉동&냉장은 냉동&냉장으로 표준화한다. 물량으로 톤수/대수를 계산하지 않는다.
+표의 냉동·냉장·합계 열 숫자는 팔레트(P) 수량이다. 합계 20 또는 20P는 20톤이 아니다.
+톤수는 차량요청 열에 명시된 '8톤', '5톤', '11톤' 등 단위가 붙은 숫자만 읽는다. 도크 번호나 지역 코드도 톤수가 아니다.
+차량요청의 각 줄을 sourceText에 그대로 옮기고 해당 줄별로 요청을 나눈다. sourceText에는 팔레트 열·합계 열·도크 열을 섞지 않는다.
+예: 냉동 3 / 냉장 17 / 합계 20 / 차량요청 '냉장&냉동 8톤 1대, 냉장 5톤 1대'이면 물량은 3·17P, 차량은 혼적 8톤 1대와 냉장 5톤 1대다.
+톤수는 원문 그대로 보존한다. 안 보이면 null로 두고 합계로 채우지 않는다.
 volumes는 지역별 1개, requests는 명시된 차량 요청별 1개이며 원문 순서다.
-형식: {"date":"YYYY-MM-DD","volumes":[{"region":"광주","frozen":2,"chilled":8}],"requests":[{"region":"광주","temperature":"냉동&냉장","tons":5,"count":1}]}`
+형식: {"date":"YYYY-MM-DD","volumes":[{"region":"광주","frozen":2,"chilled":8}],"requests":[{"region":"광주","temperature":"냉동&냉장","tons":5,"count":1,"sourceText":"냉장&냉동 5톤 1대"}]}`
     );
   return (
     BASE +
@@ -94,7 +99,27 @@ export function parseAnswer(data, mode) {
       '인식된 배차 항목이 없습니다. 원본을 확인하고 다시 붙여넣어 주세요.',
       422,
     );
-  if (mode === 'request' && !Array.isArray(result.volumes)) result.volumes = [];
+  if (mode === 'request') {
+    if (!Array.isArray(result.volumes)) result.volumes = [];
+    for (const row of result.requests) {
+      const source =
+        typeof row.sourceText === 'string'
+          ? row.sourceText.normalize('NFKC').trim()
+          : '';
+      const matches = [
+        ...source.matchAll(/(?<![\d.,])(\d+(?:\.\d+)?)\s*(?:톤|tons?\b|t\b)/gi),
+      ];
+      const ambiguous = /[-−+]\s*\d|\d\s*[~∼〜–—]\s*\d/.test(source);
+      const tons =
+        !ambiguous && matches.length === 1 ? Number(matches[0][1]) : null;
+      if (!(tons > 0) || !Number.isFinite(tons))
+        throw fail(
+          '차량요청 문구에서 톤수를 확인하지 못했습니다. 차량요청 칸이 선명한 사진으로 다시 분석해 주세요.',
+          422,
+        );
+      row.tons = tons;
+    }
+  }
   return result;
 }
 export function makeHandler(env, fetcher = fetch) {

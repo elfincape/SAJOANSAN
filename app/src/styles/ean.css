@@ -483,6 +483,7 @@ html[data-theme] body.workspace-ui .ean-tab:disabled {
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -492,6 +493,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -511,6 +513,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -521,6 +524,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -539,6 +543,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -551,6 +556,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui.app-shell
   :is(
+    .ean-interactive-row,
     .hub-directory .hub-tool,
     .task-row:not(.calendar-task-bar),
     .employee-permission-people > button
@@ -614,6 +620,7 @@ html[data-theme]
   html[data-theme]
     body.workspace-ui.app-shell
     :is(
+      .ean-interactive-row,
       .hub-directory .hub-tool,
       .task-row:not(.calendar-task-bar),
       .employee-permission-people > button

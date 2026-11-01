@@ -16,15 +16,20 @@ export async function matchOneTopWorkbook(templateBuffer:ArrayBuffer,captures:Ca
       markRowsWithExistingTemperatures(ws,vehicleRows);
       // Protect actual Q-cell images, nonblank Q content, and existing temperatures.
       const groups=groupVehicleRows(vehicleRows); const occupied=findPhotoMarkerRows(ws,vehicleRows);
+      const existingReceiptImages=new Set(await Promise.all(ws.getImages().filter(image=>vehicleRows.some(row=>imageOverlapsPhotoCell(ws,image.range,row.row))).map(image=>excelImageKey(workbook.getImage(Number(image.imageId))))));
       const insertedReceiptImages=new Set();
       const insertedVehicleKeys=new Set();
 
       for (const item of analyzed) {
-        const key=normalizeVehicle(item.result.vehicle_number); const group=groups.get(key)||[];
+        const key=normalizeVehicle(item.result.vehicle_number); let group=groups.get(key)||[];
         if (!key) { addIssue(item.name,'차량번호 판독 실패'); continue; }
+        const plate=vehiclePlate(item.result.vehicle_number);
+        if(plate)group=group.filter(row=>{const candidate=vehiclePlate(row.vehicle);return /^\d/.test(plate)?candidate.replace(/^[가-힣]+/,'')===plate:candidate===plate;});
         if (!group.length) { addIssue(item.name,`차량번호 미일치: ${item.result.vehicle_number}`); continue; }
+        if(new Set(group.map(row=>vehiclePlate(row.vehicle)||row.key)).size>1){addIssue(item.name,`차량번호 ${item.result.vehicle_number}: 끝 네 자리가 같은 서로 다른 차량이 있어 전체 차량번호를 확인해 주세요.`);continue;}
+        const vehicleKey=vehiclePlate(group[0].vehicle)||key;
         // 한 번의 결과 파일에서는 동일 차량번호에 온도 영수증을 최대 한 장만 신규 삽입한다.
-        if(insertedVehicleKeys.has(key)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 같은 차량 사진이 이미 반영되어 추가 사진을 제외했습니다.`);continue;}
+        if(insertedVehicleKeys.has(vehicleKey)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 같은 차량 사진이 이미 반영되어 추가 사진을 제외했습니다.`);continue;}
         const imageKey=receiptImageKey(item.dataUrl);
         if(insertedReceiptImages.has(imageKey)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 동일한 사진이 이미 반영되어 제외했습니다.`);continue;}
         // Whitespace alone does not establish that a receipt image exists.
@@ -33,9 +38,12 @@ export async function matchOneTopWorkbook(templateBuffer:ArrayBuffer,captures:Ca
         if(isPhotoRowOccupied(ws,target.row)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 선택 행의 Q열이 사용 중이라 사진을 제외했습니다.`);continue;}
         const record=selectRecord(item.result.records); const temps=chooseTemperatures(record?.a,record?.b);
         const receiptImage=await prepareExcelImage(item.dataUrl);
+        const preparedImageKey=await excelImageKey({base64:receiptImage,extension:receiptImage.startsWith('data:image/png')?'png':'jpeg'});
+        if(existingReceiptImages.has(preparedImageKey)){addIssue(item.name,`차량 ${item.result.vehicle_number}: 같은 사진이 원본 엑셀 Q열에 이미 있어 다른 행에 다시 삽입하지 않았습니다.`);continue;}
         addImageToCell(workbook,ws,receiptImage,COL.tempPhoto,target.row); markPhotoCell(ws,target.row); occupied.add(target.row);
+        existingReceiptImages.add(preparedImageKey);
         insertedReceiptImages.add(imageKey);
-        insertedVehicleKeys.add(key);
+        insertedVehicleKeys.add(vehicleKey);
         // Synchronize occupied rows after inserting the image.
         for(const row of vehicleRows)if(isPhotoRowOccupied(ws,row.row))occupied.add(row.row);
         if(item.supplementalDataUrl)addImageToCell(workbook,ws,await prepareSupplementExcelImage(item.supplementalDataUrl),COL.supplementalPhoto,target.row);
@@ -64,6 +72,13 @@ export async function oneTopOutputBlob(workbook:ExcelJS.Workbook){normalizeWorkb
   }
 
   function groupVehicleRows(rows:VehicleRow[]) { const map=new Map<string,VehicleRow[]>(); rows.forEach(x=>{if(!map.has(x.key))map.set(x.key,[]);map.get(x.key)!.push(x);}); return map; }
+  function vehiclePlate(value:string) { return value.replace(/[\s\-·.]/g,'').match(/(?:[가-힣]{2,3})?\d{2,3}[가-힣]\d{4}$/)?.[0]||''; }
+  async function excelImageKey(image:ExcelJS.Image) {
+    const base64=image.base64?.split(',').at(-1);
+    const bytes=base64?Uint8Array.from(atob(base64),char=>char.charCodeAt(0)):image.buffer?new Uint8Array(image.buffer):new Uint8Array();
+    const hash=await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+  }
 
   function markRowsWithExistingTemperatures(ws:ExcelJS.Worksheet,vehicleRows:VehicleRow[]) {
     for(const item of vehicleRows){
@@ -84,9 +99,11 @@ export async function oneTopOutputBlob(workbook:ExcelJS.Workbook){normalizeWorkb
     return hasImageInPhotoCell(ws,row)||Boolean(cellText(photoCell))||Boolean(cellText(ws.getCell(row,COL.freezer)))||Boolean(cellText(ws.getCell(row,COL.refrigerated)));
   }
   function hasImageInPhotoCell(ws:ExcelJS.Worksheet,row:number) {
+    return ws.getImages().some(image=>imageOverlapsPhotoCell(ws,image.range,row));
+  }
+  function imageOverlapsPhotoCell(ws:ExcelJS.Worksheet,range:ExcelJS.ImageRange,row:number) {
     const col=COL.tempPhoto-1,top=row-1;
-    return ws.getImages().some(image=>{
-      const {tl,br,ext}=image.range as ExcelJS.ImageRange & {ext?:{width:number;height:number}};
+      const {tl,br,ext}=range as ExcelJS.ImageRange & {ext?:{width:number;height:number}};
       if(br)return tl.col<col+1&&br.col>col&&tl.row<top+1&&br.row>top;
       if(!ext)return Math.floor(tl.col)===col&&Math.floor(tl.row)===top;
       // One-cell image widths depend on workbook font metrics. Protect conservatively
@@ -103,7 +120,6 @@ export async function oneTopOutputBlob(workbook:ExcelJS.Workbook){normalizeWorkb
         if(index<top)targetTop+=height;
       }
       return imageTop<targetTop+rowPixels(top)&&imageTop+ext.height>targetTop;
-    });
   }
   function receiptImageKey(dataUrl:string) {
     return String(dataUrl||'');
