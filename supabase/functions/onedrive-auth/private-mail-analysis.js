@@ -1143,11 +1143,19 @@ export async function analyzePrivateMail({
           const fact = imageResult.imageFacts.find((fact) =>
             fact.confidence === 'readable' && fact.text === item.evidence?.trim() &&
             imageDecisions.some((decision) => decision.imageId === fact.imageId && decision.include));
-          if (!fact && !['reference', 'routine'].includes(parsed.intent?.kind)) throw summaryError;
+          if (typeof item.text !== 'string' || !item.text.trim() || item.text.length > 1000 ||
+              typeof item.evidence !== 'string' || !item.evidence.trim() || item.evidence.length > 3000)
+            throw Error('ANALYSIS_FORMAT');
           if (fact) {
-            if (typeof item.text !== 'string' || !item.text.trim() || item.text.length > 1000)
-              throw Error('ANALYSIS_FORMAT');
             separatedImageSummary.push({text:item.text.trim(),evidence:fact.text,imageId:fact.imageId,sourceType:'image'});
+          } else {
+            // A model's image transcription/paraphrase is not independent OCR proof. Quarantine it
+            // as unverified metadata attached to the approved input set, never as body evidence or imageFacts.
+            const candidateImageIds = [...new Set(imageResult.imageFacts.filter((candidate) =>
+              candidate.confidence === 'readable' && imageDecisions.some((decision) =>
+                decision.imageId === candidate.imageId && decision.include)).map((candidate) => candidate.imageId))];
+            separatedImageSummary.push({text:item.text.trim(),evidence:item.evidence.trim(),sourceType:'image',
+              candidateImageIds,verification:'unverified',needsConfirmation:true});
           }
           return [];
         }
@@ -1179,7 +1187,8 @@ export async function analyzePrivateMail({
       analysis.imageSummary = separatedImageSummary;
       analysis.review.imageSummarySeparated = true;
       // A cross-channel summary does not establish that an apparent body/image disagreement is resolved.
-      if (!['reference', 'routine'].includes(ownership.intent.kind)) {
+      if (!['reference', 'routine'].includes(ownership.intent.kind) ||
+          separatedImageSummary.some((item) => item.verification === 'unverified')) {
         analysis.review.needsConfirmation = true;
         analysis.review.reasons.push('image_summary_separated');
       }

@@ -7218,9 +7218,9 @@ const cidFixture=fixtureById('mail-cid-evidence-duplicate-signatures'),cidSource
 const cidProof='테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다.',fact='TEMP 4 C / ROUTINE CHECK: NORMAL';
 const cidValue={...empty(),intent:{kind:'request',evidence:cidProof},summary:[{text:'가상구름센터 온도 이탈 조치 회신 요청',evidence:cidProof},{text:'이미지 점검표에는 4 C와 정상 상태가 표시됨',evidence:fact}],tasks:[{...task,text:'온도 이탈 확인 후 조치 회신',evidence:cidProof,assignee:null,serviceOriginal:null,selfRequestEvidence:cidProof}],issues:[{text:'본문의 온도 이탈 주장과 이미지의 정상 표시가 달라 확인 필요',evidence:cidProof,status:'needs_confirmation',impact:null,latest:null,completionEvidence:null}],imageFacts:[{imageId:cidSource.images[0].id,text:fact,confidence:'readable'}],imageDecisions:[{imageId:cidSource.images[0].id,kind:'business_document',include:true}]};
 const cidFixed=await analyze(analyzePrivateMail,cidSource,cidValue);assert.equal(cidFixed.status,'done');assert.equal(cidFixed.analysis.summary.length,1);assert.equal(cidFixed.analysis.imageSummary[0].evidence,fact);assert.equal(cidFixed.analysis.review.needsConfirmation,true);assert.equal(cidFixed.analysis.source.intent,'request','no coerced issue classification');assert.equal(cidFixed.analysis.tasks[0].status,'pending');assert.equal(cidFixed.analysis.issues[0].status,'needs_confirmation');
-const unsupported=structuredClone(cidValue);unsupported.summary[1].evidence='이미지에서 검증되지 않은 새 근거';assert.equal((await analyze(analyzePrivateMail,cidSource,unsupported)).code,'ANALYSIS_EVIDENCE');
+const unsupported=structuredClone(cidValue);unsupported.summary[1].evidence='이미지에서 검증되지 않은 새 근거';const quarantined=await analyze(analyzePrivateMail,cidSource,unsupported);assert.equal(quarantined.status,'done');assert.equal(quarantined.analysis.summary.length,1);assert.equal(quarantined.analysis.imageSummary[0].verification,'unverified');assert.equal(quarantined.analysis.imageSummary[0].needsConfirmation,true);
 const invalidTask=structuredClone(cidValue);invalidTask.tasks[0].evidence=fact;assert.equal((await analyze(analyzePrivateMail,cidSource,invalidTask)).code,'ANALYSIS_EVIDENCE','image summary fallback never accepts image evidence as body task');
-console.log('CONFIRMED image-summary boundary: request/routine mixed evidence fails original; exact approved readable image evidence separated, uncertainty retained; unsupported summary and image-derived body tasks still fail');
+console.log('CONFIRMED image-summary boundary: request/routine mixed evidence fails original; exact approved readable image evidence separated, uncertainty retained; unverified image summary stays quarantined and image-derived body tasks still fail');
 console.log('PASS local hard-failure reproductions; no network calls, operating persistence, fixture/expectation edits or live semantic pass claims');
 }
 
@@ -7228,4 +7228,171 @@ console.log('PASS local hard-failure reproductions; no network calls, operating 
 const {resolveExistingManualWork}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
 for(const id of ['manual-split-supplement-exact','manual-followup-without-pronoun','manual-late-correction-targeted','manual-exact-followup-partial-evidence','manual-cancelled-then-new-request']){const f=fixtureById(id),entries=Object.fromEntries(f.related.map(e=>[e.entryId,structuredClone(e)]));const r=resolveExistingManualWork(f.text,entries,f.referenceDate,f.now);assert.ok(r);assert.ok(r.details.every(x=>!/(?:추가정보|그대로|기존|뜻은|아닙니다|요청|수량은|정정)/.test(x)),'details must contain compact operational facts, not source clauses: '+id);if(id==='manual-split-supplement-exact')assert.deepEqual(r.details,['출발 가상별창고','하차 09:00']);assert.equal(r.sourceText,f.text);assert.ok(f.text.includes(r.items[0].evidence));console.log('PASS concise details and unchanged source',id,r.details)}
 
+}
+
+{
+// Original failed parsed model values supplied by the browser verifier; no new provider call.
+const recorded=[{"caseId":"mail-cid-evidence-duplicate-signatures","value":{"intent":{"kind":"request","evidence":"테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다."},"group":{"name":"가상구름센터","evidence":"가상구름센터"},"summary":[{"text":"가상구름센터 점검표에는 2026-11-03 서비스, 팔레트 12개, 09:00 하역, 온도 4°C 및 정기 점검 정상으로 기재되어 있습니다.","evidence":"SERVICE 2026-11-03 | PALLETS 12\nUNLOAD 09:00 | TEMP 4 C\nROUTINE CHECK: NORMAL"}],"issues":[{"text":"발신자는 가상구름센터의 온도 이탈을 확인하고 조치 내용을 회신해 달라고 요청했습니다.","evidence":"가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다.","status":"needs_confirmation","impact":"온도 이탈 여부 및 조치 내용 확인이 필요합니다.","latest":"첨부 점검표에는 TEMP 4 C 및 ROUTINE CHECK: NORMAL로 적혀 있어 본문 요청과 차이가 있습니다.","completionEvidence":null}],"tasks":[{"text":"가상구름센터 온도 이탈을 확인하고 조치 내용을 회신합니다.","evidence":"테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다.","status":"pending","assignee":"테스트담당자","due":null,"completionEvidence":null,"serviceOriginal":null,"forOwner":true,"recipientScope":"owner_direct","selfRequestEvidence":"테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다."}],"waiting":[],"updates":[],"imageFacts":[{"imageId":"f0000000-0000-4000-8000-000000000003:0","text":"합성 점검표: 서비스 2026-11-03, 팔레트 12개, 하역 09:00, 온도 4°C, 정기 점검 정상.","confidence":"readable"}],"imageDecisions":[{"imageId":"f0000000-0000-4000-8000-000000000003:0","kind":"business_document","include":true}],"imageItems":{"tasks":[],"issues":[],"waiting":[]}}},{"caseId":"mail-old-sent-collected-today","value":{"intent":{"kind":"request","evidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."},"group":{"name":"가상별창고","evidence":"가상별창고"},"summary":[{"text":"가상별창고 6P의 내일 배차 준비 요청이며, 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다."}],"issues":[],"tasks":[{"text":"가상별창고 6P의 내일 배차를 준비합니다. 하차 예정 시각은 09:00입니다.","evidence":"내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다.","status":"pending","assignee":"테스트담당자","due":null,"completionEvidence":null,"serviceOriginal":"내일","forOwner":true,"recipientScope":"owner_direct","selfRequestEvidence":"테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."}],"waiting":[],"updates":[],"imageFacts":[],"imageDecisions":[],"imageItems":{"tasks":[],"issues":[],"waiting":[]}}},{"caseId":"manual-contextless-deictic-request","value":{"items":[{"kind":"waiting","text":"자료 전달 대기","evidence":"자료는 뒤에 보낼게요.","assignee":null,"serviceOriginal":null,"dueOriginal":null,"needsConfirmation":false}],"authoredDate":null}}];
+const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+for(const {caseId,value} of recorded){const r=await runStressCase(caseId,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'mock'}),resolveJevConfiguration:async()=>null,fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]})});assert.notEqual(r.status,'failed',caseId);if(caseId==='mail-cid-evidence-duplicate-signatures'){assert.equal(r.checks.intent,false,'original classification mismatch remains visible');assert.equal(r.saved.summary.length,0);assert.equal(r.saved.imageSummary[0].verification,'unverified');assert.equal(r.saved.imageSummary[0].needsConfirmation,true);assert.equal(r.saved.review.needsConfirmation,true)}else{assert.equal(r.automatedChecksPassed,true,caseId)}}
+console.log('PASS recorded failed parsed responses replay; CID original intent mismatch retained and unverified evidence quarantined');
+}
+{
+  // Parent-transcribed original parsed values; only the completed Responses envelope is synthetic.
+  const {runStressCase,parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+  const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+  const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+  const originalMailValues = [
+  {
+    "caseId": "mail-cid-evidence-duplicate-signatures",
+    "value": {
+      "intent": {
+        "kind": "request",
+        "evidence": "테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다."
+      },
+      "group": {
+        "name": "가상구름센터",
+        "evidence": "가상구름센터"
+      },
+      "summary": [
+        {
+          "text": "가상구름센터 점검표에는 2026-11-03 서비스, 팔레트 12개, 09:00 하역, 온도 4°C 및 정기 점검 정상으로 기재되어 있습니다.",
+          "evidence": "SERVICE 2026-11-03 | PALLETS 12\nUNLOAD 09:00 | TEMP 4 C\nROUTINE CHECK: NORMAL"
+        }
+      ],
+      "issues": [
+        {
+          "text": "발신자는 가상구름센터의 온도 이탈을 확인하고 조치 내용을 회신해 달라고 요청했습니다.",
+          "evidence": "가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다.",
+          "status": "needs_confirmation",
+          "impact": "온도 이탈 여부 및 조치 내용 확인이 필요합니다.",
+          "latest": "첨부 점검표에는 TEMP 4 C 및 ROUTINE CHECK: NORMAL로 적혀 있어 본문 요청과 차이가 있습니다.",
+          "completionEvidence": null
+        }
+      ],
+      "tasks": [
+        {
+          "text": "가상구름센터 온도 이탈을 확인하고 조치 내용을 회신합니다.",
+          "evidence": "테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다.",
+          "status": "pending",
+          "assignee": "테스트담당자",
+          "due": null,
+          "completionEvidence": null,
+          "serviceOriginal": null,
+          "forOwner": true,
+          "recipientScope": "owner_direct",
+          "selfRequestEvidence": "테스트담당자님, 가상구름센터 온도 이탈 확인 후 조치 회신 부탁드립니다."
+        }
+      ],
+      "waiting": [],
+      "updates": [],
+      "imageFacts": [
+        {
+          "imageId": "f0000000-0000-4000-8000-000000000003:0",
+          "text": "합성 점검표: 서비스 2026-11-03, 팔레트 12개, 하역 09:00, 온도 4°C, 정기 점검 정상.",
+          "confidence": "readable"
+        }
+      ],
+      "imageDecisions": [
+        {
+          "imageId": "f0000000-0000-4000-8000-000000000003:0",
+          "kind": "business_document",
+          "include": true
+        }
+      ],
+      "imageItems": {
+        "tasks": [],
+        "issues": [],
+        "waiting": []
+      }
+    }
+  },
+  {
+    "caseId": "mail-old-sent-collected-today",
+    "value": {
+      "intent": {
+        "kind": "request",
+        "evidence": "테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."
+      },
+      "group": {
+        "name": "가상별창고",
+        "evidence": "가상별창고"
+      },
+      "summary": [
+        {
+          "text": "가상별창고 6P의 내일 배차 준비 요청이며, 하차 예정 시각은 09:00입니다.",
+          "evidence": "내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다."
+        }
+      ],
+      "issues": [],
+      "tasks": [
+        {
+          "text": "가상별창고 6P의 내일 배차를 준비합니다. 하차 예정 시각은 09:00입니다.",
+          "evidence": "내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 09:00입니다.",
+          "status": "pending",
+          "assignee": "테스트담당자",
+          "due": null,
+          "completionEvidence": null,
+          "serviceOriginal": "내일",
+          "forOwner": true,
+          "recipientScope": "owner_direct",
+          "selfRequestEvidence": "테스트담당자님, 내일 가상별창고 6P 배차 준비 부탁드립니다."
+        }
+      ],
+      "waiting": [],
+      "updates": [],
+      "imageFacts": [],
+      "imageDecisions": [],
+      "imageItems": {
+        "tasks": [],
+        "issues": [],
+        "waiting": []
+      }
+    }
+  }
+];
+  const envelope=value=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
+  const results = new Map();
+  for(const {caseId,value} of originalMailValues) {
+    let calls=0;
+    const result=await runStressCase(caseId,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'SYNTHETIC_REPLAY_ONLY'}),resolveJevConfiguration:async()=>null,
+      fetcher:async()=>{calls++;return envelope(value);}});
+    assert.equal(calls,1);assert.equal(result.status,'done');assert.equal(result.duplicate,'skipped');results.set(caseId,result);
+  }
+  const cid=results.get('mail-cid-evidence-duplicate-signatures'),old=results.get('mail-old-sent-collected-today');
+  const originalCid=originalMailValues.find(item=>item.caseId===cid.caseId).value;
+  assert.equal(cid.saved.summary.length,0);
+  assert.equal(cid.saved.imageSummary[0].verification,'unverified');assert.equal(cid.saved.imageSummary[0].needsConfirmation,true);
+  assert.equal(cid.saved.imageSummary[0].evidence,originalCid.summary[0].evidence);
+  assert.equal(cid.saved.imageSummary[0].imageId,undefined,'candidate source set is not asserted as independently verified OCR attribution');
+  assert.deepEqual(cid.saved.imageSummary[0].candidateImageIds,[originalCid.imageFacts[0].imageId]);
+  assert.equal(cid.saved.imageFacts[0].text,originalCid.imageFacts[0].text,'unverified transcription never replaces image facts');
+  assert.equal(cid.saved.review.needsConfirmation,true);assert.equal(cid.saved.source.intent,'request');assert.equal(cid.checks.intent,false,'original intent disagreement remains visible');
+  assert.equal(cid.saved.tasks[0].status,'pending');assert.equal(cid.saved.issues[0].status,'needs_confirmation');
+  assert.equal(old.saved.tasks[0].assignee,'테스트담당자');assert.equal(old.saved.tasks[0].assigneeConfirmed,false);
+  assert.equal(old.saved.tasks[0].serviceDate,'2026-10-30');assert.equal(old.saved.tasks[0].dueAt,null);assert.equal(old.parser.reportDay,'2026-10-29');
+  const oldValue=originalMailValues.find(item=>item.caseId===old.caseId).value;
+  const oldSource=(await parseStressMail(fixtureById(old.caseId))).source;
+  const cidSource=(await parseStressMail(fixtureById(cid.caseId))).source;
+  const run=async(source,value)=>analyzePrivateMail({messageId:source.id,provider:'openai',model:'gpt-6-luna',key:'SYNTHETIC_REPLAY_ONLY',ownerName:'테스트담당자',now:'2026-11-02T01:00:00Z',loadMail:async()=>source,fetcher:async()=>envelope(value),store:{claim:async()=>({row:{id:source.id,uidl_hash:source.uidl_hash},lease:'isolated-original-replay'}),finish:async()=>true,fail:async()=>true}});
+  for(const proof of ['내일 가상별창고 6P 배차 준비 부탁드립니다.','본문에 없는 테스트담당자님 요청']) {
+    const value=structuredClone(oldValue);value.tasks[0].selfRequestEvidence=proof;
+    assert.equal((await run(oldSource,value)).code,'ANALYSIS_ASSIGNEE');
+  }
+  const forwarded={...oldSource,text:'참고로 전달합니다.\n\n-----Original Message-----\n'+oldSource.text};
+  assert.equal((await run(forwarded,oldValue)).code,'ANALYSIS_ASSIGNEE');
+  const separateProof='테스트담당자님, 참고 자료입니다. 가상다른분님, 내일 가상별창고 6P 배차 준비 부탁드립니다.';
+  const separateValue=structuredClone(oldValue);separateValue.summary=[];
+  separateValue.tasks[0].evidence='내일 가상별창고 6P 배차 준비 부탁드립니다.';separateValue.tasks[0].selfRequestEvidence=separateProof;
+  assert.equal((await run({...oldSource,text:separateProof},separateValue)).code,'ANALYSIS_ASSIGNEE','name in a separate non-request sentence is not action ownership');
+  const otherRequest=oldSource.text+'\n가상다른분님, 내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 10:00입니다.';
+  const disjoint=structuredClone(oldValue);disjoint.tasks[0].evidence='내일 가상별창고 6P 배차 준비 부탁드립니다. 하차 예정은 10:00입니다.';
+  assert.equal((await run({...oldSource,text:otherRequest},disjoint)).code,'ANALYSIS_ASSIGNEE','same words in a disjoint request do not share the named proof');
+  const imageTask=structuredClone(originalCid);imageTask.tasks[0].evidence=imageTask.summary[0].evidence;
+  assert.equal((await run(cidSource,imageTask)).code,'ANALYSIS_EVIDENCE','quarantining an image summary never validates body tasks with image-only evidence');
+  const noImageProof=structuredClone(originalCid);noImageProof.imageFacts=[];noImageProof.imageDecisions=[];
+  assert.equal((await run({...cidSource,images:[]},noImageProof)).code,'ANALYSIS_EVIDENCE','no approved readable image means no image-summary fallback');
+  const excluded=structuredClone(originalCid);excluded.imageDecisions[0].include=false;
+  assert.equal((await run(cidSource,excluded)).code,'ANALYSIS_EVIDENCE','excluded image cannot enable summary metadata recovery');
+  console.log('PASS exact original mail parsed replay: cross-sentence named action overlap, original dates, unverified image-summary quarantine; no unrelated/forwarded ownership or body-task/image evidence promotion');
 }
