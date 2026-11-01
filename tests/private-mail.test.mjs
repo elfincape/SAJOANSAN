@@ -7882,3 +7882,110 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  const earlier={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:19:00Z',updatedAt:'2026-11-01T12:19:00Z'}};assert.equal(applyOwnerWorkCorrection(item,earlier,'2026-11-01').status,'pending','new explicit source reopen supersedes older checkbox completion');
  const later={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:22:00Z',updatedAt:'2026-11-01T12:22:00Z'}};assert.equal(applyOwnerWorkCorrection(item,later,'2026-11-01').status,'complete','subsequent explicit checkbox still wins');
 }
+
+{
+  const { normalizeDailyWork, normalizeWorkScope, portalWorkInput, applyPortalWorkSnapshot, dailyWorkItems } =
+    await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  assert.equal(typeof normalizeWorkScope, 'function', 'explicit portal classification contract exists');
+  const owner='10000000-0000-4000-8000-000000000001', id='10000000-0000-4000-8000-000000000002';
+  const ref=id+':manual:item-001';
+  const scope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'};
+  const input={ref,category:'task',title:'쿠팡창원 4P 배차 준비',status:'pending',requestedAt:'2026-11-01T00:00:00Z',serviceDate:'2026-11-04',workScope:scope,
+    sourceRefs:[{kind:'manual',id,ref,evidence:'PRIVATE_SOURCE_SENTINEL'}]};
+  const work=normalizeDailyWork(input), original=structuredClone(work);
+  assert.deepEqual(work.workScope,scope);
+  assert.deepEqual(normalizeWorkScope(null,'mail'),{kind:'delivery_team',centerCode:null,workCategory:null});
+  assert.throws(()=>normalizeWorkScope(null,'manual'),/WORK_SCOPE_REQUIRED/);
+  assert.throws(()=>normalizeWorkScope({...scope,centerCode:null}),/WORK_SCOPE/);
+  assert.throws(()=>normalizeWorkScope({...scope,kind:'delivery_team'}),/WORK_SCOPE/);
+  assert.throws(()=>normalizeWorkScope({...scope,kind:'center'},'mail'),/WORK_SCOPE/);
+  const payload=portalWorkInput(work,{ownerId:owner,scope,visibleFrom:'2026-11-01'});
+  assert.equal(payload.owner_id,owner);
+  assert.equal(payload.id,null);assert.equal(payload.expected_version,null);
+  assert.equal(payload.center_code,'yangsan');
+  assert.equal(payload.work_date,'2026-11-01');
+  assert.equal(payload.work_end_date,null);
+  assert.equal(payload.due_at,null);
+  assert.equal(payload.inputs.personal_work.serviceDate,'2026-11-04');
+  assert.equal(payload.inputs.personal_work.workId,ref);
+  assert.ok(!JSON.stringify(payload).includes('PRIVATE_SOURCE_SENTINEL'));
+  assert.ok(!JSON.stringify(payload).includes('sourceRefs'));
+  assert.throws(()=>portalWorkInput({...work,category:'reference'},{ownerId:owner,scope,visibleFrom:'2026-11-01'}),/WORK_NOT_ACTIONABLE/);
+  assert.throws(()=>portalWorkInput(work,{ownerId:owner,scope:{...scope,centerCode:'001'},visibleFrom:'2026-11-01'}),/WORK_SCOPE_CONFLICT/);
+  const task={...payload,id:'20000000-0000-4000-8000-000000000001',version:3,status:'completed',title:'사용자 정정 업무명',completed_at:'2026-11-01T02:00:00Z',updated_at:'2026-11-01T02:00:00Z'};
+  const projected=applyPortalWorkSnapshot(work,task,{ownerId:owner});
+  assert.equal(projected.status,'complete');
+  assert.equal(projected.title,task.title);
+  assert.equal(projected.portalTaskId,task.id);
+  assert.equal(projected.portalVersion,3);
+  const updatedPayload=portalWorkInput(projected,{ownerId:owner,visibleFrom:'2026-11-01'});
+  assert.equal(updatedPayload.id,task.id);assert.equal(updatedPayload.expected_version,3);
+  assert.deepEqual(projected.sourceRefs,work.sourceRefs);
+  const reopened=applyPortalWorkSnapshot(projected,{...task,version:4,status:'pending',completed_at:null,updated_at:'2026-11-02T00:00:00Z'},{ownerId:owner});
+  assert.equal(reopened.status,'pending');assert.equal(reopened.closedAt,null);
+  assert.throws(()=>applyPortalWorkSnapshot(reopened,task,{ownerId:owner}),/WORK_PORTAL_STALE/);
+  assert.throws(()=>applyPortalWorkSnapshot(work,{...task,owner_id:id},{ownerId:owner}),/WORK_PORTAL_OWNER/);
+  assert.throws(()=>applyPortalWorkSnapshot(work,{...task,inputs:{personal_work:{...task.inputs.personal_work,workId:id+':manual:item-002'}}},{ownerId:owner}),/WORK_LINK_CONFLICT/);
+  assert.deepEqual(work,original,'projection does not alter source or original state');
+  const base={groups:[],tasks:[],issues:[],waiting:[]};
+  const entry={entryId:id,submittedAt:input.requestedAt,workScope:scope,items:[{ref,kind:'dispatch',text:input.title,status:'pending',done:false,serviceDate:'2026-11-04'}]};
+  assert.deepEqual(dailyWorkItems(base,{entries:[entry]})[0].workScope,scope);
+  const follow={entryId:owner,submittedAt:'2026-11-01T01:00:00Z',workScope:{...scope,centerCode:'001'},items:[{ref:owner+':manual:item-001',workRef:ref,kind:'dispatch',text:'추가정보',status:'pending',done:false}]};
+  assert.throws(()=>dailyWorkItems(base,{entries:[entry,follow]}),/WORK_SCOPE_CONFLICT/);
+  console.log('PASS personal portal contract: owner/scope/link/privacy/date/reopen/version invariants');
+}
+{
+  const {manualInputKey,manualScopeEntries}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  assert.equal(typeof manualInputKey,'function','deduplication includes the selected work classification');
+  const a={kind:'center',centerCode:'yangsan',workCategory:'양산배차'}, b={...a,centerCode:'001'};
+  const text='11월4일 가상착지 4P 배차';
+  assert.notEqual(manualInputKey(text,null,a),manualInputKey(text,null,b));
+  assert.throws(()=>manualInputKey(text,null,false),/WORK_SCOPE/);
+  assert.equal(manualInputKey(text,null,null),text,'existing receipt hash stays compatible');
+  const entries={a:{workScope:a,status:'ready'},b:{workScope:b,status:'ready'},legacy:{status:'ready'}};
+  assert.deepEqual(Object.keys(manualScopeEntries(entries,a)),['a']);
+  assert.deepEqual(Object.keys(manualScopeEntries(entries,null)),['legacy']);
+  console.log('PASS manual context: classification-specific dedup and candidate isolation');
+}
+
+{
+  const {handleManualMessage,manualInputKey}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',id='00000000-0000-4000-8000-000000000099';
+  const scope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'};
+  const current={id:box,owner_id:owner,enabled:true,manual_entries:{}};
+  let calls=0;
+  const ctx={json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiKey:'MOCK_ONLY'}),
+    db:async(path,options)=>{
+      if(path.startsWith('private_mailboxes?'))return[current];
+      assert.equal(path,'rpc/private_mail_manual_context_enqueue');calls++;
+      assert.deepEqual(options.body.p_scope,scope);assert.equal(options.body.p_target,null);
+      const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(manualInputKey('추가 배차 요청',null,scope)))),v=>v.toString(16).padStart(2,'0')).join('');
+      assert.equal(options.body.p_hash,hash);
+      const entry={entryId:id,clientRequestId:id,workScope:scope,text:'추가 배차 요청',submittedAt:'2026-11-01T00:00:00Z',referenceDate:'2026-11-01',status:'pending',items:[]};
+      current.manual_entries[id]=entry;return{entry};
+    }};
+  const body={clientRequestId:id,text:'추가 배차 요청',workScope:scope};
+  await assert.rejects(()=>handleManualMessage('private-mail-manual-enqueue',{...body,workScope:undefined},{id:owner},ctx),/WORK_SCOPE_REQUIRED/);
+  await assert.rejects(()=>handleManualMessage('private-mail-manual-enqueue',{...body,workScope:{kind:'delivery_team',centerCode:null,workCategory:null}},{id:owner},ctx),/WORK_SCOPE_REQUIRED/);
+  const saved=await(await handleManualMessage('private-mail-manual-enqueue',body,{id:owner},ctx)).json();
+  assert.deepEqual(saved.workScope,scope);assert.equal(calls,1);
+  await assert.rejects(()=>handleManualMessage('private-mail-manual-enqueue',{...body,workScope:{...scope,centerCode:'001'}},{id:owner},ctx),/WORK_SCOPE_CONFLICT/);
+  assert.equal(calls,1,'changed classification cannot reuse a prior receipt');
+  const source=await(await handleManualMessage('private-mail-manual-source',{entryId:id},{id:owner},ctx)).json();
+  assert.deepEqual(source.workScope,scope);assert.equal(source.submittedAt,'2026-11-01T00:00:00Z');
+  console.log('PASS manual classification handler: atomic scoped enqueue, source re-read and retry conflict');
+}
+{
+ const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const {dailyWorkItems,portalWorkInput}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const id='30000000-0000-4000-8000-000000000001',ref=id+':manual:item-001',owner='30000000-0000-4000-8000-000000000002';
+ const scope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'};
+ const entries={[id]:{entryId:id,status:'ready',submittedAt:'2026-11-01T00:00:00Z',workScope:scope,items:[{itemId:'item-001',visibleFrom:'2026-11-01',ref,kind:'dispatch',text:'4P 배차 준비',evidence:'4P 배차',done:true,completedAt:'2026-11-01T02:00:00Z',completionEvents:[{done:true,at:'2026-11-01T02:00:00Z'}]}]}};
+ const overrides={['work:'+ref]:{actor:'owner',done:false,updatedAt:'2026-11-02T00:00:00Z'}};
+ const day='2026-11-02',manual=manualDailyView(entries,day,overrides);
+ const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manual,{workOverrides:overrides});
+ assert.equal(work.length,1);assert.equal(work[0].status,'pending');
+ assert.deepEqual(work[0].workScope,scope,'hidden previous-day work context preserves explicit classification');
+ assert.equal(portalWorkInput(work[0],{ownerId:owner,visibleFrom:'2026-11-01'}).inputs.personal_work.workId,ref);
+ console.log('PASS classified completed work retains scope and stable identity after next-day owner reopen');
+}

@@ -4,11 +4,22 @@ import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { requiresMailPrivacyReview } from './private-mail-images.js';
 import {
   WORK_FORMAT,
+  normalizeWorkScope,
   validWorkRef,
   dailyWorkItems,
   ownerWorkCorrection,
 } from './private-mail-work.js';
 
+export function manualInputKey(text, targetWorkId, workScope) {
+  const scoped = workScope != null ? normalizeWorkScope(workScope) : null;
+  return text + (targetWorkId ? '\u0000target:'+targetWorkId : '') +
+    (scoped ? '\u0000scope:'+JSON.stringify(scoped) : '');
+}
+export function manualScopeEntries(entries, workScope) {
+  const key=workScope != null ? JSON.stringify(normalizeWorkScope(workScope)) : null;
+  return Object.fromEntries(Object.entries(entries).filter(([,entry])=>
+    (entry.workScope ? JSON.stringify(normalizeWorkScope(entry.workScope)) : null)===key));
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const schemaObject = (properties) => ({
   type: 'object',
@@ -49,6 +60,8 @@ const errors = new Set([
   'MANUAL_SOURCE',
   'WORK_FORMAT',
   'WORK_SOURCE',
+  'WORK_SCOPE',
+  'WORK_SCOPE_CONFLICT',
 ]);
 export function readStructuredWorkInput(text) {
   if (!text.trimStart().startsWith('{')) return null;
@@ -849,6 +862,7 @@ function publicItem(
 function publicEntry(entry, items) {
   return {
     entryId: entry.entryId,
+    workScope: entry.workScope ?? null,
     status: entry.status,
     submittedAt: entry.submittedAt,
     receivedAt: entry.submittedAt,
@@ -959,6 +973,7 @@ export function manualDailyView(entries, day, workOverrides = {}) {
           publicValue.closedAt = item.declaredAt;
         }
         allItems.set(publicValue.ref, {
+          workScope: entry.workScope ?? null,
           entryId: entry.entryId,
           submittedAt: entry.submittedAt,
           items: [publicValue],
@@ -1144,6 +1159,7 @@ export async function handleManualMessage(action, body, user, ctx) {
       entryId: entry.entryId,
       text: entry.text,
       targetWorkId: entry.targetWorkId ?? null,
+      workScope: entry.workScope ?? null,
       clientRequestId: entry.clientRequestId,
       requestedReference: entry.requestedReference ?? null,
       submittedAt: entry.submittedAt,
@@ -1195,16 +1211,26 @@ export async function handleManualMessage(action, body, user, ctx) {
   if (!structured && !ai.aiKey) throw fail('AI_NOT_CONFIGURED', 503);
   const existingRequest=Object.values(current.manual_entries).find(prior=>prior.clientRequestId===body.clientRequestId||(prior.requestIds??[]).includes(body.clientRequestId));
   const requestedTarget=body.targetWorkId ?? existingRequest?.targetWorkId ?? null;
+  let requestedScope=body.workScope ?? existingRequest?.workScope ?? null;
+  if(requestedScope != null){try{requestedScope=normalizeWorkScope(requestedScope,'manual');}catch{throw fail('WORK_SCOPE',400);}}
+  if(existingRequest && JSON.stringify(requestedScope)!==JSON.stringify(existingRequest.workScope??null))throw fail('WORK_SCOPE_CONFLICT',409);
+  if(requestedTarget){
+    const original=current.manual_entries[requestedTarget.slice(0,36)];
+    const targetScope=original?.workScope ?? (!requestedTarget.includes(':manual:') ? normalizeWorkScope(null,'mail') : null);
+    if(requestedScope && targetScope && JSON.stringify(requestedScope)!==JSON.stringify(normalizeWorkScope(targetScope)))throw fail('WORK_SCOPE_CONFLICT',409);
+    if(!existingRequest)requestedScope ??= targetScope;
+  }
+  if(action==='private-mail-manual-enqueue' && !existingRequest && !requestedTarget && requestedScope?.kind!=='center')throw fail('WORK_SCOPE_REQUIRED',400);
   const hash = Array.from(
     new Uint8Array(
-      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(requestedTarget ? text+'\u0000target:'+requestedTarget : text)),
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manualInputKey(text,requestedTarget,requestedScope))),
     ),
     (v) => v.toString(16).padStart(2, '0'),
   ).join('');
   if (requiresMailPrivacyReview(text)) throw fail('MAIL_PRIVACY_REVIEW', 409);
-  if (action === 'private-mail-manual-enqueue' && !structured) {
-    const result = await rpc(body.targetWorkId ? 'private_mail_manual_target_enqueue' : 'private_mail_manual_enqueue', {
-      ...(body.targetWorkId ? {p_target:body.targetWorkId} : {}),
+  if (action === 'private-mail-manual-enqueue' && (!structured || requestedScope)) {
+    const result = await rpc(requestedScope ? 'private_mail_manual_context_enqueue' : requestedTarget ? 'private_mail_manual_target_enqueue' : 'private_mail_manual_enqueue', {
+      ...(requestedScope ? {p_scope:requestedScope,p_target:requestedTarget} : requestedTarget ? {p_target:requestedTarget} : {}),
       p_request: body.clientRequestId,
       p_text: text,
       p_hash: hash,
@@ -1221,6 +1247,7 @@ export async function handleManualMessage(action, body, user, ctx) {
       ),
     );
   }
+  if(requestedScope && !existingRequest)throw fail('MANUAL_CONTEXT_REQUIRED',409);
   const lease = crypto.randomUUID();
   const claim = await rpc('private_mail_manual_claim', {
     p_request: body.clientRequestId,
@@ -1232,6 +1259,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   });
   if (!claim?.entry) throw fail('MANUAL_CLAIM_FAILED', 409);
   const entry = claim.entry;
+  const candidateEntries=manualScopeEntries(current.manual_entries,entry.workScope);
   if (!claim.claimed)
     return json({
       ...publicEntry(
@@ -1251,13 +1279,13 @@ export async function handleManualMessage(action, body, user, ctx) {
       ? null
       : resolveExistingManualWork(
           entry.text,
-          current.manual_entries,
+          candidateEntries,
           entry.referenceDate,
           entry.submittedAt,
           current.briefing_overrides ?? {},
         ) ?? resolveDispatchAssignment(
           entry.text,
-          current.manual_entries,
+          candidateEntries,
           entry.referenceDate,
           entry.submittedAt,
           current.briefing_overrides ?? {},
@@ -1410,7 +1438,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   if (typeof ctx.resolveJevConfiguration === 'function') {
     try {
       const config = await ctx.resolveJevConfiguration(finished.entryId);
-      const related = Object.values(current.manual_entries).flatMap((prior) =>
+      const related = Object.values(candidateEntries).flatMap((prior) =>
         prior.status === 'ready'
           ? (prior.items ?? []).filter(item=>!entry.targetWorkId||item.ref===entry.targetWorkId||item.workRef===entry.targetWorkId).map((item) => ({
               ref: item.ref,

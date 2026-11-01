@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
+import { portalApi } from '../../lib/portal';
 import type {
   MailManualEntry,
   MailManualItem,
@@ -37,6 +38,9 @@ function failure(error: unknown) {
   return (
     (
       {
+        WORK_SCOPE: '센터와 업무 구분을 확인해 주세요.',
+        WORK_SCOPE_REQUIRED: '센터와 업무 구분을 지정해 주세요.',
+        WORK_SCOPE_CONFLICT: '선택한 업무의 분류와 다릅니다. 기존 업무를 유지합니다.',
         OWNER_REQUIRED: '본인 계정에서만 메시지를 추가할 수 있습니다.',
         MANUAL_TARGET_CONFLICT: '같은 메시지가 다른 대상 범위로 이미 접수돼 있습니다. 기존 접수건을 확인해 주세요.',
         MANUAL_SCHEMA_REQUIRED:
@@ -77,6 +81,18 @@ export function MailBriefingManualEntries({
   const [text, setText] = useState('');
   const [targetWorkId,setTargetWorkId]=useState<string | null>(null);
   const [referenceDate, setReferenceDate] = useState('');
+  const [centers,setCenters]=useState<{code:string;name:string}[]>([]);
+  const [scopeLoading,setScopeLoading]=useState(false);
+  const [scopeError,setScopeError]=useState(false);
+  const [centerCode,setCenterCode]=useState('');
+  const [workCategory,setWorkCategory]=useState('');
+  const loadCenters=useCallback(async()=>{
+    setScopeLoading(true);setScopeError(false);
+    try{const context=await portalApi.context();if(mounted.current)setCenters(context.centers);}
+    catch{if(mounted.current)setScopeError(true);}
+    finally{if(mounted.current)setScopeLoading(false);}
+  },[]);
+  useEffect(()=>{if(inputOpen&&!initialDraft?.targetWorkId&&!centers.length)void loadCenters();},[inputOpen,initialDraft?.targetWorkId,loadCenters]);
   const [data, setData] = useState<MailManualList | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -163,6 +179,7 @@ export function MailBriefingManualEntries({
         clientRequestId: source.clientRequestId,
         referenceDate: source.requestedReference,
         targetWorkId: source.targetWorkId,
+        workScope: source.workScope,
         retry: true,
       });
       if (!mounted.current) return;
@@ -181,8 +198,12 @@ export function MailBriefingManualEntries({
     const input = text.trim(),
       basis = referenceDate || null;
     if (!input || input.length > 12000 || (basis && !validDay(basis))) return;
+    const workScope = targetWorkId ? null : {
+      kind:'center' as const,centerCode,workCategory:workCategory.trim(),
+    };
+    if(workScope&&(!centers.some(center=>center.code===centerCode)||!workScope.workCategory))return;
     const key = JSON.stringify({ text: input, referenceDate: basis,
-        targetWorkId });
+        targetWorkId,workScope });
     if (submission.current?.key !== key)
       submission.current = { key, id: crypto.randomUUID() };
     const clientRequestId = submission.current.id,
@@ -194,6 +215,7 @@ export function MailBriefingManualEntries({
         clientRequestId,
         referenceDate: basis,
         targetWorkId,
+        workScope,
         retry,
       });
       if (!mounted.current) return;
@@ -330,6 +352,24 @@ export function MailBriefingManualEntries({
                 }}
               />
             </label>
+            {!targetWorkId ? <div className="daily-filter-actions">
+              <label className="manual-reference" htmlFor="manual-center">센터 (필수)
+                <select id="manual-center" name="centerCode" required className="app-input" value={centerCode}
+                  disabled={busy||scopeLoading} aria-describedby={scopeError?'manual-scope-error':undefined}
+                  onChange={event=>{draftVersion.current++;setCenterCode(event.target.value);}}>
+                  <option value="">{scopeLoading?'불러오는 중…':'센터 선택'}</option>
+                  {centers.map(center=><option key={center.code} value={center.code}>{center.name}</option>)}
+                </select>
+              </label>
+              <label className="manual-reference" htmlFor="manual-work-category">업무 구분 (필수)
+                <input id="manual-work-category" name="workCategory" required autoComplete="off" className="app-input" value={workCategory} maxLength={100}
+                  disabled={busy} placeholder="예: 양산배차"
+                  onChange={event=>{draftVersion.current++;setWorkCategory(event.target.value);}} />
+              </label>
+              {scopeError?<div id="manual-scope-error" role="alert">센터를 불러오지 못했습니다.
+                <button type="button" className="btn btn-ghost" disabled={scopeLoading||busy} onClick={()=>void loadCenters()}>다시 불러오기</button>
+              </div>:null}
+            </div>:null}
             <div className="daily-filter-actions">
               <label className="manual-reference" htmlFor="manual-reference">
                 메시지 기준일 (선택)
@@ -350,6 +390,7 @@ export function MailBriefingManualEntries({
                 disabled={
                   busy ||
                   disabled ||
+                  (!targetWorkId && (scopeLoading || !centers.some(center=>center.code===centerCode) || !workCategory.trim())) ||
                   !text.trim() ||
                   text.trim().length > 12000 ||
                   (Boolean(referenceDate) && !validDay(referenceDate))

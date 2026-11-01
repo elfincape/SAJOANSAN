@@ -271,4 +271,30 @@ end; $$;
 revoke all on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) from public,anon,authenticated;
 grant execute on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) to service_role;
 
+-- Persist explicit classification under the same row lock as receipt/deduplication.
+create or replace function public.private_mail_manual_context_enqueue(p_box uuid,p_user uuid,p_request uuid,p_text text,p_hash text,p_reference date,p_retry boolean,p_target text,p_scope jsonb)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; prior jsonb; result jsonb; e jsonb;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;
+ if not public.private_mail_manual_allowed(p_box,p_user) then raise exception 'MANUAL_SOURCE'; end if;
+ if jsonb_typeof(p_scope) is distinct from 'object' or coalesce(p_scope->>'kind','') not in ('center','delivery_team')
+   or not(p_scope ?& array['kind','centerCode','workCategory']) or (p_scope - array['kind','centerCode','workCategory'])<>'{}'::jsonb then raise exception 'WORK_SCOPE'; end if;
+ if p_scope->>'kind'='center' then
+  if jsonb_typeof(p_scope->'workCategory') is distinct from 'string' or btrim(coalesce(p_scope->>'workCategory',''))=''  or length(p_scope->>'workCategory')>100
+    or not exists(select 1 from public.centers where code=p_scope->>'centerCode' and active) then raise exception 'WORK_SCOPE'; end if;
+ elsif p_scope->>'centerCode' is not null or p_scope->>'workCategory' is not null then raise exception 'WORK_SCOPE'; end if;
+ select value into prior from jsonb_each(b.manual_entries) where value->>'clientRequestId'=p_request::text or coalesce(value->'requestIds','[]') ? p_request::text or (value->>'textHash'=p_hash and ((value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date=(clock_timestamp() at time zone 'Asia/Seoul')::date) limit 1;
+ if prior is null and p_target is null and p_scope->>'kind'<>'center' then raise exception 'WORK_SCOPE_REQUIRED'; end if;
+ if prior is not null and (prior->'workScope' is distinct from p_scope or prior->>'targetWorkId' is distinct from p_target) then raise exception 'WORK_SCOPE_CONFLICT'; end if;
+ result=case when p_target is null then public.private_mail_manual_enqueue(p_box,p_user,p_request,p_text,p_hash,p_reference,p_retry)
+   else public.private_mail_manual_target_enqueue(p_box,p_user,p_request,p_text,p_hash,p_reference,p_retry,p_target) end;
+ e=result->'entry';
+ e=e||jsonb_build_object('workScope',p_scope);
+ update public.private_mailboxes set manual_entries=jsonb_set(manual_entries,array[e->>'entryId'],e) where id=p_box;
+ return result||jsonb_build_object('entry',e);
+end; $$;
+revoke all on function public.private_mail_manual_context_enqueue(uuid,uuid,uuid,text,text,date,boolean,text,jsonb) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_context_enqueue(uuid,uuid,uuid,text,text,date,boolean,text,jsonb) to service_role;
+
 commit;

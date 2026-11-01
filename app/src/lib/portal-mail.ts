@@ -238,7 +238,11 @@ export interface MailManualItem {
   completedAt: string | null;
   needsConfirmation?: boolean;
 }
+export type MailWorkScope =
+  | {kind:'center';centerCode:string;workCategory:string}
+  | {kind:'delivery_team';centerCode:null;workCategory:null};
 export interface MailManualEntry {
+  workScope?: MailWorkScope | null;
   entryId: string;
   status: 'ready' | 'pending' | 'processing' | 'failed';
   submittedAt: string;
@@ -265,11 +269,13 @@ export const privateMail = {
       clientRequestId: string;
       requestedReference: string | null;
       targetWorkId?: string | null;
+      workScope?: MailWorkScope | null;
       submittedAt: string;
       referenceDate: string | null;
       authoredDate: string | null;
     }>('private-mail-manual-source', { entryId }),
   manualEnqueue: (body: {
+    workScope?: MailWorkScope | null;
     targetWorkId?: string | null;
     text: string;
     clientRequestId: string;

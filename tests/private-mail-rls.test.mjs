@@ -2064,6 +2064,19 @@ try{
  const targeted=(await db.query('select private_mail_manual_target_enqueue($1,$2,$3,$4,$5,null,false,$6) r',[BOX,OWNER,requestId,targetText,hash,ref])).rows[0].r;
  assert.equal(targeted.entry.targetWorkId,ref);const again=(await db.query('select private_mail_manual_target_enqueue($1,$2,$3,$4,$5,null,false,$6) r',[BOX,OWNER,requestId,targetText,hash,ref])).rows[0].r;assert.equal(again.entry.entryId,targeted.entry.entryId);
  await assert.rejects(()=>db.query('select private_mail_manual_target_enqueue($1,$2,$3,$4,$5,null,false,$6)',[BOX,OWNER,requestId,targetText,hash,id+':manual:item-002']),/MANUAL_TARGET_CONFLICT/);
+ await db.exec("reset role;create table public.centers(code text primary key,active boolean);insert into public.centers values('yangsan',true),('001',true),('inactive',false);grant select on public.centers to service_role;set role service_role;");
+ const workScope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'},scopeRequest=crypto.randomUUID();
+ const scopeArgs=[BOX,OWNER,scopeRequest,'분류된 새 메시지','b'.repeat(64),null,workScope];
+ const contextCall=args=>db.query('select private_mail_manual_context_enqueue($1,$2,$3,$4,$5,null,false,$6,$7) r',args);
+ const contextual=(await contextCall(scopeArgs)).rows[0].r;
+ assert.deepEqual(contextual.entry.workScope,workScope);
+ assert.equal((await contextCall(scopeArgs)).rows[0].r.entry.entryId,contextual.entry.entryId);
+ await assert.rejects(()=>contextCall([...scopeArgs.slice(0,6),{...workScope,centerCode:'001'}]),/WORK_SCOPE_CONFLICT/);
+ await assert.rejects(()=>contextCall([BOX,OWNER,crypto.randomUUID(),'invalid','c'.repeat(64),null,{...workScope,centerCode:'inactive'}]),/WORK_SCOPE/);
+ await assert.rejects(()=>contextCall([BOX,OWNER,crypto.randomUUID(),'invalid','c'.repeat(64),null,{kind:null,centerCode:null,workCategory:null}]),/WORK_SCOPE/);
+ const scopedClaim=(await db.query('select private_mail_manual_claim($1,$2,$3,$4,$5,null,$6,false) r',[...scopeArgs.slice(0,5),crypto.randomUUID()])).rows[0].r;
+ assert.deepEqual(scopedClaim.entry.workScope,workScope,'background worker keeps explicit classification');
+ assert.equal((await db.query("select has_function_privilege('authenticated','public.private_mail_manual_context_enqueue(uuid,uuid,uuid,text,text,date,boolean,text,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
  const claimedTarget=(await db.query('select private_mail_manual_claim($1,$2,$3,$4,$5,null,$6,false) r',[BOX,OWNER,requestId,targetText,hash,crypto.randomUUID()])).rows[0].r;assert.equal(claimedTarget.entry.targetWorkId,ref,'worker claim/retry keeps immutable target binding');
  console.log('PASS owner-reopened manual next-day queue with paused collection: actual tick/transport/claim/canonical projection/save/complete, daily dedup, closed Graph0, stale fence, hold and source preservation');
 
