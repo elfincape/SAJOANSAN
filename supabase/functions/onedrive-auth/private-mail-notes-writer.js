@@ -315,7 +315,7 @@ function normalizePage(page) {
     parent_section: { id: page.parentSection?.id },
   };
 }
-async function listPages({ graph, access, title }) {
+async function listPages({ graph, access, title, unfiltered = false }) {
   const path =
     '/me/onenote/sections/' + enc(BRIEFING_TARGET.sectionId) + '/pages';
   const filter = "title eq '" + title.replaceAll("'", "''") + "'";
@@ -324,7 +324,7 @@ async function listPages({ graph, access, title }) {
   let skip = 0;
   for (let batch = 0; batch < 50; batch++) {
     const query = new URLSearchParams({
-      $filter: filter,
+      ...(!unfiltered ? { $filter: filter } : {}),
       $select: 'id,title',
       $expand: 'parentSection($select=id)',
       $top: '100',
@@ -363,6 +363,37 @@ async function listPages({ graph, access, title }) {
     skip = Number(nextSkip);
   }
   throw Error('PAGE_LIST_INCOMPLETE');
+}
+
+// Diagnostic-only recovery: Graph may return an empty metadata title after a successful HTML create.
+// Identity still requires the exact section, page ID and an unambiguous title in the stored HTML head.
+export async function readDiagnosticPage({ graph, access, pageId, title }) {
+  const page = await (await graph('/me/onenote/pages/' + enc(pageId) + '?$select=id,title,links&$expand=parentSection($select=id)', access)).json();
+  if (page?.id !== pageId || page.parentSection?.id !== BRIEFING_TARGET.sectionId ||
+      (page.title !== title && page.title !== '')) throw Error('PAGE_REFERENCE_CONFLICT');
+  if (page.title === '') {
+    const html = await (await graph('/me/onenote/pages/' + enc(pageId) + '/content?includeIDs=true', access)).text();
+    const { nodes } = scanHtml(html), titles = nodes.filter(node => node.tag === 'title');
+    if (titles.length !== 1 || titles[0].parent?.tag !== 'head' ||
+        titles[0].children.some(child => typeof child !== 'string') || titles[0].children.join('') !== title)
+      throw Error('PAGE_REFERENCE_CONFLICT');
+  }
+  return { ...page, title };
+}
+async function recoverDiagnosticPages({ graph, access, title, pages }) {
+  const all = await listPages({ graph, access, title, unfiltered: true });
+  const blank = all.filter(page => page.title === '' && page.parent_section.id === BRIEFING_TARGET.sectionId);
+  if (blank.length > 10) throw Error('PAGE_CREATE_UNCERTAIN');
+  const recovered = [...pages];
+  for (const page of blank) {
+    try {
+      const verified = await readDiagnosticPage({ graph, access, title, pageId: page.id });
+      recovered.push(normalizePage(verified));
+    } catch (error) {
+      if (error?.message !== 'PAGE_REFERENCE_CONFLICT') throw error;
+    }
+  }
+  return recovered;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -756,6 +787,8 @@ export async function writeDailyBriefing({
       imageProgress: desired.imageProgress,
     });
     let pages = await listPages({ graph, access, title: base.title });
+    if (diagnosticRunId !== null && state.createAttempted && !pages.length)
+      pages = await recoverDiagnosticPages({ graph, access, title: base.title, pages });
     let selection = selectDailyPage({
       identity: base,
       pages,
@@ -796,6 +829,10 @@ export async function writeDailyBriefing({
       if (typeof result?.id !== 'string' || !result.id)
         throw Error('PAGE_CREATE_UNCERTAIN');
       pages = await listPages({ graph, access, title: base.title });
+      if (diagnosticRunId !== null && !pages.some(page => page.id === result.id)) {
+        const verified = await readDiagnosticPage({ graph, access, pageId: result.id, title: base.title });
+        pages.push(normalizePage(verified));
+      }
       selection = selectDailyPage({
         identity: base,
         pages,
