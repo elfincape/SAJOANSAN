@@ -7469,3 +7469,56 @@ let failed=0;for(const[name,test]of[
  assert.equal(bound.source.id,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');assert.equal(normal.source.uidl_hash,bound.source.uidl_hash);assert.equal(normal.source.text,bound.source.text);assert.equal(normal.source.headers,bound.source.headers);
  console.log('PASS virtual receipt binding restricted to one frozen mail; source bytes/headers immutable');
 }
+
+{
+const {normalizeManualItems,resolveExistingManualWork,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const day='2026-10-31',at='2026-10-31T01:00:00.000Z',id='aaaa1111-1111-4111-8111-111111111111',next='bbbb2222-2222-4222-8222-222222222222';
+const blocks=['11/2 월\n쿠팡창원 4p 배차입니다.\n하차 13:15\n경상남도 창원시 진해구 두동로 33 A동 5층','11/2 월\n쿠팡시흥 6p 배차입니다.\n하차 15:00\n경기도 시흥시 정왕동 2676 4,5F'];
+const text=blocks.join('\n'),value={items:blocks.map((evidence,i)=>({kind:'dispatch',text:i?'쿠팡시흥 6P 배차 준비':'쿠팡창원 4P 배차 준비',evidence,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}))};
+const source={entryId:id,status:'ready',text,submittedAt:at,referenceDate:day,items:normalizeManualItems(value,{text,submittedAt:at,entryId:id,referenceDate:day})};
+assert.deepEqual(source.items[0].details,['하차 13:15','경상남도 창원시 진해구 두동로 33 A동 5층'],'first request retains only its own unloading/address');
+assert.deepEqual(source.items[1].details,['하차 15:00','경기도 시흥시 정왕동 2676 4,5F']);
+const follow='월요일 쿠팡\n창원 160박스 4p 1.7톤\n시흥 288박스 6p 2.6톤 입니다.';
+const before=JSON.stringify(source),reply=resolveExistingManualWork(follow,{[id]:source},day,'2026-10-31T02:00:00Z');assert.ok(reply,'cargo rows must resolve existing requests');assert.equal(reply.items.length,2);assert.deepEqual(reply.items.map(x=>x.workRef),source.items.map(x=>x.ref));
+const updates=normalizeManualItems(reply,{text:follow,entryId:next,submittedAt:'2026-10-31T02:00:00Z',referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetailsByItem:reply.items.map(x=>x.details)});
+const entries={[id]:source,[next]:{entryId:next,status:'ready',text:follow,submittedAt:'2026-10-31T02:00:00Z',referenceDate:day,items:updates}};
+const work=dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day));assert.equal(work.length,2);assert.deepEqual(work.map(x=>x.workId),source.items.map(x=>x.ref));
+for(const [i,w] of work.entries()){assert.equal(w.status,'pending');assert.equal(w.serviceDate,'2026-11-02');assert.equal(w.dueAt,null);assert.equal(w.dueDate,null);assert.ok(w.summary.includes(i?'화물 288박스 · 6P · 화물 중량 2.6톤':'화물 160박스 · 4P · 화물 중량 1.7톤'));assert.ok(w.summary.includes(i?'하차 15:00':'하차 13:15'));assert.ok(w.summary.includes(i?'경기도 시흥시 정왕동 2676 4,5F':'경상남도 창원시 진해구 두동로 33 A동 5층'));assert.equal(w.sourceRefs.length,2)}
+assert.equal(JSON.stringify(source),before);assert.ok(!renderBriefingWorkNote(work).includes('차량 톤'));
+console.log('PASS two requests and row-scoped cargo supplements preserve IDs, addresses, times, source evidence and unfinished state');
+const resolve=t=>resolveExistingManualWork(t,{[id]:source},day,'2026-10-31T02:00:00Z');
+assert.equal(resolve('월요일 쿠팡\n시흥 288박스 6p 2.6톤\n창원 160박스 4p 1.7톤').items[0].workRef,source.items[1].ref,'row order never determines target');
+assert.equal(resolve('월요일 쿠팡\n창원 160박스 4p 1.7톤').items.length,1,'partial supplement updates only specified destination');
+assert.equal(resolve('월요일 쿠팡\n창원 160박스 4p 1.7톤\n창원 160박스 4p 1.7톤').items.length,1,'duplicate repeated row is not a new issue/task');
+for(const line of ['창원 160박스 4p 5p 1.7톤','창원 160박스 5p 1.7톤']){const r=resolve('월요일 쿠팡\n'+line);assert.equal(r.items[0].needsConfirmation,true);assert.equal(r.items[0].workRef,undefined);assert.equal(r.items[0].kind,'issue')}
+const partial=resolve('월요일 쿠팡\n창원 160박스 4p 1.7톤\n부산 288박스 6p 2.6톤');assert.equal(partial.items[0].workRef,source.items[0].ref);assert.equal(partial.items[1].workRef,undefined);assert.equal(partial.items[1].needsConfirmation,true,'one unmatched row does not corrupt or discard the matched row');
+assert.equal(resolve('11/3 수 쿠팡\n창원 160박스 4p 1.7톤'),null,'conflicting weekday cannot become a confirmed service day');
+assert.equal(resolve('월요일 쿠팡\n창원 '+ '9'.repeat(320) +'박스 4p 1.7톤'),null,'unrepresentable quantity is never converted into fabricated numeric output');
+const duplicateId='cccc3333-3333-4333-8333-333333333333';
+for(const date of ['2026-11-02','2026-11-09']){const candidate=structuredClone(source);candidate.entryId=duplicateId;candidate.items=[{...candidate.items[0],ref:duplicateId+':manual:item-001',serviceDate:date,details:['하차 18:00','경상남도 창원시 다른로 1']}];const r=resolveExistingManualWork('월요일 쿠팡\n창원 160박스 4p 1.7톤',{[id]:source,[duplicateId]:candidate},day,'2026-10-31T02:00:00Z');assert.equal(r.items[0].workRef,undefined);assert.equal(r.items[0].needsConfirmation,true,'same weekday/destination/pallet ambiguity does not pick first candidate')}
+const complete=structuredClone(source);complete.items[0].done=true;complete.items[0].completedAt='2026-10-31T01:30:00Z';complete.items[0].completionEvents=[{done:true,at:'2026-10-31T01:30:00Z'}];
+const completedReply=resolveExistingManualWork('월요일 쿠팡\n창원 160박스 4p 1.7톤',{[id]:complete},day,'2026-10-31T02:00:00Z');assert.equal(completedReply.items[0].workRef,complete.items[0].ref);
+const completedItems=normalizeManualItems(completedReply,{text:completedReply.sourceText,entryId:next,submittedAt:'2026-10-31T02:00:00Z',referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetailsByItem:completedReply.items.map(x=>x.details)});
+const completedWork=dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView({[id]:complete,[next]:{...entries[next],text:completedReply.sourceText,items:completedItems}},day));assert.equal(completedWork.find(x=>x.workId===complete.items[0].ref).status,'complete','cargo update does not reopen owner-completed preparation');
+const excluded=resolveExistingManualWork('월요일 쿠팡\n창원 160박스 4p 1.7톤',{[id]:source},day,'2026-10-31T02:00:00Z',{['work:'+source.items[0].ref]:{actor:'owner',excluded:true,updatedAt:at}});assert.equal(excluded.items[0].workRef,undefined,'excluded owner work cannot be silently updated');
+const again={...entries[next],entryId:duplicateId,submittedAt:'2026-10-31T03:00:00Z',items:updates.map((item,i)=>({...item,ref:duplicateId+':manual:'+item.itemId,submittedAt:'2026-10-31T03:00:00Z',receivedAt:'2026-10-31T03:00:00Z'}))};const repeated=dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView({...entries,[duplicateId]:again},day));assert.equal(repeated.length,2);for(const w of repeated){assert.equal(w.summary.filter(s=>s.startsWith('화물 ')).length,1);assert.equal(w.status,'pending')}
+assert.equal(JSON.stringify(source),before);
+console.log('PASS cargo followup variations: reordered/partial/duplicate/conflicting rows, same route other date/time ambiguity, owner completion/exclusion and repeated delivery keep task count and source unchanged');
+
+}
+
+{
+ const {STRESS_FIXTURES}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ for(const fixture of STRESS_FIXTURES.slice(20)){
+  let calls=0;
+  const result=await runStressCase(fixture.id,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async()=>{
+   calls++;const blocks=fixture.text.split(/(?=^11\/2 월$)/m);
+   return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({items:blocks.map((evidence,index)=>({kind:'dispatch',text:index?'가상쿠팡별 6P 배차 준비':'가상쿠팡구름 4P 배차 준비',evidence:evidence.trim(),serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false})),authoredDate:null})}]}]});
+  }});
+  assert.equal(result.automatedChecksPassed,true,JSON.stringify({caseId:fixture.id,status:result.status,code:result.code,checks:result.checks}));
+  assert.equal(result.duplicate,'reused');assert.equal(calls,fixture.id==='manual-two-destination-requests'?1:0);
+ }
+ console.log('PASS additional six frozen stress cases via real manual handler with recorded/constructed response transport, no production writes or live model claims');
+}

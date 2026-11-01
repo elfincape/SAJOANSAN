@@ -208,6 +208,48 @@ cases.push({
   text:'이거 좀 해주세요. 자료는 뒤에 보낼게요.',
   expected:{classification:'needs_confirmation',taskCount:0,issueCount:1,serviceDate:null,dueDate:null,dueAt:null,link:{mode:'none',refs:[]},mustNot:['drop_explicit_request','invent_antecedent','invent_center_or_deadline']},
 });
+const cargoBlocks = [
+  '11/2 월\n가상쿠팡구름 4p 배차입니다.\n하차 13:15\n경상남도 가상시 테스트로 33 A동 5층',
+  '11/2 월\n가상쿠팡별 6p 배차입니다.\n하차 15:00\n경기도 가상시 검증동 2676 4,5F',
+];
+const cargoPrior = {
+  entryId: 'e5555555-5555-4555-8555-555555555555', status: 'ready', text: cargoBlocks.join('\n'),
+  submittedAt: '2026-11-01T01:00:00.000Z', referenceDate: '2026-11-01',
+  items: cargoBlocks.map((evidence, index) => ({ itemId: 'item-00' + (index + 1),
+    ref: 'e5555555-5555-4555-8555-555555555555:manual:item-00' + (index + 1),
+    kind: 'dispatch', text: index ? '가상쿠팡별 6P 배차 준비' : '가상쿠팡구름 4P 배차 준비', evidence,
+    serviceDate: '2026-11-02', serviceOriginal: '11/2', visibleFrom: '2026-11-01',
+    submittedAt: '2026-11-01T01:00:00.000Z', receivedAt: '2026-11-01T01:00:00.000Z',
+    workflowStatus: 'pending', done: false, completedAt: null, completionEvents: [], needsConfirmation: false,
+    dueDate: null, dueAt: null, details: index ? ['하차 15:00', '경기도 가상시 검증동 2676 4,5F'] : ['하차 13:15', '경상남도 가상시 테스트로 33 A동 5층'] })),
+};
+const cargoRefs = cargoPrior.items.map(item => item.ref);
+const cargoExpected = { taskCount: 0, dueDate: null, dueAt: null, expectedStatus: 'pending',
+  link: { mode: 'exact', refs: cargoRefs },
+  targetFacts: cargoRefs.map((ref, index) => ({ ref, status: 'pending', serviceDate: '2026-11-02',
+    summaryIncludes: index ? ['288박스', '화물 중량 2.6톤', '하차 15:00', '경기도 가상시 검증동 2676 4,5F'] : ['160박스', '화물 중량 1.7톤', '하차 13:15', '경상남도 가상시 테스트로 33 A동 5층'] })),
+  mustNot: ['new_duplicate_task', 'cargo_weight_becomes_vehicle_class', 'cargo_supplement_completes_dispatch', 'cross_destination_address_or_time'] };
+const ambiguousCargo = structuredClone(cargoPrior);
+ambiguousCargo.entryId = 'f6666666-6666-4666-8666-666666666666';
+ambiguousCargo.items = [{ ...ambiguousCargo.items[0], ref: ambiguousCargo.entryId + ':manual:item-001', details: ['하차 18:00'] }];
+cases.push(
+  { id: 'manual-two-destination-requests', kind: 'manual', ...common, text: cargoBlocks.join('\n'),
+    expected: { taskCount: 2, dueDate: null, dueAt: null, serviceDate: '2026-11-02', link: { mode: 'none', refs: [] },
+      summaryContains: ['하차 13:15', '하차 15:00', '테스트로 33', '검증동 2676'], mustNot: ['cross_destination_address_or_time', 'pallets_become_tonnage'] } },
+  { id: 'manual-two-destination-cargo-supplement', kind: 'manual', ...common, related: [cargoPrior],
+    text: '월요일 가상쿠팡\n구름 160박스 4p 1.7톤\n별 288박스 6p 2.6톤 입니다.', expected: cargoExpected },
+  { id: 'manual-partial-cargo-supplement-unmatched', kind: 'manual', ...common, related: [cargoPrior],
+    text: '월요일 가상쿠팡\n구름 160박스 4p 1.7톤\n달 288박스 6p 2.6톤 입니다.',
+    expected: { ...cargoExpected, issueCount: 1, classification: 'needs_confirmation', link: { mode: 'exact', refs: [cargoRefs[0]] }, targetFacts: [cargoExpected.targetFacts[0]] } },
+  { id: 'manual-cargo-same-destination-other-time', kind: 'manual', ...common, related: [cargoPrior, ambiguousCargo],
+    text: '월요일 가상쿠팡\n구름 160박스 4p 1.7톤',
+    expected: { taskCount: 0, issueCount: 1, classification: 'ambiguous_link', dueDate: null, link: { mode: 'none', refs: [] }, mustNot: ['pick_first_same_destination', 'overwrite_either_unloading_time'] } },
+  { id: 'manual-cargo-conflicting-pallets', kind: 'manual', ...common, related: [cargoPrior],
+    text: '월요일 가상쿠팡\n구름 160박스 4p 5p 1.7톤',
+    expected: { taskCount: 0, issueCount: 1, classification: 'needs_confirmation', dueDate: null, link: { mode: 'none', refs: [] }, mustNot: ['choose_one_conflicting_quantity', 'overwrite_owner_source'] } },
+  { id: 'manual-cargo-reordered-duplicate-lines', kind: 'manual', ...common, related: [cargoPrior],
+    text: '월요일 가상쿠팡\n별 288박스 6p 2.6톤\n구름 160박스 4p 1.7톤\n별 288박스 6p 2.6톤', expected: cargoExpected },
+);
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {
   return STRESS_FIXTURES.find((fixture) => fixture.id === id) ?? null;
