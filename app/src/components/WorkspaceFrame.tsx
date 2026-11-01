@@ -22,6 +22,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { WorkspaceCommands } from './WorkspaceCommands';
 import type { WorkspaceCommand } from './WorkspaceCommands';
 import { signOut } from '../lib/auth';
+import '../styles/menu-icon-motion.css';
 
 type NavigationLink = {
   children?: ReactNode;
@@ -46,7 +47,14 @@ function RailIcon({ href = '' }: { href?: string }) {
       : path.startsWith('/admin')
         ? LayoutGrid
         : BriefcaseBusiness;
-  return <Icon aria-hidden="true" size={22} strokeWidth={1.5} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      data-menu-icon={path === '/' ? 'chart' : path.startsWith('/admin') ? 'grid' : 'briefcase'}
+      size={22}
+      strokeWidth={1.5}
+    />
+  );
 }
 
 export function WorkspaceFrame({

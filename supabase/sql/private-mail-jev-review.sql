@@ -13,11 +13,19 @@ begin
  or e->'items' is distinct from p_items or e ? 'jevReview' then return false; end if;
  if jsonb_typeof(p_review) is distinct from 'object' or octet_length(p_review::text)>16384
  or p_review->>'sourceId' is distinct from p_entry::text
- or p_review->>'policyVersion' is distinct from 'manual-semantics-v1'
+ or coalesce(p_review->>'policyVersion','') not in ('manual-semantics-v1','manual-semantics-v2')
  or p_review->'sourceRevision' is distinct from 'null'::jsonb
  or coalesce(p_review->>'status','') not in ('unavailable','skipped','review','no_concerns')
  or exists(select 1 from jsonb_object_keys(p_review) k where k not in
- ('sourceId','sourceRevision','policyVersion','status','code','model','findings','reviewIds','latencyMs','usage','reviewedCount','omittedCount'))
+ ('sourceId','sourceRevision','policyVersion','status','code','model','findings','reviewIds','latencyMs','usage','reviewedCount','omittedCount','coverageChecked','coverageUnavailable'))
+ then raise exception 'JEV_REVIEW_FORMAT'; end if;
+ -- Coverage is a v2-only advisory claim, never an unchecked success flag.
+ if (p_review ? 'coverageChecked' and (p_review->>'policyVersion'<>'manual-semantics-v2'
+  or jsonb_typeof(p_review->'coverageChecked') is distinct from 'boolean'))
+ or (p_review ? 'coverageUnavailable' and (p_review->>'policyVersion'<>'manual-semantics-v2'
+  or (p_review->'coverageUnavailable'<>'null'::jsonb and
+   (jsonb_typeof(p_review->'coverageUnavailable') is distinct from 'string'
+    or p_review->>'coverageUnavailable'<>'INPUT_TOO_LARGE'))))
  then raise exception 'JEV_REVIEW_FORMAT'; end if;
  if p_review ? 'model' and p_review->>'model' is distinct from 'jev-1.14.0' then raise exception 'JEV_REVIEW_FORMAT'; end if;
  if p_review ? 'code' and coalesce(p_review->>'code','') not in
@@ -28,12 +36,19 @@ begin
   for finding in select value from jsonb_array_elements(p_review->'findings') loop
    if jsonb_typeof(finding) is distinct from 'object' or
     exists(select 1 from jsonb_object_keys(finding) k where k not in ('id','unsupportedProbability'))
+    or jsonb_typeof(finding->'id') is distinct from 'string'
     or jsonb_typeof(finding->'unsupportedProbability') is distinct from 'number'
     or (finding->>'unsupportedProbability')::numeric not between 0 and 1
-    or not exists(select 1 from jsonb_array_elements(p_items) i where finding->>'id'=p_entry::text||':manual:'||(i->>'itemId'))
+    or not (exists(select 1 from jsonb_array_elements(p_items) i where finding->>'id'=p_entry::text||':manual:'||(i->>'itemId'))
+     or (p_review->>'policyVersion'='manual-semantics-v2' and finding->>'id'=p_entry::text||':coverage'))
    then raise exception 'JEV_REVIEW_FORMAT'; end if;
   end loop;
  end if;
+ if coalesce(p_review->'coverageChecked','false'::jsonb) is distinct from to_jsonb(exists(
+  select 1 from jsonb_array_elements(coalesce(p_review->'findings','[]'::jsonb)) f
+  where f->>'id'=p_entry::text||':coverage'))
+ or (p_review->>'coverageUnavailable'='INPUT_TOO_LARGE' and p_review->'coverageChecked'='true'::jsonb)
+ then raise exception 'JEV_REVIEW_FORMAT'; end if;
  if p_review ? 'reviewIds' then
   if jsonb_typeof(p_review->'reviewIds') is distinct from 'array' or jsonb_array_length(p_review->'reviewIds')>8 then raise exception 'JEV_REVIEW_FORMAT'; end if;
   for review_id in select value from jsonb_array_elements(p_review->'reviewIds') loop

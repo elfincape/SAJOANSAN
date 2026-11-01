@@ -1,0 +1,84 @@
+/* Only the existing SVG strokes move; navigation targets and labels stay still. */
+[data-menu-icon] > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+[data-menu-icon='chart'] > path:not(:nth-child(4)) {
+  --menu-stroke-motion: menu-bar-rise;
+  transform-origin: bottom;
+}
+[data-menu-icon='grid'] > rect:nth-child(2),
+[data-menu-icon='grid'] > rect:nth-child(4) {
+  --menu-stroke-motion: menu-tile-turn;
+}
+[data-menu-icon='briefcase'] > path:nth-child(2) {
+  --menu-stroke-motion: menu-handle-lift;
+}
+[data-menu-icon='dispatch'] > path {
+  --menu-stroke-motion: menu-route-trace;
+}
+[data-menu-icon='transport'] > path:nth-child(2),
+[data-menu-icon='transport'] > path:nth-child(3) {
+  --menu-stroke-motion: menu-row-slide;
+}
+[data-menu-icon='daily'] > path:nth-child(n + 5) {
+  --menu-stroke-motion: menu-date-nod;
+}
+[data-menu-icon='documents'] > path:nth-child(-n + 2) {
+  --menu-stroke-motion: menu-page-tilt;
+  transform-box: view-box;
+  transform-origin: 9px 17px;
+}
+[data-menu-icon='administration'] > path:nth-child(3),
+[data-menu-icon='administration'] > path:nth-child(4),
+[data-menu-icon='administration'] > path:nth-child(8) {
+  --menu-stroke-motion: menu-slider-adjust;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is(.app-rail-link, .hub-category):is(:focus-visible, :active)
+    [data-menu-icon] > * {
+    animation: var(--menu-stroke-motion, none) 420ms ease-out 1;
+  }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :is(.app-rail-link, .hub-category):hover [data-menu-icon] > * {
+    animation: var(--menu-stroke-motion, none) 420ms ease-out 1;
+  }
+}
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  :is(.app-rail-link, .hub-category):focus [data-menu-icon] > * {
+    animation: var(--menu-stroke-motion, none) 420ms ease-out 1;
+  }
+}
+@keyframes menu-bar-rise {
+  0%, 100% { transform: scaleY(1); }
+  40% { transform: scaleY(.68); }
+}
+@keyframes menu-tile-turn {
+  0%, 100% { transform: rotate(0); }
+  40% { transform: rotate(12deg); }
+}
+@keyframes menu-handle-lift {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-1px); }
+}
+@keyframes menu-route-trace {
+  0%, 100% { stroke-dasharray: 60 0; stroke-dashoffset: 0; }
+  40% { stroke-dasharray: 14 3; stroke-dashoffset: -8; }
+}
+@keyframes menu-row-slide {
+  0%, 100% { transform: translateX(0); }
+  40% { transform: translateX(1.5px); }
+}
+@keyframes menu-date-nod {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-1.5px); }
+}
+@keyframes menu-page-tilt {
+  0%, 100% { transform: rotate(0); }
+  40% { transform: rotate(-7deg); }
+}
+@keyframes menu-slider-adjust {
+  0%, 100% { transform: translateX(0); }
+  40% { transform: translateX(2px); }
+}

@@ -176,6 +176,7 @@ export function projectMailDates(analysis, row) {
     tasks: (analysis.tasks ?? []).map(rebase),
     issues: (analysis.issues ?? []).map(rebase),
     waiting: (analysis.waiting ?? []).map(rebase),
+    updates: (analysis.updates ?? []).map(rebase),
   };
 }
 export function normalizeMailAnalysis(value, mail) {
@@ -244,7 +245,31 @@ export function normalizeMailAnalysis(value, mail) {
         raw.assignee == null || raw.assignee === ''
           ? null
           : text(raw.assignee, 100);
-      if (assignee && !item.evidence.includes(assignee))
+      // A short action quote may omit the addressee from the same explicit request.
+      // Accept that name only from its exact current-message request proof, never the whole body or headers.
+      const requestProof = raw.selfRequestEvidence;
+      let namedRequest = false;
+      if (assignee && raw.forOwner === true &&
+          ['owner_direct', 'owner_cc'].includes(raw.recipientScope) &&
+          typeof mail.currentBody === 'string' && body.includes(mail.currentBody) &&
+          typeof requestProof === 'string') {
+        const proofStart = mail.currentBody.indexOf(requestProof);
+        const actionStart = mail.currentBody.indexOf(item.evidence);
+        const overlapStart = Math.max(proofStart, actionStart);
+        const overlapEnd = Math.min(proofStart + requestProof.length, actionStart + item.evidence.length);
+        const name = new RegExp(assignee.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+          '(?:님|씨|께|\\s*[:：,，])');
+        const sentences = (value) => (value.match(/[^.!?。！？\n]+[.!?。！？]?/gu) ?? []).map((part) => part.trim());
+        const overlap = mail.currentBody.slice(overlapStart, overlapEnd);
+        // The evidence may continue with adjacent service details. Its actual overlapping request
+        // sentence must still name this recipient and contain an explicit action request.
+        namedRequest = proofStart >= 0 && actionStart >= 0 && overlapEnd > overlapStart &&
+          sentences(requestProof).some((proofSentence) => name.test(proofSentence) &&
+            sentences(item.evidence).some((actionSentence) => actionSentence.length >= 8 &&
+              proofSentence.includes(actionSentence) && overlap.includes(actionSentence) &&
+              /(?:검토|확인|제출|회신|승인|재가|처리|준비|진행|연락|발주|배차|조치|협의|결정|서명|납부|예약|선정|변경|해결).{0,60}(?:해\s*주|부탁|바랍니다|요청|하세요|주시|주십시오|주세요)/.test(actionSentence)));
+      }
+      if (assignee && !item.evidence.includes(assignee) && !namedRequest)
         throw Error('ANALYSIS_ASSIGNEE');
       const dueOriginal =
         raw.due == null || raw.due === '' ? null : text(raw.due, 100);
@@ -689,6 +714,17 @@ export function dailyBriefingView({
         });
         if (!target.visible) output[target.kind].push(target.row);
         target.visible = true;
+      }
+      if (typeof update.dueOriginal === 'string' && update.dueOriginal.trim() &&
+          update.evidence.includes(update.dueOriginal)) {
+        const base = dailyReportIdentity(mail.source.receivedAt ?? mail.source.sentAt).day;
+        const computed = deadline(update.dueOriginal, update.evidence, base);
+        if (computed.dueDate && !computed.uncertain) {
+          Object.assign(target.row, {dueOriginal:update.dueOriginal,dueAt:computed.dueAt,
+            dueDate:computed.dueDate,duePrecision:computed.duePrecision,
+            due:computed.dueAt ? new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date(computed.dueAt)) : computed.dueDate,
+            deadlineSource:{source:mail.source,evidence:update.evidence}});
+        }
       }
       target.row.status = update.status;
       target.row.resolution = {

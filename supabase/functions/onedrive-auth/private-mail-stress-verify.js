@@ -3,7 +3,7 @@ import { STRESS_FIXTURES, fixtureById } from './private-mail-stress-fixtures.js'
 import { emlHeaderText, mailBodyText, mailMessageTimes } from './private-mail-body.js';
 import { inspectMailImage, selectMailPhotos } from './private-mail-images.js';
 import { loadApprovedRemoteMailImages } from './private-mail-remote-images.js';
-import { analyzePrivateMail } from './private-mail-analysis.js';
+import { analyzePrivateMail, extractMailThreadHeaders, relatedItems } from './private-mail-analysis.js';
 import { handleManualMessage, manualDailyView } from './private-mail-manual.js';
 import { dailyBriefingView, renderDailyBriefing } from './private-mail-briefing-model.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
@@ -69,12 +69,26 @@ function evaluate(fixture, saved, normalized, parser) {
 export async function runStressCase(caseId,ctx) {
   const fixture = fixtureById(caseId);
   if(!fixture) throw Error('STRESS_CASE_INVALID');
+  const id = syntheticId(fixture), trace = [], replay = [], requests = [];
+  // Frozen synthetic input is available even when source validation fails before a provider request.
+  const input = structuredClone({kind:fixture.kind,referenceDate:fixture.referenceDate,now:fixture.now,
+    ...(fixture.mime ? {mime:fixture.mime} : {text:fixture.text}), related:fixture.related??[],remoteUrls:fixture.remoteUrls??[]});
+  let saved=null, normalized=[], parser=null, duplicate=null, status=null, stage='configuration';
+  const prior = structuredClone(fixture.related??[]);
+  const preconditions = { checked:false, valid:null, errors:[], adaptations:[] };
+  const diagnostics = () => ({stage,fixturePreconditions:preconditions,adaptedRelated:structuredClone(prior)});
+  const failedResult = code => ({caseId,status:'failed',code,input,trace,replay,requests,parser,expected:fixture.expected,
+    diagnostics:diagnostics(),storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false});
+  try {
   const ai = await ctx.resolveAiConfiguration();
   if(ai.aiProvider!=='openai'||ai.aiModel!=='gpt-6-luna'||!ai.aiKey) throw Error('STRESS_AI_CONFIGURATION');
-  const id = syntheticId(fixture), trace = [], replay = [];
   const transport = async(url,options)=>{
     if(!['https://api.openai.com/v1/responses','https://api.typesafe.ai/v1/systemone'].includes(url)) throw Error('STRESS_DESTINATION');
-    const response = await ctx.fetcher(url,{...options,body:options.body.replaceAll('장희성','테스트담당자')});
+    const body = options.body.replaceAll('장희성','테스트담당자');
+    requests.push({provider:url.includes('typesafe')?'typesafe':'openai',body:JSON.parse(body)});
+    let response;
+    try { response = await ctx.fetcher(url,{...options,body}); }
+    catch(error) { trace.push({provider:url.includes('typesafe')?'typesafe':'openai',httpStatus:null,status:'transport_failed'});throw error; }
     const value = await response.clone().json().catch(()=>({}));
     trace.push({provider:url.includes('typesafe')?'typesafe':'openai',httpStatus:response.status,model:value.model??null,status:value.status??null,usage:value.usage??null});
     if(response.ok) replay.push(url.includes('typesafe')?{model:value.model,answers:value.answers,usage:value.usage}:{model:value.model,status:value.status,output:value.output,usage:value.usage,incomplete_details:value.incomplete_details});
@@ -82,21 +96,44 @@ export async function runStressCase(caseId,ctx) {
   };
   const config = await ctx.resolveJevConfiguration(id);
   const jev = async()=>config?{...config,fetcher:transport}:null;
-  let saved=null, normalized=[], parser=null, duplicate=null, status=null;
-  const prior = structuredClone(fixture.related??[]);
-  for(const candidate of prior) if(candidate.source && !candidate.source.uidl) candidate.source.uidl=await digest(new TextEncoder().encode(candidate.source.id));
+  stage='fixture_preconditions';
+  for(const candidate of prior) {
+    if(candidate.source && !candidate.source.uidl) candidate.source.uidl=await digest(new TextEncoder().encode(candidate.source.id));
+    if(fixture.kind==='mail') {
+      const original=candidate.source?.thread?.messageId;
+      const canonical=typeof original==='string' ? extractMailThreadHeaders('Message-ID: '+
+        (original.startsWith('<') ? original : '<'+original+'>')).messageId : null;
+      if(!canonical) preconditions.errors.push({sourceId:candidate.source?.id??null,code:'INVALID_RELATED_MESSAGE_ID'});
+      else if(original!==canonical) {
+        candidate.source.thread.messageId=canonical;
+        preconditions.adaptations.push({sourceId:candidate.source.id,field:'source.thread.messageId',original,canonical});
+      }
+    }
+  }
+  if(preconditions.errors.length) {preconditions.checked=true;preconditions.valid=false;return failedResult('STRESS_FIXTURE_PRECONDITION');}
   if(fixture.kind==='mail') {
+    stage='mail_parse';
     const parsed = await parseStressMail(fixture,ctx.remoteFetcher);
     parser=parsed.parser;
-    let leased=false,failed=null;
-    const store={claim:async()=>{if(leased||saved)return null;leased=true;return{row:{id,uidl_hash:parsed.source.uidl_hash},lease:'isolated-stress'};},finish:async({analysis})=>{saved=structuredClone(analysis);leased=false;return true;},fail:async({code})=>{failed=code;leased=false;return true;}};
+    parsed.source.related=prior;
+    const thread=extractMailThreadHeaders(parsed.source.headers);
+    for(const candidate of prior) if(![...thread.inReplyTo,...thread.references].includes(candidate.source?.thread?.messageId))
+      preconditions.errors.push({sourceId:candidate.source?.id??null,code:'RELATED_NOT_IN_THREAD'});
+    try { relatedItems(prior,thread,id); }
+    catch(error) { preconditions.errors.push({code:error.message}); }
+    preconditions.checked=true;preconditions.valid=preconditions.errors.length===0;
+    if(preconditions.errors.length) {stage='fixture_preconditions';return failedResult('STRESS_FIXTURE_PRECONDITION');}
+    stage='mail_analysis';
+    let leased=false,failureCode=null;
+    const store={claim:async()=>{if(leased||saved)return null;leased=true;return{row:{id,uidl_hash:parsed.source.uidl_hash},lease:'isolated-stress'};},finish:async({analysis})=>{saved=structuredClone(analysis);leased=false;return true;},fail:async({code})=>{failureCode=code;leased=false;return true;}};
     const args={messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
     const results=await Promise.all([analyzePrivateMail(args),analyzePrivateMail(args)]);
     status=results[0].status;duplicate=results[1].status;
-    if(!saved) return{caseId,status:'failed',code:results[0].code??failed,trace,replay,parser,expected:fixture.expected,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+    if(!saved) return failedResult(results[0].code??failureCode);
     saved=JSON.parse(JSON.stringify(saved));
     normalized=dailyBriefingView({now:fixture.now,analyses:[...prior.filter(item=>item.source),saved]}).workItems;
   } else {
+    stage='manual_analysis';
     const entries=Object.fromEntries(prior.filter(item=>item.entryId).map(item=>[item.entryId,item]));
     const history=[];
     const db=async(path,options={})=>{
@@ -118,13 +155,17 @@ export async function runStressCase(caseId,ctx) {
     const body={clientRequestId:id,text:fixture.text,referenceDate:fixture.referenceDate};
     const response=await handleManualMessage('private-mail-manual-add',body,{id:TARGET.owner_id},adapter);
     status=(await response.json()).status;saved=JSON.parse(JSON.stringify(entries[id]));
-    if(saved?.status!=='ready')return{caseId,status:'failed',code:saved?.error,trace,replay,expected:fixture.expected,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+    if(saved?.status!=='ready')return failedResult(saved?.error??'STRESS_MANUAL_FAILED');
     const before=trace.length;
     await handleManualMessage('private-mail-manual-add',body,{id:TARGET.owner_id},adapter);
     duplicate=trace.length===before?'reused':'called_again';
     const manual=manualDailyView(entries,fixture.referenceDate);
     normalized=dailyBriefingView({now:fixture.now,analyses:[],manual}).workItems;
   }
+  stage='projection';
   const note = fixture.kind==='mail' ? renderDailyBriefing({now:fixture.now,analyses:[...prior.filter(item=>item.source),saved]}) : renderDailyBriefing({now:fixture.now,analyses:[],manual:manualDailyView(Object.fromEntries([...prior.filter(item=>item.entryId),saved].map(entry=>[entry.entryId,entry])),fixture.referenceDate)});
-  return{caseId,status,expected:fixture.expected,...evaluate(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:note.managedHtml,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+  return{caseId,status,input,requests,diagnostics:diagnostics(),expected:fixture.expected,...evaluate(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:note.managedHtml,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+  } catch(error) {
+    return failedResult(/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_RUNTIME_FAILED');
+  }
 }
