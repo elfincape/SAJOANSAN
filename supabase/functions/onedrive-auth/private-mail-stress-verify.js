@@ -62,7 +62,13 @@ function evaluate(fixture, saved, normalized, parser) {
   if(expected.items) checks.independentItems = expected.items.every(wanted=>records.some(item=>Object.entries(wanted).every(([key,value])=>key==='textIncludes'?item.text.includes(value):value===null?item[key]==null:item[key]===value)));
   if(expected.reprocess) checks.referenceAnchor = !mail && saved.referenceDate===expected.reprocess.referenceDate && saved.items.some(item=>item.serviceDate===expected.reprocess.serviceDate);
   if(expected.expectedStatus) checks.status = records.some(item=>(item.workflowStatus??item.status??(item.done?'complete':'pending'))===expected.expectedStatus);
-  if(expected.targetFacts) checks.linkedFacts = expected.targetFacts.every(wanted => normalized.some(item => item.workId === wanted.ref && item.status === wanted.status && item.serviceDate === wanted.serviceDate && wanted.summaryIncludes.every(fact => item.summary.some(line => line.includes(fact)))));
+  if(expected.targetFacts) checks.linkedFacts = expected.targetFacts.every(wanted => normalized.some(item => item.workId === wanted.ref && item.status === wanted.status && item.serviceDate === wanted.serviceDate && wanted.summaryIncludes.every(fact => item.summary.some(line => line.includes(fact))) && (wanted.summaryExcludes ?? []).every(fact => item.summary.every(line => !line.includes(fact)))));
+  if(expected.displayItems) checks.visibleOperationalFacts = expected.displayItems.every(wanted => normalized.some(item => {
+    const visible = [item.title, ...(item.summary ?? [])].join('\n');
+    return item.title.replace(/\s/g,'').includes(wanted.name.replace(/\s/g,'')) &&
+      new RegExp('(?:^|[^\\d.])' + wanted.pallets + '(?:\\.0+)?\\s*p(?=$|[^a-z])', 'i').test(visible) &&
+      wanted.includes.every(fact => visible.includes(fact));
+  }));
   return {checks,automatedChecksPassed:Object.values(checks).every(Boolean),actual:{newTasks:tasks,issues,links,needsConfirmation:confirmed},manualReviewRequired:expected.mustNot??[]};
 }
 

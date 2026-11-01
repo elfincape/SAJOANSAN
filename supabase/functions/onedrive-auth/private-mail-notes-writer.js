@@ -654,7 +654,10 @@ export async function writeDailyBriefing({
   connected,
   graph,
   hash,
+  diagnosticRunId = null,
+  beforeCreate,
 }) {
+  if (diagnosticRunId !== null && (!uuid.test(diagnosticRunId) || typeof beforeCreate !== 'function')) throw Error('PAGE_IDENTITY');
   if (
     !Number.isSafeInteger(maxImageBatches) ||
     maxImageBatches < 1 ||
@@ -662,7 +665,12 @@ export async function writeDailyBriefing({
     (deadline !== Infinity && !Number.isFinite(deadline))
   )
     throw Error('NOTES_IMAGE_LIMIT');
-  const base = renderDailyBriefing({ now, analyses, overrides, manual });
+  const rendered = renderDailyBriefing({ now, analyses, overrides, manual });
+  const base = diagnosticRunId === null ? rendered : {
+    ...rendered,
+    title: '가상 검증 ' + diagnosticRunId,
+    html: rendered.html.replace('<title>' + rendered.title + '</title>', '<title>가상 검증 ' + diagnosticRunId + '</title>'),
+  };
   // Validate every supplied descriptor before omitting sources absent from today's view.
   const visiblePhotoSources = new Set(
     [
@@ -753,6 +761,7 @@ export async function writeDailyBriefing({
       pages,
       savedPageId: state.pageId ?? null,
       pagesComplete: true,
+      diagnosticRunId,
     });
     let status = 'updated',
       created = false;
@@ -767,6 +776,7 @@ export async function writeDailyBriefing({
         .replace('</body>', '</div></body>');
       let result;
       try {
+        if (diagnosticRunId !== null) await beforeCreate?.();
         result = await (
           await graph(
             '/me/onenote/sections/' + enc(BRIEFING_TARGET.sectionId) + '/pages',
@@ -778,8 +788,10 @@ export async function writeDailyBriefing({
             },
           )
         ).json();
-      } catch {
-        throw Error('PAGE_CREATE_UNCERTAIN');
+      } catch (error) {
+        throw Object.assign(Error('PAGE_CREATE_UNCERTAIN'), { providerStatus: error?.providerStatus ?? null,
+          stressNoteStage: error?.stressNoteStage ?? null,
+          createRejected: diagnosticRunId !== null && (error?.diagnosticNotSent === true || [400, 401, 403, 404, 405, 413, 415, 422, 429].includes(error?.providerStatus)) });
       }
       if (typeof result?.id !== 'string' || !result.id)
         throw Error('PAGE_CREATE_UNCERTAIN');
@@ -789,6 +801,7 @@ export async function writeDailyBriefing({
         pages,
         savedPageId: result.id,
         pagesComplete: true,
+        diagnosticRunId,
       });
       await save({ pageId: selection.pageId });
       created = true;
@@ -796,7 +809,8 @@ export async function writeDailyBriefing({
     } else if (
       state.pageId == null &&
       state.createAttempted &&
-      !state.pendingWrite
+      !state.pendingWrite &&
+      diagnosticRunId === null
     )
       throw Error('PAGE_CREATE_UNCERTAIN');
     const pageId = selection.pageId,
@@ -848,6 +862,15 @@ export async function writeDailyBriefing({
     };
     if (created) await verifyAndSave(initial);
     else {
+      // A cold diagnostic retry may adopt only the exact previously written synthetic content.
+      // It never patches an existing page without the normal durable managed baseline.
+      if (diagnosticRunId !== null && state.pageId == null) {
+        if (current.managed && JSON.stringify(contentSignature(current.managed)) === initial.content) {
+          await verifyAndSave(initial);
+          return { status: 'skipped', day: base.day, pageId };
+        }
+        throw Error('PAGE_MANAGED_CONFLICT');
+      }
       if (state.pendingWrite) {
         const intent = state.pendingWrite;
         const contentHash = current.managed

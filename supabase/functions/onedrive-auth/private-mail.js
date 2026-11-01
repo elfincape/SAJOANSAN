@@ -641,6 +641,11 @@ export async function handlePrivateMail(action, req, user, ctx) {
       resolveJevConfiguration,
       ...source,
       remoteFetcher,
+      diagnosticNotes: (action) => withLock(async holder => action(await ctx.connectedNotes(), async (...args) => {
+        try { await renew(holder); }
+        catch (error) { throw Object.assign(error, { diagnosticNotSent: true }); }
+        return graph(...args);
+      })),
       writeHistory: (document) =>
         writeMailHistoryDocument({
           document,

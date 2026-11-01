@@ -994,11 +994,13 @@ export function selectDailyPage({
   pages,
   savedPageId = null,
   pagesComplete = false,
+  diagnosticRunId = null,
 }) {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(identity?.day ?? '') ||
-    dailyReportIdentity(identity.day + 'T00:00:00+09:00').title !==
-      identity.title ||
+    (diagnosticRunId === null
+      ? dailyReportIdentity(identity.day + 'T00:00:00+09:00').title !== identity.title
+      : !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(diagnosticRunId) || identity.title !== '가상 검증 ' + diagnosticRunId) ||
     !Array.isArray(pages)
   )
     throw Error('PAGE_IDENTITY');

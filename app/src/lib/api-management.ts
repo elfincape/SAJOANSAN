@@ -63,6 +63,8 @@ export const apiManagement = {
     'private-mail-stress-verify', {confirmation:'isolated-stress',list:true}, false, 30000),
   stressCase: (caseId:string,receiptId?:string) => oneDriveCall<Record<string,unknown>>(
     'private-mail-stress-verify', {confirmation:'isolated-stress',caseId,...(receiptId?{receiptId}:{})}, false, 180000),
+  stressNote: (proof:string,stored:unknown) => oneDriveCall<Record<string,unknown>>(
+    'private-mail-stress-verify', {confirmation:'isolated-stress',operation:'notes',proof,stored}, false, 180000),
   verify: (provider: string, model: string) =>
     oneDriveCall<ApiCompatibilityResult>(
       'api-admin-verify',

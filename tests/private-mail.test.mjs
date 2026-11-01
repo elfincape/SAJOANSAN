@@ -7511,7 +7511,7 @@ console.log('PASS cargo followup variations: reordered/partial/duplicate/conflic
 {
  const {STRESS_FIXTURES}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
  const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
- for(const fixture of STRESS_FIXTURES.slice(20)){
+ for(const fixture of STRESS_FIXTURES.slice(20,26)){
   let calls=0;
   const result=await runStressCase(fixture.id,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async()=>{
    calls++;const blocks=fixture.text.split(/(?=^11\/2 월$)/m);
@@ -7521,4 +7521,214 @@ console.log('PASS cargo followup variations: reordered/partial/duplicate/conflic
   assert.equal(result.duplicate,'reused');assert.equal(calls,fixture.id==='manual-two-destination-requests'?1:0);
  }
  console.log('PASS additional six frozen stress cases via real manual handler with recorded/constructed response transport, no production writes or live model claims');
+}
+
+{
+const {writeDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-notes-writer.js');
+const {BRIEFING_TARGET: T}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const runId='11111111-2222-4333-8444-555555555555',title='가상 검증 '+runId,now='2026-11-02T01:00:00Z';
+const hash=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+const pages=[],contents=new Map();let writes=0,reads=0,seq=0,staged=0;
+const graph=async(path,access,options={})=>{
+ assert.equal(access,'MOCK_NOTES');
+ if(path.startsWith('/me/onenote/notebooks/'))return Response.json({id:T.notebookId,userRole:'Owner',isShared:false});
+ if(path.startsWith('/me/onenote/sections/')&&!path.includes('/pages'))return Response.json({id:T.sectionId,parentNotebook:{id:T.notebookId}});
+ if(path.includes('/sections/')&&path.includes('/pages')){
+  if(options.method==='POST'){writes++;const actualTitle=/<title>([^<]+)<\/title>/.exec(options.body)[1];assert.equal(actualTitle,title,'diagnostic writer must never create ordinary daily title');const id='test-note-'+writes;pages.push({id,title:actualTitle,parentSection:{id:T.sectionId}});contents.set(id,options.body.replace(/(<[a-z][a-z0-9]*)(?=[\s>])/g,(_,tag)=>tag+' id="node-'+(++seq)+'"'));return Response.json({id})}
+  return Response.json({value:pages});
+ }
+ if(path.includes('/pages/')&&path.includes('/content')){assert.ok(!options.method,'same synthetic result never patches owner content');reads++;return new Response(contents.get(decodeURIComponent(path.split('/pages/')[1].split('/')[0])),{headers:{ETag:'mock'}})}
+ throw Error('UNEXPECTED_GRAPH');
+};
+const createStore=(state={})=>{const value={...state};return{state:value,claim:async()=>({lease:'local',state:value}),save:async({value:next})=>Object.assign(value,next),release:async()=>{}}};
+const perform=store=>writeDailyBriefing({now,analyses:[],store,connected:async()=>({accessToken:'MOCK_NOTES',notesGranted:true}),graph,hash,diagnosticRunId:runId,beforeCreate:async()=>{staged++}});
+const store=createStore();const first=await perform(store);assert.equal(first.status,'created');assert.equal(staged,1);assert.equal(writes,1);assert.ok(reads>0);
+contents.set(first.pageId,contents.get(first.pageId).replace('<h2','<p>OWNER MEMO MUST SURVIVE</p><h2'));
+assert.equal((await perform(store)).status,'skipped');assert.equal(writes,1);assert.ok(contents.get(first.pageId).includes('OWNER MEMO MUST SURVIVE'));
+const cold=await perform(createStore({createAttempted:true}));assert.equal(cold.status,'skipped');assert.equal(writes,1,'cold retry re-reads exact dedicated page without duplicate create');
+const existingBody=contents.get(first.pageId);contents.set(first.pageId,'<html><body><p>OWNER CONTENT WITHOUT MANAGED BASELINE</p></body></html>');await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_MANAGED_CONFLICT/);contents.set(first.pageId,existingBody);
+const visible=pages.splice(0);await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_CREATE_UNCERTAIN/);assert.equal(writes,1);pages.push(...visible);
+contents.set(first.pageId,contents.get(first.pageId).replace('최종 업데이트','USER EDITED CONTENT'));
+await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_MANAGED_CONFLICT/);assert.equal(writes,1);
+await assert.rejects(()=>writeDailyBriefing({now,analyses:[],store:createStore(),connected:async()=>assert.fail('bad ID must fail before connection'),graph,hash,diagnosticRunId:'261030 일일정리'}),/PAGE_IDENTITY/);
+console.log('PASS actual writer dedicated title/create/readback/repeat/cold retry/lost response fence/manual memo/conflict protection with simulated Graph');
+
+}
+
+{
+const {issueStressNoteProof,writeStressNote}=await import('../supabase/functions/onedrive-auth/private-mail-stress-notes.js');
+const {handleMailAutomation}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {BRIEFING_TARGET: T,normalizeMailAnalysis}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const CASE='mail-old-sent-collected-today',id='11111111-2222-4333-8444-555555555555',owner='2a828c2d-9a6f-40d4-8e13-336b591811cc';
+const f=fixtureById(CASE),parsed=await parseStressMail(f,undefined,id);
+const evidence='내일 가상별창고 6P 배차 준비 부탁드립니다.';
+const saved=normalizeMailAnalysis({summary:[{text:'가상별창고 6P 배차 준비 요청',evidence}],issues:[],tasks:[{text:'가상별창고 6P 배차 준비',evidence,status:'pending',assignee:null,due:null}]},parsed.source);saved.tasks[0].serviceDate='2026-10-30';
+const proofs=new Map(),markers=new Map(),pages=[],contents=new Map();let writes=0,graphReads=0,locks=0,seq=0,failure=null;
+const ctx={sealDiagnostic:async value=>{const key='sealed.token'+proofs.size;proofs.set(key,structuredClone(value));return key},openDiagnostic:async key=>{if(!proofs.has(key))throw Error('BAD_SEAL');return structuredClone(proofs.get(key))},
+ db:async(path,options={})=>{if(path.startsWith('onedrive_locks?')){const name=decodeURIComponent(path.split('name=eq.')[1].split('&')[0]);if(options.method==='DELETE'){markers.delete(name);return{}}return markers.has(name)?[markers.get(name)]:[];}assert.equal(path,'onedrive_locks');assert.equal(options.method,'POST');assert.ok(!markers.has(options.body.name));markers.set(options.body.name,structuredClone(options.body));return{}},
+ diagnosticNotes:async action=>{locks++;return action({accessToken:'MOCK_NOTES',notesGranted:true})},
+ graph:async(path,access,options={})=>{assert.equal(access,'MOCK_NOTES');if(!options.method)graphReads++;
+  if(path.startsWith('/me/onenote/notebooks/'))return Response.json({id:T.notebookId,userRole:'Owner',isShared:false});
+  if(path.startsWith('/me/onenote/sections/')&&!path.includes('/pages'))return Response.json({id:T.sectionId,parentNotebook:{id:T.notebookId}});
+  if(path.includes('/sections/')&&path.includes('/pages')){
+   if(options.method==='POST'){if(failure==='rejected'){failure=null;throw Object.assign(Error('REJECTED'),{providerStatus:403})}assert.ok(options.body.includes('<title>가상 검증 '+id+'</title>'));writes++;const page={id:'test-note-'+writes,title:'가상 검증 '+id,parentSection:{id:T.sectionId},links:{oneNoteWebUrl:{href:'https://onedrive.live.com/?test-note='+writes}}};pages.push(page);contents.set(page.id,options.body.replace(/(<[a-z][a-z0-9]*)(?=[\s>])/g,(_,tag)=>tag+' id="node-'+(++seq)+'"'));if(failure==='lost-create'){failure=null;throw Error('LOST_ACK')}return Response.json({id:page.id})}
+   return Response.json({value:pages});
+  }
+  if(path.includes('/pages/')&&path.includes('/content')){assert.ok(!options.method,'diagnostic never patches owner edits');return new Response(contents.get(decodeURIComponent(path.split('/pages/')[1].split('/')[0])),{headers:{ETag:'mock'}})}
+  if(path.startsWith('/me/onenote/pages/'))return Response.json(pages.find(page=>page.id===decodeURIComponent(path.split('/pages/')[1].split('?')[0])));
+  throw Error('UNEXPECTED_GRAPH');
+ },json:Response.json,fail:code=>Error(code)};
+const protectedGraph=ctx.graph;ctx.graph=()=>assert.fail('diagnostic writer must use the lock-checked Graph callback');ctx.diagnosticNotes=async action=>{locks++;return action({accessToken:'MOCK_NOTES',notesGranted:true},protectedGraph)};
+const proof=await issueStressNoteProof({caseId:CASE,automatedChecksPassed:true,saved},id,ctx);assert.ok(proof);
+const body={proof,stored:JSON.parse(JSON.stringify(saved))};
+for(const bad of [{...body,proof:'broken.token'},{...body,stored:{...saved,summary:[]}}])await assert.rejects(()=>writeStressNote(bad,ctx),/STRESS_NOTE_PROOF|STRESS_NOTE_SQL_MISMATCH/);assert.equal(locks,0);
+const expired=await ctx.sealDiagnostic({...proofs.get(proof),expiresAt:Date.now()-1});await assert.rejects(()=>writeStressNote({...body,proof:expired},ctx),/STRESS_NOTE_PROOF/);assert.equal(locks,0);
+await assert.rejects(()=>handleMailAutomation('private-mail-stress-verify',{confirmation:'isolated-stress',operation:'notes',...body},{id:'other-owner'},ctx),/OWNER_REQUIRED/);assert.equal(locks,0);
+const result=await writeStressNote(body,ctx);assert.equal(result.status,'passed');assert.equal(result.firstStatus,'created');assert.equal(result.repeatStatus,'skipped');assert.equal(result.readBackVerified,true);assert.equal(result.productionBusinessWritten,false);assert.equal(result.modelCalled,false);assert.equal(writes,1);assert.equal(markers.size,1);assert.ok(graphReads>0);
+contents.set(result.pageId,contents.get(result.pageId).replace('data-id="sajo-mail-manual">','data-id="sajo-mail-manual"><p>OWNER MEMO</p>'));
+const repeat=await writeStressNote(body,ctx);assert.equal(repeat.firstStatus,'skipped');assert.equal(repeat.diagnosticStateWritten,false);assert.equal(writes,1);assert.ok(contents.get(result.pageId).includes('OWNER MEMO'));
+contents.set(result.pageId,contents.get(result.pageId).replace('가상별창고 6P 배차 준비','OWNER CHANGED TASK'));await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_MANAGED_CONFLICT/);assert.equal(writes,1);
+// Separate simulations keep the same signed receipt but reset only local fake state.
+markers.clear();pages.length=0;contents.clear();failure='lost-create';await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_CREATE_UNCERTAIN/);const afterLost=writes;assert.equal((await writeStressNote(body,ctx)).status,'passed');assert.equal(writes,afterLost,'accepted-but-lost response must not duplicate a page');
+markers.clear();pages.length=0;contents.clear();failure='rejected';await assert.rejects(()=>writeStressNote(body,ctx),/PAGE_CREATE_UNCERTAIN/);assert.equal(markers.size,0,'confirmed rejected create can retry the same proof');assert.equal((await writeStressNote(body,ctx)).status,'passed');
+assert.equal(await issueStressNoteProof({caseId:CASE,automatedChecksPassed:false,saved},id,ctx),null);
+console.log('PASS owner proof binding, exact SQL result, actual writer/Graph readback, durable attempt fence, cold retry, lost ACK, definite rejection retry, owner memo/conflict; simulated external Graph only');
+
+}
+
+// Fixed-synthetic followup variants; pure parser/normalizer/ledger checks, no provider or operational writes.
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {resolveDispatchAssignment,resolveExistingManualWork,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const day='2026-11-02',at=day+'T01:00:00.000Z',fixture=fixtureById('manual-two-destination-cargo-supplement'),seed=structuredClone(fixture.related[0]);
+const a=seed.items[0].ref,b=seed.items[1].ref,idA='a1111111-1111-4111-8111-111111111111',idB='b2222222-2222-4222-8222-222222222222';
+function save(reply,id,time){return {entryId:id,status:'ready',text:reply.sourceText,submittedAt:time,referenceDate:day,items:normalizeManualItems(reply,{text:reply.sourceText,entryId:id,submittedAt:time,referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetails:reply.details??[],replyDetailsByItem:reply.items.map(item=>item.details??reply.details??[])})};}
+const view=entries=>dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day));
+const failures=[];function test(name,run){try{run();console.log('PASS',name);}catch(error){failures.push({name,error:error.message});console.log('FAIL',name,error.message);}}
+const original=JSON.stringify(seed);
+test('partial completion with pending row first',()=>{
+ const text='11월 2일 가상쿠팡별 6P는 아직 차량 배정 대기입니다.\n11월 2일 가상쿠팡구름 4P 차량 배정 완료했습니다.';
+ const reply=resolveExistingManualWork(text,{[seed.entryId]:seed},day,at);assert.ok(reply);
+ const work=view({[seed.entryId]:seed,[idA]:save(reply,idA,at)});assert.equal(work.length,2);assert.equal(work.find(w=>w.workId===a).status,'complete');assert.equal(work.find(w=>w.workId===b).status,'pending');
+});
+const oldText='11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상12가0001 가상갑 01000000001';
+const oldReply=resolveDispatchAssignment(oldText,{[seed.entryId]:seed},day,at);assert.equal(oldReply.items[0].workRef,a);const old=save(oldReply,idA,at);
+test('vehicle replacement latest summary has only new vehicle',()=>{
+ const text='차량 교체\n11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상34나0002 가상을 01000000002';
+ const entries={[seed.entryId]:seed,[idA]:old};const reply=resolveDispatchAssignment(text,entries,day,day+'T02:00:00.000Z');assert.ok(reply,'explicit full assignment replacement must remain deterministic');
+ const work=view({...entries,[idB]:save(reply,idB,day+'T02:00:00.000Z')});const target=work.find(w=>w.workId===a);assert.ok(target.summary.some(t=>t.includes('가상34나0002')));assert.ok(!target.summary.some(t=>t.includes('가상12가0001')));assert.equal(target.status,'complete');assert.equal(target.sourceRefs.length,3);
+});
+test('unlabelled exact new assignment still replaces old vehicle',()=>{
+ const text='11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상34나0002 가상을 01000000002',entries={[seed.entryId]:seed,[idA]:old};
+ const reply=resolveDispatchAssignment(text,entries,day,day+'T02:00:00.000Z');assert.ok(reply);const work=view({...entries,[idB]:save(reply,idB,day+'T02:00:00.000Z')});
+ const target=work.find(w=>w.workId===a);assert.ok(target.summary.some(t=>t.includes('가상34나0002')));assert.ok(!target.summary.some(t=>t.includes('가상12가0001')));
+});
+test('P omitted from actual-style model title remains human visible',()=>{
+ const items=normalizeManualItems({items:seed.items.map(item=>({kind:'dispatch',text:item.text.replace(/\s*\d+P/,''),evidence:item.evidence,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}))},{text:seed.text,entryId:seed.entryId,submittedAt:seed.submittedAt,referenceDate:seed.referenceDate});
+ const work=view({[seed.entryId]:{...seed,items}});for(const [index,p] of ['4P','6P'].entries())assert.ok(JSON.stringify([work[index].title,work[index].summary]).includes(p),'human output missing '+p);
+});
+
+test('partial completion row order and two independently completed rows',()=>{
+ for(const text of ['11월 2일 가상쿠팡구름 4P 차량 배정 완료했습니다.\n11월 2일 가상쿠팡별 6P는 아직 차량 배정 대기입니다.', '11월 2일 가상쿠팡구름 4P 차량 배정 완료했습니다.\n11월 2일 가상쿠팡별 6P 차량 배정 완료했습니다.']){
+  const reply=resolveExistingManualWork(text,{[seed.entryId]:seed},day,at);assert.ok(reply);const work=view({[seed.entryId]:seed,[idA]:save(reply,idA,at)});assert.equal(work.length,2);assert.equal(work.find(w=>w.workId===a).status,'complete');assert.equal(work.find(w=>w.workId===b).status,text.includes('대기')?'pending':'complete');
+ }
+ assert.equal(resolveExistingManualWork('11월 2일 가상쿠팡구름 4P 차량 배정 완료했습니다.\n11월 2일 가상쿠팡별 6P 취소해주세요.',{[seed.entryId]:seed},day,at),null,'unsupported sibling mutation must go through full extraction');
+});
+test('cancelled original stays cancelled and explicit re-request creates a new ref',()=>{
+ const prior=structuredClone(seed);prior.items[0].workflowStatus='cancelled';prior.items[0].declaredAt=day+'T00:00:00.000Z';prior.items[0].ownerStateDeclared=true;
+ const before=JSON.stringify(prior),text='취소했던 11월 2일 가상쿠팡구름 4P 건과 별개로 새 요청을 접수합니다. 같은 조건으로 다시 배차 준비 부탁드립니다. 기존 취소 이력은 그대로 남겨주세요.';
+ const reply=resolveExistingManualWork(text,{[prior.entryId]:prior},day,at);assert.ok(reply);assert.equal(reply.items[0].workRef,undefined);
+ const work=view({[prior.entryId]:prior,[idA]:save(reply,idA,at)});assert.equal(work.find(w=>w.workId===a).status,'cancelled');assert.equal(work.find(w=>w.workId===idA+':manual:item-001').status,'pending');assert.equal(JSON.stringify(prior),before);
+});
+test('replacement preserves owner reopen, source refs and receipt-order latest details',()=>{
+ const entries={[seed.entryId]:seed,[idA]:old},newText='차량 교체\n11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상34나0002 가상을 01000000002';
+ const reply=resolveDispatchAssignment(newText,entries,day,day+'T02:00:00.000Z');const replacement=save(reply,idB,day+'T02:00:00.000Z');
+ const reopened=structuredClone(seed);reopened.items[0].completionEvents=[{done:true,at:day+'T00:20:00.000Z'},{done:false,at:day+'T00:30:00.000Z'}];reopened.items[0].ownerUpdatedAt=day+'T00:30:00.000Z';
+ const before=JSON.stringify([reopened,old,replacement]),work=view({[idB]:replacement,[idA]:old,[reopened.entryId]:reopened});const target=work.find(w=>w.workId===a);
+ assert.equal(target.status,'pending');assert.ok(target.summary.some(t=>t.includes('가상34나0002')));assert.ok(!target.summary.some(t=>t.includes('가상12가0001')));
+ assert.ok(target.sourceRefs.some(r=>r.id===idA&&r.evidence===oldText));assert.ok(target.sourceRefs.some(r=>r.id===idB&&r.evidence===newText));assert.equal(target.serviceDate,'2026-11-02');assert.equal(target.dueAt,null);
+ const note=renderBriefingWorkNote(work);assert.ok(note.includes('가상34나0002'));assert.ok(!note.includes('가상12가0001'));assert.equal(JSON.stringify([reopened,old,replacement]),before);
+ const excluded={['work:'+a]:{actor:'owner',excluded:true,updatedAt:at}};
+ assert.equal(resolveDispatchAssignment(newText,entries,day,at,excluded).items[0].workRef,null,'excluded request cannot be silently assigned');
+ assert.equal(resolveDispatchAssignment('이전 회신입니다. 현재 교체 차량은 변경 없습니다.\n'+oldText,entries,day,at),null,'historical reply annotation never becomes a current deterministic assignment');
+});
+test('P-less model titles retain row-specific pallets through next cargo supplement',()=>{
+ const items=normalizeManualItems({items:seed.items.map(item=>({kind:'dispatch',text:item.text.replace(/\s*\d+P/,''),evidence:item.evidence,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}))},{text:seed.text,entryId:seed.entryId,submittedAt:seed.submittedAt,referenceDate:seed.referenceDate});
+ const originalEntry={...seed,items},entries={[seed.entryId]:originalEntry};const note=renderBriefingWorkNote(view(entries));assert.ok(note.includes('4P'));assert.ok(note.includes('6P'));assert.ok(!note.includes('차량 톤급'));
+ const f=fixtureById('manual-two-destination-cargo-supplement'),reply=resolveExistingManualWork(f.text,entries,day,at);assert.equal(reply.items[0].workRef,a);assert.equal(reply.items[1].workRef,b);
+ const current=view({...entries,[idA]:save(reply,idA,at)});assert.equal(current.length,2);assert.ok(current.every(item=>item.status==='pending'));assert.ok(current.find(item=>item.workId===a).summary.some(t=>t.includes('160박스')));assert.ok(current.find(item=>item.workId===b).summary.some(t=>t.includes('288박스')));
+});
+test('ambiguous cargo includes conflicting quantities and candidate unloading facts without choosing',()=>{
+ for(const id of ['manual-cargo-conflicting-pallets','manual-cargo-same-destination-other-time']){
+  const f=fixtureById(id),entries=Object.fromEntries(f.related.map(e=>[e.entryId,structuredClone(e)])),before=JSON.stringify(entries),reply=resolveExistingManualWork(f.text,entries,f.referenceDate,f.now);
+  assert.equal(reply.items[0].workRef,undefined);assert.equal(reply.items[0].needsConfirmation,true);
+  const details=reply.items[0].details.join(' ');assert.ok(details.includes('가상쿠팡구름'));
+  if(id.includes('conflicting')){assert.ok(details.includes('4P'));assert.ok(details.includes('5P'));}else{assert.ok(details.includes('13:15'));assert.ok(details.includes('18:00'));}
+  const work=dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},manualDailyView({...entries,[idA]:save(reply,idA,f.now)},f.referenceDate));const note=renderBriefingWorkNote(work);
+  if(id.includes('conflicting'))assert.ok(note.includes('4P / 5P'));else{assert.ok(note.includes('13:15'));assert.ok(note.includes('18:00'));}assert.equal(JSON.stringify(entries),before);
+ }
+});
+assert.equal(JSON.stringify(seed),original);console.log(JSON.stringify({failures},null,2));assert.deepEqual(failures,[]);
+
+}
+{
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {normalizeManualItems}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const seed=fixtureById('manual-two-destination-cargo-supplement').related[0],entryId='a1111111-1111-4111-8111-111111111111';
+ const value={items:[{kind:'dispatch',text:'가상쿠팡구름 배차 준비',evidence:seed.items[0].evidence,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}]};
+ const items=normalizeManualItems(value,{text:seed.text,entryId,submittedAt:'2026-11-02T01:00:00Z',referenceDate:'2026-11-02',allowLinks:true,verifiedDispatchReply:true,replyDetails:['상차 08:00','하차 13:15','출발 가상공장','도착 가상쿠팡구름','화물 별도 확인','취급 주의']});
+ assert.equal(items[0].details.length,6);assert.ok(items[0].details.includes('물량 4P'));
+ console.log('PASS exact-evidence P fallback survives bounded six-detail output');
+}
+
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+const {dailyBriefingView,renderDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const f=fixtureById('mail-image-only-routine-table'),source=(await parseStressMail(f)).source,imageId=source.images[0].id;
+const fact='SERVICE 2026-11-03 | PALLETS 12 | UNLOAD 09:00 | TEMP 4 C | ROUTINE CHECK: NORMAL';
+// Constructed model claim against the existing public synthetic raster; this is an ownership-boundary test, not an OCR correctness claim.
+const value={intent:{kind:'request',evidence:fact},group:null,summary:[],issues:[],tasks:[],waiting:[],updates:[],imageFacts:[{imageId,text:fact,confidence:'readable'}],imageDecisions:[{imageId,kind:'business_document',include:true}],imageItems:{issues:[],waiting:[],tasks:[{imageId,text:'사진만으로 개인 배차 요청을 확정',evidence:fact,confidence:'readable',status:'pending',forOwner:true,recipientScope:'owner_direct',selfRequestEvidence:fact}]}};
+let saves=0,calls=0;
+const run=()=>analyzePrivateMail({messageId:source.id,provider:'openai',model:'gpt-6-luna',key:'SYNTHETIC_ONLY',ownerName:'테스트담당자',now:f.now,loadMail:async()=>source,fetcher:async()=>{calls++;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});},store:{claim:async()=>({row:source,lease:'isolated-image-ownership'}),finish:async()=>{saves++;return true;},fail:async()=>true}});
+const result=await run();assert.equal(result.status,'done');assert.equal(result.analysis.source.intent,'unknown');assert.equal(result.analysis.tasks.length,0);assert.equal(result.analysis.imageItems.tasks.length,0);assert.equal(result.analysis.review.withheldTasks,1);assert.equal(result.analysis.imageFacts[0].text,fact);
+const view=dailyBriefingView({now:f.now,analyses:[result.analysis]});assert.ok(view.workItems.every(w=>w.category!=='task'&&w.status!=='complete'));
+value.intent.kind='routine';value.imageItems.tasks=[];const routine=await run();assert.equal(routine.status,'done');assert.equal(routine.analysis.source.intent,'routine');assert.equal(routine.analysis.tasks.length,0);const note=renderDailyBriefing({now:f.now,analyses:[routine.analysis]}).managedHtml;assert.ok(note.includes('정기보고메일'));assert.ok(!note.includes('sajo-mail-photos-'));assert.ok(!note.includes('<img'));
+value.intent.kind='request';value.tasks=[{text:'사진 주장만으로 배차 준비',evidence:fact,status:'pending',assignee:null,due:null,serviceOriginal:null,completionEvidence:null,forOwner:true,recipientScope:'owner_direct',selfRequestEvidence:fact}];const invalid=await run();assert.equal(invalid.status,'failed');assert.equal(invalid.code,'ANALYSIS_EVIDENCE');assert.equal(saves,2);assert.equal(calls,3);
+console.log('PASS image-only boundary: model request claims remain review without personal task/completion, image facts retained, routine compact without photos, image-only body-task evidence rejected; mocked transport only');
+
+}
+
+{
+ const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const result=await runStressCase('manual-late-correction-targeted',{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:()=>assert.fail('unambiguous existing-work correction does not need a new model request')});
+ assert.equal(result.saved.items[0].needsConfirmation,false,'verified old-to-new quantity correction is not an unresolved multiple-quantity request');
+ assert.ok(result.saved.items[0].text.includes('10P'));assert.equal(result.automatedChecksPassed,true);
+ console.log('PASS explicit resolved quantity correction remains exact while fresh ambiguous quantities require review');
+}
+
+{
+ const {STRESS_FIXTURES}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ for(const fixture of STRESS_FIXTURES.slice(26)){
+  const original=JSON.stringify(fixture.related);let calls=0;
+  const result=await runStressCase(fixture.id,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async()=>{
+   calls++;assert.equal(fixture.id,'manual-late-reply-is-historical-reference');
+   return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({items:[{kind:'reference',text:'교체 전 차량 회신 참고',evidence:fixture.text,serviceOriginal:null,dueOriginal:null,assignee:null,needsConfirmation:false}],authoredDate:null})}]}]});
+  }});
+  assert.equal(result.automatedChecksPassed,true,JSON.stringify({caseId:fixture.id,status:result.status,code:result.code,checks:result.checks}));
+  assert.equal(result.duplicate,'reused');assert.equal(calls,fixture.id==='manual-late-reply-is-historical-reference'?1:0);assert.equal(JSON.stringify(fixture.related),original);
+ }
+ console.log('PASS fixed state-change diagnostics: partial completion, vehicle replacement and explicit historical reply preserve target IDs/latest facts; constructed transport only');
+}
+
+{
+ const {normalizeManualItems}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const text='11/2 월\n가상센터 4p 배차입니다.\n하차 13:15\n경기도 가상시 검증로 33';
+ assert.throws(()=>normalizeManualItems({items:[text,text.replaceAll('\n','  ')].map(evidence=>({kind:'dispatch',text:'배차 준비',evidence,serviceOriginal:'11/2',needsConfirmation:false}))},{text,entryId:'11111111-2222-4333-8444-555555555555',submittedAt:'2026-11-01T01:00:00Z',referenceDate:'2026-11-01'}),/MANUAL_EVIDENCE/,'rewritten evidence is rejected rather than assigned as another original request');
+ console.log('PASS rewritten source quote remains rejected without fabricated quantity/address ownership');
 }

@@ -235,6 +235,7 @@ ambiguousCargo.items = [{ ...ambiguousCargo.items[0], ref: ambiguousCargo.entryI
 cases.push(
   { id: 'manual-two-destination-requests', kind: 'manual', ...common, text: cargoBlocks.join('\n'),
     expected: { taskCount: 2, dueDate: null, dueAt: null, serviceDate: '2026-11-02', link: { mode: 'none', refs: [] },
+      displayItems: [{ name: '가상쿠팡구름', pallets: 4, includes: ['13:15', '테스트로 33'] }, { name: '가상쿠팡별', pallets: 6, includes: ['15:00', '검증동 2676'] }],
       summaryContains: ['하차 13:15', '하차 15:00', '테스트로 33', '검증동 2676'], mustNot: ['cross_destination_address_or_time', 'pallets_become_tonnage'] } },
   { id: 'manual-two-destination-cargo-supplement', kind: 'manual', ...common, related: [cargoPrior],
     text: '월요일 가상쿠팡\n구름 160박스 4p 1.7톤\n별 288박스 6p 2.6톤 입니다.', expected: cargoExpected },
@@ -249,6 +250,37 @@ cases.push(
     expected: { taskCount: 0, issueCount: 1, classification: 'needs_confirmation', dueDate: null, link: { mode: 'none', refs: [] }, mustNot: ['choose_one_conflicting_quantity', 'overwrite_owner_source'] } },
   { id: 'manual-cargo-reordered-duplicate-lines', kind: 'manual', ...common, related: [cargoPrior],
     text: '월요일 가상쿠팡\n별 288박스 6p 2.6톤\n구름 160박스 4p 1.7톤\n별 288박스 6p 2.6톤', expected: cargoExpected },
+);
+const oldAssignmentText = '11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상12가0001 가상갑 01000000001';
+const newAssignmentText = '차량 교체\n11월2일\n가상공장(09:00상)-가상쿠팡구름\n가상34나0002 가상을 01000000002';
+function assignmentReceipt(entryId, text, at, vehicleLine) {
+  return { entryId, status: 'ready', text, referenceDate: REFERENCE_DATE, submittedAt: at,
+    items: [{ itemId: 'item-001', ref: entryId + ':manual:item-001', workRef: cargoRefs[0], kind: 'dispatch',
+      text: cargoPrior.items[0].text, evidence: text, resolution: 'dispatch_assignment_v1',
+      serviceDate: '2026-11-02', serviceOriginal: '11월2일', visibleFrom: REFERENCE_DATE,
+      submittedAt: at, receivedAt: at, workflowStatus: 'complete', declaredAt: at,
+      done: false, completedAt: null, completionEvents: [], needsConfirmation: false, dueDate: null, dueAt: null,
+      details: ['가상공장 → 가상쿠팡구름 · 상차 09:00', vehicleLine] }] };
+}
+const oldAssignment = assignmentReceipt('a1111111-1111-4111-8111-111111111111', oldAssignmentText, '2026-11-02T00:10:00.000Z', '가상12가0001 가상갑 010-0000-0001');
+const newAssignment = assignmentReceipt('b2222222-2222-4222-8222-222222222222', newAssignmentText, '2026-11-02T00:20:00.000Z', '가상34나0002 가상을 010-0000-0002');
+const replacementFacts = [{ ref: cargoRefs[0], status: 'complete', serviceDate: '2026-11-02',
+  summaryIncludes: ['가상34나0002', '가상을', '010-0000-0002', '하차 13:15', '테스트로 33'],
+  summaryExcludes: ['가상12가0001', '가상갑', '010-0000-0001'] }];
+cases.push(
+  { id: 'manual-two-destination-partial-completion', kind: 'manual', ...common, related: [cargoPrior],
+    text: '11월 2일 가상쿠팡별 6P는 아직 차량 배정 대기입니다.\n11월 2일 가상쿠팡구름 4P 차량 배정 완료했습니다.',
+    expected: { taskCount: 0, link: { mode: 'exact', refs: [cargoRefs[0]] }, dueDate: null, expectedStatus: 'complete',
+      targetFacts: [{ ref: cargoRefs[0], status: 'complete', serviceDate: '2026-11-02', summaryIncludes: ['하차 13:15', '테스트로 33'] },
+        { ref: cargoRefs[1], status: 'pending', serviceDate: '2026-11-02', summaryIncludes: ['하차 15:00', '검증동 2676'] }],
+      mustNot: ['pending_first_row_hides_completed_second', 'complete_both_destinations', 'complete_actual_unloading'] } },
+  { id: 'manual-exact-vehicle-replacement', kind: 'manual', ...common, related: [cargoPrior, oldAssignment], text: newAssignmentText,
+    expected: { taskCount: 0, link: { mode: 'exact', refs: [cargoRefs[0]] }, dueDate: null, expectedStatus: 'complete', targetFacts: replacementFacts,
+      mustNot: ['new_duplicate_task', 'stale_vehicle_in_latest_summary', 'discard_old_source_evidence', 'complete_actual_unloading'] } },
+  { id: 'manual-late-reply-is-historical-reference', kind: 'manual', ...common, related: [cargoPrior, oldAssignment, newAssignment],
+    text: '이전 회신입니다. 현재 교체 차량은 변경 없습니다. 아래는 교체 전 자료로만 참고하세요.\n' + oldAssignmentText,
+    expected: { taskCount: 0, link: { mode: 'none', refs: [] }, items: [{ kind: 'reference' }], targetFacts: replacementFacts,
+      mustNot: ['historical_vehicle_replaces_current_assignment', 'new_duplicate_dispatch_task', 'reopen_completed_preparation'] } },
 );
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {

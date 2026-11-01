@@ -159,6 +159,7 @@ export function IsolatedStorageCheck({
             modelTrace: modelResult.trace,
             modelStatus: modelResult.status,
             modelChecks: modelResult.checks,
+            noteProof: modelResult.noteProof,
             networkCalled:
               Array.isArray(modelResult.trace) && modelResult.trace.length > 0,
             providerRequestAttempted:
@@ -219,6 +220,28 @@ export function IsolatedStorageCheck({
       await run(JSON.parse(await file.text()));
     } catch {
       setStatus('JSON 파일을 읽지 못했습니다.');
+    }
+  }
+  async function writeNote() {
+    const row = report[0];
+    if (active.current || disabled || row?.flowPassed !== true || typeof row.noteProof !== 'string' || !row.roundTrip) return;
+    active.current = true;
+    setBusy(true);
+    onBusyChange?.(true);
+    setStatus('기존 분석·격리 SQL 결과로 별도 가상 검증 페이지를 저장하고 다시 읽습니다. 모델을 다시 호출하지 않습니다.');
+    try {
+      const note = await apiManagement.stressNote(row.noteProof, row.roundTrip);
+      if (alive.current) {
+        setReport([{ ...row, noteCheck: note }]);
+        setStatus(note.status === 'passed'
+          ? '별도 가상 검증 페이지의 실제 저장·재조회와 중복 없는 반복 처리를 확인했습니다.'
+          : '가상 검증 페이지 확인을 끝내지 못했습니다. 기존 결과를 유지합니다. 코드: ' + String(note.code ?? 'STRESS_NOTE_FAILED'));
+      }
+    } catch {
+      if (alive.current) setStatus('원노트 응답을 확인하지 못했습니다. 같은 버튼으로 기존 페이지부터 재조회할 수 있습니다. 분석은 다시 호출하지 않습니다.');
+    } finally {
+      active.current = false;
+      if (alive.current) { setBusy(false); onBusyChange?.(false); }
     }
   }
   function download() {
@@ -292,6 +315,16 @@ export function IsolatedStorageCheck({
       <p role="status" aria-live="polite">
         {status}
       </p>
+      {report[0]?.flowPassed === true && typeof report[0].noteProof === 'string' ? (
+        <button type="button" className="btn btn-ghost" disabled={busy || disabled} onClick={() => void writeNote()}>
+          가상 검증 페이지에 저장
+        </button>
+      ) : null}
+      {(report[0]?.noteCheck as Row | undefined)?.status === 'passed' ? (
+        <p>{String((report[0].noteCheck as Row).title)} · 실제 재조회 확인 · 반복 처리 {String((report[0].noteCheck as Row).repeatStatus)}
+          {typeof (report[0].noteCheck as Row).pageUrl === 'string' ? <> · <a href={String((report[0].noteCheck as Row).pageUrl)} target="_blank" rel="noopener noreferrer">검증 노트 열기</a></> : null}
+        </p>
+      ) : null}
       {report.some((row) => typeof row.noteHtml === 'string') ? (
         <iframe
           title="가상 검증 노트 미리보기"
