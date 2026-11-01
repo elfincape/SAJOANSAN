@@ -678,8 +678,18 @@ function manualConfirmationReasons(item, entry) {
   if (unknown.length) reasons.push(unknown.join('·') + ' 미정');
   return reasons;
 }
-function briefingWorkTitle(title) {
-  return String(title ?? '').replace(/^[^,，\n]{1,40}님[,，]\s*/,'').replace(/\s*(?:부탁드립니다|부탁드려요|부탁합니다|부탁해요|요청드립니다|요청합니다|해\s*주세요|해\s*주시기\s*바랍니다)[.!?。]*$/,'').trim();
+function briefingWorkTitle(title, serviceDate) {
+  let value = String(title ?? '').replace(/^[^,，\n]{1,40}님[,，]\s*/,'').replace(/\s*(?:부탁드립니다|부탁드려요|부탁합니다|부탁해요|요청드립니다|요청합니다|해\s*주세요|해\s*주시기\s*바랍니다)[.!?。]*$/,'').trim();
+  const first = value.split(/[.!?。\n]/)[0];
+  const relative = /오늘|내일|모레|글피|어제|익일/g;
+  const day = calendar(serviceDate);
+  if (day && (first.match(relative) ?? []).length === 1 &&
+      /배차|운행|납품|상차|하차|배송|회의/.test(first) &&
+      !/까지|기한|마감|내로|회신|제출|보고|검토/.test(first)) {
+    const [year,month,date] = day.split('-');
+    value = first.replace(relative,year+'.'+Number(month)+'.'+Number(date)) + value.slice(first.length);
+  }
+  return value;
 }
 export function renderWorkSections(items) {
   const chunks = [],
@@ -689,7 +699,7 @@ export function renderWorkSections(items) {
     if (!rows.length) continue;
     chunks.push('<h2>' + section.title + '</h2>');
     for (const item of rows) {
-      const title = briefingWorkTitle(item.title);
+      const title = briefingWorkTitle(item.title, item.serviceDate);
       chunks.push(
         item.category === 'reference'
           ? item.summary.length
@@ -752,7 +762,7 @@ export function renderWorkSections(items) {
 
 // Presentation only: use the confirmed service day, never a collection or processing deadline.
 function compactWorkSummary(item) {
-  const title = briefingWorkTitle(item.title);
+  const title = briefingWorkTitle(item.title, item.serviceDate);
   const titleQuantity = /\d+(?:\.\d+)?\s*[pP](?:\b|(?=[^A-Za-z]))/.exec(title);
   return (item.summary ?? []).filter(value => {
     const text = value.trim();
@@ -764,7 +774,7 @@ function compactWorkSummary(item) {
   });
 }
 export function workSummaryForDisplay(item) {
-  const summary = compactWorkSummary(item);
+  const summary = compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate));
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];
   const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));
@@ -845,7 +855,7 @@ export function renderBriefingWorkNote(items) {
     chunks.push('<h2 style="font-family:Malgun Gothic,Arial,sans-serif;font-size:14pt;font-weight:bold;color:#222222;margin-top:18pt;margin-bottom:8pt">' + (++sectionNumber) + '. ' + heading + '</h2>');
     if (rows.length) chunks.push('<ol style="list-style-type:decimal">');
     for (const item of rows) {
-      const title = briefingWorkTitle(item.title);
+      const title = briefingWorkTitle(item.title, item.serviceDate);
       const detailLines = [];
       const displaySummary = workSummaryForDisplay(item);
       chunks.push('<li style="list-style-type:decimal;' + itemStyle + '">');
