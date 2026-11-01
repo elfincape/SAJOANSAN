@@ -261,8 +261,11 @@ export function applyOwnerWorkCorrection(item, overrides = {}, day) {
       result.closedAt = null;
     }
   }
+  const correctionAt=correction.doneAt ?? correction.updatedAt;
+  const newerOwnerDecision=typeof item.ownerStateAt==='string' && Number.isFinite(Date.parse(item.ownerStateAt)) &&
+    typeof correctionAt==='string' && Number.isFinite(Date.parse(correctionAt)) && Date.parse(item.ownerStateAt)>Date.parse(correctionAt);
   if (typeof correction.done === 'boolean' && result.category !== 'reference' &&
-      !(correction.done === false && completionAfterReopen(item, correction.doneAt ?? correction.updatedAt))) {
+      !newerOwnerDecision && !(correction.done === false && completionAfterReopen(item, correctionAt))) {
     result.status = correction.done ? 'complete' : 'pending';
     result.closedAt = correction.done
       ? (correction.doneAt ?? correction.updatedAt)
