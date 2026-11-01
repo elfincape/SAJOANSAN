@@ -26,6 +26,7 @@ export function DailyWorkList({
   day,
   busy,
   onChangeWork,
+  onFollowup,
 }: {
   items: DailyWork[];
   excludedItems?: DailyWork[];
@@ -33,6 +34,7 @@ export function DailyWorkList({
   labels: Record<string, string>;
   day: string;
   busy: boolean;
+  onFollowup?: (text:string,targetWorkId:string) => void;
   onChangeWork: (
     item: DailyWork,
     patch: WorkPatch,
@@ -315,25 +317,25 @@ export function DailyWorkList({
             {item.needsConfirmation && (
               <p className="daily-task-meta">날짜·담당·내용을 확인해 주세요.</p>
             )}
-            <label>처리 내용 · 보낸 메시지/메일
-              <textarea className="app-input" rows={4} maxLength={3000} disabled={disabled}
+            <label>추가 정보·처리 내용
+              <textarea className="app-input" rows={4} maxLength={12000} disabled={disabled}
                 value={drafts[item.workId]?.text ?? ''}
                 onChange={event=>{const text=event.target.value;setDrafts(current=>({...current,[item.workId]:{id:crypto.randomUUID(),text}}));}} />
             </label>
-            <button type="button" className="btn btn-ghost" disabled={disabled || !drafts[item.workId]?.text.trim()}
-              onClick={()=>void save({activity:drafts[item.workId]})}>진행 기록 저장</button>
+            {onFollowup && <button type="button" className="btn btn-primary" disabled={disabled || !drafts[item.workId]?.text.trim()} onClick={()=>{const text=drafts[item.workId]?.text ?? '';close();onFollowup(text,item.workId);setDrafts(current=>{const next={...current};delete next[item.workId];return next;});}}>분석 후 저장</button>}
             {item.correction?.processingNotes?.map(note=><div key={note.id}><small>{formatBriefingTimestamp(note.at)}</small><p style={{whiteSpace:'pre-wrap'}}>{note.text}</p></div>)}
             <div className="daily-detail-actions">
               {item.category !== 'reference' && (
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  disabled={disabled}
+                  className="btn btn-ghost"
+                  disabled={disabled || !!drafts[item.workId]?.text.trim()}
+                  title={drafts[item.workId]?.text.trim() ? '처리 기록을 먼저 저장해 주세요.' : undefined}
                   onClick={() =>
-                    void save({ done: item.status !== 'complete', ...(drafts[item.workId]?.text.trim() ? {activity:drafts[item.workId]} : {}) })
+                    void save({ done: item.status !== 'complete' })
                   }
                 >
-                  {item.status === 'complete' ? '완료 취소' : drafts[item.workId]?.text.trim() ? '기록 저장 및 완료' : '완료'}
+                  {item.status === 'complete' ? '완료 취소' : '완료'}
                 </button>
               )}
               <label className="daily-classification">

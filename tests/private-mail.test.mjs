@@ -7832,3 +7832,43 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
 }
 
 }
+
+{
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');const {resolveExistingManualWork,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const f=fixtureById('manual-two-destination-cargo-supplement'),seed=structuredClone(f.related[0]),day=f.referenceDate,first=seed.items[0].ref,second=seed.items[1].ref;
+ for(const status of ['both_pending','second_complete','first_reopened']){
+  const overrides=status==='both_pending'?{}:status==='second_complete'?{['work:'+second]:{actor:'owner',done:true,doneAt:day+'T00:30:00Z',updatedAt:day+'T00:30:00Z'}}:{['work:'+first]:{actor:'owner',done:false,doneAt:day+'T00:30:00Z',updatedAt:day+'T00:30:00Z'}};
+  const entries={[seed.entryId]:structuredClone(seed)},reply=resolveExistingManualWork(f.text,entries,day,f.now,overrides);assert.equal(reply.items.length,2);assert.ok(reply.items.every(item=>item.workflowStatus==='pending'));
+  const id='aaaaaaaa-2222-4222-8222-333333333333',items=normalizeManualItems(reply,{text:f.text,entryId:id,submittedAt:f.now,referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetailsByItem:reply.items.map(item=>item.details)});for(const item of items)item.resolution=reply.resolution;
+  entries[id]={entryId:id,status:'ready',text:f.text,submittedAt:f.now,referenceDate:day,items};const snapshot=JSON.stringify(entries);
+  const project=()=>dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day,overrides),{workOverrides:overrides});const work=project();assert.equal(work.length,2);assert.equal(work.find(item=>item.workId===first).status,'pending');assert.equal(work.find(item=>item.workId===second).status,status==='second_complete'?'complete':'pending');assert.deepEqual(project(),work);assert.equal(JSON.stringify(entries),snapshot);
+  assert.ok(work.find(item=>item.workId===first).summary.some(text=>text.includes('160박스')));assert.ok(work.find(item=>item.workId===second).summary.some(text=>text.includes('288박스')));
+ }
+}
+
+{
+ const {analyzeTargetedManual}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const target={workId:'11111111-2222-4333-8444-555555555555:manual:item-001',title:'쿠팡시흥 6P 배차',kind:'dispatch',serviceDate:'2026-11-02'},entry={text:'시흥 288박스 6p 2.6톤 입니다.',submittedAt:'2026-11-01T12:00:00Z',referenceDate:'2026-11-01'};
+ const ai={aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'};
+ const run=async(overrides={},text=entry.text)=>analyzeTargetedManual({entry:{...entry,text},target,ai,fetcher:async(url,options)=>{assert.equal(url,'https://api.openai.com/v1/responses');assert.ok(options.body.includes(target.workId));return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'update',text:target.title,evidence:text,details:[text],completionEvidence:null,serviceOriginal:null,dueOriginal:null,...overrides})}]}]});}});
+ const saved=await run();assert.equal(saved.reply.items[0].workRef,target.workId);assert.equal(saved.reply.items[0].workflowStatus,'pending');assert.deepEqual(saved.reply.items[0].details,[entry.text]);
+ const badComplete=await run({action:'complete'});assert.equal(badComplete.reply.items[0].workRef,undefined);assert.equal(badComplete.reply.items[0].needsConfirmation,true);
+ const conflict=await run({matchesTarget:false,action:'conflict'});assert.equal(conflict.reply.items[0].workRef,undefined);
+ const complete=await run({action:'complete',completionEvidence:'차량 배정 완료했습니다.'},'차량 배정 완료했습니다.');assert.equal(complete.reply.items[0].workRef,target.workId);assert.equal(complete.reply.items[0].workflowStatus,'complete');
+ const wrongDay=await run({serviceOriginal:'11월 3일'},'11월 3일 시흥 배차입니다.');assert.equal(wrongDay.reply.items[0].workRef,undefined);
+}
+
+{
+ const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const f=fixtureById('manual-two-destination-cargo-supplement'),seed=structuredClone(f.related[0]),target=seed.items[0].ref,owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26';
+ for(const scenario of ['cargo','conflict','vehicle']){
+  const text=scenario==='cargo'?f.text.split('\n').slice(0,2).join('\n'):scenario==='conflict'?f.text:'가상12가3456 가상인 010-1234-5678',id='bbbbbbbb-2222-4222-8222-333333333333',entry={entryId:id,clientRequestId:id,status:'pending',text,submittedAt:f.now,referenceDate:f.referenceDate,targetWorkId:target,items:[]},current={id:box,owner_id:owner,enabled:true,manual_entries:{[seed.entryId]:seed,[id]:entry},briefing_overrides:{}};
+  const before=JSON.stringify(seed);let paid=0;
+  const response=await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},{json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),enqueueManualReport:async()=>false,
+   db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path==='rpc/private_mail_manual_claim')return{claimed:true,entry};if(path==='rpc/private_mail_manual_finish'){current.manual_entries[id]={...entry,status:'ready',items:options.body.p_items};return current.manual_entries[id];}throw Error('UNEXPECTED_DB '+path);},
+   fetcher:async(url,options)=>{paid++;assert.equal(url,'https://api.openai.com/v1/responses');assert.ok(options.body.includes(target));return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:scenario!=='conflict',action:scenario==='vehicle'?'complete':scenario==='conflict'?'conflict':'update',text:seed.items[0].text,evidence:text,details:[text],completionEvidence:scenario==='vehicle'?text:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+  const saved=await response.json();assert.equal(saved.status,'ready');assert.equal(paid,1,'targeted handler must actually invoke configured model transport');assert.equal(JSON.stringify(seed),before);assert.ok(saved.items.every(item=>!item.workRef||item.workRef===target));
+  const work=dailyWorkItems({day:f.referenceDate,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(current.manual_entries,f.referenceDate));assert.equal(work.find(item=>item.workId===seed.items[1].ref).status,'pending');assert.equal(work.find(item=>item.workId===target).status,scenario==='vehicle'?'complete':'pending');
+ }
+}

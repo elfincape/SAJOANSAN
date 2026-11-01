@@ -86,6 +86,7 @@ function ItemEvidence({ item }: { item: Item }) {
 function DailyOverview() {
   const [day, setDay] = useState(initialDay);
   const [messageOpen, setMessageOpen] = useState(false);
+  const [messageDraft,setMessageDraft]=useState<{id:string;text:string;targetWorkId?:string;autoSubmit?:boolean} | undefined>();
   const [dateInput, setDateInput] = useState(day);
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -365,7 +366,7 @@ function DailyOverview() {
         <button
           className="btn btn-ghost"
           type="button"
-          onClick={() => setMessageOpen(true)}
+          onClick={() => {setMessageDraft(undefined);setMessageOpen(true);}}
         >
           메시지 입력
         </button>
@@ -398,6 +399,7 @@ function DailyOverview() {
                 day={day}
                 busy={loading || pending !== null || filtersBusy || manualBusy}
                 onChangeWork={changeWork}
+                onFollowup={(text,targetWorkId)=>{setMessageDraft({id:crypto.randomUUID(),text,targetWorkId,autoSubmit:true});setMessageOpen(true);}}
               />
             ) : (
               <>
@@ -513,6 +515,7 @@ function DailyOverview() {
         <MailBriefingManualEntries
           refreshKey={manualRefresh}
           inputOpen={messageOpen}
+          initialDraft={messageDraft}
           onInputClose={() => setMessageOpen(false)}
           day={day}
           disabled={pending !== null || filtersBusy}

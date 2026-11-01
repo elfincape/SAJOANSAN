@@ -38,6 +38,7 @@ function failure(error: unknown) {
     (
       {
         OWNER_REQUIRED: '본인 계정에서만 메시지를 추가할 수 있습니다.',
+        MANUAL_TARGET_CONFLICT: '같은 메시지가 다른 대상 범위로 이미 접수돼 있습니다. 기존 접수건을 확인해 주세요.',
         MANUAL_SCHEMA_REQUIRED:
           '메시지 저장 준비 중입니다. 잠시 후 다시 시도해 주세요.',
         AI_NOT_CONFIGURED: '메시지 분석 연결이 준비되지 않았습니다.',
@@ -59,9 +60,11 @@ export function MailBriefingManualEntries({
   showItems = true,
   onChanged,
   inputOpen = false,
+  initialDraft,
   refreshKey = 0,
   onInputClose,
 }: {
+  initialDraft?: {id:string;text:string;targetWorkId?:string;autoSubmit?:boolean};
   refreshKey?: number;
   inputOpen?: boolean;
   onInputClose?: () => void;
@@ -72,6 +75,7 @@ export function MailBriefingManualEntries({
   onChanged?: () => void;
 }) {
   const [text, setText] = useState('');
+  const [targetWorkId,setTargetWorkId]=useState<string | null>(null);
   const [referenceDate, setReferenceDate] = useState('');
   const [data, setData] = useState<MailManualList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,6 +90,9 @@ export function MailBriefingManualEntries({
     id: string;
     retry?: boolean;
   } | null>(null);
+  useEffect(()=>{setTargetWorkId(initialDraft?.targetWorkId??null);if(!initialDraft)return;setText(initialDraft.text);setReferenceDate('');submission.current=null;draftVersion.current++;},[initialDraft?.id]);
+  const autoSubmitted=useRef<string | null>(null);
+  useEffect(()=>{if(!inputOpen||!initialDraft?.autoSubmit||autoSubmitted.current===initialDraft.id||text!==initialDraft.text||targetWorkId!==(initialDraft.targetWorkId??null)||disabled||busy)return;autoSubmitted.current=initialDraft.id;void add();},[inputOpen,initialDraft?.id,text,targetWorkId,disabled,busy]);
   const load = useCallback(async () => {
     const id = ++request.current;
     setLoading(true);
@@ -155,6 +162,7 @@ export function MailBriefingManualEntries({
         text: source.text,
         clientRequestId: source.clientRequestId,
         referenceDate: source.requestedReference,
+        targetWorkId: source.targetWorkId,
         retry: true,
       });
       if (!mounted.current) return;
@@ -173,7 +181,8 @@ export function MailBriefingManualEntries({
     const input = text.trim(),
       basis = referenceDate || null;
     if (!input || input.length > 12000 || (basis && !validDay(basis))) return;
-    const key = JSON.stringify({ text: input, referenceDate: basis });
+    const key = JSON.stringify({ text: input, referenceDate: basis,
+        targetWorkId });
     if (submission.current?.key !== key)
       submission.current = { key, id: crypto.randomUUID() };
     const clientRequestId = submission.current.id,
@@ -184,6 +193,7 @@ export function MailBriefingManualEntries({
         text: input,
         clientRequestId,
         referenceDate: basis,
+        targetWorkId,
         retry,
       });
       if (!mounted.current) return;
@@ -299,6 +309,7 @@ export function MailBriefingManualEntries({
         >
           <div className="daily-message-dialog">
             <h2>메시지 입력</h2>
+            {targetWorkId && <p className="daily-task-meta">선택한 업무에 반영합니다. 대상이 다른 내용은 확인이 필요합니다.</p>}
             <label className="manual-message-label" htmlFor="manual-message">
               카톡 메시지·직접 입력
               <textarea

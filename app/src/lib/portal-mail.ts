@@ -264,11 +264,13 @@ export const privateMail = {
       text: string;
       clientRequestId: string;
       requestedReference: string | null;
+      targetWorkId?: string | null;
       submittedAt: string;
       referenceDate: string | null;
       authoredDate: string | null;
     }>('private-mail-manual-source', { entryId }),
   manualEnqueue: (body: {
+    targetWorkId?: string | null;
     text: string;
     clientRequestId: string;
     referenceDate?: string | null;

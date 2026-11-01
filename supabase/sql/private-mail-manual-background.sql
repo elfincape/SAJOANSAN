@@ -252,4 +252,23 @@ end; $$;
 revoke all on function public.private_mail_manual_enqueue(uuid,uuid,uuid,text,text,date,boolean) from public,anon,authenticated;
 grant execute on function public.private_mail_manual_enqueue(uuid,uuid,uuid,text,text,date,boolean) to service_role;
 
+-- Bind a selected work context atomically before the existing background dispatch can run.
+create or replace function public.private_mail_manual_target_enqueue(p_box uuid,p_user uuid,p_request uuid,p_text text,p_hash text,p_reference date,p_retry boolean,p_target text)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; prior jsonb; result jsonb; e jsonb;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;
+ if not public.private_mail_manual_allowed(p_box,p_user) or p_target is null or length(p_target)>160 then raise exception 'MANUAL_SOURCE'; end if;
+ select value into prior from jsonb_each(b.manual_entries) where value->>'clientRequestId'=p_request::text or coalesce(value->'requestIds','[]') ? p_request::text or (value->>'textHash'=p_hash and ((value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date=(clock_timestamp() at time zone 'Asia/Seoul')::date) limit 1;
+ if prior is not null and prior->>'targetWorkId' is distinct from p_target then raise exception 'MANUAL_TARGET_CONFLICT'; end if;
+ result=public.private_mail_manual_enqueue(p_box,p_user,p_request,p_text,p_hash,p_reference,p_retry);
+ e=result->'entry';
+ if e->>'targetWorkId' is not null and e->>'targetWorkId'<>p_target then raise exception 'MANUAL_TARGET_CONFLICT'; end if;
+ e=e||jsonb_build_object('targetWorkId',p_target);
+ update public.private_mailboxes set manual_entries=jsonb_set(manual_entries,array[e->>'entryId'],e) where id=p_box;
+ return result||jsonb_build_object('entry',e);
+end; $$;
+revoke all on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) to service_role;
+
 commit;
