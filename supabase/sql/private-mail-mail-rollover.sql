@@ -1,11 +1,14 @@
--- Apply after private-mail-manual-background.sql and private-mail-image-transport.sql.
+-- Apply after private-mail-report-dispatch.sql, private-mail-manual-background.sql and private-mail-image-transport.sql.
 -- A new-day report preflight reuses the day-scoped worker capability. Only JS decides whether work carries.
 begin;
 create or replace function public.private_mail_mail_rollover_pending(p_box uuid,p_day date)
 returns boolean language sql stable security invoker set search_path='' as $$
  select p_day=(clock_timestamp() at time zone 'Asia/Seoul')::date and p_day<>'2026-10-30'::date
- and public.private_mail_automation_allowed(p_box) and exists(select 1 from public.private_mailboxes b
- where b.id=p_box and b.automation_config->>'analysisConsent'='true'
+ and public.private_mail_manual_allowed(p_box,'2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid)
+ and exists(select 1 from public.private_mailboxes b where b.id=p_box
+ and ((public.private_mail_automation_allowed(p_box) and b.automation_config->>'analysisConsent'='true')
+ or exists(select 1 from jsonb_each(b.manual_entries) e where e.value->>'status'='ready'
+ and ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date<p_day))
  and b.briefing_pages->p_day::text->>'mailRolloverPending'='true'
  and b.briefing_pages->p_day::text->>'mailRolloverCheckedDay' is distinct from p_day::text
  and coalesce(b.briefing_pages->p_day::text->>'hold','false')<>'true'
@@ -18,6 +21,7 @@ create or replace function public.private_mail_mail_rollover_token(p_box uuid,p_
 returns text language sql stable security invoker set search_path='' as $$
  select encode(sha256(convert_to(jsonb_build_object('overrides',b.briefing_overrides,
  'manual',b.manual_entries,'intentOverrides',b.automation_config->'intentOverrides',
+ 'scope',jsonb_build_array(b.automation_config->'enabled',b.automation_config->'analysisConsent',b.automation_config->'readStateVerified'),
  'sources',(select coalesce(jsonb_agg(jsonb_build_array(m.id,m.xmin::text) order by m.id),'[]'::jsonb)
  from public.private_mail_messages m where m.mailbox_id=b.id and m.analysis is not null))::text,'UTF8')),'hex')
  from public.private_mailboxes b where b.id=p_box;
@@ -29,7 +33,7 @@ declare b public.private_mailboxes; page jsonb;
 begin
  select * into b from public.private_mailboxes where id=p_box for update;
  if p_day is null or p_day<>(clock_timestamp() at time zone 'Asia/Seoul')::date or p_day='2026-10-30'::date
- or not public.private_mail_automation_allowed(p_box) or b.automation_config->>'analysisConsent' is distinct from 'true'
+ or not public.private_mail_manual_allowed(p_box,'2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid)
  or not exists(select 1 from public.onedrive_connection where id=true and encrypted_notes_tokens is not null)
  then return false; end if;
  page=coalesce(b.briefing_pages->p_day::text,'{}'::jsonb);
@@ -37,13 +41,39 @@ begin
  or coalesce((page->>'leaseUntil')::timestamptz,'-infinity')>clock_timestamp()
  or coalesce(page->>'hold','false')='true' or coalesce(page->>'ownerPreviewHold','false')='true'
  or coalesce((page->>'notBefore')::timestamptz,'-infinity')>clock_timestamp()
- or not exists(select 1 from public.private_mail_messages m where m.mailbox_id=b.id and m.owner_id=b.owner_id
- and m.analysis is not null and m.report_day<p_day) then return false; end if;
+ or not ((public.private_mail_automation_allowed(p_box) and b.automation_config->>'analysisConsent'='true'
+ and exists(select 1 from public.private_mail_messages m where m.mailbox_id=b.id and m.owner_id=b.owner_id
+ and m.analysis is not null and m.report_day<p_day))
+ or exists(select 1 from jsonb_each(b.manual_entries) e where e.value->>'status'='ready'
+ and ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date<p_day)) then return false; end if;
  -- Do not mark dirty until the canonical projection has checked owner edits and related replies.
  page=page||jsonb_build_object('mailRolloverPending',true,'revision',coalesce((page->>'revision')::integer,0));
  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[p_day::text],page) where id=p_box;
  return true;
 end; $$;
+
+-- A preflight for explicitly submitted manual work remains authorized while collection is paused.
+-- Its canonical decision may need to acknowledge an owner reopen that is absent from the original item.
+create or replace function public.private_mail_report_allowed(p_box uuid,p_day date)
+returns boolean language sql stable security invoker set search_path='' as $$
+ select exists(select 1 from public.private_mailboxes b join public.user_profiles p on p.id=b.owner_id and p.active
+ where b.id=p_box and b.id='39045005-313e-42e1-b50c-2394b3b6ff26'::uuid
+ and b.owner_id='2a828c2d-9a6f-40d4-8e13-336b591811cc'::uuid and b.enabled
+ and ((public.private_mail_automation_allowed(b.id) and b.automation_config->>'analysisConsent'='true') or
+ (jsonb_typeof(b.briefing_pages->p_day::text->'pageId')='string' and length(b.briefing_pages->p_day::text->>'pageId')>0) or
+ exists(select 1 from public.private_mail_messages m where m.mailbox_id=b.id and m.owner_id=b.owner_id
+ and m.report_day=p_day and m.analysis_manual_selected_at is not null and m.analysis_status='ready' and m.analysis is not null) or
+ exists(select 1 from jsonb_each(b.manual_entries) e,lateral jsonb_array_elements(e.value->'items') i
+ where e.value->>'status'='ready' and (e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul'<(p_day+1)::timestamp
+ and (i->>'kind'<>'reference' or ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date=p_day)
+ and ((public.private_mail_manual_item_state(i,p_day)->>'done'='false' and public.private_mail_manual_item_state(i,p_day)->>'cancelled' is distinct from 'true')
+ or ((public.private_mail_manual_item_state(i,p_day)->>'completedAt')::timestamptz at time zone 'Asia/Seoul')::date>=p_day
+ or ((public.private_mail_manual_item_state(i,p_day)->>'closedAt')::timestamptz at time zone 'Asia/Seoul')::date>=p_day)) or
+ (p_day=(clock_timestamp() at time zone 'Asia/Seoul')::date and p_day<>'2026-10-30'::date
+ and (b.briefing_pages->p_day::text->>'mailRolloverPending'='true' or b.briefing_pages->p_day::text->>'mailRolloverCheckedDay'=p_day::text)
+ and exists(select 1 from jsonb_each(b.manual_entries) e where e.value->>'status'='ready'
+ and ((e.value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date<p_day))));
+$$;
 
 create or replace function public.private_mail_mail_rollover_finish(p_box uuid,p_day date,p_lease uuid,p_token text,p_has_work boolean)
 returns jsonb language plpgsql security invoker set search_path='' as $$
@@ -77,7 +107,8 @@ begin
  page=jsonb_build_object('pageId',null,'managedHash',null,'fingerprint',null,'createAttempted',false,'pendingWrite',null)||page||
  jsonb_build_object('lease',p_lease,'leaseUntil',clock_timestamp()+interval '5 minutes','claimedRevision',(page->>'revision')::integer);
  if public.private_mail_mail_rollover_pending(p_box,p_day) then
-  page=page||jsonb_build_object('mailRolloverInput',public.private_mail_mail_rollover_token(p_box,p_day));
+  page=page||jsonb_build_object('mailRolloverInput',public.private_mail_mail_rollover_token(p_box,p_day),
+   'mailRolloverMailAllowed',coalesce(public.private_mail_automation_allowed(p_box) and b.automation_config->>'analysisConsent'='true',false));
  end if;
  update public.private_mailboxes set briefing_pages=jsonb_set(briefing_pages,array[d],page) where id=p_box;return page;
 end; $$;
@@ -247,7 +278,6 @@ returns integer language plpgsql security invoker set search_path='' as $$
 declare b public.private_mailboxes; count_dispatched integer=0; report_day text;
 begin
  for b in select * from public.private_mailboxes where id='39045005-313e-42e1-b50c-2394b3b6ff26'::uuid loop
-  perform public.private_mail_manual_rollover(b.id,(clock_timestamp() at time zone 'Asia/Seoul')::date);
   perform public.private_mail_mail_rollover_prepare(b.id,(clock_timestamp() at time zone 'Asia/Seoul')::date);
   if public.private_mail_dispatch_history(b.id,null::uuid) then count_dispatched=count_dispatched+1; end if;
   update public.private_mailboxes x set manual_entries=(select jsonb_object_agg(e.key,case
@@ -268,7 +298,8 @@ begin
   if not public.private_mail_automation_allowed(b.id) then
    -- Explicit manual reports and their retries do not start POP or a new inference.
    for report_day in select pages.key from public.private_mailboxes current_box,
-    lateral jsonb_each(current_box.briefing_pages) pages where current_box.id=b.id and pages.value->>'dirty'='true'
+    lateral jsonb_each(current_box.briefing_pages) pages where current_box.id=b.id
+    and (pages.value->>'dirty'='true' or coalesce(public.private_mail_mail_rollover_pending(b.id,pages.key::date),false))
     and coalesce(pages.value->>'hold','false')<>'true' and coalesce(pages.value->>'ownerPreviewHold','false')<>'true'
     and coalesce((pages.value->>'leaseUntil')::timestamptz,'-infinity')<=clock_timestamp()
     and coalesce((pages.value->>'notBefore')::timestamptz,'-infinity')<=clock_timestamp()
@@ -289,7 +320,7 @@ end; $$;
 do $$ declare f record; begin
  for f in select p.oid::regprocedure as signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname='public' and p.proname in ('private_mail_mail_rollover_pending','private_mail_mail_rollover_token',
- 'private_mail_mail_rollover_prepare','private_mail_mail_rollover_finish','private_mail_briefing_claim','private_mail_briefing_complete',
+ 'private_mail_mail_rollover_prepare','private_mail_mail_rollover_finish','private_mail_report_allowed','private_mail_briefing_claim','private_mail_briefing_complete',
  'private_mail_dispatch_target_allowed','private_mail_dispatch_core','private_mail_automation_tick') loop
  execute format('revoke all on function %s from public,anon,authenticated',f.signature);
  execute format('grant execute on function %s to service_role',f.signature);
