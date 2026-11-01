@@ -774,7 +774,7 @@ function compactWorkSummary(item) {
   });
 }
 export function workSummaryForDisplay(item) {
-  const summary = compactWorkSummary(item);
+  const summary = compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate));
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];
   const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));

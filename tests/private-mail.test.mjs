@@ -7451,6 +7451,7 @@ let failed=0;for(const[name,test]of[
 {
  const {renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
  const item={workId:'synthetic',title:'내일 가상별창고 6P 배차를 준비합니다. 하차 예정은 09:00입니다.',category:'task',status:'pending',serviceDate:'2026-10-30',summary:[],sourceRefs:[],needsConfirmation:false};
+ item.summary=['가상별창고 6P의 내일 배차 준비 요청입니다.'];
  const before=structuredClone(item),html=renderBriefingWorkNote([item]);assert.ok(!html.includes('내일'));assert.ok(html.includes('2026.10.30 가상별창고'));assert.deepEqual(item,before);
  assert.ok(renderBriefingWorkNote([{...item,serviceDate:null}]).includes('내일'),'unconfirmed dates must not be invented');
  const dueTitle='내일 17시까지 11월 3일 배차 회신';assert.ok(renderBriefingWorkNote([{...item,title:dueTitle}]).includes(dueTitle),'relative processing deadline must not become service day');
