@@ -2065,3 +2065,28 @@ try{
 }finally{await db.close()}
 
 }
+
+// Owner progress/completion notes share one locked transaction and immutable history.
+{
+ const db=new PGlite({extensions:{pgcrypto}}),BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc',entry='11111111-2222-4333-8444-555555555555',work=entry+':manual:item-001';
+ try{
+ await db.exec(`create role anon;create role authenticated;create role service_role;create extension pgcrypto;create table private_mailboxes(id uuid,owner_id uuid,enabled boolean,manual_entries jsonb,briefing_overrides jsonb default '{}',briefing_pages jsonb default '{}');create table private_mail_messages(id uuid,mailbox_id uuid,owner_id uuid,analysis jsonb);create table user_profiles(id uuid,active boolean);create table test_history(payload text);create function private_mail_manual_dirty(uuid,date) returns boolean language sql as $$select true$$;create function private_mail_history_enqueue(text,text) returns boolean language plpgsql as $$begin insert into public.test_history values($2);return true;end$$;create function private_mail_dispatch_report(uuid,date) returns boolean language sql as $$select true$$;`);
+ await db.exec(await readFile(new URL('../supabase/sql/private-mail-work-correction.sql',import.meta.url),'utf8'));
+ await db.query('insert into user_profiles values($1,true)',[OWNER]);await db.query('insert into private_mailboxes(id,owner_id,enabled,manual_entries) values($1,$2,true,$3)',[BOX,OWNER,{[entry]:{status:'ready',items:[{itemId:'item-001',kind:'dispatch',text:'배차 준비'}]}}]);
+ const day=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text d")).rows[0].d;
+ const call=async(patch,expected=null)=>(await db.query('select private_mail_work_correct($1,$2,$3,$4,$5,$6) r',[BOX,OWNER,work,day,patch,expected])).rows[0].r;
+ const note=(id,text)=>({activity:{id:'aaaaaaaa-1111-4111-8111-'+String(id).padStart(12,'0'),text}});
+ const first=await call(note(1,'차량 문의 메시지 발송\n원문 보존'));assert.equal(first.correction.done,undefined);assert.equal(first.correction.processingNotes[0].text,'차량 문의 메시지 발송\n원문 보존');
+ const completed=await call({...note(2,'기사 정보 전달 완료'),done:true},first.correction.updatedAt);assert.equal(completed.correction.done,true);assert.equal(completed.correction.processingNotes.length,2);
+ const retried=await call({...note(2,'기사 정보 전달 완료'),done:true},first.correction.updatedAt);assert.deepEqual(retried,completed);assert.equal((await db.query('select count(*)::int n from test_history')).rows[0].n,2);
+ await assert.rejects(()=>call({...note(2,'기사 정보 전달 완료'),done:false},completed.correction.updatedAt),/CONFLICT/);
+ await assert.rejects(()=>call({...note(3,'다른 수정'),done:false},first.correction.updatedAt),/CONFLICT/);
+ const reopened=await call({done:false},completed.correction.updatedAt);assert.equal(reopened.correction.done,false);assert.deepEqual(reopened.correction.processingNotes,completed.correction.processingNotes);
+ const later=await call(note(4,'추가 회신 내용'),reopened.correction.updatedAt);assert.equal(later.correction.done,false);assert.equal(later.correction.processingNotes.length,3);
+ await assert.rejects(()=>call({...note(5,''),done:true},later.correction.updatedAt),/INVALID/);
+ const before=JSON.stringify((await db.query('select * from private_mailboxes')).rows);
+ await db.exec('create or replace function private_mail_history_enqueue(text,text) returns boolean language plpgsql as $$begin raise exception \'SIMULATED_HISTORY_FAILURE\';end$$');
+ await assert.rejects(()=>call({...note(6,'실패시 둘다 미반영'),done:true},later.correction.updatedAt),/SIMULATED_HISTORY_FAILURE/);assert.equal(JSON.stringify((await db.query('select * from private_mailboxes')).rows),before);
+ console.log('PASS owner activity progress/atomic completion/readback/idempotency/conflict/reopen/history/rollback');
+ }finally{await db.close()}
+}

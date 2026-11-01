@@ -7783,3 +7783,26 @@ console.log('PASS field-wise cargo supplements preserve unspecified quantities/w
 
 const projected=work(),snapshot=JSON.stringify(projected);renderBriefingWorkNote(projected);assert.equal(JSON.stringify(projected),snapshot,'presentation must not erase stored pallet facts');
 }
+
+{
+ const {resolveDispatchAssignment,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const id='11111111-2222-4333-8444-555555555555',day='2026-11-01',text='11/2 월\n쿠팡시흥 6P 배차입니다.\n하차 15:00\n경기도 가상시 테스트로 33';
+ const items=normalizeManualItems({items:[{kind:'dispatch',text:'쿠팡시흥 6P 배차',evidence:text,serviceOriginal:'11/2',dueOriginal:null,assignee:null,needsConfirmation:false}]},{text,entryId:id,submittedAt:day+'T01:00:00Z',referenceDate:day});
+ const entries={[id]:{entryId:id,status:'ready',text,submittedAt:day+'T01:00:00Z',referenceDate:day,items}};
+ for(const separator of ['~','～','→','-']){
+ const replyText='11/02 (월)\n가상공장(09:00상)'+separator+'시흥쿠팡\n강원80바1234 가상인 010-1234-5678';
+ const reply=resolveDispatchAssignment(replyText,entries,day);assert.ok(reply,'parenthesized weekday and route separator must enter existing assignment resolver');assert.equal(reply.items[0].workRef,items[0].ref);assert.equal(reply.items[0].workflowStatus,'complete');
+ const nextId='aaaaaaaa-1111-4111-8111-222222222222',next=normalizeManualItems(reply,{text:replyText,entryId:nextId,submittedAt:day+'T02:00:00Z',referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetails:reply.details});
+ const all={...entries,[nextId]:{entryId:nextId,status:'ready',text:replyText,submittedAt:day+'T02:00:00Z',referenceDate:day,items:next}};
+ const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(all,day));assert.equal(work.length,1);assert.equal(work[0].status,'complete');assert.ok(work[0].title.includes('6P'));assert.equal(work[0].serviceDate,'2026-11-02');
+ }
+}
+
+{
+ const {applyOwnerWorkCorrection,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const item={workId:'test-owner-notes',title:'배차 준비',category:'task',status:'pending',summary:[],sourceRefs:[]};
+ const notes=[{id:'first',text:'차량 정보 전달 완료\n메일 원문 전체는 상세에서 보존',at:'2026-11-01T01:00:00Z'},{id:'future',text:'다음날 추가 기록',at:'2026-11-02T01:00:00Z'}];
+ const overrides={'work:test-owner-notes':{actor:'owner',done:true,updatedAt:'2026-11-01T01:00:00Z',processingNotes:notes}};
+ const result=applyOwnerWorkCorrection(item,overrides,'2026-11-01');assert.equal(result.status,'complete');assert.equal(result.correction.processingNotes.length,1);const html=renderBriefingWorkNote([result]);assert.ok(html.includes('차량 정보 전달 완료'));assert.ok(!html.includes('메일 원문 전체'));assert.ok(!html.includes('다음날 추가'));assert.deepEqual(overrides['work:test-owner-notes'].processingNotes,notes);
+}
