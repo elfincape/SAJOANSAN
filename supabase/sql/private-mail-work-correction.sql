@@ -52,13 +52,14 @@ begin
   end if;
   if jsonb_array_length(coalesce(old->'processingNotes','[]'))>=200 then raise exception 'WORK_ACTIVITY_LIMIT'; end if;
  end if;
- if (old-'actor'-'updatedAt'-'revision'-'events'-'doneAt') @> p_patch then return jsonb_build_object('saved',true,'workId',p_work,'correction',old); end if;
+ if (old-'actor'-'updatedAt'-'revision'-'events'-'doneAt') @> p_patch
+ and (not (p_patch ? 'done') or coalesce(p_expected,'') is distinct from coalesce(old->>'updatedAt','')) then return jsonb_build_object('saved',true,'workId',p_work,'correction',old); end if;
  if coalesce(old->>'updatedAt','') is distinct from coalesce(p_expected,'') then raise exception 'WORK_CORRECTION_CONFLICT'; end if;
  revised=old||(p_patch-'activity')||jsonb_build_object('actor','owner','updatedAt',now_at,'revision',coalesce((old->>'revision')::integer,0)+1);
  if p_patch ? 'activity' then
   revised=revised||jsonb_build_object('processingNotes',coalesce(old->'processingNotes','[]')||jsonb_build_array(p_patch->'activity'||jsonb_build_object('at',now_at,'requestedDone',coalesce(p_patch->'done','null'::jsonb))));
  end if;
- if p_patch ? 'done' and p_patch->'done' is distinct from old->'done' then
+ if p_patch ? 'done' then
   revised=revised||jsonb_build_object('doneAt',case when jsonb_typeof(p_patch->'done')='boolean' then to_jsonb(now_at) else 'null'::jsonb end);
  end if;
  if revised->'excluded'='false'::jsonb then revised=revised||'{"reason":null}'::jsonb; end if;
