@@ -226,3 +226,14 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const tied=await optimizeCourseCapture({},c,{candidatePlan:reordered,measure:async(_p,stops,o)=>{const r={method:'naver-map-display',distanceKm:5,distanceMeters:5000,distanceText:'5km',routeLabel:'free',requestedStops:stops};return {...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('tie')}:{})};}});
  assert.deepEqual(tied.orderedStops,coursePermutations(c)[0],'Web ties use original permutation order, not API score order');
 }
+
+{
+ const settings={cartype:'1',fueltype:'1',output:'pbf'};let checkpoint;
+ await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,stops)=>{
+  if(stops[2]==='B'&&stops[3]==='A')throw Error('synthetic interruption');
+  return{distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,requestSettings:settings};
+ },onProgress:async state=>{checkpoint=structuredClone(state);}}),error=>error.code==='OPTIMIZATION_INCOMPLETE');
+ const prior=structuredClone(checkpoint);
+ await assert.rejects(()=>optimizeCourseCapture({},course,{previous:checkpoint,measure:async(_p,stops)=>({distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,requestSettings:{...settings,cartype:'2'},png:Buffer.from('wrong-settings')})}),error=>error.code==='OPTIMIZATION_SETTINGS_CHANGED');
+ assert.deepEqual(checkpoint,prior,'changed conditions never alter the previous checkpoint');
+}

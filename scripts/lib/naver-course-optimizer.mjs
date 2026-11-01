@@ -1,6 +1,7 @@
 export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
 export const SHORTLIST_WEB_POLICY='naver-api-top3-web-meters-v1';
 
+import {routeSettingsKey} from './naver-route-evidence.mjs';
 import {coursePermutations} from '../../supabase/functions/naver-relations/course-permutations.js';
 export {coursePermutations};
 
@@ -26,14 +27,18 @@ export function captureResultVerified(course,result){
 }
 export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={}}={}) {
  const started=performance.now(),metrics={routeLookups:0,routeCacheHits:0,addressResolutionMs:0,searchRefreshMs:0,routeRequestMs:0,optionCompareMs:0,captureMs:0,addressQueries:0,addressCacheHits:0,routeRequests:0,networkAddressRequests:0};
- const lookup=async(stops,options)=>{metrics.routeLookups++;const result=await measure(page,stops,{...options,addressCache,routeContext});for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
+ const changedSettings=()=>Object.assign(Error('저장된 비교와 차량·주행 옵션이 다릅니다. 기존 진행은 보존했습니다.'),{code:'OPTIMIZATION_SETTINGS_CHANGED'});
+ let expectedSettings=routeContext.settings;
+ const lookup=async(stops,options)=>{metrics.routeLookups++;const result=await measure(page,stops,{...options,addressCache,routeContext});if(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(result.requestSettings))throw changedSettings();if(result.requestSettings){expectedSettings??=structuredClone(result.requestSettings);routeContext.settings??=structuredClone(result.requestSettings);}for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
  const scope=comparisonScope(course,candidatePlan),{routes,inputKey}=scope;
  const evaluations={},state={version:1,policy:scope.policy,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false,...(scope.selection?{selection:scope.selection,allPermutations:scope.selection.totalPermutations,globalMinimumGuaranteed:false}:{})};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
+ const savedSettings=Object.values(evaluations).map(value=>value.requestSettings).filter(Boolean);
+ if(savedSettings.length){if(savedSettings.length!==Object.keys(evaluations).length||savedSettings.some(value=>routeSettingsKey(value)!==routeSettingsKey(savedSettings[0]))||(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(savedSettings[0])))throw Object.assign(changedSettings(),{optimization:structuredClone(previous)});expectedSettings=structuredClone(savedSettings[0]);routeContext.settings??=structuredClone(savedSettings[0]);}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};
  await checkActive();await report();let consecutiveFailures=0,bestCapture;
  for(const [index,stops] of routes.entries()) {
-  await checkActive();const key=JSON.stringify(stops),cacheKey=JSON.stringify([COMPARISON_POLICY,stops]);
+  await checkActive();const key=JSON.stringify(stops),cacheKey=JSON.stringify([COMPARISON_POLICY,stops,routeSettingsKey(expectedSettings)]);
   state.current=index+1;
   if(evaluations[key])continue;
   try {
@@ -44,13 +49,13 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
    // Keep only the current winning image, from the exact lookup used in the comparison.
    // Buffers never enter checkpoints/cache; a resumed winner without an image is revalidated below.
    if(png?.length&&Object.values(evaluations).every(other=>result.distanceKm<other.distanceKm))bestCapture={key,result};
-   evaluations[key]=details;cache.set(cacheKey,details);consecutiveFailures=0;
+   evaluations[key]=details;cache.set(JSON.stringify([COMPARISON_POLICY,stops,routeSettingsKey(expectedSettings)]),details);consecutiveFailures=0;
   }catch(e){
-   if(e.code==='CAPTURE_PAUSED')throw e;
+   if(e.queueFailure||e.code==='CAPTURE_PAUSED')throw e;
    state.failed.push({index:index+1,code:e.code??(e.name==='TimeoutError'?'BROWSER_TIMEOUT':'ROUTE_LOOKUP_FAILED'),message:String(e.message).split('\n')[0].slice(0,160),...(e.routeDiagnostics?{routeDiagnostics:e.routeDiagnostics}:{})});
    consecutiveFailures++;
    await report();
-   if(['ADDRESS_NOT_FOUND','NAVER_SEARCH_UNAVAILABLE','NAVER_ROUTE_UNAVAILABLE'].includes(e.code)){e.optimization=structuredClone(state);throw e;}
+   if(['ADDRESS_NOT_FOUND','NAVER_SEARCH_UNAVAILABLE','NAVER_ROUTE_UNAVAILABLE','OPTIMIZATION_SETTINGS_CHANGED'].includes(e.code)){e.optimization=structuredClone(state);throw e;}
    if(consecutiveFailures>=3)break;
    continue;
   }
@@ -65,7 +70,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
  const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await lookup(selected,{screenshot:true,checkActive});
  await checkActive();
  if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||evidenceKey(captured)!==evidenceKey(expected)||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
-  delete evaluations[JSON.stringify(selected)];cache.delete(JSON.stringify([COMPARISON_POLICY,selected]));await report();
+  delete evaluations[JSON.stringify(selected)];cache.delete(JSON.stringify([COMPARISON_POLICY,selected,routeSettingsKey(expectedSettings)]));await report();
   throw Object.assign(Error('최종 캡처의 순서·거리가 비교 결과와 달라 최단 검증을 완료하지 못했습니다. 재시도해 주세요.'),{code:'CAPTURE_DISTANCE_CHANGED',optimization:structuredClone(state)});
  }
  state.complete=true;state.failed=[];await report();

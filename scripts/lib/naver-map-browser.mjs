@@ -1,4 +1,4 @@
-import {decodeNaverDirections,matchNaverRouteOptions} from './naver-route-evidence.mjs';
+import {decodeNaverDirections,matchNaverRouteOptions,routeSettingsKey} from './naver-route-evidence.mjs';
 export function distanceFromCard(text){
  if(!/거리\s*우선/.test(text))throw Error('거리우선 항목을 확인하지 못했습니다.');
  const match=text.split(/거리\s*우선/)[1].match(/([\d,]+(?:\.\d+)?)\s*(km|m)(?![a-z])/i);
@@ -254,7 +254,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
  page.on('response',watchRoute);
  const routeResponse=page.waitForResponse(matches,{timeout:45000}).then(async response=>{
   if(!response.ok())throw await providerFailure(response,undefined,'route');
-  const settings=routeSettings(response.url());if(routeContext.settings&&JSON.stringify(routeContext.settings)!==JSON.stringify(settings))throw Error('네이버 비교 경로의 차량·주행 옵션이 변경되었습니다.');routeContext.settings=settings;
+  const settings=routeSettings(response.url());if(routeContext.settings&&routeSettingsKey(routeContext.settings)!==routeSettingsKey(settings))throw Object.assign(Error('저장된 비교와 차량·주행 옵션이 다릅니다. 기존 진행은 보존했습니다.'),{code:'OPTIMIZATION_SETTINGS_CHANGED'});routeContext.settings=settings;
   return decodeNaverDirections(await response.body());
  }).catch(error=>({error}));
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000});

@@ -4,7 +4,8 @@ import { useAdminPage } from './AdminPage';
 import { permissionAllowed } from '../lib/permissions';
 import { NaverCourseMapping } from './NaverCourseMapping';
 import { NaverAddressValidation } from './NaverAddressValidation';
-import { sameRoutingCourse, validatedCourseIds } from '../domain/naver-address-validation';
+import { sameRoutingCourse, validatedCourseIds, sameCaptureInput, canResumeCapture } from '../domain/naver-address-validation';
+import {getAddressValidation} from '../lib/naver-address-validation';
 import type { AddressValidationJob } from '../lib/naver-address-validation';
 import type { CourseSheetTable } from './NaverCourseMapping';
 import { findCourseTables, courseTableAt } from '../domain/naver-course-import';
@@ -25,6 +26,7 @@ import {
   captureVerificationLabel,
   captureImage,
   enqueueCapture,
+  resumeCapture,
   getCapture,
   saveFile,
 } from '../lib/naver-courses';
@@ -90,6 +92,9 @@ export function NaverCourseCapture({
     [validationRunning, setValidationRunning] = useState(false), [inputVersion,setInputVersion] = useState(0);
   const [strategy,setStrategy]=useState<'api3'|'full'>(editable?'api3':'full'),[shortlist,setShortlist]=useState<ShortlistJob|null>(null);
   const stopApi=useRef(false);
+  const [forceNewSelection,setForceNewSelection]=useState(false);
+  const [restoring,setRestoring]=useState(true);
+  const [restoreValidationId,setRestoreValidationId]=useState<string | undefined>();
   const [sources, setSources] = useState<CourseSheetTable[]>([]),
     [choice, setChoice] = useState(''),
     [table, setTable] = useState<CourseTable | null>(null);
@@ -99,13 +104,28 @@ export function NaverCourseCapture({
     (c) => c.rotations === 2 && !c.rotation,
   );
   const running = !!job && ['queued', 'running'].includes(job.status);
-  const locked = busy || running || validationRunning,
+  const locked = busy || running || validationRunning || restoring,
     confirmedIds = validation?.center_code === center && validation.status === 'completed'
       ? validatedCourseIds(input.courses, validation.results) : [],
     inputMatchesJob = !!job && input.courses.length === job.courses.length && input.courses.every(c => job.courses.some(old => sameRoutingCourse(c, old)));
+  const sameFrozenInput=!!job&&sameCaptureInput(input.courses,job.courses)&&!!job.shortlist_job_id===(strategy==='api3')&&!legacyCombined;
+  const resumeExisting=!forceNewSelection&&!legacyCombined&&canResumeCapture(job,input.courses,strategy,validation?.id);
+  const finishedExisting=!forceNewSelection&&sameFrozenInput&&(!job!.validation_job_id||job!.validation_job_id===validation?.id)&&job!.courses.every(course=>!!job!.results[course.id]?.imagePath);
   const apiInputMatches=!!validation&&validation.courses.length===input.courses.length&&input.courses.every(c=>validation.courses.some(old=>sameRoutingCourse(c,old)));
   useEffect(()=>{let active=true;setShortlist(null);if(validation?.id&&editable)void latestShortlist(center,profile.id,validation.id).then(next=>{if(active)setShortlist(current=>current?.validationJob===validation.id?current:next);}).catch(e=>{if(active)setStatus(errorText(e));});return()=>{active=false;};},[center,profile.id,validation?.id,editable]);
-  useEffect(() => { setJob(null);setValidation(null);setInput({courses:[],issues:[]});setSources([]);setFilename(''); }, [center]);
+  useEffect(() => {
+    let active=true;
+    setRestoring(true);setForceNewSelection(false);setJob(null);setValidation(null);setRestoreValidationId(undefined);setInput({courses:[],issues:[]});setSources([]);setFilename('');setChoice('');setTable(null);
+    void Promise.all([getCapture(undefined,center),getAddressValidation(center)]).then(([saved,checked])=>{
+      if(!active)return;
+      const latestValidation=checked&&(!saved||Date.parse(checked.created_at??'')>Date.parse(saved.created_at??''));
+      const courses=latestValidation?checked.courses:saved?.courses??checked?.courses;
+      if(courses){setInput({courses,issues:courses.flatMap(course=>course.importIssues??[])});setFilename(latestValidation?'저장된 주소 검증 작업':'저장된 캡처 작업');}
+      if(saved&&!latestValidation){setJob(saved);setStrategy(saved.shortlist_job_id?'api3':'full');setRestoreValidationId(saved.validation_job_id??undefined);}
+      else setRestoreValidationId(checked?.id);
+    }).catch(error=>{if(active)setStatus(errorText(error));}).finally(()=>{if(active)setRestoring(false);});
+    return()=>{active=false;};
+  }, [center,profile.id]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -293,6 +313,11 @@ export function NaverCourseCapture({
     );
   }
   async function start() {
+    if(resumeExisting&&job){
+      const id=await resumeCapture(job,input.courses,strategy),saved=await getCapture(id,center);
+      if(!saved)throw Error('재개한 작업의 응답을 확인하지 못했습니다. 저장된 작업은 유지됩니다.');
+      setJob(saved);return;
+    }
     if (!validation || validation.center_code !== center || validation.status !== 'completed') throw Error('주소 사전 검증을 먼저 완료해 주세요.');
     if (!confirmedIds.length) throw Error('주소가 모두 확인된 코스가 없습니다. 주소 검증 표를 확인해 주세요.');
     let shortlistId: string | undefined;
@@ -364,7 +389,7 @@ export function NaverCourseCapture({
         {shortlist.error&&<p>{shortlist.error}</p>}
         {!!shortlist.issues?.length&&<p>미완료 항목 {shortlist.issues.length}건. 주소·경유지 한도 또는 API 응답을 확인해 주세요. 확인된 코스는 보존됩니다.</p>}
         {['queued','running'].includes(shortlist.status)&&<button className="btn btn-ghost" onClick={()=>{stopApi.current=true;void cancelRelationJob(shortlist.id).then(({error})=>{if(error)setStatus(error.message);});}}>API 후보 선정 중지</button>}
-        {!locked&&(['attention','paused'].includes(shortlist.status)||(shortlist.status==='completed'&&!shortlist.completedCourses))&&<button className="btn btn-ghost" onClick={()=>setShortlist(null)}>API 후보 새로 선정 준비</button>}
+        {!locked&&(['attention','paused'].includes(shortlist.status)||(shortlist.status==='completed'&&!shortlist.completedCourses))&&<button className="btn btn-ghost" onClick={()=>{setShortlist(null);setForceNewSelection(true);}}>API 후보 새로 선정 준비</button>}
       </div>}
       <div className="toolbar">
         <button
@@ -387,6 +412,7 @@ export function NaverCourseCapture({
                   issues: j.courses.flatMap((c) => c.importIssues ?? []),
                 });
                 setFilename('최근 캡처 작업');
+                setForceNewSelection(false);setStrategy(j.shortlist_job_id?'api3':'full');setRestoreValidationId(j.validation_job_id??undefined);
                 setInputVersion(value=>value+1);
                 setSources([]);setChoice('');setTable(null);
               } else setStatus('저장된 캡처 작업이 없습니다.');
@@ -448,7 +474,7 @@ export function NaverCourseCapture({
           onRole={roleChange}
         />
       )}
-      <NaverAddressValidation center={center} courses={input.courses} disabled={busy || running} resetKey={inputVersion}
+      <NaverAddressValidation key={`${profile.id}:${center}`} restoreJobId={restoreValidationId} center={center} courses={input.courses} disabled={busy || running} resetKey={inputVersion}
         onCoursesChange={courses => setInput(previous => ({...previous,courses}))}
         onJobChange={setValidation} onRunningChange={setValidationRunning} />
       {input.issues.length > 0 && (
@@ -515,18 +541,16 @@ export function NaverCourseCapture({
         <button
           className="btn btn-primary"
           disabled={
-            busy ||
+            busy || restoring || finishedExisting ||
             running ||
-            validationRunning ||
-            !confirmedIds.length ||
-            (strategy==='api3'&&!apiInputMatches) ||
+            (!resumeExisting && (validationRunning || !confirmedIds.length || (strategy==='api3'&&!apiInputMatches))) ||
             !input.courses.length ||
             input.issues.some((issue) => !issue.courseId) ||
             input.courses.some((c) => c.rotations === 2 && !c.rotation)
           }
           onClick={() => void run(() => start())}
         >
-          주소 확인된 {confirmedIds.length}건 캡처 시작
+          {restoring?'저장된 진행 불러오는 중…':resumeExisting?'저장된 진행부터 계속':finishedExisting?'저장된 캡처 완료':`주소 확인된 ${confirmedIds.length}건 캡처 시작`}
         </button>
         {running && (
           <button

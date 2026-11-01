@@ -8,11 +8,12 @@ export interface AddressValidationJob {
   courses: NaverCourse[];
   addresses: string[];
   cursor: number;
+  created_at?: string;
   results: Record<string, AddressCheck>;
 }
 export async function getAddressValidation(center: string, id?: string) {
   let request = supabase.from('naver_browser_jobs')
-    .select('id,center_code,status,courses,addresses,cursor,results')
+    .select('id,center_code,status,courses,addresses,cursor,results,created_at')
     .eq('kind', 'validation').eq('center_code', center);
   if (id) request = request.eq('id', id);
   const { data, error } = await request.order('created_at', { ascending: false }).limit(1).maybeSingle<AddressValidationJob>();
