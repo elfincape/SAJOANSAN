@@ -50,6 +50,20 @@ if(process.env.PGLITE_MODULE){
   await pg.exec(await readFile(new URL('../repo-root/sql/naver-browser-jobs.sql',import.meta.url),'utf8'));
   await pg.exec("alter table naver_browser_jobs add column kind text default 'capture',add column courses jsonb,add column validation_job_id uuid,add column shortlist_job_id uuid,add column candidate_plans jsonb default '{}' ");
   await pg.exec(await readFile(new URL('../repo-root/sql/naver-capture-resume.sql',import.meta.url),'utf8'));
+  {
+   const {runWorker}=await import('../scripts/naver-browser-worker.mjs'),captureId='66666666-6666-4666-8666-666666666666',courses=[{id:'partial',stops:['G','C','A','B','G']},{id:'independent',rotation:2,stops:['C','D','G']}];let rejected=false,clock=0;
+   await pg.query("insert into naver_browser_jobs(id,owner_id,center_code,origin,addresses,status,kind,courses) values($1,$2,'001','synthetic',$3,'queued','capture',$4)",[captureId,owner,courses.map(c=>c.id),courses]);
+   const execute=()=>{clock=0;return runWorker({jobId:captureId,durationMs:100,now:()=>clock,db:async sql=>(await pg.query(sql)).rows,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),capture:async(_p,stops,o)=>{
+    if(stops.includes('B')&&stops.indexOf('B')<stops.indexOf('A')){rejected=true;clock=101;throw Object.assign(Error('route400'),{code:'NAVER_ROUTE_UNAVAILABLE',reason:'PROVIDER_HTTP_ERROR',httpStatus:400,routeDiagnostics:{responseEvidence:{restrictionConfirmed:false}}});}
+    const r={distanceKm:10,distanceText:'10km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('png')}:{})};
+   },saveCapture:async(_j,c)=>c.id+'.png',log:()=>{}});};
+   await execute();const yielded=(await pg.query('select * from naver_browser_jobs where id=$1',[captureId])).rows[0];assert.equal(yielded.status,'queued');assert.equal(yielded.cursor,1);assert.equal(yielded.results.partial.retryRequired,true);assert(!yielded.results.independent);
+   await execute();const stored=(await pg.query('select * from naver_browser_jobs where id=$1',[captureId])).rows[0];
+   assert(rejected);assert.equal(stored.status,'attention');assert.equal(stored.cursor,2);assert.equal(stored.results.partial.retryRequired,true);assert.equal(stored.results.partial.optimization.completed,1);assert(!stored.results.partial.imagePath);assert.equal(stored.results.independent.imagePath,'independent.png');
+   await pg.exec(`set "request.jwt.claim.sub"='${owner}'`);await pg.query("select naver_capture_resume($1,'001',$2,'full')",[captureId,courses]);const resumed=(await pg.query('select * from naver_browser_jobs where id=$1',[captureId])).rows[0];assert.deepEqual(resumed.addresses,['partial']);assert.deepEqual(resumed.results,stored.results);await pg.query('delete from naver_browser_jobs where id=$1',[captureId]);
+   console.log('PASS individual HTTP400: real worker SQL preserves partial comparison, continues independent rotation, ends attention, resumes only unfinished work');
+  }
+
   const courses=[{id:'row-2',rotation:1,stops:['G','C','A','C']},{id:'row-3',rotation:2,stops:['C','B','D','G']}],results={'row-2':{imagePath:'keep.png',optimization:{version:1,policy:'naver-api-top3-web-meters-v1',complete:true,completed:1,total:1,failed:[]}},'row-3':{optimization:{version:1,policy:'naver-api-top3-web-meters-v1',complete:false,completed:1,total:2,failed:[{code:'NAVER_ROUTE_UNAVAILABLE'}],evaluations:{keep:{distanceKm:7}}}}};
   await pg.query("insert into naver_browser_jobs(id,owner_id,center_code,origin,addresses,status,cursor,kind,courses,results,validation_job_id,shortlist_job_id,candidate_plans) values($1,$2,'001','synthetic',$3,'attention',1,'capture',$4,$5,$6,$7,$8)",[id,owner,['row-2','row-3'],courses,results,validation,shortlist,{frozen:'approved'}]);
   await pg.exec(`set role authenticated;set "request.jwt.claim.sub"='${owner}'`);

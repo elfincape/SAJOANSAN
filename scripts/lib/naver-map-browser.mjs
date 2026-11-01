@@ -111,13 +111,24 @@ export function naverCourseRequestMatches(request,stops,cache,{startedAt,frame,u
  }catch{return false;}
 }
 const routeSettings=url=>{const q=new URL(url).searchParams;return Object.fromEntries(['cartype','fueltype','mileage','mainoption','restrictvolume','departuretime','respversion','crs','rptype','output'].map(k=>[k,q.get(k)]));};
+export function courseLocalRouteFailure(error){
+ return error?.code==='NAVER_ROUTE_UNAVAILABLE'&&error.reason==='PROVIDER_HTTP_ERROR'&&error.httpStatus===400&&error.routeDiagnostics?.responseEvidence?.restrictionConfirmed===false&&!['access','captcha','limit'].some(key=>error.routeDiagnostics.responseEvidence.markers?.[key]);
+}
+function providerRequestShape(response){
+ const url=new URL(response.url()),q=url.searchParams,route=url.pathname==='/p/api/directions/car';
+ const shape={path:url.pathname,requestKind:route?'route':'search',queryLength:route?null:q.get('query')?.length??0,queryEncodingValid:decodeURIComponent((url.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??''),paramKeys:[...q.keys()].filter(k=>/^(query|coords|types|searchCoord|boundary|x|y|longitude|latitude|start|goal|waypoints|crs|respversion|output|cartype|fueltype|mileage|mainoption|restrictvolume|departuretime|rptype)$/.test(k)).sort()};
+ if(route){const points=[q.get('start'),...(q.get('waypoints')?.split('|')??[]),q.get('goal')];shape.pointCount=points.length;shape.coordinatesValid=points.every(value=>{const pair=value?.split(',').slice(0,2);return pair?.length===2&&pair.every((n,i)=>n.trim()&&Number.isFinite(Number(n))&&Math.abs(Number(n))<=(i===0?180:90));});}
+ else shape.types=q.get('types')?.split(',').filter(v=>/^(place|address|bus)$/.test(v));
+ const method=response.request?.()?.method?.();if(['GET','POST'].includes(method))shape.method=method;
+ return shape;
+}
 const responseEvidence=new WeakMap();
 export async function searchResponseEvidence(response){
  if(!response)return {status:null,bodyReadFailed:true,bodyBytes:null};
  if(responseEvidence.has(response))return responseEvidence.get(response);
  const pending=(async()=>{
   const evidence={status:response.status?.()??null,bodyBytes:null,bodyReadFailed:false};
-  try{const u=new URL(response.url()),q=u.searchParams,raw=q.get('coords');evidence.path=u.pathname;evidence.queryLength=q.get('query')?.length??0;evidence.queryEncodingValid=decodeURIComponent((u.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??'');if(raw){const parts=raw.split(',').map(Number);if(parts.length===2&&parts.every(Number.isFinite)){evidence.coords=parts;evidence.latitudeFirstInWorldBounds=Math.abs(parts[0])<=90&&Math.abs(parts[1])<=180;}else evidence.coordinateNonFinite=true;}}catch{}
+  try{const u=new URL(response.url()),q=u.searchParams,raw=q.get('coords');Object.assign(evidence,providerRequestShape(response));if(raw){const parts=raw.split(',').map(Number);if(parts.length===2&&parts.every(Number.isFinite)){evidence.coords=parts;evidence.latitudeFirstInWorldBounds=Math.abs(parts[0])<=90&&Math.abs(parts[1])<=180;}else evidence.coordinateNonFinite=true;}}catch{}
   try{const headers=await response.headers?.(),mime=headers?.['content-type']?.split(';')[0].trim().toLowerCase();if(['application/json','text/html','text/plain','application/octet-stream'].includes(mime))evidence.contentType=mime;const length=headers?.['content-length'];if(/^\d{1,12}$/.test(length??''))evidence.declaredBodyBytes=Number(length);const after=headers?.['retry-after'];if(/^\d{1,8}$/.test(after??''))evidence.retryAfterSeconds=Number(after);evidence.responseHeaderNames=Object.keys(headers??{}).filter(k=>!/cookie|auth|token|key|secret|session/i.test(k)).slice(0,40);evidence.serverFamily=['nginx','envoy','cloudflare','cloudfront','nserver'].find(s=>String(headers?.server??'').toLowerCase().includes(s))??(headers?.server?'other':'not-provided');}catch{}
   try{const request=response.request?.(),headers=await request?.headers?.();if(headers){evidence.requestHeaderNames=Object.keys(headers).filter(k=>!/cookie|auth|token|key|secret|session/i.test(k)).slice(0,40);evidence.cookiePresent=!!headers.cookie;evidence.acceptsJson=/json/i.test(headers.accept??'');evidence.userAgentClass=/HeadlessChrome/.test(headers['user-agent']??'')?'headless-chromium':/Chrome/.test(headers['user-agent']??'')?'chromium':'other';if(['same-origin','same-site','cross-site','none'].includes(headers['sec-fetch-site']))evidence.fetchSite=headers['sec-fetch-site'];if(['cors','same-origin','no-cors','navigate'].includes(headers['sec-fetch-mode']))evidence.fetchMode=headers['sec-fetch-mode'];for(const key of ['origin','referer'])if(headers[key])try{evidence[key+'Origin']=new URL(headers[key]).origin;}catch{}}}catch{}
   try{evidence.fromServiceWorker=!!response.fromServiceWorker?.();}catch{}
@@ -134,7 +145,7 @@ async function providerFailure(response,diagnostics,stage='search'){
  const status=response?.status?.(),detail=diagnostics?.at(-1);let providerCode,coordinateState='not-provided';
  try{const q=new URL(response.url()).searchParams,coordinates=[...q].filter(([k])=>/coord|boundary|^(?:x|y|longitude|latitude)$/i.test(k)).map(([,v])=>v);if(coordinates.length)coordinateState=coordinates.every(v=>v.trim()&&v.split(/[;,\s]+/).every(s=>s&&Number.isFinite(Number(s))))?'valid':'invalid';}catch{}
  let requestShape,responseShape;
- try{const url=new URL(response.url()),q=url.searchParams;requestShape={path:url.pathname,queryLength:q.get('query')?.length??0,queryEncodingValid:decodeURIComponent((url.search.match(/[?&]query=([^&]*)/)?.[1]??'').replace(/\+/g,' '))===(q.get('query')??''),paramKeys:[...q.keys()].filter(k=>/^(query|coords|types|searchCoord|boundary|x|y|longitude|latitude)$/.test(k)).sort(),types:q.get('types')?.split(',').filter(v=>/^(place|address|bus)$/.test(v))};}catch{}
+ try{requestShape=providerRequestShape(response);}catch{}
  try{const data=await response?.json?.(),error=data?.error,code=error?.code??data?.code,message=String(error?.message??data?.message??'');if(/^(?:\d{1,6}|INVALID_[A-Z_]{1,60}|BAD_REQUEST|TOO_MANY_REQUESTS|ACCESS_DENIED|FORBIDDEN)$/.test(String(code??'')))providerCode=String(code);responseShape={format:'json',hasError:!!error,errorCategory:/coord|latitude|longitude|boundary|위도|경도|좌표/i.test(message)?'coordinates':/parameter|argument|파라미터|인자/i.test(message)?'parameters':/limit|too many|quota|제한/i.test(message)?'limit':/denied|forbidden|access|접근/i.test(message)?'access':'other'};}catch{responseShape={format:'non-json-or-unavailable'};}
  const evidence=await searchResponseEvidence(response);
  if(detail){detail.coordinateState=coordinateState;if(providerCode)detail.providerCode=providerCode;if(requestShape)detail.requestShape=requestShape;detail.responseShape=responseShape;detail.responseEvidence=evidence;}

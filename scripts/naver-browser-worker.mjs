@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {appendFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {query,quote} from './naver-browser-db.mjs';
-import {browserDistance,browserCourseCapture,browserValidateAddress,naverPointFromUrl,addressSearch} from './lib/naver-map-browser.mjs';
+import {browserDistance,browserCourseCapture,browserValidateAddress,naverPointFromUrl,addressSearch,courseLocalRouteFailure} from './lib/naver-map-browser.mjs';
 import {optimizeCourseCapture,captureResultVerified,comparisonScope} from './lib/naver-course-optimizer.mjs';
 import {saveCourseCapture} from './lib/naver-capture-storage.mjs';
 const ready="(status='queued' or (status='running' and updated_at<now()-interval '5 minutes'))";
@@ -74,14 +74,14 @@ export async function runWorker({db=query,lookup=browserDistance,capture=browser
       const operation=String(e.message).match(/^(?:page|locator|browserContext|browser)\.[A-Za-z]+/)?.[0];
       console.error(JSON.stringify({event:'naver_capture_failed',stage,...(operation?{operation}:{}),...(e.reason?{reason:e.reason}:{}),...(e.searchDiagnostics?{searchDiagnostics:e.searchDiagnostics}:{}),...(e.routeDiagnostics?{routeDiagnostics:e.routeDiagnostics}:{}),...(e.optimization?{comparison:{completed:e.optimization.completed,total:e.optimization.total,failed:e.optimization.failed?.map(f=>({index:f.index,code:f.code,routeDiagnostics:f.routeDiagnostics}))}}:{})}));
      }
-     const comparisonIssue=['OPTIMIZATION_INCOMPLETE','CAPTURE_DISTANCE_CHANGED','ADDRESS_VALIDATION_REQUIRED','SHORTLIST_INVALID_INPUT','OPTIMIZATION_SETTINGS_CHANGED','CAPTURE_STORAGE_UNAVAILABLE'].includes(e.code);conditionPaused=['OPTIMIZATION_SETTINGS_CHANGED','CAPTURE_STORAGE_UNAVAILABLE'].includes(e.code);providerPaused=['NAVER_SEARCH_UNAVAILABLE','NAVER_ROUTE_UNAVAILABLE'].includes(e.code);
-     failures=e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?0:failures+1;result={issue:providerPaused||e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?e.message:job.kind==='capture'?'코스 캡처 확인 필요 — 주소 검색·지도 응답·저장 상태를 확인해 주세요.':'네이버 지도 거리우선 결과 확인 필요',...(providerPaused?{providerUnavailable:true,httpStatus:e.httpStatus}:{}),...(e.reason?{addressReason:e.reason}:{}),...(e.searchDiagnostics?{addressDiagnostics:e.searchDiagnostics}:{}),...(e.routeDiagnostics?{routeDiagnostics:e.routeDiagnostics}:{}),...(optimization?{optimization:e.optimization??optimization}:{}),measuredAt:new Date().toISOString()};}
+     const comparisonIssue=['OPTIMIZATION_INCOMPLETE','CAPTURE_DISTANCE_CHANGED','ADDRESS_VALIDATION_REQUIRED','SHORTLIST_INVALID_INPUT','OPTIMIZATION_SETTINGS_CHANGED','CAPTURE_STORAGE_UNAVAILABLE'].includes(e.code);conditionPaused=['OPTIMIZATION_SETTINGS_CHANGED','CAPTURE_STORAGE_UNAVAILABLE'].includes(e.code);providerPaused=['NAVER_SEARCH_UNAVAILABLE','NAVER_ROUTE_UNAVAILABLE'].includes(e.code)&&!courseLocalRouteFailure(e);
+     failures=e.code==='ADDRESS_NOT_FOUND'||comparisonIssue||courseLocalRouteFailure(e)?0:failures+1;result={...(courseLocalRouteFailure(e)?{retryRequired:true}:{}),issue:providerPaused||courseLocalRouteFailure(e)||e.code==='ADDRESS_NOT_FOUND'||comparisonIssue?e.message:job.kind==='capture'?'코스 캡처 확인 필요 — 주소 검색·지도 응답·저장 상태를 확인해 주세요.':'네이버 지도 거리우선 결과 확인 필요',...(providerPaused?{providerUnavailable:true,httpStatus:e.httpStatus}:{}),...(e.reason?{addressReason:e.reason}:{}),...(e.searchDiagnostics?{addressDiagnostics:e.searchDiagnostics}:{}),...(e.routeDiagnostics?{routeDiagnostics:e.routeDiagnostics}:{}),...(optimization?{optimization:e.optimization??optimization}:{}),measuredAt:new Date().toISOString()};}
     if(providerPaused||conditionPaused){await db("update public.naver_browser_jobs set results=results||jsonb_build_object("+quote(address)+','+quote(JSON.stringify(result))+"::jsonb),status='attention',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");interrupted=true;break;}
     await db("update public.naver_browser_jobs set results=results||jsonb_build_object("+quote(address)+','+quote(JSON.stringify(result))+"::jsonb),cursor="+(i+1)+",updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");
     log(job.kind==='validation'?'Server address validation saved':result.distanceText?'Server route result saved':'Server route needs attention');
     if(failures>=3){await db("update public.naver_browser_jobs set status='attention',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");interrupted=true;break;}
    }
-   if(!interrupted)await db("update public.naver_browser_jobs set status='completed',updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");
+   if(!interrupted)await db("update public.naver_browser_jobs set status=case when kind='capture' and exists(select 1 from jsonb_array_elements_text(addresses) a(value) where results->a.value->>'retryRequired'='true') then 'attention' else 'completed' end,updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");
    if(jobId)break;
   }
  }finally{await browser.close();}

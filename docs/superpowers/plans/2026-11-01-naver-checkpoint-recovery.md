@@ -36,3 +36,13 @@
 - Impeccable detect attempted on both changed components: exit127, pinned engine unavailable and default home cache not writable. No duplicate engine installed; manual guideline review and real local React render used.
 - Actual Naver routeHTTP400: stored response has zero-byte body and no access/captcha marker. Provider-internal cause remains unconfirmed. This fix preserves/restarts confirmed progress rather than claiming that rejection is solved.
 - Operational rollout pending: install compatible owner-scoped SQL before frontend, then existing workflow/public fixture checks and deployment observations. Do not touch portal draft PR111 or auto-reprocess private attention jobs as tests.
+
+
+## Follow-up: isolated route HTTP400 (PR112 operating replay)
+
+- Evidence: the same saved job preserved six captures but a row-14 candidate HTTP400 stopped fifteen independent rotations. `queryLength:0` measured the search-only `query` parameter, not route `start/goal/waypoints`; the matcher already requires exact coordinates and names for the current navigation.
+- Keep address-search outages, restriction indicators (including JSON access/captcha/limit markers), settings changes, storage failures and queue outages as global pauses. Only a route HTTP400 without restriction evidence becomes a per-course retry item.
+- Persist incomplete optimizer evidence and advance the independent-course cursor. Do not upload a partial winner or claim a shortest route. Final SQL checks persisted retry markers so a worker handoff cannot hide unresolved courses. Existing owner-approved resume filters finished captures and retains successful candidate evaluations.
+- Diagnostics record method, safe parameter names, point count and coordinate validity; no labels, raw URLs, coordinates or credentials are added. Search query length is null for route requests.
+- Verification: red/green worker continuation and request diagnostics, JSON restriction regression, actual worker SQL in PGlite, resume filtering, existing Naver regression suites. A saved successful candidate's distance is not repeated; if its final screenshot was never persisted, the eventual winner still requires one screenshot/evidence verification. Already verified captures remain untouched.
+- Provider HTTP400's internal cause remains unconfirmed. This change fixes isolation and recovery; it does not bypass restrictions or assert that the provider rejection is cured.
