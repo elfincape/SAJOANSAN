@@ -24,8 +24,8 @@ const day = (value) =>
   new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
 const enc = encodeURIComponent;
 // The same projection used by the portal decides carry; SQL never guesses from immutable pending rows.
-export function hasBriefingCarryWork({ day: reportDay, analyses, overrides = {}, manual = {}, includeMail = true }) {
-  const view = dailyBriefingView({ now: reportDay + 'T12:00:00+09:00', analyses, overrides, manual });
+export function hasBriefingCarryWork({ day: reportDay, analyses, overrides = {}, manual = {}, includeMail = true, portalTasks = [], portalOwnerId }) {
+  const view = dailyBriefingView({ now: reportDay + 'T12:00:00+09:00', analyses, overrides, manual, portalTasks, portalOwnerId });
   return view.workItems.some((item) => !item.excluded &&
     !['complete', 'cancelled', 'resolved'].includes(item.status) &&
     (item.category === 'task' || item.category === 'issue' ||

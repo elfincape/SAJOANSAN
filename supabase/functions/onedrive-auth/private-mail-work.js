@@ -75,6 +75,7 @@ function sameWorkScope(first, second) {
 export function portalWorkInput(work, {ownerId, scope, visibleFrom}) {
   if (!uuid.test(ownerId ?? '') || !validWorkRef(work?.workId)) throw Error('WORK_SOURCE');
   if (!['task','issue'].includes(work.category)) throw Error('WORK_NOT_ACTIONABLE');
+  if(!clean(work.title,200))throw Error('WORK_FORMAT');
   const sourceKind=work.sourceRefs?.[0]?.kind;
   const selected=normalizeWorkScope(scope ?? work.workScope,sourceKind);
   if (work.workScope && !sameWorkScope(selected,normalizeWorkScope(work.workScope))) throw Error('WORK_SCOPE_CONFLICT');
@@ -89,11 +90,13 @@ export function portalWorkInput(work, {ownerId, scope, visibleFrom}) {
     status:({complete:'completed',cancelled:'not_applicable',waiting:'in_progress'})[checked.status] ?? checked.status,
     inputs:{personal_work:{
       schema:WORK_FORMAT,workId:checked.workId,ownerId,scope:selected,
+      sourceKeys:[...new Set(checked.sourceRefs.map(source=>source.ref))],
       category:checked.category,reportKind:checked.reportKind,status:checked.status,
       summary:checked.summary,nextAction:checked.nextAction,progress:checked.progress,waitingFor:checked.waitingFor,
       customer:checked.customer,requester:checked.requester,requestedAt:checked.requestedAt,
       dueDate:checked.dueDate,serviceDate:checked.serviceDate,needsConfirmation:checked.needsConfirmation,
-      confirmationReasons:checked.confirmationReasons,
+      confirmationReasons:checked.confirmationReasons,ownerStateAt:checked.ownerStateAt,
+      verifiedCompletionAt:checked.verifiedCompletionAt,inferredStateAt:checked.inferredStateAt,closedAt:checked.closedAt,
     }},
   };
 }
@@ -119,7 +122,8 @@ export function applyPortalWorkSnapshot(work, task, {ownerId}) {
     customer:current.customer,requester:current.requester,dueAt:task.due_at ?? null,dueDate:current.dueDate,serviceDate:current.serviceDate,
     needsConfirmation:current.needsConfirmation,confirmationReasons:current.confirmationReasons,
     status,closedAt:status==='complete'?stamp(task.completed_at):status==='cancelled'?updatedAt:null,
-    ownerStateAt:updatedAt,inferredStateAt:null,verifiedCompletionAt:null,
+    ownerStateAt:stamp(current.ownerStateAt),inferredStateAt:stamp(current.inferredStateAt),
+    verifiedCompletionAt:status==='complete'?stamp(current.verifiedCompletionAt):null,
   });
   return {...work,...projected,portalVersion:task.version};
 }
@@ -391,6 +395,8 @@ export function dailyWorkItems(
     excludedSourceIds = new Set(),
     workOverrides = {},
     includeExcluded = false,
+    portalTasks = [],
+    portalOwnerId,
   } = {},
 ) {
   const result = [],
@@ -690,8 +696,23 @@ export function dailyWorkItems(
     }
     merged.set(key, combined);
   }
-  return [...merged.values()]
-    .map((item) => applyOwnerWorkCorrection(item, workOverrides, view.day))
+  const projected = new Map([...merged.values()]
+    .map(item=>applyOwnerWorkCorrection(item,workOverrides,view.day)).map(item=>[item.workId,item]));
+  const portalIds=new Set();
+  for(const task of portalTasks){
+    const marker=task.inputs?.personal_work;
+    if(!marker || portalIds.has(marker.workId))throw Error('WORK_LINK_CONFLICT');
+    portalIds.add(marker.workId);
+    if(view.day && task.work_date>view.day)continue;
+    const ref=marker.workId;
+    const sourceId=ref?.startsWith('source:')?ref.slice(7):ref?.slice(0,36);
+    const original=projected.get(ref) ?? normalizeDailyWork({
+      ref,category:marker.category,title:task.title,status:'pending',workScope:marker.scope,
+      requestedAt:marker.requestedAt,sourceRefs:[{kind:'linked',id:sourceId,ref}],
+    });
+    projected.set(ref,applyPortalWorkSnapshot(original,task,{ownerId:portalOwnerId}));
+  }
+  return [...projected.values()]
     .filter((item) => includeExcluded || !item.excluded)
     .filter(
       (item) =>

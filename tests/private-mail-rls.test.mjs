@@ -2110,3 +2110,163 @@ try{
  console.log('PASS owner activity progress/atomic completion/readback/idempotency/conflict/reopen/history/rollback');
  }finally{await db.close()}
 }
+
+// The real portal ledger and save/reopen functions, isolated from operating data.
+{
+ const db=new PGlite({extensions:{pgcrypto}}),OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc',BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OTHER='40000000-0000-4000-8000-000000000002';
+ const {normalizeDailyWork}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const {syncPersonalPortalWork,syncPersonalPortalBatch,personalPortalDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-portal.js');
+ try{
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create extension pgcrypto;create schema auth;
+   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+   create table auth.users(id uuid primary key);create table user_profiles(id uuid primary key,active boolean,role text,email text,display_name text);
+   create table centers(code text primary key,name text,active boolean default true);
+   insert into auth.users values('${OWNER}'),('${OTHER}');insert into user_profiles values('${OWNER}',true,'admin','owner@example.test','가상담당'),('${OTHER}',true,'admin','other@example.test','다른담당');insert into centers values('yangsan','가상 양산',true),('001','가상 안산',true);
+   grant usage on schema public,auth to authenticated,service_role;grant select on user_profiles,centers to authenticated,service_role;`);
+  await db.exec(await readFile(new URL('../repo-root/sql/private-mail.sql',import.meta.url),'utf8'));
+  await db.exec("alter table private_mailboxes add column manual_entries jsonb default '{}',add column briefing_overrides jsonb default '{}',add column briefing_pages jsonb default '{}'");
+  const manualSql=await readFile(new URL('../supabase/sql/private-mail-manual.sql',import.meta.url),'utf8');
+  for(const name of ['private_mail_manual_allowed','private_mail_manual_dirty']){const start=manualSql.indexOf('create or replace function public.'+name+'(');await db.exec(manualSql.slice(start,manualSql.indexOf('$$;',start)+3));}
+  await db.exec(await readFile(new URL('../repo-root/sql/operations-core.sql',import.meta.url),'utf8'));
+  const portalSql=await readFile(new URL('../repo-root/sql/operations-portal.sql',import.meta.url),'utf8');
+  const start=portalSql.indexOf('create function public.operations_reopen_task(');
+  await db.exec("alter table operations_task_events drop constraint operations_task_events_action_check;alter table operations_task_events add check(action in ('created','updated','completed','not_applicable','task_reopened'))");
+  await db.exec(portalSql.slice(start,portalSql.indexOf('end $$;',start)+7));
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-portal.sql',import.meta.url),'utf8'));
+  await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled) values($1,$2,'jhs96@eangroup.kr','synthetic-drive','synthetic-folder',true)",[BOX,OWNER]);
+  const day=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text d")).rows[0].d;
+  const later=new Date(Date.parse(day+'T00:00:00Z')+2*86400000).toISOString().slice(0,10);
+  const scope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'};
+  const ids=['50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002'];
+  const originals=Object.fromEntries(ids.map((id,i)=>[id,{entryId:id,status:'ready',submittedAt:day+'T00:00:00Z',workScope:scope,text:'PRIVATE_SOURCE_SENTINEL '+i,items:[{itemId:'item-001',ref:id+':manual:item-001',kind:'dispatch',text:`가상착지${i} ${i+4}P 배차 준비`,visibleFrom:day,done:false,completionEvents:[],details:[`물량 ${i+4}P`]}]}]));
+  const originalOverrides={['work:'+ids[0]+':manual:item-001']:{actor:'owner',title:'보존할 이전 정정',events:[{category:'task'}]}};
+  await db.query('update private_mailboxes set manual_entries=$1,briefing_overrides=$2 where id=$3',[originals,originalOverrides,BOX]);
+  const works=ids.map((id,i)=>normalizeDailyWork({ref:id+':manual:item-001',category:'task',title:originals[id].items[0].text,status:'pending',workScope:scope,requestedAt:day+'T00:00:00Z',serviceDate:later,summary:[`물량 ${i+4}P`],sourceRefs:[{kind:'manual',id,ref:id+':manual:item-001',evidence:originals[id].text}]}));
+  const rpc=async(name,args)=>{const keys=Object.keys(args);return(await db.query(`select to_jsonb(public.${name}(${keys.map((_,i)=>'$'+(i+1)).join(',')})) result`,Object.values(args))).rows[0].result;};
+  // Supabase's service table/sequence access is modeled in this isolated database only.
+  await db.exec('grant all on operations_tasks,operations_task_events to service_role;grant usage,select on sequence operations_task_events_id_seq to service_role');
+  let serviceQueue=Promise.resolve();
+  const serviceRpc=(name,args)=>serviceQueue=serviceQueue.catch(()=>{}).then(async()=>{
+    await db.exec('set role service_role');
+    try{return await rpc(name,args);}finally{await db.exec('reset role');}
+  });
+  const ctx={ownerId:OWNER,rpc:serviceRpc},make=(work,requestId=crypto.randomUUID())=>({work,requestId,scope,visibleFrom:day});
+  works[0].title=originalOverrides['work:'+works[0].workId].title;
+  const wrongScope={kind:'center',centerCode:'001',workCategory:'안산쿠팡'};
+  await assert.rejects(()=>syncPersonalPortalWork({...make({...works[0],workScope:wrongScope}),scope:wrongScope},ctx),/WORK_SCOPE_CONFLICT/);
+  const request=make(works[0]);let first=await syncPersonalPortalWork(request,ctx);
+  assert.equal(first.saved,true);assert.equal(first.task.owner_id,OWNER);assert.equal(first.task.center_code,'yangsan');assert.equal(first.task.work_date.slice(0,10),day);
+  assert.equal(first.task.inputs.personal_work.serviceDate,later);assert.equal(first.task.due_at,null);
+  assert.equal((await syncPersonalPortalWork(request,ctx)).portalTaskId,first.portalTaskId,'lost acknowledgment retry reuses exact task');
+  assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,1);
+  const sourceBefore=JSON.stringify((await db.query('select manual_entries from private_mailboxes')).rows[0].manual_entries);
+  let view=await personalPortalDailyView({now:day+'T12:00:00+09:00',manualEntries:originals,overrides:originalOverrides},ctx);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).portalTaskId,first.portalTaskId);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).title,first.task.title,'portal is canonical after link; private correction history remains');
+  const supplement={...works[0],summary:['화물 160박스 · 4P · 화물 중량 1.7톤']};
+  first=await syncPersonalPortalWork(make(supplement),ctx);assert.equal(first.task.status,'pending');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const save=async(task,title,inputs,status)=>rpc('operations_save_task',{p_request_id:crypto.randomUUID(),p_task_id:task.id,p_expected_version:task.version,p_center:task.center_code,p_title:title,p_work_date:task.work_date.slice(0,10),p_inputs:inputs,p_status:status});
+  let edited=await save(first.task,'본인 정정 배차명',{...first.task.inputs,work_note:'운수사에 조건 확인 중'},'in_progress');
+  assert.equal(edited.inputs.personal_work.progress,'운수사에 조건 확인 중');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const replay=await syncPersonalPortalWork(make(supplement),ctx);
+  assert.equal(replay.task.title,'본인 정정 배차명');assert.equal(replay.task.inputs.personal_work.progress,'운수사에 조건 확인 중');
+  await assert.rejects(()=>syncPersonalPortalWork(make({...supplement,portalTaskId:first.portalTaskId,portalVersion:1}),ctx),/WORK_PORTAL_STALE/);
+  const countBefore=(await db.query('select count(*)::int n from operations_task_events')).rows[0].n;
+  await assert.rejects(()=>syncPersonalPortalWork({...request,work:{...works[0],title:'다른 내용'}},ctx),/WORK_REQUEST_CONFLICT/);
+  assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,countBefore);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  let closed=await save(replay.task,replay.task.title,replay.task.inputs,'completed');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  view=await personalPortalDailyView({now:day+'T12:00:00+09:00',manualEntries:originals,overrides:originalOverrides},ctx);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).status,'complete');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const reopened=await rpc('operations_reopen_task',{p_request_id:crypto.randomUUID(),p_task_id:closed.id,p_expected_version:closed.version});
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const nextDay=new Date(Date.parse(day+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  const hiddenOriginals=structuredClone(originals);hiddenOriginals[ids[0]].items[0].done=true;hiddenOriginals[ids[0]].items[0].completedAt=day+'T02:00:00Z';
+  const nextView=await personalPortalDailyView({now:nextDay+'T12:00:00+09:00',manualEntries:hiddenOriginals,overrides:originalOverrides},ctx);
+  assert.equal(nextView.workItems.find(w=>w.workId===works[0].workId).status,'in_progress','canonical reopen carries even when private completed source is hidden');
+  const ownerAt=reopened.inputs.personal_work.ownerStateAt;
+  const oldProof=new Date(Date.parse(ownerAt)-1000).toISOString(),newProof=new Date(Date.parse(ownerAt)+1000).toISOString();
+  const oldCompletion={...supplement,status:'complete',verifiedCompletionAt:oldProof,closedAt:oldProof};
+  assert.equal((await syncPersonalPortalWork(make(oldCompletion),ctx)).task.status,'in_progress','old source retry cannot defeat portal reopen');
+  const newCompletion={...oldCompletion,verifiedCompletionAt:newProof,closedAt:newProof};
+  closed=(await syncPersonalPortalWork(make(newCompletion),ctx)).task;
+  assert.equal(closed.status,'completed','newer verified evidence can complete the same preparation task');
+  assert.equal((await syncPersonalPortalWork(make(supplement),ctx)).task.status,'completed','quantity-only supplement preserves completed status');
+  const bad={...works[1],workScope:{...scope,centerCode:'001'}};
+  const batch=await syncPersonalPortalBatch([make(works[1]),make(bad)],ctx);
+  assert.equal(batch[0].saved,true);assert.equal(batch[1].saved,false);
+  assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,2);
+  const untouched=JSON.stringify((await db.query('select * from operations_tasks where id=$1',[batch[0].portalTaskId])).rows[0]);
+  await db.exec("create function test_portal_fail() returns trigger language plpgsql as $$begin raise exception 'SYNTHETIC_STORAGE_FAILURE';end$$;create trigger test_portal_fail before insert on operations_task_events for each row execute function test_portal_fail()");
+  const beforeFailure=(await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[closed.id])).rows[0].t;
+  const beforeBox=(await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0];
+  const failureRequest=make({...supplement,summary:['화물 170박스 · 4P · 화물 중량 1.8톤']});
+  await assert.rejects(()=>syncPersonalPortalWork(failureRequest,ctx),/SYNTHETIC_STORAGE_FAILURE/);
+  assert.deepEqual((await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[closed.id])).rows[0].t,beforeFailure);
+  assert.deepEqual((await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0],beforeBox,'task/link/note dirty transaction rolls back together');
+  await db.exec('drop trigger test_portal_fail on operations_task_events');
+  assert.equal((await syncPersonalPortalWork(failureRequest,ctx)).saved,true);
+  assert.equal(JSON.stringify((await db.query('select * from operations_tasks where id=$1',[batch[0].portalTaskId])).rows[0]),untouched,'other destination never changes');
+  assert.equal(JSON.stringify((await db.query('select manual_entries from private_mailboxes')).rows[0].manual_entries),sourceBefore,'original entries/completion history never rewritten');
+  const finalBox=(await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0];
+  assert.deepEqual(finalBox.briefing_overrides['work:'+works[0].workId],originalOverrides['work:'+works[0].workId]);
+  assert.equal(finalBox.briefing_overrides['portal:'+works[0].workId].taskId,closed.id);assert.equal(finalBox.briefing_pages[day].dirty,true);
+  assert.ok(!JSON.stringify((await db.query('select inputs from operations_tasks')).rows).includes('PRIVATE_SOURCE_SENTINEL'));
+  assert.equal((await db.query("select has_function_privilege('authenticated','private_mail_portal_upsert(uuid,uuid,uuid,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
+  // Concurrent adapter reads both observe an unlinked stable work; only one task is issued.
+  const thirdId='50000000-0000-4000-8000-000000000003',thirdRef=thirdId+':manual:item-001';
+  const thirdEntry={...originals[ids[0]],entryId:thirdId,items:[{...originals[ids[0]].items[0],ref:thirdRef}]};
+  await db.query('update private_mailboxes set manual_entries=manual_entries||$1',[{[thirdId]:thirdEntry}]);
+  const proof=new Date(Date.now()-10000).toISOString();
+  const thirdWork={...works[0],workId:thirdRef,originRef:thirdRef,status:'complete',verifiedCompletionAt:proof,closedAt:proof,sourceRefs:[{kind:'manual',id:thirdId,ref:thirdRef,evidence:'SYNTHETIC'}]};
+  const concurrent=await Promise.all([syncPersonalPortalWork(make(thirdWork),ctx),syncPersonalPortalWork(make(thirdWork),ctx)]);
+  assert.equal(concurrent[0].portalTaskId,concurrent[1].portalTaskId);
+  const sourceReopen={...thirdWork,status:'pending',verifiedCompletionAt:null,closedAt:null,ownerStateAt:new Date(Date.now()).toISOString()};
+  const sourceReopened=await syncPersonalPortalWork(make(sourceReopen),ctx);
+  assert.equal(sourceReopened.task.status,'pending','new explicit source reopen works even if inferred completion had no ownerStateAt');
+  assert.equal((await syncPersonalPortalWork(make(thirdWork),ctx)).task.status,'pending','old completion replay cannot revive after source reopen');
+  // Mail is delivery-team work, not a fabricated center, and history is read as of the requested day.
+  const mailId='50000000-0000-4000-8000-000000000004',mailRef=mailId+':tasks:0';
+  const previousDay=new Date(Date.parse(day+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+  await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$5,'합성 메일','sender@example.test',$6,'[]')",[mailId,BOX,OWNER,'d'.repeat(64),'e'.repeat(64),previousDay+'T00:00:00Z']);
+  const mailWork=normalizeDailyWork({ref:mailRef,category:'task',title:'합성 배송 업무',status:'pending',requestedAt:previousDay+'T00:00:00Z',sourceRefs:[{kind:'mail',id:mailId,ref:mailRef}]});
+  const mailSaved=await syncPersonalPortalWork({work:mailWork,requestId:crypto.randomUUID(),visibleFrom:previousDay},ctx);
+  assert.equal(mailSaved.task.work_scope,'delivery_team');assert.equal(mailSaved.task.center_code,null);assert.equal(mailSaved.task.owner_id,OWNER);
+  const previousSnapshots=await rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OWNER,p_day:previousDay});
+  assert.equal(previousSnapshots.length,0,'today registration/corrections cannot leak into past-day canonical snapshots');
+  // Simulate elapsed days using captured synthetic ledger events, never an operating row.
+  await db.query("update operations_task_events set occurred_at=$2 where task_id=$1",[mailSaved.portalTaskId,previousDay+'T00:00:00Z']);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const mailClosed=await save(mailSaved.task,mailSaved.task.title,mailSaved.task.inputs,'completed');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const historicClosed={...mailClosed,completed_at:previousDay+'T02:00:00Z',updated_at:previousDay+'T02:00:00Z'};
+  await db.query("update operations_task_events set occurred_at=$2,after_value=$3 where task_id=$1 and action='completed'",[mailClosed.id,previousDay+'T02:00:00Z',historicClosed]);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  await rpc('operations_reopen_task',{p_request_id:crypto.randomUUID(),p_task_id:mailClosed.id,p_expected_version:mailClosed.version});
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const historicView=await personalPortalDailyView({now:previousDay+'T12:00:00+09:00'},ctx);
+  assert.equal(historicView.workItems.find(w=>w.workId===mailRef).status,'complete','past completed day uses its ledger snapshot, not later reopen');
+  assert.equal((await personalPortalDailyView({now:day+'T12:00:00+09:00'},ctx)).workItems.find(w=>w.workId===mailRef).status,'in_progress');
+  const snapshots=await rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OWNER,p_day:day});
+  const {renderDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const {hasBriefingCarryWork}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const carryManual=manualDailyView({[ids[0]]:originals[ids[0]]},nextDay,originalOverrides);
+  const firstSnapshot=snapshots.find(t=>t.id===first.portalTaskId);
+  assert.equal(hasBriefingCarryWork({day:nextDay,analyses:[],overrides:originalOverrides,manual:carryManual,portalTasks:[firstSnapshot],portalOwnerId:OWNER,includeMail:false}),false,'closed portal state prevents stale private pending work from next-day rollover');
+  assert.equal(hasBriefingCarryWork({day:nextDay,analyses:[],overrides:originalOverrides,manual:carryManual,portalTasks:[reopened],portalOwnerId:OWNER,includeMail:false}),true,'canonical reopened work remains eligible for next-day output');
+  const note=renderDailyBriefing({now:day+'T12:00:00+09:00',analyses:[],manual:manualDailyView(originals,day,originalOverrides),overrides:originalOverrides,portalTasks:snapshots,portalOwnerId:OWNER});
+  assert.ok(note.managedHtml.includes('본인 정정 배차명'));assert.ok(note.managedHtml.includes('170박스'));assert.ok(!note.managedHtml.includes('PRIVATE_SOURCE_SENTINEL'));
+  const actual=(await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[batch[0].portalTaskId])).rows[0].t;
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
+  await assert.rejects(()=>save(actual,'다른 직원 수정 시도',actual.inputs,'in_progress'),/WORK_PORTAL_OWNER/);
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  await assert.rejects(()=>rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OTHER}),/WORK_PORTAL_OWNER/);
+  console.log('PASS isolated real portal linkage: stable IDs, idempotent upsert, save/reopen projection, correction protection, chronology, batch isolation, rollback/retry, private source preservation and note queue');
+ }finally{await db.close();}
+}

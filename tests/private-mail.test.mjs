@@ -7910,6 +7910,7 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   assert.equal(payload.inputs.personal_work.workId,ref);
   assert.ok(!JSON.stringify(payload).includes('PRIVATE_SOURCE_SENTINEL'));
   assert.ok(!JSON.stringify(payload).includes('sourceRefs'));
+  assert.deepEqual(payload.inputs.personal_work.sourceKeys,[ref]);
   assert.throws(()=>portalWorkInput({...work,category:'reference'},{ownerId:owner,scope,visibleFrom:'2026-11-01'}),/WORK_NOT_ACTIONABLE/);
   assert.throws(()=>portalWorkInput(work,{ownerId:owner,scope:{...scope,centerCode:'001'},visibleFrom:'2026-11-01'}),/WORK_SCOPE_CONFLICT/);
   const task={...payload,id:'20000000-0000-4000-8000-000000000001',version:3,status:'completed',title:'사용자 정정 업무명',completed_at:'2026-11-01T02:00:00Z',updated_at:'2026-11-01T02:00:00Z'};
@@ -7988,4 +7989,9 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  assert.deepEqual(work[0].workScope,scope,'hidden previous-day work context preserves explicit classification');
  assert.equal(portalWorkInput(work[0],{ownerId:owner,visibleFrom:'2026-11-01'}).inputs.personal_work.workId,ref);
  console.log('PASS classified completed work retains scope and stable identity after next-day owner reopen');
+}
+{
+ const bridge=await import('../supabase/functions/onedrive-auth/private-mail-portal.js').catch(()=>({}));
+ assert.equal(typeof bridge.syncPersonalPortalWork,'function','canonical portal linkage is an executable adapter');
+ assert.equal(typeof bridge.personalPortalDailyView,'function','canonical portal snapshots feed the actual daily projection');
 }

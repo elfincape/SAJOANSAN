@@ -75,3 +75,26 @@
 - Review fixed: next-day hidden workContext lost scope (reproduced actual null classification, regression now covers it); fresh global enqueue could omit classification (now rejected by handler, with delivery_team forbidden for new untargeted scoped SQL receipts).
 - Local React mock screenshot: /tmp/personal-portal-scope.png. Real API, operational portal linkage and Ego Lite verification for this stage remain unperformed.
 - Impeccable detect attempted: exit127, engine0.1.16 missing and default /home/agent/.impeccable cache unwritable. No install or permission expansion performed; local actual React screenshot and manual guideline review used instead.
+
+## Task 3 isolated continuation (no operational activation)
+
+The parent explicitly authorized implementing the real linkage/synchronization in isolation while sharing remains undecided. No authenticated grants, RLS policy changes, production data, production SQL application or OneNote writes are included.
+
+- [ ] Add `private-mail-portal.js` orchestration: `syncPersonalPortalWork`, batch results with stable request IDs, and `personalPortalDailyView` reading canonical snapshots.
+- [ ] Add local-only `supabase/sql/private-mail-portal.sql`: unique owner/workId identity in existing operations_tasks inputs, service-only idempotent upsert/snapshot RPCs, existing task/event history, same-transaction private link and dirty-report update. Existing portal save/reopen operations participate through guarded task triggers.
+- [ ] Apply canonical snapshots after private corrections and before date filtering. Retain owner-protected fields across source reanalysis and use original verified event time to distinguish newer completion from old retry.
+- [ ] Extend existing PGlite suite using actual operations core/save/reopen SQL: create/link, duplicate requests, supplements, owner edit, complete/reopen, stale version, category conflict, transaction rollback, batch partial failure/retry, and unchanged unrelated task/source/history.
+- [ ] Reuse dailyBriefingView/renderDailyBriefing in the isolated path; no synthetic records reach operating DB or Note.
+- [ ] Run focused suites/build and review; commit/push and create draft PR only. Document that actual grants/visibility and production enrollment remain unresolved.
+
+### Isolated continuation result
+
+Implemented `private_mail_portal_upsert` and snapshots plus the existing operations save/reopen path through guarded task triggers. The task's stable owner/workId key is unique; the private ledger holds only the task link. Source receipts and preexisting correction/event arrays are retained. Public business projection includes opaque source keys, not source text/evidence/attachment URLs. Reanalysis preserves fields explicitly edited through the portal. Original source proof time controls completion/reopen; cargo supplements alone cannot change state.
+
+Canonical snapshots feed the actual daily view and HTML renderer after private corrections. Historical dates read event snapshots up to KST day end. The rollover predicate accepts the same snapshots. This adapter is deliberately not registered as a live action and no analysis worker is enabled to enroll production records.
+
+Verification: five relevant existing test files pass (JS/model, real PGlite operations save/reopen/upsert/snapshots/trigger path, portal calendar/model/view), app build passes with existing chunk-size warnings. Service RPC tests run as service_role; only the isolated fixture models the expected Supabase table/sequence ACL. Overlapping adapter calls are tested against PGlite's serialized engine; this is not a multi-session PostgreSQL load test. No new model calls, real portal/OneNote writes or production SQL execution occurred.
+
+Fresh review found three defects: lost incoming reopen proof, historical latest-state leakage, first-link source-scope mismatch. All three were reproduced and corrected with regressions. Role-realistic execution gap was fixed in the fixture. Same-transaction rollback covers task, private link, dirty-note marker and event failure; retry succeeds without duplicate task.
+
+Remaining activation work: determine actual read-sharing boundary and apply reviewed policy, verify operating ACL, explicitly classify historical unclassified manual work without guessing or replacing IDs, connect enrollment/read adapters to the operating handlers and verify Ego Lite UI. Existing center_code:string frontend assumptions need delivery-team null-center presentation before operating activation. No standalone merge/deploy of this draft.
