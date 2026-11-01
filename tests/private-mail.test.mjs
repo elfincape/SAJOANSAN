@@ -7732,3 +7732,26 @@ console.log('PASS image-only boundary: model request claims remain review withou
  assert.throws(()=>normalizeManualItems({items:[text,text.replaceAll('\n','  ')].map(evidence=>({kind:'dispatch',text:'배차 준비',evidence,serviceOriginal:'11/2',needsConfirmation:false}))},{text,entryId:'11111111-2222-4333-8444-555555555555',submittedAt:'2026-11-01T01:00:00Z',referenceDate:'2026-11-01'}),/MANUAL_EVIDENCE/,'rewritten evidence is rejected rather than assigned as another original request');
  console.log('PASS rewritten source quote remains rejected without fabricated quantity/address ownership');
 }
+
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const {resolveExistingManualWork,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const fixture=fixtureById('manual-two-destination-cargo-supplement'),seed=structuredClone(fixture.related[0]),day=fixture.referenceDate,entries={[seed.entryId]:seed},sourceBefore=JSON.stringify(seed);
+let index=0;
+function add(text){index++;const entryId='99999999-1111-4111-8111-'+String(index).padStart(12,'0'),submittedAt=day+'T0'+index+':00:00.000Z';const reply=resolveExistingManualWork(text,entries,day,submittedAt);assert.ok(reply);const items=normalizeManualItems(reply,{text,entryId,submittedAt,referenceDate:day,allowLinks:true,verifiedDispatchReply:true,replyDetails:reply.details??[],replyDetailsByItem:reply.items.map(item=>item.details??reply.details??[])});for(const item of items)item.resolution=reply.resolution;entries[entryId]={entryId,status:'ready',text,submittedAt,referenceDate:day,items};return reply;}
+function work(){return dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day));}
+const target=()=>work().find(item=>item.workId===seed.items[0].ref),other=()=>work().find(item=>item.workId===seed.items[1].ref);
+add(fixture.text);const originalOther=JSON.stringify(other());assert.ok(target().summary.some(line=>line.includes('160박스')&&line.includes('1.7톤')));
+assert.equal((renderBriefingWorkNote(work()).match(/4P/g)??[]).length,1,'visible title quantity is not repeated in compound cargo detail');
+add('월요일 가상쿠팡\n구름 1.8톤');
+assert.ok(target().summary.some(line=>line.includes('160박스')&&line.includes('4P')&&line.includes('1.8톤')),'weight-only supplement must preserve known boxes/pallets');
+assert.ok(!target().summary.some(line=>line.includes('1.7톤')));assert.equal(JSON.stringify(other()),originalOther);
+add('월요일 가상쿠팡\n구름 168박스');assert.ok(target().summary.some(line=>line.includes('168박스')&&line.includes('4P')&&line.includes('1.8톤')));
+add('늦은 정정입니다. 11월 2일 가상쿠팡구름 4P 요청 건의 수량은 5P가 맞습니다. 날짜나 마감을 바꾸는 정정이 아닙니다.');assert.ok(target().title.includes('5P'));assert.ok(target().summary.some(line=>line.includes('168박스')&&line.includes('5P')&&line.includes('1.8톤')),'pallet-only correction must not discard known boxes/weight');
+add('월요일 가상쿠팡\n구름 1800kg');assert.ok(target().summary.some(line=>line.includes('168박스')&&line.includes('5P')&&line.includes('1800kg')));assert.ok(!target().summary.some(line=>line.includes('1.8톤')));
+const before=target().summary;add('월요일 가상쿠팡\n구름 1800kg');assert.deepEqual(target().summary,before);assert.equal(work().length,2);assert.equal(target().status,'pending');assert.equal(target().serviceDate,'2026-11-02');assert.equal(target().dueAt,null);assert.ok(target().summary.includes('하차 13:15'));assert.ok(target().summary.includes('경상남도 가상시 테스트로 33 A동 5층'));assert.equal(JSON.stringify(seed),sourceBefore);assert.equal(JSON.stringify(other()),originalOther);assert.ok(renderBriefingWorkNote(work()).includes('1800kg'));
+console.log('PASS field-wise cargo supplements preserve unspecified quantities/weight, replace only supplied facts, retain IDs/routes/state/source and deduplicate repeats');
+
+const projected=work(),snapshot=JSON.stringify(projected);renderBriefingWorkNote(projected);assert.equal(JSON.stringify(projected),snapshot,'presentation must not erase stored pallet facts');
+}

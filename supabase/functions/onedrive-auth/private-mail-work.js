@@ -264,15 +264,35 @@ export function applyOwnerWorkCorrection(item, overrides = {}, day) {
   return { ...result, section: workSection(result) };
 }
 
+function cargoSummaryFacts(value) {
+  const standalone = /^물량 (\d+(?:\.\d+)?)P$/.exec(value);
+  if (standalone) return { pallets: standalone[1] + 'P' };
+  if (!value.startsWith('화물 ')) return null;
+  const facts = {};
+  for (const part of value.slice(3).split(' · ')) {
+    const field = /^\d+(?:\.\d+)?박스$/.test(part) ? 'boxes' : /^\d+(?:\.\d+)?P$/.test(part) ? 'pallets'
+      : /^화물 중량 \d+(?:\.\d+)?(?:톤|kg)$/.test(part) ? 'weight' : null;
+    if (!field || (facts[field] && facts[field] !== part)) return null;
+    facts[field] = part;
+  }
+  return Object.keys(facts).length ? facts : null;
+}
 function currentSummaryKeys(value) {
   if (/^(?:[가-힣]{2,3})?\d{2,3}[가-힣]\d{4}\s+[가-힣]{2,5}\s+010-?\d{4}-?\d{4}$/.test(value)) return ['vehicle'];
   if (/^.{1,100} → .{1,100} · 상차 (?:[01]?\d|2[0-3]):[0-5]\d$/.test(value) || /^상차 (?:[01]?\d|2[0-3]):[0-5]\d$/.test(value)) return ['loading'];
   if (/^하차 (?:[01]?\d|2[0-3]):[0-5]\d$/.test(value)) return ['unloading'];
-  if (/^화물 /.test(value)) return /\d+(?:\.\d+)?\s*[pP]/.test(value) ? ['cargo','pallets'] : ['cargo'];
+  if (/^화물 /.test(value) && cargoSummaryFacts(value)) return /\d+(?:\.\d+)?\s*[pP]/.test(value) ? ['cargo','pallets'] : ['cargo'];
   if (/^물량 \d+(?:\.\d+)?P$/.test(value)) return ['pallets'];
   return [];
 }
 function mergeCurrentSummary(previous, incoming) {
+  if (incoming.some(value => cargoSummaryFacts(value)) &&
+      [...previous, ...incoming].some(value => value.startsWith('화물 ') && cargoSummaryFacts(value))) {
+    const facts = Object.assign({}, ...[...previous, ...incoming].map(value => cargoSummaryFacts(value) ?? {}));
+    previous = previous.filter(value => !cargoSummaryFacts(value));
+    incoming = [...incoming.filter(value => !cargoSummaryFacts(value)),
+      '화물 ' + [facts.boxes, facts.pallets, facts.weight].filter(Boolean).join(' · ')];
+  }
   const latest = [...new Set(incoming)];
   const keys = new Set(latest.flatMap(currentSummaryKeys));
   const retained = [...new Set(previous)].filter(value => !latest.includes(value) &&
@@ -781,8 +801,15 @@ export function renderWorkSections(items) {
 function compactWorkSummary(item) {
   const title = briefingWorkTitle(item.title, item.serviceDate);
   const titleQuantity = /\d+(?:\.\d+)?\s*[pP](?:\b|(?=[^A-Za-z]))/.exec(title);
-  return (item.summary ?? []).filter(value => {
+  return (item.summary ?? []).map(value => {
+    const facts = cargoSummaryFacts(value);
+    if (item.category === 'reference' || !titleQuantity || !facts?.pallets ||
+        Number(titleQuantity[0].replace(/[pP]$/,'')) !== Number(facts.pallets.slice(0,-1))) return value;
+    const rest = [facts.boxes, facts.weight].filter(Boolean);
+    return rest.length ? '화물 ' + rest.join(' · ') : '';
+  }).filter(value => {
     const text = value.trim();
+    if (!text) return false;
     if (item.category === 'reference' || !title) return true;
     if (title.includes(text)) return false;
     if (titleQuantity && /^\d+(?:\.\d+)?\s*[pP]$/.test(text)) return false;
