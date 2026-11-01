@@ -15,6 +15,8 @@ export function ApiManagement({ editable, stressEnabled = false }: { editable: b
   const [stressResults, setStressResults] = useState<Record<string,unknown>[]>([]);
   const [stressProgress, setStressProgress] = useState('');
   const [stressRunning, setStressRunning] = useState(false);
+  const [stressChoice, setStressChoice] = useState('');
+  const [stressCases, setStressCases] = useState<{id:string;kind:string}[]>([]);
   const stressActive = useRef(false), stressStop = useRef(false);
   const [verification, setVerification] =
     useState<ApiCompatibilityResult | null>(null);
@@ -135,27 +137,38 @@ export function ApiManagement({ editable, stressEnabled = false }: { editable: b
       if (alive.current && request === sequence.current) setBusy(false);
     }
   }
-  async function runStress() {
+  function recordStress(result:Record<string,unknown>, id:string) {
+    setStressResults(prior=>{
+      const previous = prior.find(row=>row.caseId===id);
+      const {previousResults = [], ...snapshot} = previous ?? {};
+      return [...prior.filter(row=>row.caseId!==id),{...result,caseId:id,
+        ...(previous ? {previousResults:[...(Array.isArray(previousResults)?previousResults:[]),snapshot]} : {})}];
+    });
+  }
+  async function runStress(only?: string) {
     if (!stressEnabled || !editable || busy || stressActive.current) return;
     stressActive.current = true;
     stressStop.current = false;
     setBusy(true);
     setStressRunning(true);
-    setStressResults([]);
+    if (!only) setStressResults([]);
     setStressProgress('고정 합성 사례를 확인하고 있습니다.');
     try {
       const {cases} = await apiManagement.stressCases();
+      if (alive.current) setStressCases(cases);
       if (cases.length !== 20 || new Set(cases.map(item=>item.id)).size !== 20)
         throw Error('STRESS_CATALOGUE_INVALID');
-      for (const [index,item] of cases.entries()) {
+      const selected = only ? cases.filter(item=>item.id===only) : cases;
+      if (!selected.length) throw Error('STRESS_CASE_INVALID');
+      for (const [index,item] of selected.entries()) {
         if (stressStop.current || !alive.current) break;
-        setStressProgress(`${index + 1}/20 · ${item.id}`);
+        setStressProgress(`${index + 1}/${selected.length} · ${item.id}`);
         try {
           const result = await apiManagement.stressCase(item.id);
-          if (alive.current) setStressResults(prior=>[...prior,{...result,caseId:item.id}]);
+          if (alive.current) recordStress(result,item.id);
         } catch {
           // A lost response does not prove that the paid request never ran.
-          if (alive.current) setStressResults(prior=>[...prior,{caseId:item.id,status:'response_unknown',code:'RESPONSE_NOT_CONFIRMED'}]);
+          if (alive.current) recordStress({status:'response_unknown',code:'RESPONSE_NOT_CONFIRMED'},item.id);
           stressStop.current = true;
         }
       }
@@ -391,6 +404,10 @@ export function ApiManagement({ editable, stressEnabled = false }: { editable: b
           <button type="button" className="btn btn-ghost" disabled={busy || !editable} onClick={()=>void runStress()}>고정 20건 실행</button>
           {stressRunning ? <button type="button" className="btn btn-ghost" onClick={()=>{stressStop.current=true;setStressProgress('현재 건을 마친 뒤 중지합니다.');}}>현재 건 이후 중지</button> : null}
           <button type="button" className="btn btn-ghost" disabled={!stressResults.length || stressRunning} onClick={downloadStress}>검증 결과 다운로드</button>
+        </div>
+        <div className="feature-toolbar">
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={()=>{void apiManagement.stressCases().then(({cases})=>{if(alive.current){setStressCases(cases);setStressChoice(cases[0]?.id??'');}}).catch(()=>{if(alive.current)setStressProgress('사례 목록을 확인하지 못했습니다.');});}}>검증 사례 조회</button>
+          {stressCases.length ? <><label style={{minWidth:0,flex:'1 1 20rem'}}>재시험 사례<select style={{width:'100%',minWidth:0}} className="app-input" value={stressChoice} disabled={busy} onChange={event=>setStressChoice(event.target.value)}><option value="">사례 선택</option>{stressCases.map(item=><option key={item.id} value={item.id}>{item.id}</option>)}</select></label><button type="button" className="btn btn-ghost" disabled={busy || !editable || !stressChoice} onClick={()=>void runStress(stressChoice)}>선택 1건 재시험</button></> : null}
         </div>
         <p role="status" aria-live="polite">{stressProgress}</p>
         {stressResults.length ? <ul>{stressResults.map(result=><li key={String(result.caseId)}>{String(result.caseId)} · {result.automatedChecksPassed === true ? '자동 검사 통과 · 수동 검토 별도' : result.status === 'failed' ? `실패 · ${String(result.code ?? '원인 확인 필요')}` : result.status === 'response_unknown' ? '응답 미확인' : '기대값 불일치·검토 필요'}</li>)}</ul> : null}

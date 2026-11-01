@@ -4837,7 +4837,7 @@ console.log(
   const html = renderWorkSections(work);
   for (const value of [
     '4p',
-    '하차 13:15',
+    '2026.11.2(월) 13:15 하차',
     '두동로 33 A동 5층',
     '양산공장',
     '09:00',
@@ -7210,7 +7210,7 @@ const task={text:'가상별창고 배차 준비',evidence:shortProof,status:'pen
 const oldValue={...empty(),intent:{kind:'request',evidence:oldProof},summary:[{text:'가상별창고 6P 배차 요청',evidence:oldProof}],tasks:[task]};
 async function analyze(fn,source,value){return fn({messageId:source.id,provider:'openai',model:'gpt-6-luna',key:'SYNTHETIC_ONLY',now:oldFixture.now,ownerName:'테스트담당자',loadMail:async()=>source,fetcher:async()=>response(value),store:{claim:async()=>({row:{id:source.id,uidl_hash:source.uidl_hash},lease:'local'}),finish:async()=>true,fail:async()=>true}});}
 const fixedOld=await analyze(analyzePrivateMail,oldSource,oldValue);assert.equal(fixedOld.status,'done');assert.equal(fixedOld.analysis.tasks[0].assignee,'테스트담당자');assert.equal(fixedOld.analysis.tasks[0].assigneeConfirmed,false);assert.equal(fixedOld.analysis.tasks[0].serviceDate,'2026-10-30');assert.equal(fixedOld.analysis.tasks[0].dueAt,null);
-for(const invalidTask of [{...task,selfRequestEvidence:shortProof},{...task,assignee:'다른가상인물'},{...task,selfRequestEvidence:'본문에 없는 테스트담당자님 요청'}])assert.equal((await analyze(analyzePrivateMail,oldSource,{...oldValue,tasks:[invalidTask]})).code,'ANALYSIS_ASSIGNEE');
+for(const invalidTask of [{...task,assignee:'다른가상인물'},{...task,selfRequestEvidence:'본문에 없는 테스트담당자님 요청'}])assert.equal((await analyze(analyzePrivateMail,oldSource,{...oldValue,tasks:[invalidTask]})).code,'ANALYSIS_ASSIGNEE');
 const quotedSource={...oldSource,text:'참고 전달입니다.\n\n-----Original Message-----\n'+oldProof};
 assert.equal((await analyze(analyzePrivateMail,quotedSource,oldValue)).code,'ANALYSIS_ASSIGNEE','forwarded names cannot corroborate current ownership');
 console.log('CONFIRMED scoped assignee rejection: exact named same-request proof accepted; action-only/name mismatch/forged/forwarded proof still rejected; dates and unconfirmed assignee state preserved');
@@ -7395,4 +7395,55 @@ console.log('PASS recorded failed parsed responses replay; CID original intent m
   const excluded=structuredClone(originalCid);excluded.imageDecisions[0].include=false;
   assert.equal((await run(cidSource,excluded)).code,'ANALYSIS_EVIDENCE','excluded image cannot enable summary metadata recovery');
   console.log('PASS exact original mail parsed replay: cross-sentence named action overlap, original dates, unverified image-summary quarantine; no unrelated/forwarded ownership or body-task/image evidence promotion');
+}
+
+{
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const {analyzePrivateMail}=await import('../supabase/functions/onedrive-auth/private-mail-analysis.js');
+ const f=fixtureById('mail-old-sent-collected-today'),source=(await parseStressMail(f)).source;
+ const proof='내일 가상별창고 6P 배차 준비 부탁드립니다.';
+ const value={intent:{kind:'request',evidence:proof},group:null,summary:[],issues:[],tasks:[{text:'가상별창고 6P 배차 준비',evidence:proof,status:'pending',assignee:'테스트담당자',due:null,completionEvidence:null,serviceOriginal:'내일',forOwner:true,recipientScope:'owner_direct',selfRequestEvidence:proof}],waiting:[],updates:[],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}};
+ const run=async src=>analyzePrivateMail({messageId:src.id,provider:'openai',model:'gpt-6-luna',key:'mock',ownerName:'테스트담당자',now:f.now,loadMail:async()=>src,fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]}),store:{claim:async()=>({row:{id:src.id,uidl_hash:src.uidl_hash},lease:'test'}),finish:async()=>true,fail:async()=>true}});
+ const result=await run(source);assert.equal(result.status,'done');assert.equal(result.analysis.tasks[0].serviceDate,'2026-10-30');assert.equal(result.analysis.tasks[0].dueAt,null);assert.equal(result.analysis.tasks[0].assigneeConfirmed,false);
+ for(const src of [{...source,text:source.text.replace('테스트담당자님, ','')},{...source,text:source.text.replace('테스트담당자님, ','다른담당자님, ')},{...source,ownerContext:{recipientRole:'cc',senderIsOwner:false}},{...source,text:source.text+'\n다른담당자님, '+proof}])assert.equal((await run(src)).code,'ANALYSIS_ASSIGNEE');
+ console.log('PASS actual PR93 short addressee proof; exact same-sentence direct owner fallback only, no header-only/other-name/CC/duplicate inference');
+}
+{
+const {renderDailyBriefing,dailyBriefingView}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+const {parseStressMail}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+const parsed=(await parseStressMail(fixtureById('mail-image-only-routine-table'))).source;
+const img=parsed.images[0];
+const base={source:{id:parsed.id,uidl:'a'.repeat(64),subject:'합성 정기 점검표',sender:'가상발신 <sender@example.test>',sentAt:'2026-11-02T00:00:00Z',receivedAt:'2026-11-02T00:01:00Z',intent:'routine',images:[{id:img.id,name:img.name,mediaType:img.mediaType,contentHash:img.contentHash,width:img.width,height:img.height,byteLength:img.bytes.length}]},revision:1,summary:[{text:'정기 점검표 제목이 확인됩니다.',evidence:'SYNTHETIC TEST'}],tasks:[],issues:[],waiting:[],updates:[],imageFacts:[{imageId:img.id,text:'온도 4°C 정기 점검표',confidence:'readable'}],imageDecisions:[{imageId:img.id,kind:'business_document',include:true}]};
+const render=analysis=>renderDailyBriefing({now:'2026-11-02T01:00:00Z',analyses:[analysis]}).managedHtml;
+const original=structuredClone(base),html=render(base);
+assert.ok(!html.includes('제목이 확인됩니다'));assert.ok(html.includes('합성 정기 점검표 자료'));
+assert.ok(html.includes('정기보고메일'));assert.ok(!html.includes('정상'));assert.ok(!html.includes('<img'));assert.ok(!html.includes('sajo-mail-photos-'));
+assert.deepEqual(base,original);assert.equal(dailyBriefingView({now:'2026-11-02T01:00:00Z',analyses:[base]}).workItems[0].summary[0],'정기 점검표 제목이 확인됩니다.');
+const noImage=structuredClone(base);noImage.source.images=[];noImage.imageFacts=[];noImage.imageDecisions=[];
+assert.ok(render(noImage).includes('합성 정기 점검표 자료'));
+for(const meaningful of ['온도 4°C로 기재된 정기 점검표입니다.','온도 이탈 문구가 확인됩니다.','점검표 제목 누락이 확인됩니다.','보관 온도 4°C, 정기 점검 정상으로 기재되어 있습니다.']) {
+ const analysis=structuredClone(base);analysis.summary=[{text:meaningful,evidence:'synthetic'}];assert.ok(render(analysis).includes(meaningful.replace(/[.]$/,'')));
+}
+const mixed=structuredClone(base);mixed.summary.push({text:'점검 대상은 가상구름센터이며 온도는 4°C입니다.',evidence:'synthetic'});const mixedHtml=render(mixed);assert.ok(mixedHtml.includes('점검 대상은 가상구름센터이며 온도는 4°C입니다'));assert.ok(!mixedHtml.includes('제목이 확인됩니다'));
+const sameLine=structuredClone(base);sameLine.summary=[{text:'정기 점검표 제목이 확인됩니다. 온도는 4°C로 기재되어 있습니다.',evidence:'synthetic'}];const sameLineHtml=render(sameLine);assert.ok(!sameLineHtml.includes('제목이 확인됩니다'));assert.ok(sameLineHtml.includes('온도는 4°C로 기재되어 있습니다'));
+const reference=structuredClone(noImage);reference.source.intent='reference';reference.source.subject='가상 안내 자료';assert.ok(render(reference).includes('제목이 확인됩니다'),'scope is routine-note presentation only');
+console.log('PASS routine note topic: boilerplate replaced by original subject without invented normality, no-image fallback, meaningful/mixed business summaries retained, source/workItems unchanged and no recurring report photos');
+
+}
+
+{
+const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');const {normalizeManualItems,manualDailyView,resolveExistingManualWork}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');const {dailyWorkItems,renderBriefingWorkNote,workSummaryForDisplay}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const previews=[];function renderPreview(items){const html=renderBriefingWorkNote(items);previews.push(html);return html;}
+const newId='ffffffff-1111-4111-8111-000000009999';
+function view(f,value,verified=false){const entries=Object.fromEntries((f.related??[]).map(e=>[e.entryId,structuredClone(e)]));const items=normalizeManualItems(value,{text:f.text,entryId:newId,submittedAt:f.now,referenceDate:f.referenceDate,allowLinks:verified,verifiedDispatchReply:verified,verifiedReplyRef:value.items[0]?.workRef,replyDetails:value.details??[]});for(const i of items)if(value.resolution)i.resolution=value.resolution;entries[newId]={entryId:newId,status:'ready',text:f.text,referenceDate:f.referenceDate,submittedAt:f.now,items};return {items,work:dailyWorkItems({day:f.referenceDate,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,f.referenceDate))};}
+let failed=0;for(const[name,test]of[
+['latest quantity has no stale standalone quantity in note',()=>{const f=fixtureById('manual-late-correction-targeted'),r=resolveExistingManualWork(f.text,Object.fromEntries(f.related.map(x=>[x.entryId,x])),f.referenceDate,f.now),{work}=view(f,r,true);const target=work.find(x=>x.workId===f.related[0].ref);assert.ok(target.title.includes('10P'));const before=JSON.stringify(target);const note=renderPreview([target]);assert.ok(!note.includes('12P'),note);assert.equal(JSON.stringify(target),before);assert.ok(target.sourceRefs.some(x=>x.evidence.includes('12P')))}],
+['date weekday conflict reason shown without confirmed date',()=>{const f=fixtureById('manual-conflicting-date-weekday-incomplete');const {work,items}=view(f,{items:[{kind:'dispatch',text:'가상별창고 배차 준비 부탁드립니다',evidence:f.text,serviceOriginal:'11월 3일(수)',needsConfirmation:true}]});assert.equal(items[0].serviceDate,null);const note=renderPreview(work);assert.match(note,/날짜·요일.*불일치|날짜·요일.*확인/);assert.ok(note.includes('11월 3일(수)'));assert.ok(note.includes('수량·하차 시각 미정'));assert.ok(!note.includes('운행·납품 2026-11-03'));assert.ok(!note.includes('부탁드립니다'))}],
+['contextless request explains missing target without false progress',()=>{const f=fixtureById('manual-contextless-deictic-request');const {work}=view(f,{items:[]});const note=renderPreview(work);assert.match(note,/요청 대상.*자료.*확인 필요/);assert.ok(!note.includes('진행 중'));assert.ok(!note.includes('진행중'))}],
+['supplement detail facts appear once',()=>{const f=fixtureById('manual-split-supplement-exact'),r=resolveExistingManualWork(f.text,Object.fromEntries(f.related.map(x=>[x.entryId,x])),f.referenceDate,f.now),{work}=view(f,r,true);const target=work.find(x=>x.workId===f.related[0].ref),note=renderPreview([target]);assert.equal((note.match(/12P/g)??[]).length,1);assert.equal((note.match(/가상구름센터/g)??[]).length,1);assert.ok(!note.includes('대상 2026'));assert.ok(note.includes('출발 가상별창고'));assert.ok(note.includes('2026.11.3(화) 09:00 하차'));assert.ok(!workSummaryForDisplay(target).includes('12P'))}],
+])try{test();console.log('PASS',name)}catch(e){failed++;console.log('FAIL',name,e.message)}if(failed)process.exitCode=1;
+
+
 }
