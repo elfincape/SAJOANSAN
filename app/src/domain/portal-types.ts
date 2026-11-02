@@ -169,9 +169,10 @@ export const centerLabels: Record<string, string> = {
   yangsan: '양산공장',
 };
 export function portalCenterName(
-  code: string,
+  code: string | null,
   centers: { code: string; name: string }[] = [],
 ) {
+  if(code===null)return '배송팀';
   return (
     centerLabels[code] ?? centers.find((c) => c.code === code)?.name ?? code
   );
@@ -196,3 +197,17 @@ export const portalStamp = (value?: string | null) =>
         hour12: false,
       }).format(new Date(value))
     : '';
+
+// Read-only dates for the existing task detail; never a fabricated due time or completion.
+export function portalMonthlyFacts(inputs: PortalInputs): [string,string][] {
+  const raw=inputs.personal_monthly;
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return [];
+  const monthly=raw as Record<string,unknown>;
+  const date=(value:unknown):value is string=>typeof value==='string'&&/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+  if(!date(monthly.scheduledDate))return [];
+  const result:[string,string][]=[[monthly.advanceKind?'품의 예정':'처리 예정',monthly.scheduledDate+(monthly.qualifier==='before'?' 이전':monthly.advanceKind==='nonghyup'?' (월초 품의)':'')]];
+  const period=monthly.targetPeriod as {from?:unknown;through?:unknown}|null;
+  if(period&&date(period.from)&&date(period.through))result.push(['대상기간',period.from+' ~ '+period.through]);
+  if(date(monthly.paymentDate))result.push(['지급예정',monthly.paymentDate]);
+  return result;
+}

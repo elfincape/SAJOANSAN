@@ -14,6 +14,7 @@ export function shiftPeriod(value,unit,direction){
 }
 export function taskState(task,now=new Date()){
  if(['completed','not_applicable'].includes(task.status))return 'completed';
+ if(task.inputs?.personal_monthly&&!task.due_at)return 'active';
  return (task.due_at?new Date(task.due_at)<now:taskEnd(task)<koreaDate(now))?'delayed':'active';
 }
 export const taskEnd=task=>task.work_end_date||task.work_date;

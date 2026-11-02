@@ -1,3 +1,13 @@
+import monthly0 from '../../../repo-root/sql/operations-core.sql?raw';
+import monthly1 from '../../../repo-root/sql/operations-workflow.sql?raw';
+import monthly2 from '../../../repo-root/sql/operations-templates.sql?raw';
+import monthly3 from '../../../repo-root/sql/operations-portal.sql?raw';
+import monthly4 from '../../../repo-root/sql/operations-scheduler.sql?raw';
+import monthly5 from '../../../repo-root/sql/operations-ai.sql?raw';
+import monthly6 from '../../../repo-root/sql/operations-trash.sql?raw';
+import monthly7 from '../../../supabase/sql/private-mail-portal.sql?raw';
+import monthly8 from '../../../supabase/sql/private-mail-work-correction.sql?raw';
+import monthly9 from '../../../supabase/sql/private-mail-monthly.sql?raw';
 /// <reference lib="webworker" />
 import { PGlite } from '@electric-sql/pglite';
 import wasmUrl from '../../node_modules/@electric-sql/pglite/dist/pglite.wasm?url';
@@ -55,9 +65,11 @@ const dependencies = Promise.all([
     setup: async () => ({ bundlePath: new URL(cryptoUrl, self.location.href) }),
   },
   sqlSources: [base, automation, filters, manual, history, dates, jev],
+  monthlySqlSources: {'repo-root/sql/operations-core.sql':monthly0,'repo-root/sql/operations-workflow.sql':monthly1,'repo-root/sql/operations-templates.sql':monthly2,'repo-root/sql/operations-portal.sql':monthly3,'repo-root/sql/operations-scheduler.sql':monthly4,'repo-root/sql/operations-ai.sql':monthly5,'repo-root/sql/operations-trash.sql':monthly6,'supabase/sql/private-mail-portal.sql':monthly7,'supabase/sql/private-mail-work-correction.sql':monthly8,'supabase/sql/private-mail-monthly.sql':monthly9},
 }));
 let session: Awaited<ReturnType<typeof prepareIsolatedMailCase>> | null = null;
 let working = false;
+let sessionCase = 'mail-old-sent-collected-today';
 self.onmessage = async (event) => {
   if (working) {
     self.postMessage({ status: 'failed', error: 'ISOLATED_BUSY' });
@@ -67,8 +79,9 @@ self.onmessage = async (event) => {
   try {
     if (event.data?.operation === 'prepare') {
       if (session) throw Error('ISOLATED_ALREADY_PREPARED');
+      sessionCase = event.data.caseId ?? 'mail-old-sent-collected-today';
       session = await prepareIsolatedMailCase(
-        'mail-old-sent-collected-today',
+        sessionCase,
         await dependencies,
       );
       self.postMessage({
@@ -79,10 +92,10 @@ self.onmessage = async (event) => {
     } else if (event.data?.operation === 'finish') {
       if (!session) throw Error('ISOLATED_NOT_PREPARED');
       const result = await session.finish(event.data.result);
-      const f = fixtureById('mail-old-sent-collected-today');
+      const f = fixtureById(sessionCase);
       const note =
         result.status === 'passed'
-          ? renderDailyBriefing({ now: f.now, analyses: [result.roundTrip] })
+          ? result.noteHtml ?? renderDailyBriefing({ now: f.now, analyses: [result.roundTrip] })
               .managedHtml
           : null;
       self.postMessage({

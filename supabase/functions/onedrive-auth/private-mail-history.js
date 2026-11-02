@@ -95,7 +95,7 @@ export async function createMailHistoryDocument({
   completionEvents = [],
 }) {
   if (
-    !['mail', 'manual'].includes(kind) ||
+    !['mail', 'manual', 'portal'].includes(kind) ||
     !UUID.test(sourceId ?? '') ||
     !Number.isSafeInteger(revision) ||
     revision < 1 ||

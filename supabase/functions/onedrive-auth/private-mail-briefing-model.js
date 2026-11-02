@@ -71,6 +71,7 @@ export function applyMailIntentOverride(analysis, correction) {
   return {
     ...projected,
     source: { ...analysis.source, intent: 'reference' },
+    ...(analysis.monthlyUpdates?{monthlyUpdates:[],monthlyReview:[]}:{}),
     intent: { kind: 'reference', evidence: null, ownerFeedback: true },
     tasks: [],
     waiting: [],
@@ -489,6 +490,8 @@ export function dailyBriefingView({
   analyses,
   overrides = {},
   manual = {},
+  portalTasks = [],
+  portalOwnerId,
 }) {
   const identity = dailyReportIdentity(now),
     allRows = uniqueAnalyses(analyses)
@@ -878,6 +881,7 @@ export function dailyBriefingView({
   const view = {
     ...identity,
     groups,
+    monthlyUpdates:rows.flatMap(mail=>(mail.monthlyUpdates??[]).map(update=>({...update,source:mail.source}))),
     issues: output.issues,
     tasks: output.tasks,
     waiting: output.waiting.filter((item) => item.status !== 'resolved'),
@@ -890,10 +894,12 @@ export function dailyBriefingView({
     ...view,
     excludedWorkItems: dailyWorkItems(view, manual, {
       workOverrides: overrides,
+      portalTasks,portalOwnerId,
       includeExcluded: true,
     }).filter((item) => item.excluded),
     workItems: dailyWorkItems(view, manual, {
       workOverrides: overrides,
+      portalTasks,portalOwnerId,
       excludedSourceIds: new Set(
         allRows
           .filter((mail) => mail.source.excluded === true)
@@ -935,8 +941,8 @@ const localTime = (value) =>
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(date(value));
-export function renderDailyBriefing({ now, analyses, overrides, manual = {} }) {
-  const view = dailyBriefingView({ now, analyses, overrides, manual });
+export function renderDailyBriefing({ now, analyses, overrides, manual = {}, portalTasks = [], portalOwnerId }) {
+  const view = dailyBriefingView({ now, analyses, overrides, manual, portalTasks, portalOwnerId });
   if (manual.day != null && manual.day !== view.day) throw Error('REPORT_DATE');
   const times = [
     ...analyses.map(

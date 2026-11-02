@@ -19,12 +19,12 @@ const source=surveyPrompt(survey).source;
 const draft={steps:[{label:'차량 확인',evidence:'차량 확인'}],fields:[],completion:{text:'전달 여부 확인',evidence:'전달 확인'},repeat:null,automation:[],questions:['반복 주기는 언제인가요?']};
 assert.equal(validateSurveyDraft(draft,survey,source).survey_version,1);
 assert.throws(()=>validateSurveyDraft({...draft,steps:[{label:'자동 CJ 전송',evidence:'존재하지 않는 원문'}]},survey,source),/원문/);
-let role='admin',active=true,cache=null,aiCalls=0,answer={rankings:['task:b']},calls=[];
+let email='admin@example.test',role='admin',active=true,cache=null,aiCalls=0,answer={rankings:['task:b']},calls=[];
 const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_ANON_KEY:'anon',SUPABASE_SERVICE_ROLE_KEY:'service',AIAPIFLOW_API_KEY:'ai'};
 const json=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
 async function fake(input,options={}){
  const url=new URL(input),path=url.pathname,b=options.body?JSON.parse(options.body):null;
- if(path==='/auth/v1/user')return json({id:userId});
+ if(path==='/auth/v1/user')return json({id:userId,email});
  if(url.hostname==='aiapiflow.com'){aiCalls++;assert.equal(b.model,'claude-haiku-4-5-20251001');assert(b.max_tokens<=4000);return json({content:[{type:'text',text:JSON.stringify(answer)}]});}
  assert.equal(url.hostname,'example.supabase.co');calls.push({path,method:options.method});
  if(path==='/rest/v1/user_profiles')return json([{id:userId,role,active}]);
@@ -49,6 +49,6 @@ const result=await(await handler(request())).json();assert.equal(result.model_us
 const cached=await(await handler(request())).json();assert.equal(cached.cached,true);assert.equal(aiCalls,1);
 assert(calls.every(call=>call.method!=='PATCH'&&call.method!=='DELETE'),'AI must not update or delete workflow records');
 cache=null;answer={rankings:['task:invented']};const invalid=await handler(request());assert.equal(invalid.status,502);assert.equal(cache.status,'failed');assert.equal(cache.body,null);
-cache=null;answer=draft;const generatedDraft=await(await handler(request('portal-survey-draft',{surveyId}))).json();assert.equal(generatedDraft.kind,'survey_draft');assert.equal(generatedDraft.survey_version,1);
+cache=null;answer=draft;const callsBeforeDraft=aiCalls;assert.equal((await handler(request('portal-survey-draft',{surveyId}))).status,403);assert.equal(aiCalls,callsBeforeDraft,'ordinary admin cannot generate a protected draft or consume model tokens');email='elfincape@gmail.com';const generatedDraft=await(await handler(request('portal-survey-draft',{surveyId}))).json();assert.equal(generatedDraft.kind,'survey_draft');assert.equal(generatedDraft.survey_version,1);
 cache=null;const missingKey=await makePortalAiHandler({...env,AIAPIFLOW_API_KEY:''},fake)(request());assert.equal(missingKey.status,503);assert.equal(cache.status,'failed');
 console.log('PASS: grounded references, mandatory urgency, survey evidence, HQ access, scheduled authentication, bounded AI calls, caching, failure visibility and no workflow writes');

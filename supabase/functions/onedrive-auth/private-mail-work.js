@@ -54,6 +54,90 @@ function sourceRef(source, kind, ref) {
     intentCorrected: source.intentCorrected === true,
   };
 }
+export function normalizeWorkScope(value, sourceKind) {
+  if (sourceKind === 'mail' && value == null)
+    return {kind:'delivery_team',centerCode:null,workCategory:null};
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('WORK_SCOPE_REQUIRED');
+  if (!['center','delivery_team'].includes(value.kind) ||
+      (sourceKind === 'mail' && value.kind !== 'delivery_team')) throw Error('WORK_SCOPE');
+  if (value.kind === 'delivery_team') {
+    if (value.centerCode != null || value.workCategory != null) throw Error('WORK_SCOPE');
+    return {kind:'delivery_team',centerCode:null,workCategory:null};
+  }
+  if (typeof value.centerCode !== 'string' || !/^[a-zA-Z0-9_-]{1,50}$/.test(value.centerCode) || !clean(value.workCategory,100))
+    throw Error('WORK_SCOPE');
+  return {kind:'center',centerCode:value.centerCode,workCategory:value.workCategory.trim()};
+}
+function sameWorkScope(first, second) {
+  return first.kind === second.kind && first.centerCode === second.centerCode && first.workCategory === second.workCategory;
+}
+export function portalWorkInput(work, {ownerId, scope, visibleFrom}) {
+  if (!uuid.test(ownerId ?? '') || !validWorkRef(work?.workId)) throw Error('WORK_SOURCE');
+  if (!['task','issue'].includes(work.category)) throw Error('WORK_NOT_ACTIONABLE');
+  if(!clean(work.title,200))throw Error('WORK_FORMAT');
+  const sourceKind=work.sourceRefs?.[0]?.kind;
+  const selected=normalizeWorkScope(scope ?? work.workScope,sourceKind);
+  if (work.workScope && !sameWorkScope(selected,normalizeWorkScope(work.workScope))) throw Error('WORK_SCOPE_CONFLICT');
+  if(work.portalTaskId && (!Number.isSafeInteger(work.portalVersion)||work.portalVersion<1))throw Error('WORK_PORTAL_STALE');
+  const checked=normalizeDailyWork({...work,assigneeConfirmed:!!work.assignee,ref:work.originRef ?? work.workId,linkedWorkRef:work.workId});
+  const day=calendar(visibleFrom);
+  if (!day) throw Error('WORK_DATE');
+  return {
+    id:checked.portalTaskId,expected_version:work.portalVersion ?? null,
+    owner_id:ownerId,center_code:selected.centerCode,work_scope:selected.kind,
+    title:checked.title,work_date:day,work_end_date:null,due_at:checked.dueAt,
+    status:({complete:'completed',cancelled:'not_applicable',waiting:'in_progress'})[checked.status] ?? checked.status,
+    inputs:{personal_work:{
+      schema:WORK_FORMAT,workId:checked.workId,ownerId,scope:selected,
+      sourceKeys:[...new Set(checked.sourceRefs.map(source=>source.ref))],
+      category:checked.category,reportKind:checked.reportKind,status:checked.status,
+      summary:checked.summary,nextAction:checked.nextAction,progress:checked.progress,waitingFor:checked.waitingFor,
+      customer:checked.customer,requester:checked.requester,requestedAt:checked.requestedAt,
+      dueDate:checked.dueDate,serviceDate:checked.serviceDate,needsConfirmation:checked.needsConfirmation,
+      confirmationReasons:checked.confirmationReasons,ownerStateAt:checked.ownerStateAt,
+      verifiedCompletionAt:checked.verifiedCompletionAt,inferredStateAt:checked.inferredStateAt,closedAt:checked.closedAt,
+    }},
+  };
+}
+export function applyPortalWorkSnapshot(work, task, {ownerId}) {
+  const current=task?.inputs?.personal_work;
+  if (!uuid.test(ownerId ?? '') || task?.owner_id !== ownerId || current?.ownerId !== ownerId)
+    throw Error('WORK_PORTAL_OWNER');
+  if (!uuid.test(task.id ?? '') || current.schema !== WORK_FORMAT || current.workId !== work.workId ||
+      (work.portalTaskId && task.id !== work.portalTaskId) || task.deleted_at) throw Error('WORK_LINK_CONFLICT');
+  if (!Number.isSafeInteger(task.version) || task.version < 1 || task.version < (work.portalVersion ?? 0))
+    throw Error('WORK_PORTAL_STALE');
+  const selected=normalizeWorkScope(current.scope);
+  if (task.center_code !== selected.centerCode || task.work_scope !== selected.kind ||
+      (work.workScope && !sameWorkScope(selected,work.workScope))) throw Error('WORK_SCOPE_CONFLICT');
+  const status=({pending:'pending',in_progress:current.status==='waiting'?'waiting':'in_progress',completed:'complete',not_applicable:'cancelled'})[task.status];
+  if (!status) throw Error('WORK_STATUS');
+  const updatedAt=stamp(task.updated_at);
+  if (!updatedAt) throw Error('WORK_DATE');
+  const projected=normalizeDailyWork({
+    ...work,ref:work.originRef ?? work.workId,linkedWorkRef:work.workId,
+    portalTaskId:task.id,assigneeConfirmed:!!work.assignee,workScope:selected,title:task.title,category:current.category,reportKind:current.reportKind,
+    summary:current.summary,nextAction:current.nextAction,progress:current.progress,waitingFor:current.waitingFor,
+    customer:current.customer,requester:current.requester,dueAt:task.due_at ?? null,dueDate:current.dueDate,serviceDate:current.serviceDate,
+    needsConfirmation:current.needsConfirmation,confirmationReasons:current.confirmationReasons,
+    status,closedAt:status==='complete'?stamp(task.completed_at):status==='cancelled'?updatedAt:null,
+    ownerStateAt:stamp(current.ownerStateAt),inferredStateAt:stamp(current.inferredStateAt),
+    verifiedCompletionAt:status==='complete'?stamp(current.verifiedCompletionAt):null,
+  });
+  const planned=task.inputs?.personal_monthly;
+  let monthly;
+  if(planned){
+    const scheduledDate=calendar(planned.scheduledDate),visibleFrom=calendar(planned.visibleFrom);
+    if(planned.ownerId!==ownerId||current.workId!=='source:'+task.id||!scheduledDate||!visibleFrom||scheduledDate.slice(0,7)!==planned.scheduledMonth
+      ||!['on','before'].includes(planned.qualifier)||!clean(planned.originalSchedule,500))throw Error('WORK_MONTHLY');
+    let targetPeriod=null;
+    if(planned.targetPeriod){const from=calendar(planned.targetPeriod.from),through=calendar(planned.targetPeriod.through);if(!from||!through||from>through)throw Error('WORK_MONTHLY');targetPeriod={from,through};}
+    const paymentDate=calendar(planned.paymentDate??null);
+    monthly={scheduledDate,visibleFrom,qualifier:planned.qualifier,originalSchedule:planned.originalSchedule,targetPeriod,paymentDate,advanceKind:planned.advanceKind??null};
+  }
+  return {...work,...projected,portalVersion:task.version,...(monthly?{monthly}:{})};
+}
 export function normalizeDailyWork(input) {
   if (
     !input ||
@@ -98,6 +182,7 @@ export function normalizeDailyWork(input) {
     schema: WORK_FORMAT,
     workId,
     portalTaskId,
+    workScope: input.workScope == null ? null : normalizeWorkScope(input.workScope),
     controlRef:
       input.category === 'task' ||
       (input.ref.includes(':manual:') && input.category === 'issue')
@@ -152,6 +237,7 @@ export function needsOwnerReview(mail) {
     return false;
   return (
     mail.source?.intent === 'unknown' ||
+    mail.review?.monthlyConfirmation === true ||
     (mail.review?.withheldTasks ?? 0) + (mail.review?.withheldWaiting ?? 0) > 0
   );
 }
@@ -321,8 +407,12 @@ export function dailyWorkItems(
     excludedSourceIds = new Set(),
     workOverrides = {},
     includeExcluded = false,
+    portalTasks = [],
+    portalOwnerId,
   } = {},
 ) {
+  const monthlyRoots=new Set(portalTasks.filter(task=>task.inputs?.personal_monthly&&task.owner_id===portalOwnerId).map(task=>task.inputs?.personal_work?.workId));
+  const monthlyLinks=(view.monthlyUpdates??[]).filter(update=>monthlyRoots.has(update.ref)&&update.resolution==='monthly_mail_v1'&&update.needsConfirmation===false&&update.sourceId===update.source?.id);
   const result = [],
     summaries = new Map(),
     references = new Map(),
@@ -332,10 +422,11 @@ export function dailyWorkItems(
       for (const mail of thread.mails ?? []) {
         const routine = isRoutineMail(mail);
         if (routine) routineIds.add(mail.source.id);
-        summaries.set(mail.source.id, mailSummaryTexts(mail));
+        const remaining=monthlyLinks.some(update=>update.sourceId===mail.source.id)?{...mail,summary:(mail.summary??[]).filter(item=>!monthlyLinks.some(update=>update.sourceId===mail.source.id&&(update.evidence===item.evidence||(item.evidence?.length>=10&&update.evidence.includes(item.evidence)))))}:mail;
+        summaries.set(mail.source.id, mailSummaryTexts(remaining));
         references.set(mail.source.id, {
           source: mail.source,
-          summary: mailSummaryTexts(mail),
+          summary: mailSummaryTexts(remaining),
           context: group.name,
           reportKind: routine
             ? 'routine'
@@ -434,6 +525,11 @@ export function dailyWorkItems(
         }),
       );
     }
+  for(const link of monthlyLinks){
+    result.push(normalizeDailyWork({ref:link.ref,linkedWorkRef:link.ref,category:'task',title:link.text,status:'pending',summary:link.details??[],progress:link.text,requestedAt:link.sourceAt,
+      sourceRefs:[sourceRef({...link.source,evidence:link.evidence},'mail','source:'+link.sourceId)]}));
+    if(!(references.get(link.sourceId)?.summary.length))usedSummary.add(link.sourceId);
+  }
   for (const record of references.values())
     if (
       !usedSummary.has(record.source.id) &&
@@ -482,14 +578,14 @@ export function dailyWorkItems(
         )
       )
         refs.push({
-          kind: item.workRef.includes(':manual:') ? 'manual' : 'mail',
+          kind: item.workRef.includes(':manual:') ? 'manual' : portalTasks.some(task=>task.inputs?.personal_monthly&&task.inputs?.personal_work?.workId===item.workRef)?'linked':'mail',
           id: item.workRef.startsWith('source:')
             ? item.workRef.slice(7)
             : item.workRef.slice(0, 36),
           ref: item.workRef,
           title: item.workRef.includes(':manual:')
             ? '연결된 입력 메시지'
-            : '연결된 원본 메일',
+            : portalTasks.some(task=>task.inputs?.personal_monthly&&task.inputs?.personal_work?.workId===item.workRef)?'연결된 월간 업무':'연결된 원본 메일',
           receivedAt: null,
         });
       result.push(
@@ -497,6 +593,7 @@ export function dailyWorkItems(
           ref: item.ref,
           linkedWorkRef: item.workRef,
           portalTaskId: item.portalTaskId,
+          workScope: item.workScope ?? entry.workScope,
           category:
             item.kind === 'reference'
               ? 'reference'
@@ -551,6 +648,8 @@ export function dailyWorkItems(
       previous.portalTaskId !== item.portalTaskId
     )
       throw Error('WORK_LINK_CONFLICT');
+    if (previous?.workScope && item.workScope && !sameWorkScope(previous.workScope,item.workScope))
+      throw Error('WORK_SCOPE_CONFLICT');
     aliases.set(item.originRef, key);
     if (!previous) {
       merged.set(key, { ...item, workId: key });
@@ -574,6 +673,7 @@ export function dailyWorkItems(
       ...item,
       workId: key,
       portalTaskId: previous.portalTaskId ?? item.portalTaskId,
+      workScope: previous.workScope ?? item.workScope,
       summary: mergeCurrentSummary(previous.summary, item.summary),
       sourceRefs: [...previous.sourceRefs, ...item.sourceRefs].filter(
         (source, index, all) =>
@@ -616,8 +716,23 @@ export function dailyWorkItems(
     }
     merged.set(key, combined);
   }
-  return [...merged.values()]
-    .map((item) => applyOwnerWorkCorrection(item, workOverrides, view.day))
+  const projected = new Map([...merged.values()]
+    .map(item=>applyOwnerWorkCorrection(item,workOverrides,view.day)).map(item=>[item.workId,item]));
+  const portalIds=new Set();
+  for(const task of portalTasks){
+    const marker=task.inputs?.personal_work;
+    if(!marker || portalIds.has(marker.workId))throw Error('WORK_LINK_CONFLICT');
+    portalIds.add(marker.workId);
+    if(view.day && task.work_date>view.day)continue;
+    const ref=marker.workId;
+    const sourceId=ref?.startsWith('source:')?ref.slice(7):ref?.slice(0,36);
+    const original=projected.get(ref) ?? applyOwnerWorkCorrection(normalizeDailyWork({
+      ref,category:marker.category,title:task.title,status:'pending',workScope:marker.scope,
+      requestedAt:marker.requestedAt,sourceRefs:[{kind:'linked',id:sourceId,ref}],
+    }),workOverrides,view.day);
+    projected.set(ref,applyPortalWorkSnapshot(original,task,{ownerId:portalOwnerId}));
+  }
+  return [...projected.values()]
     .filter((item) => includeExcluded || !item.excluded)
     .filter(
       (item) =>
@@ -836,7 +951,9 @@ function compactWorkSummary(item) {
   });
 }
 export function workSummaryForDisplay(item) {
-  const summary = compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate));
+  const planned=item.monthly;
+  const schedule=planned?['처리예정: '+calendar(planned.scheduledDate)+(planned.qualifier==='before'?' 이전':planned.advanceKind==='nonghyup'?' (월초 품의)':''),...(planned.targetPeriod?['대상기간: '+calendar(planned.targetPeriod.from)+' ~ '+calendar(planned.targetPeriod.through)]:[]),...(planned.paymentDate?['지급예정: '+calendar(planned.paymentDate)]:[])]:[];
+  const summary = [...schedule,...compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate))];
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];
   const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));

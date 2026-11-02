@@ -296,6 +296,15 @@ cases.push({ id: 'manual-cargo-weight-only-preserves-known-fields', kind: 'manua
   expected: { taskCount: 0, link: { mode: 'exact', refs: [cargoRefs[0]] }, dueDate: null, dueAt: null, expectedStatus: 'pending',
     targetFacts: [{ ...cargoExpected.targetFacts[0], summaryIncludes: ['160박스', '4P', '1.8톤', '하차 13:15', '테스트로 33'], summaryExcludes: ['1.7톤'] }, cargoExpected.targetFacts[1]],
     mustNot: ['weight_only_drops_known_boxes_or_pallets', 'changes_other_destination', 'converts_cargo_weight_to_vehicle_class', 'completes_preparation', 'changes_deadline'] } });
+const monthlyOwner='2a828c2d-9a6f-40d4-8e13-336b591811cc',monthlyTaskId='71000000-0000-4000-8000-000000000001',monthlyFamilyId='72000000-0000-4000-8000-000000000002';
+const monthlySpec={fields:[],steps:[],owner_ids:[monthlyOwner],effective_from:'2026-11-01',repeat:{kind:'monthly',day:1},personal_monthly:{ownerId:monthlyOwner,leadDays:3,qualifier:'on',targetPeriod:'previous_full_month',advanceKind:'nonghyup',paymentRule:'day10',originalSchedule:'월초 품의',source:{kind:'onenote',pageId:'synthetic-monthly-source'}}};
+const monthlyTask={id:monthlyTaskId,owner_id:monthlyOwner,title:'가상협동조합 선지급 품의',version:1,center_code:null,work_scope:'delivery_team',work_date:'2026-10-29',created_at:'2026-10-29T00:00:00Z',updated_at:'2026-10-29T00:00:00Z',status:'pending',due_at:null,completed_at:null,inputs:{personal_monthly:{ownerId:monthlyOwner,familyId:monthlyFamilyId,scheduledMonth:'2026-11',scheduledDate:'2026-11-01',visibleFrom:'2026-10-29',qualifier:'on',originalSchedule:'월초 품의',advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'},paymentDate:'2026-11-10',source:monthlySpec.personal_monthly.source},personal_work:{schema:'sajo-daily-work-v1',workId:'source:'+monthlyTaskId,ownerId:monthlyOwner,scope:{kind:'delivery_team',centerCode:null,workCategory:null},category:'task',status:'pending',summary:[],sourceKeys:['source:'+monthlyTaskId],requestedAt:'2026-10-29T00:00:00Z'}}};
+for(const [id,body,complete]of [
+ ['mail-monthly-approval-complete','테스트담당자님, 요청하신 2026년 10월분 가상협동조합 선지급 품의 상신 완료했습니다.',true],
+ ['mail-monthly-material-only','2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다. 품의 상신은 아직 하지 않았습니다.',false],
+ ['mail-monthly-wrong-period','2026년 11월분 가상협동조합 선지급 품의 상신 완료했습니다. 10월분 건에 대한 통보는 아닙니다.',false],
+])cases.push({id,kind:'mail',...common,mime:mime({id,subject:'가상 월간 품의 통보',text:body}),monthlyTemplate:{family_id:monthlyFamilyId,title:monthlyTask.title,spec:monthlySpec},monthlyTask,
+ expected:{taskCount:0,monthly:{...(complete?{updateCount:1}:{}),completedCount:complete?1:0,nativeStatus:complete?'completed':'pending',ref:'source:'+monthlyTaskId},mustNot:['material_delivery_completes_approval','different_period_updates_current_duty','duplicate_monthly_task','payment_day_becomes_approval_completion']}});
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {
   return STRESS_FIXTURES.find((fixture) => fixture.id === id) ?? null;

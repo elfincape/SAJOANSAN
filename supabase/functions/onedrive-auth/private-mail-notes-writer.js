@@ -673,6 +673,8 @@ function fragmentChanges(html, targets) {
 }
 
 export async function writeDailyBriefing({
+  portalTasks = [],
+  portalOwnerId,
   now,
   analyses,
   overrides = {},
@@ -696,7 +698,7 @@ export async function writeDailyBriefing({
     (deadline !== Infinity && !Number.isFinite(deadline))
   )
     throw Error('NOTES_IMAGE_LIMIT');
-  const rendered = renderDailyBriefing({ now, analyses, overrides, manual });
+  const rendered = renderDailyBriefing({ now, analyses, overrides, manual, portalTasks, portalOwnerId });
   const base = diagnosticRunId === null ? rendered : {
     ...rendered,
     title: '가상 검증 ' + diagnosticRunId,

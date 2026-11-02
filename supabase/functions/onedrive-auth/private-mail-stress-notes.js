@@ -3,7 +3,8 @@ import { BRIEFING_TARGET } from './private-mail-briefing-model.js';
 import { writeDailyBriefing, readDiagnosticPage } from './private-mail-notes-writer.js';
 import { fixtureById } from './private-mail-stress-fixtures.js';
 
-const CASE = 'mail-old-sent-collected-today';
+import { verifyMonthlyDiagnosticSnapshot } from './private-mail-monthly.js';
+const CASES = new Set(['mail-old-sent-collected-today','mail-monthly-approval-complete','mail-monthly-material-only','mail-monthly-wrong-period']);
 const PURPOSE = 'private-mail-virtual-note-v1';
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const enc = encodeURIComponent;
@@ -13,22 +14,24 @@ function canonical(value) {
   return value;
 }
 export async function issueStressNoteProof(result, receiptId, ctx) {
-  if (result.caseId !== CASE || result.automatedChecksPassed !== true || result.saved?.source?.id !== receiptId || !uuid.test(receiptId)) return null;
+  if (!CASES.has(result.caseId) || result.automatedChecksPassed !== true || result.saved?.source?.id !== receiptId || !uuid.test(receiptId)) return null;
   if (typeof ctx.sealDiagnostic !== 'function') return null;
   if (JSON.stringify(result.saved).length > 64000) throw Error('STRESS_NOTE_RESULT_LIMIT');
-  return ctx.sealDiagnostic({ purpose: PURPOSE, owner: TARGET.owner_id, caseId: CASE,
+  return ctx.sealDiagnostic({ purpose: PURPOSE, owner: TARGET.owner_id, caseId: result.caseId,
     receiptId, expiresAt: Date.now() + 86400000, saved: result.saved });
 }
-export async function writeStressNote({ proof, stored }, ctx) {
+export async function writeStressNote({ proof, stored, portalTasks }, ctx) {
   if (typeof proof !== 'string' || proof.length > 128000 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(proof) || typeof ctx.openDiagnostic !== 'function') throw Error('STRESS_NOTE_PROOF');
   let approved;
   try { approved = await ctx.openDiagnostic(proof); } catch { throw Error('STRESS_NOTE_PROOF'); }
-  if (approved?.purpose !== PURPOSE || approved.owner !== TARGET.owner_id || approved.caseId !== CASE ||
+  if (approved?.purpose !== PURPOSE || approved.owner !== TARGET.owner_id || !CASES.has(approved.caseId) ||
       !uuid.test(approved.receiptId ?? '') || !Number.isFinite(approved.expiresAt) || approved.expiresAt <= Date.now() ||
       approved.saved?.source?.id !== approved.receiptId) throw Error('STRESS_NOTE_PROOF');
   if (!stored || JSON.stringify(stored).length > 64000 || JSON.stringify(canonical(stored)) !== JSON.stringify(canonical(approved.saved))) throw Error('STRESS_NOTE_SQL_MISMATCH');
   if (typeof ctx.diagnosticNotes !== 'function') throw Error('STRESS_NOTE_CONNECTION');
-  const fixture = fixtureById(CASE), title = '가상 검증 ' + approved.receiptId;
+  const fixture = fixtureById(approved.caseId), title = '가상 검증 ' + approved.receiptId;
+  const verifiedTasks = fixture.monthlyTemplate ? verifyMonthlyDiagnosticSnapshot(fixture, approved.saved, portalTasks) : [];
+  if (!fixture.monthlyTemplate && portalTasks != null) throw Error('STRESS_MONTHLY_SQL_MISMATCH');
   const marker = 'private-mail-note-test:' + approved.receiptId;
   return ctx.diagnosticNotes(async (connection, graph = ctx.graph) => {
     const checkedGraph = async (path, access, options) => {
@@ -50,7 +53,7 @@ export async function writeStressNote({ proof, stored }, ctx) {
       },
       release: async () => {},
     };
-    const write = () => writeDailyBriefing({ now: fixture.now, analyses: [approved.saved], store,
+    const write = () => writeDailyBriefing({ now: fixture.now, analyses: [approved.saved], portalTasks: verifiedTasks, portalOwnerId: TARGET.owner_id, store,
       connected: async () => connection, graph: checkedGraph, hash: async value => {
         const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
         return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('');

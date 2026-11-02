@@ -1989,6 +1989,7 @@ try {
   if(path.startsWith('private_mailboxes?'))return JSON.parse(JSON.stringify((await db.query('select * from private_mailboxes where id=$1',[BOX])).rows));
   if(path.startsWith('private_mail_messages?'))return JSON.parse(JSON.stringify((await db.query('select analysis,sent_at,received_at,created_at,report_day::text report_day,analysis_status,analysis_excluded,analysis_filter_override from private_mail_messages where mailbox_id=$1 and analysis is not null and report_day<=$2::date order by created_at,id',[BOX,today])).rows));
   if(path.startsWith('rpc/')){const entries=Object.entries(options.body);return(await db.query('select public.'+path.slice(4)+'('+entries.map(([key],index)=>key+' => $'+(index+1)).join(',')+') result',entries.map(([,value])=>value))).rows[0].result;}
+  if(path.startsWith('operations_tasks?select=*&owner_id=')&&path.includes('&inputs->personal_monthly->>ownerId=eq.'))return []; // This earlier fixture has no native portal tables; monthly integration is tested below.
   throw Error('UNEXPECTED_DB_ADAPTER_PATH');
  };
  const ctx={db:dbAdapter,json:Response.json,fail:(code)=>Error(code),background:true,graph:async()=>{graphCalls++;throw Error('GRAPH_MUST_NOT_BE_CALLED');},connectedNotes:async()=>{notesConnections++;throw Error('NOTES_MUST_NOT_BE_CALLED');}};
@@ -2052,6 +2053,7 @@ try{
   if(path.startsWith('private_mailboxes?'))return JSON.parse(JSON.stringify((await db.query('select * from private_mailboxes where id=$1',[BOX])).rows));
   if(path.startsWith('private_mail_messages?'))return[];
   if(path.startsWith('rpc/')){const pairs=Object.entries(options.body);return(await db.query('select public.'+path.slice(4)+'('+pairs.map(([key],i)=>key+' => $'+(i+1)).join(',')+') result',pairs.map(([,value])=>value))).rows[0].result;}
+  if(path.startsWith('operations_tasks?select=*&owner_id=')&&path.includes('&inputs->personal_monthly->>ownerId=eq.'))return []; // Monthly tasks are exercised by the native fixture below.
   throw Error('UNEXPECTED_DB');
  };
  const response=await handleMailAutomation('private-mail-background-work',{operation:'report',mailbox:BOX,day:today},{id:OWNER},{db:dbAdapter,json:Response.json,fail:code=>Error(code),background:true,graph:async()=>{graphCalls++;throw Error('MUST_NOT_WRITE')},connectedNotes:async()=>{connections++;throw Error('MUST_NOT_CONNECT')}});
@@ -2096,4 +2098,300 @@ try{
  await assert.rejects(()=>call({...note(6,'실패시 둘다 미반영'),done:true},later.correction.updatedAt),/SIMULATED_HISTORY_FAILURE/);assert.equal(JSON.stringify((await db.query('select * from private_mailboxes')).rows),before);
  console.log('PASS owner activity progress/atomic completion/readback/idempotency/conflict/reopen/history/rollback');
  }finally{await db.close()}
+}
+
+// The real portal ledger and save/reopen functions, isolated from operating data.
+{
+ const db=new PGlite({extensions:{pgcrypto}}),OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc',BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OTHER='40000000-0000-4000-8000-000000000002';
+ const {normalizeDailyWork}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const {syncPersonalPortalWork,syncPersonalPortalBatch,personalPortalDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-portal.js');
+ try{
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create extension pgcrypto;create schema auth;
+   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+   create table auth.users(id uuid primary key);create table user_profiles(id uuid primary key,active boolean,role text,email text,display_name text);
+   create table centers(code text primary key,name text,active boolean default true);
+   insert into auth.users values('${OWNER}'),('${OTHER}');insert into user_profiles values('${OWNER}',true,'admin','owner@example.test','가상담당'),('${OTHER}',true,'admin','other@example.test','다른담당');insert into centers values('yangsan','가상 양산',true),('001','가상 안산',true);
+   grant usage on schema public,auth to authenticated,service_role;grant select on user_profiles,centers to authenticated,service_role;`);
+  await db.exec(await readFile(new URL('../repo-root/sql/private-mail.sql',import.meta.url),'utf8'));
+  await db.exec("alter table private_mailboxes add column manual_entries jsonb default '{}',add column briefing_overrides jsonb default '{}',add column briefing_pages jsonb default '{}'");
+  const manualSql=await readFile(new URL('../supabase/sql/private-mail-manual.sql',import.meta.url),'utf8');
+  for(const name of ['private_mail_manual_allowed','private_mail_manual_dirty']){const start=manualSql.indexOf('create or replace function public.'+name+'(');await db.exec(manualSql.slice(start,manualSql.indexOf('$$;',start)+3));}
+  await db.exec(await readFile(new URL('../repo-root/sql/operations-core.sql',import.meta.url),'utf8'));
+  const portalSql=await readFile(new URL('../repo-root/sql/operations-portal.sql',import.meta.url),'utf8');
+  const start=portalSql.indexOf('create function public.operations_reopen_task(');
+  await db.exec("alter table operations_task_events drop constraint operations_task_events_action_check;alter table operations_task_events add check(action in ('created','updated','completed','not_applicable','task_reopened'))");
+  await db.exec(portalSql.slice(start,portalSql.indexOf('end $$;',start)+7));
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-portal.sql',import.meta.url),'utf8'));
+  await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled) values($1,$2,'jhs96@eangroup.kr','synthetic-drive','synthetic-folder',true)",[BOX,OWNER]);
+  const day=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text d")).rows[0].d;
+  const later=new Date(Date.parse(day+'T00:00:00Z')+2*86400000).toISOString().slice(0,10);
+  const scope={kind:'center',centerCode:'yangsan',workCategory:'양산배차'};
+  const ids=['50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002'];
+  const originals=Object.fromEntries(ids.map((id,i)=>[id,{entryId:id,status:'ready',submittedAt:day+'T00:00:00Z',workScope:scope,text:'PRIVATE_SOURCE_SENTINEL '+i,items:[{itemId:'item-001',ref:id+':manual:item-001',kind:'dispatch',text:`가상착지${i} ${i+4}P 배차 준비`,visibleFrom:day,done:false,completionEvents:[],details:[`물량 ${i+4}P`]}]}]));
+  const originalOverrides={['work:'+ids[0]+':manual:item-001']:{actor:'owner',title:'보존할 이전 정정',events:[{category:'task'}]}};
+  await db.query('update private_mailboxes set manual_entries=$1,briefing_overrides=$2 where id=$3',[originals,originalOverrides,BOX]);
+  const works=ids.map((id,i)=>normalizeDailyWork({ref:id+':manual:item-001',category:'task',title:originals[id].items[0].text,status:'pending',workScope:scope,requestedAt:day+'T00:00:00Z',serviceDate:later,summary:[`물량 ${i+4}P`],sourceRefs:[{kind:'manual',id,ref:id+':manual:item-001',evidence:originals[id].text}]}));
+  const rpc=async(name,args)=>{const keys=Object.keys(args);return(await db.query(`select to_jsonb(public.${name}(${keys.map((_,i)=>'$'+(i+1)).join(',')})) result`,Object.values(args))).rows[0].result;};
+  // Supabase's service table/sequence access is modeled in this isolated database only.
+  await db.exec('grant all on operations_tasks,operations_task_events to service_role;grant usage,select on sequence operations_task_events_id_seq to service_role');
+  let serviceQueue=Promise.resolve();
+  const serviceRpc=(name,args)=>serviceQueue=serviceQueue.catch(()=>{}).then(async()=>{
+    await db.exec('set role service_role');
+    try{return await rpc(name,args);}finally{await db.exec('reset role');}
+  });
+  const ctx={ownerId:OWNER,rpc:serviceRpc},make=(work,requestId=crypto.randomUUID())=>({work,requestId,scope,visibleFrom:day});
+  works[0].title=originalOverrides['work:'+works[0].workId].title;
+  const wrongScope={kind:'center',centerCode:'001',workCategory:'안산쿠팡'};
+  await assert.rejects(()=>syncPersonalPortalWork({...make({...works[0],workScope:wrongScope}),scope:wrongScope},ctx),/WORK_SCOPE_CONFLICT/);
+  const request=make(works[0]);let first=await syncPersonalPortalWork(request,ctx);
+  assert.equal(first.saved,true);assert.equal(first.task.owner_id,OWNER);assert.equal(first.task.center_code,'yangsan');assert.equal(first.task.work_date.slice(0,10),day);
+  assert.equal(first.task.inputs.personal_work.serviceDate,later);assert.equal(first.task.due_at,null);
+  assert.equal((await syncPersonalPortalWork(request,ctx)).portalTaskId,first.portalTaskId,'lost acknowledgment retry reuses exact task');
+  assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,1);
+  const sourceBefore=JSON.stringify((await db.query('select manual_entries from private_mailboxes')).rows[0].manual_entries);
+  let view=await personalPortalDailyView({now:day+'T12:00:00+09:00',manualEntries:originals,overrides:originalOverrides},ctx);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).portalTaskId,first.portalTaskId);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).title,first.task.title,'portal is canonical after link; private correction history remains');
+  const supplement={...works[0],summary:['화물 160박스 · 4P · 화물 중량 1.7톤']};
+  first=await syncPersonalPortalWork(make(supplement),ctx);assert.equal(first.task.status,'pending');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const save=async(task,title,inputs,status)=>rpc('operations_save_task',{p_request_id:crypto.randomUUID(),p_task_id:task.id,p_expected_version:task.version,p_center:task.center_code,p_title:title,p_work_date:task.work_date.slice(0,10),p_inputs:inputs,p_status:status});
+  let edited=await save(first.task,'본인 정정 배차명',{...first.task.inputs,work_note:'운수사에 조건 확인 중'},'in_progress');
+  assert.equal(edited.inputs.personal_work.progress,'운수사에 조건 확인 중');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const replay=await syncPersonalPortalWork(make(supplement),ctx);
+  assert.equal(replay.task.title,'본인 정정 배차명');assert.equal(replay.task.inputs.personal_work.progress,'운수사에 조건 확인 중');
+  await assert.rejects(()=>syncPersonalPortalWork(make({...supplement,portalTaskId:first.portalTaskId,portalVersion:1}),ctx),/WORK_PORTAL_STALE/);
+  const countBefore=(await db.query('select count(*)::int n from operations_task_events')).rows[0].n;
+  await assert.rejects(()=>syncPersonalPortalWork({...request,work:{...works[0],title:'다른 내용'}},ctx),/WORK_REQUEST_CONFLICT/);
+  assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,countBefore);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  let closed=await save(replay.task,replay.task.title,replay.task.inputs,'completed');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  view=await personalPortalDailyView({now:day+'T12:00:00+09:00',manualEntries:originals,overrides:originalOverrides},ctx);
+  assert.equal(view.workItems.find(w=>w.workId===works[0].workId).status,'complete');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const reopened=await rpc('operations_reopen_task',{p_request_id:crypto.randomUUID(),p_task_id:closed.id,p_expected_version:closed.version});
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const nextDay=new Date(Date.parse(day+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  const hiddenOriginals=structuredClone(originals);hiddenOriginals[ids[0]].items[0].done=true;hiddenOriginals[ids[0]].items[0].completedAt=day+'T02:00:00Z';
+  const nextView=await personalPortalDailyView({now:nextDay+'T12:00:00+09:00',manualEntries:hiddenOriginals,overrides:originalOverrides},ctx);
+  assert.equal(nextView.workItems.find(w=>w.workId===works[0].workId).status,'in_progress','canonical reopen carries even when private completed source is hidden');
+  const ownerAt=reopened.inputs.personal_work.ownerStateAt;
+  const oldProof=new Date(Date.parse(ownerAt)-1000).toISOString(),newProof=new Date(Date.parse(ownerAt)+1000).toISOString();
+  const oldCompletion={...supplement,status:'complete',verifiedCompletionAt:oldProof,closedAt:oldProof};
+  assert.equal((await syncPersonalPortalWork(make(oldCompletion),ctx)).task.status,'in_progress','old source retry cannot defeat portal reopen');
+  const newCompletion={...oldCompletion,verifiedCompletionAt:newProof,closedAt:newProof};
+  closed=(await syncPersonalPortalWork(make(newCompletion),ctx)).task;
+  assert.equal(closed.status,'completed','newer verified evidence can complete the same preparation task');
+  assert.equal((await syncPersonalPortalWork(make(supplement),ctx)).task.status,'completed','quantity-only supplement preserves completed status');
+  const bad={...works[1],workScope:{...scope,centerCode:'001'}};
+  const batch=await syncPersonalPortalBatch([make(works[1]),make(bad)],ctx);
+  assert.equal(batch[0].saved,true);assert.equal(batch[1].saved,false);
+  assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,2);
+  const untouched=JSON.stringify((await db.query('select * from operations_tasks where id=$1',[batch[0].portalTaskId])).rows[0]);
+  await db.exec("create function test_portal_fail() returns trigger language plpgsql as $$begin raise exception 'SYNTHETIC_STORAGE_FAILURE';end$$;create trigger test_portal_fail before insert on operations_task_events for each row execute function test_portal_fail()");
+  const beforeFailure=(await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[closed.id])).rows[0].t;
+  const beforeBox=(await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0];
+  const failureRequest=make({...supplement,summary:['화물 170박스 · 4P · 화물 중량 1.8톤']});
+  await assert.rejects(()=>syncPersonalPortalWork(failureRequest,ctx),/SYNTHETIC_STORAGE_FAILURE/);
+  assert.deepEqual((await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[closed.id])).rows[0].t,beforeFailure);
+  assert.deepEqual((await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0],beforeBox,'task/link/note dirty transaction rolls back together');
+  await db.exec('drop trigger test_portal_fail on operations_task_events');
+  assert.equal((await syncPersonalPortalWork(failureRequest,ctx)).saved,true);
+  assert.equal(JSON.stringify((await db.query('select * from operations_tasks where id=$1',[batch[0].portalTaskId])).rows[0]),untouched,'other destination never changes');
+  assert.equal(JSON.stringify((await db.query('select manual_entries from private_mailboxes')).rows[0].manual_entries),sourceBefore,'original entries/completion history never rewritten');
+  const finalBox=(await db.query('select briefing_overrides,briefing_pages from private_mailboxes')).rows[0];
+  assert.deepEqual(finalBox.briefing_overrides['work:'+works[0].workId],originalOverrides['work:'+works[0].workId]);
+  assert.equal(finalBox.briefing_overrides['portal:'+works[0].workId].taskId,closed.id);assert.equal(finalBox.briefing_pages[day].dirty,true);
+  assert.ok(!JSON.stringify((await db.query('select inputs from operations_tasks')).rows).includes('PRIVATE_SOURCE_SENTINEL'));
+  assert.equal((await db.query("select has_function_privilege('authenticated','private_mail_portal_upsert(uuid,uuid,uuid,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
+  // Concurrent adapter reads both observe an unlinked stable work; only one task is issued.
+  const thirdId='50000000-0000-4000-8000-000000000003',thirdRef=thirdId+':manual:item-001';
+  const thirdEntry={...originals[ids[0]],entryId:thirdId,items:[{...originals[ids[0]].items[0],ref:thirdRef}]};
+  await db.query('update private_mailboxes set manual_entries=manual_entries||$1',[{[thirdId]:thirdEntry}]);
+  const proof=new Date(Date.now()-10000).toISOString();
+  const thirdWork={...works[0],workId:thirdRef,originRef:thirdRef,status:'complete',verifiedCompletionAt:proof,closedAt:proof,sourceRefs:[{kind:'manual',id:thirdId,ref:thirdRef,evidence:'SYNTHETIC'}]};
+  const concurrent=await Promise.all([syncPersonalPortalWork(make(thirdWork),ctx),syncPersonalPortalWork(make(thirdWork),ctx)]);
+  assert.equal(concurrent[0].portalTaskId,concurrent[1].portalTaskId);
+  const sourceReopen={...thirdWork,status:'pending',verifiedCompletionAt:null,closedAt:null,ownerStateAt:new Date(Date.now()).toISOString()};
+  const sourceReopened=await syncPersonalPortalWork(make(sourceReopen),ctx);
+  assert.equal(sourceReopened.task.status,'pending','new explicit source reopen works even if inferred completion had no ownerStateAt');
+  assert.equal((await syncPersonalPortalWork(make(thirdWork),ctx)).task.status,'pending','old completion replay cannot revive after source reopen');
+  // Mail is delivery-team work, not a fabricated center, and history is read as of the requested day.
+  const mailId='50000000-0000-4000-8000-000000000004',mailRef=mailId+':tasks:0';
+  const previousDay=new Date(Date.parse(day+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+  await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$5,'합성 메일','sender@example.test',$6,'[]')",[mailId,BOX,OWNER,'d'.repeat(64),'e'.repeat(64),previousDay+'T00:00:00Z']);
+  const mailWork=normalizeDailyWork({ref:mailRef,category:'task',title:'합성 배송 업무',status:'pending',requestedAt:previousDay+'T00:00:00Z',sourceRefs:[{kind:'mail',id:mailId,ref:mailRef}]});
+  const mailSaved=await syncPersonalPortalWork({work:mailWork,requestId:crypto.randomUUID(),visibleFrom:previousDay},ctx);
+  assert.equal(mailSaved.task.work_scope,'delivery_team');assert.equal(mailSaved.task.center_code,null);assert.equal(mailSaved.task.owner_id,OWNER);
+  const previousSnapshots=await rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OWNER,p_day:previousDay});
+  assert.equal(previousSnapshots.length,0,'today registration/corrections cannot leak into past-day canonical snapshots');
+  // Simulate elapsed days using captured synthetic ledger events, never an operating row.
+  await db.query("update operations_task_events set occurred_at=$2 where task_id=$1",[mailSaved.portalTaskId,previousDay+'T00:00:00Z']);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const mailClosed=await save(mailSaved.task,mailSaved.task.title,mailSaved.task.inputs,'completed');
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const historicClosed={...mailClosed,completed_at:previousDay+'T02:00:00Z',updated_at:previousDay+'T02:00:00Z'};
+  await db.query("update operations_task_events set occurred_at=$2,after_value=$3 where task_id=$1 and action='completed'",[mailClosed.id,previousDay+'T02:00:00Z',historicClosed]);
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  await rpc('operations_reopen_task',{p_request_id:crypto.randomUUID(),p_task_id:mailClosed.id,p_expected_version:mailClosed.version});
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const historicView=await personalPortalDailyView({now:previousDay+'T12:00:00+09:00'},ctx);
+  assert.equal(historicView.workItems.find(w=>w.workId===mailRef).status,'complete','past completed day uses its ledger snapshot, not later reopen');
+  assert.equal((await personalPortalDailyView({now:day+'T12:00:00+09:00'},ctx)).workItems.find(w=>w.workId===mailRef).status,'in_progress');
+  const snapshots=await rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OWNER,p_day:day});
+  const {renderDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const {hasBriefingCarryWork}=await import('../supabase/functions/onedrive-auth/private-mail-background.js');
+  const carryManual=manualDailyView({[ids[0]]:originals[ids[0]]},nextDay,originalOverrides);
+  const firstSnapshot=snapshots.find(t=>t.id===first.portalTaskId);
+  assert.equal(hasBriefingCarryWork({day:nextDay,analyses:[],overrides:originalOverrides,manual:carryManual,portalTasks:[firstSnapshot],portalOwnerId:OWNER,includeMail:false}),false,'closed portal state prevents stale private pending work from next-day rollover');
+  assert.equal(hasBriefingCarryWork({day:nextDay,analyses:[],overrides:originalOverrides,manual:carryManual,portalTasks:[reopened],portalOwnerId:OWNER,includeMail:false}),true,'canonical reopened work remains eligible for next-day output');
+  const note=renderDailyBriefing({now:day+'T12:00:00+09:00',analyses:[],manual:manualDailyView(originals,day,originalOverrides),overrides:originalOverrides,portalTasks:snapshots,portalOwnerId:OWNER});
+  assert.ok(note.managedHtml.includes('본인 정정 배차명'));assert.ok(note.managedHtml.includes('170박스'));assert.ok(!note.managedHtml.includes('PRIVATE_SOURCE_SENTINEL'));
+  const actual=(await db.query('select to_jsonb(t) t from operations_tasks t where id=$1',[batch[0].portalTaskId])).rows[0].t;
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
+  await assert.rejects(()=>save(actual,'다른 직원 수정 시도',actual.inputs,'in_progress'),/WORK_PORTAL_OWNER/);
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  await assert.rejects(()=>rpc('private_mail_portal_snapshots',{p_box:BOX,p_user:OTHER}),/WORK_PORTAL_OWNER/);
+  console.log('PASS isolated real portal linkage: stable IDs, idempotent upsert, save/reopen projection, correction protection, chronology, batch isolation, rollback/retry, private source preservation and note queue');
+ }finally{await db.close();}
+}
+
+// Monthly duties reuse real native templates, task occurrence IDs and event history.
+{
+ const db=new PGlite({extensions:{pgcrypto}}),OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc',BOX='39045005-313e-42e1-b50c-2394b3b6ff26',OTHER='40000000-0000-4000-8000-000000000002';
+ try{
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create extension pgcrypto;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;create table auth.users(id uuid primary key);create table user_profiles(id uuid primary key,active boolean,role text,email text,display_name text);create table centers(code text primary key,name text,active boolean default true);insert into auth.users values('${OWNER}'),('${OTHER}');insert into user_profiles values('${OWNER}',true,'admin','owner@example.test','합성 담당'),('${OTHER}',true,'admin','other@example.test','다른 담당');insert into centers values('001','합성센터',true);grant usage on schema public,auth to authenticated,service_role;grant select on user_profiles,centers to authenticated,service_role;`);
+  await db.exec(await readFile(new URL('../repo-root/sql/private-mail.sql',import.meta.url),'utf8'));
+  await db.exec("alter table private_mailboxes add column manual_entries jsonb default '{}',add column briefing_overrides jsonb default '{}',add column briefing_pages jsonb default '{}'");
+  const manualSql=await readFile(new URL('../supabase/sql/private-mail-manual.sql',import.meta.url),'utf8');for(const name of ['private_mail_manual_allowed','private_mail_manual_dirty']){const start=manualSql.indexOf('create or replace function public.'+name+'(');await db.exec(manualSql.slice(start,manualSql.indexOf('$$;',start)+3));}
+  for(const file of ['operations-core.sql','operations-workflow.sql','operations-templates.sql','operations-portal.sql'])await db.exec(await readFile(new URL('../repo-root/sql/'+file,import.meta.url),'utf8'));
+  const scheduler=await readFile(new URL('../repo-root/sql/operations-scheduler.sql',import.meta.url),'utf8');await db.exec(scheduler.slice(0,scheduler.indexOf('create extension if not exists pg_cron'))+'commit;');
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-portal.sql',import.meta.url),'utf8'));
+  await db.query("insert into private_mailboxes(id,owner_id,account,drive_id,folder_id,enabled) values($1,$2,'jhs96@eangroup.kr','isolated-drive','isolated-folder',true)",[BOX,OWNER]);
+  await db.exec("create function auth.role() returns text language sql stable as $$select current_user::text$$;create table audit_log(id uuid,table_name text,row_id text,action text,changed_at timestamptz,center_code text,new_data jsonb,old_data jsonb)");
+  const aiSql=await readFile(new URL('../repo-root/sql/operations-ai.sql',import.meta.url),'utf8');const aiStart=aiSql.indexOf('create function public.operations_ai_snapshot()');await db.exec(aiSql.slice(aiStart,aiSql.indexOf('end $$;',aiStart)+7));await db.exec('grant execute on function operations_ai_snapshot() to authenticated');
+  await db.exec(await readFile(new URL('../repo-root/sql/operations-trash.sql',import.meta.url),'utf8'));
+  await db.exec("alter table private_mail_messages add column analysis jsonb,add column analysis_status text default 'ready',add column received_at timestamptz;create function private_mail_dispatch_report(uuid,date) returns boolean language sql as $$select true$$");
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-history.sql',import.meta.url),'utf8'));
+
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-work-correction.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/sql/private-mail-monthly.sql',import.meta.url),'utf8'));
+  const definitions=[[1,'on','previous_full_month'],[1,'on',null],[7,'on','previous_second_half'],[8,'before',null],[10,'on',null],[23,'on','current_first_half']],templates=[];
+  for(const [i,[date,qualifier,targetPeriod]]of definitions.entries()){
+   const spec={fields:[],steps:[],effective_from:'2026-11-01',repeat:{kind:'monthly',day:date},owner_ids:[OWNER],personal_monthly:{ownerId:OWNER,leadDays:3,qualifier,targetPeriod,advanceKind:targetPeriod==='current_first_half'?'yangsan_first':targetPeriod==='previous_second_half'?'yangsan_second':targetPeriod==='previous_full_month'?'nonghyup':null,paymentRule:targetPeriod==='current_first_half'?'month_end':targetPeriod==='previous_second_half'?'day15':targetPeriod==='previous_full_month'?'day10':null,originalSchedule:targetPeriod==='previous_full_month'?'월초 품의':date+'일'+(qualifier==='before'?' 이전':''),source:{kind:'onenote',pageId:'isolated-monthly-source'}}};
+   await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+   const created=(await db.query("select to_jsonb(operations_template_action($1,null,'create',$2)) r",[crypto.randomUUID(),{center_code:null,title:'합성 월별 업무 '+i,spec}])).rows[0].r;
+   const approved=(await db.query("select to_jsonb(operations_template_action($1,$2,'approve','{}')) r",[crypto.randomUUID(),created.id])).rows[0].r;templates.push(approved);await db.exec('reset role;reset "request.jwt.claim.sub"');
+  }
+  await assert.rejects(()=>db.query("insert into operations_templates(family_id,version,center_code,title,status,spec,created_by) values($1,2,'001','합성 공유 전환','draft',$2,$3)",[templates[0].family_id,{fields:[],steps:[]},OTHER]),/MONTHLY_FAMILY/);
+  const generate=async now=>(await db.query('select private_mail_generate_monthly($1) r',[now])).rows[0].r;
+  assert.equal((await generate('2026-10-28T14:59:59Z')).created,0);assert.equal((await generate('2026-10-28T15:00:00Z')).created,2);
+  const first=(await db.query('select to_jsonb(t) value from operations_tasks t order by id')).rows.map(row=>row.value);assert.equal(first.length,2);assert(first.every(t=>t.work_date==='2026-10-29'&&t.inputs.personal_monthly.scheduledDate==='2026-11-01'&&t.center_code===null&&t.owner_id===OWNER&&t.due_at===null));
+  await generate('2026-10-30T03:00:00Z');const carryState=(await db.query("select briefing_pages->'2026-10-30' value from private_mailboxes where id=$1",[BOX])).rows[0].value;assert.equal(carryState?.dirty,true,'monthly-only next-day note must be queued even without mail/manual input');await generate('2026-10-30T04:00:00Z');assert.deepEqual((await db.query("select briefing_pages->'2026-10-30' value from private_mailboxes where id=$1",[BOX])).rows[0].value,carryState,'same-day scheduler retry must not repeatedly dirty unchanged carry');
+  assert.equal((await generate('2026-11-20T03:00:00Z')).created,4);const six=(await db.query('select to_jsonb(t) value from operations_tasks t order by id')).rows.map(row=>row.value);assert.equal(six.length,6);const before=six.find(t=>t.inputs.personal_monthly.qualifier==='before');assert.equal(before.inputs.personal_monthly.originalSchedule,'8일 이전');assert.equal(before.inputs.personal_monthly.scheduledDate,'2026-11-08');
+  const second=six.find(t=>t.inputs.personal_monthly.scheduledDate==='2026-11-07');assert.deepEqual(second.inputs.personal_monthly.targetPeriod,{from:'2026-10-16',through:'2026-10-31'});assert.equal(second.inputs.personal_monthly.paymentDate,'2026-11-15');
+  const {normalizeDailyWork,applyPortalWorkSnapshot,workSummaryForDisplay}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const sourceRef='source:'+before.id,baseWork=normalizeDailyWork({ref:sourceRef,category:'task',title:before.title,status:'pending',sourceRefs:[{kind:'linked',id:before.id,ref:sourceRef}]});
+  const projected=applyPortalWorkSnapshot(baseWork,before,{ownerId:OWNER});assert.equal(projected.monthly.scheduledDate,'2026-11-08');assert.equal(projected.monthly.qualifier,'before');assert.equal(projected.dueDate,null);assert.equal(projected.serviceDate,null);assert(workSummaryForDisplay(projected).some(text=>text.includes('2026-11-08 이전')));
+  const {dailyBriefingView,renderDailyBriefing}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  const daily=dailyBriefingView({now:'2026-11-20T12:00:00+09:00',analyses:[],portalTasks:six,portalOwnerId:OWNER});assert.equal(daily.workItems.length,6);assert.equal(new Set(daily.workItems.map(work=>work.portalTaskId)).size,6);
+  const note=renderDailyBriefing({now:'2026-11-20T12:00:00+09:00',analyses:[],portalTasks:six,portalOwnerId:OWNER});assert(note.managedHtml.includes('2026-11-08 이전'));assert(note.managedHtml.includes('2026-10-16 ~ 2026-10-31'));assert(note.managedHtml.includes('지급예정: 2026-11-15'));assert(!note.managedHtml.includes('isolated-monthly-source'));
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  await assert.rejects(()=>db.query("select operations_task_from_template($1,$2,'2026-11-01','{}',$3,false)",[crypto.randomUUID(),templates[0].id,OWNER]),/MONTHLY_RECURRING/);
+  const sharedSnapshot=(await db.query('select operations_ai_snapshot() value')).rows[0].value;assert.equal(sharedSnapshot.tasks.length,0,'shared HQ AI must exclude private monthly duties even for their owner');assert.equal(sharedSnapshot.counts.pending_tasks,0);
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const snapshot=JSON.stringify(six);await Promise.all([generate('2026-11-20T03:00:00Z'),generate('2026-11-20T03:00:00Z')]);assert.equal(JSON.stringify((await db.query('select to_jsonb(t) value from operations_tasks t order by id')).rows.map(row=>row.value)),snapshot);
+  assert.equal((await generate('2026-11-28T03:00:00Z')).created,2);assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,8);
+  const priorEight=JSON.stringify((await db.query('select to_jsonb(t) value from operations_tasks t order by id')).rows);
+  await db.exec(`create function isolated_monthly_fault() returns trigger language plpgsql as $$begin if new.template_id='${templates[0].id}'::uuid and new.work_date=date '2027-01-01' then raise exception 'PRIVATE_CONTENT_NOT_FOR_LOGS';end if;return new;end$$;create trigger aaa_isolated_monthly_fault before insert on operations_tasks for each row execute function isolated_monthly_fault()`);
+  const partial=await generate('2026-12-29T03:00:00Z');assert.equal(partial.created,5);assert.equal(partial.failed,1,'one private template failure must preserve other successful month instances');
+  await db.exec('drop trigger aaa_isolated_monthly_fault on operations_tasks');assert.equal((await generate('2026-12-29T03:00:00Z')).created,1);assert.equal((await db.query('select count(*)::int n from operations_tasks')).rows[0].n,14);
+  assert.equal(JSON.stringify((await db.query("select to_jsonb(t) value from operations_tasks t where inputs->'personal_monthly'->>'scheduledMonth'='2026-11' or (inputs->'personal_monthly'->>'scheduledMonth'='2026-12' and inputs->'personal_monthly'->>'scheduledDate'='2026-12-01') order by id")).rows),priorEight);
+  const recovered=(await db.query("select last_error,last_success_at from operations_automation_state where name like 'personal-monthly:%:monthly:%' ")).rows;assert.equal(recovered.length,1);assert.equal(recovered[0].last_error,null);assert(recovered[0].last_success_at);
+
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
+  await assert.rejects(()=>db.query("select operations_template_action($1,null,'create',$2)",[crypto.randomUUID(),{family_id:templates[0].family_id,center_code:'001',title:'합성 공유 버전',spec:{fields:[],steps:[]}}]),/MONTHLY_FAMILY/);
+  await assert.rejects(()=>db.query("select operations_task_from_template($1,$2,'2026-11-01','{}',$3,true)",[crypto.randomUUID(),templates[0].id,OWNER]),/MONTHLY_OWNER/);assert.equal((await db.query('select * from operations_tasks')).rows.length,0);assert.equal((await db.query('select * from operations_templates')).rows.length,0);assert.equal((await db.query('select * from operations_task_events')).rows.length,0);
+  await assert.rejects(()=>db.query("select operations_save_task($1,$2,$3,null,'침범',$4,$5,'completed')",[crypto.randomUUID(),first[0].id,first[0].version,first[0].work_date,first[0].inputs]),/MONTHLY_OWNER|WORK_PORTAL_OWNER/);
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const completed=(await db.query("select to_jsonb(operations_save_task($1,$2,$3,null,$4,$5,$6,'completed')) value",[crypto.randomUUID(),first[0].id,first[0].version,first[0].title,first[0].work_date,first[0].inputs])).rows[0].value;
+  assert.equal(completed.status,'completed');assert(completed.completed_at);assert.equal(completed.id,first[0].id);
+  const reopened=(await db.query('select to_jsonb(operations_reopen_task($1,$2,$3)) value',[crypto.randomUUID(),completed.id,completed.version])).rows[0].value;
+  assert.equal(reopened.status,'in_progress');assert.equal(reopened.id,completed.id);assert.equal(reopened.inputs.personal_monthly.scheduledDate,first[0].inputs.personal_monthly.scheduledDate);
+  const actions=(await db.query('select action from operations_task_events where task_id=$1',[completed.id])).rows.map(row=>row.action);assert(actions.includes('completed'));assert(actions.includes('task_reopened'));
+  await db.exec('reset role;reset "request.jwt.claim.sub"');
+  const monthlyTarget=first[1];const inputTime=(await db.query("select clock_timestamp()-interval '5 seconds' value")).rows[0].value.toISOString();
+  const receipt=crypto.randomUUID(),input={entryId:receipt,text:'합성 품의 발송 완료',submittedAt:inputTime,status:'ready',items:[{itemId:'item-001',ref:receipt+':manual:item-001',workRef:'source:'+monthlyTarget.id,resolution:'targeted_update_v1',kind:'task',text:'합성 품의 발송 완료',evidence:'합성 품의 발송 완료',details:[],needsConfirmation:false,workflowStatus:'complete',ownerStateDeclared:false,submittedAt:inputTime,declaredAt:inputTime}]};
+  await db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,receipt,input]);
+  const applied=(await db.query('select to_jsonb(t) value from operations_tasks t where id=$1',[monthlyTarget.id])).rows[0].value;assert.equal(applied.status,'completed','ready validated monthly completion must atomically update canonical native task');assert.equal(applied.id,monthlyTarget.id);assert(applied.inputs.personal_work.sourceKeys.includes(input.items[0].ref));
+  const actualDay=(await db.query("select to_char(clock_timestamp() at time zone 'Asia/Seoul','YYYY-MM-DD') value")).rows[0].value;
+  const corrected=(await db.query("select private_mail_work_correct($1,$2,$3,$4,'{\"done\":false}',null) value",[BOX,OWNER,'source:'+monthlyTarget.id,actualDay])).rows[0].value;assert.equal(corrected.saved,true);assert.equal((await db.query('select status from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].status,'pending','daily reopen must update same native monthly task atomically');assert.equal((await db.query("select count(*)::int n from private_mail_analysis_history where source_kind='portal'")).rows[0].n,1);
+  const queuedPortal=(await db.query("select * from private_mail_analysis_history where source_kind='portal'")).rows[0],{restoreMailHistoryDocument}=await import('../supabase/functions/onedrive-auth/private-mail-history.js');const restoredPortal=await restoreMailHistoryDocument(JSON.parse(queuedPortal.payload),queuedPortal.payload);assert.equal(restoredPortal.historyId,queuedPortal.history_id);assert.equal(restoredPortal.fileName,queuedPortal.file_name);assert.equal(queuedPortal.status,'pending','isolation verifies actual durable backup queue without external OneDrive writes');
+  const appliedVersion=(await db.query('select version from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].version;await db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,receipt,input]);assert.equal((await db.query('select version from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].version,appliedVersion,'same ready result replay must not duplicate native state events');
+  assert.equal((await db.query('select status from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].status,'pending','old receipt replay must not undo owner reopen');
+  const saveMonthlyInput=async ({at,status='complete',text='합성 품의 발송 완료'})=>{const key=crypto.randomUUID(),value={...input,entryId:key,text,submittedAt:at,items:input.items.map(item=>({...item,ref:key+':manual:item-001',text,evidence:text,workflowStatus:status,submittedAt:at,declaredAt:at}))};await db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,key,value]);return key;};
+  await saveMonthlyInput({at:inputTime});assert.equal((await db.query('select status from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].status,'pending','different older source cannot override later owner reopen');
+  const newerTime=new Date(Date.parse(corrected.correction.updatedAt)+1000).toISOString();await saveMonthlyInput({at:newerTime});assert.equal((await db.query('select status from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].status,'completed','new verified source after reopen may complete the same duty');
+  const progressKey=await saveMonthlyInput({at:new Date(Date.parse(newerTime)+1000).toISOString(),status:'pending',text:'합성 자료 추가 4P'});assert.equal((await db.query('select status from operations_tasks where id=$1',[monthlyTarget.id])).rows[0].status,'completed','progress after completion preserves completed state');assert.equal((await db.query("select action from operations_task_events where request_body->'document'->'inputs'->'personal_work'->'sourceKeys' ? $1",[progressKey+':manual:item-001'])).rows.at(-1).action,'updated','progress is not a new completion event');
+  const failedReceipt=crypto.randomUUID(),failedInput={...input,entryId:failedReceipt,items:input.items.map(item=>({...item,ref:failedReceipt+':manual:item-001',workflowStatus:'pending',text:'합성 진행 정보'}))};
+  await db.exec(`create function isolated_monthly_update_fault() returns trigger language plpgsql as $$begin if new.id='${monthlyTarget.id}'::uuid then raise exception 'SYNTHETIC_MONTHLY_UPDATE_FAILED';end if;return new;end$$;create trigger aaa_isolated_monthly_update_fault before update on operations_tasks for each row execute function isolated_monthly_update_fault()`);
+  await assert.rejects(()=>db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,failedReceipt,failedInput]),/SYNTHETIC_MONTHLY_UPDATE_FAILED/);assert.equal((await db.query('select manual_entries ? $2 value from private_mailboxes where id=$1',[BOX,failedReceipt])).rows[0].value,false,'failed native update must roll back ready receipt write');await db.exec('drop trigger aaa_isolated_monthly_update_fault on operations_tasks');
+  const mailTarget=first[0],mailId=crypto.randomUUID(),mailTime=(await db.query('select clock_timestamp() value')).rows[0].value.toISOString();
+  await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 월간 처리','owner@example.test',$5,'[]')",[mailId,BOX,OWNER,'b'.repeat(64),mailTime]);
+  const mailUpdate={ref:'source:'+mailTarget.id,sourceId:mailId,sourceAt:mailTime,resolution:'monthly_mail_v1',status:'complete',text:'합성 월간 품의 상신 완료',evidence:'합성 월간 품의 상신 완료했습니다.',details:[],needsConfirmation:false};
+  const mailAnalysis={source:{id:mailId,sentAt:mailTime,receivedAt:null,subject:'합성 월간 처리',sender:'owner@example.test',intent:'update'},intent:{kind:'update'},summary:[{text:mailUpdate.text,evidence:mailUpdate.evidence}],tasks:[],issues:[],waiting:[],updates:[],monthlyUpdates:[mailUpdate]};
+  await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,mailAnalysis]);const mailApplied=(await db.query('select to_jsonb(t) value from operations_tasks t where id=$1',[mailTarget.id])).rows[0].value;assert.equal(mailApplied.status,'completed','validated mail update must reach the same native monthly task');assert(mailApplied.inputs.personal_work.sourceKeys.includes('source:'+mailId));assert.deepEqual(mailApplied.inputs.personal_work.summary,[mailUpdate.text]);
+  const mailCorrected=(await db.query("select private_mail_work_correct($1,$2,$3,$4,'{\"done\":false}',null) value",[BOX,OWNER,'source:'+mailTarget.id,actualDay])).rows[0].value;assert.equal(mailCorrected.saved,true);const reopenedMailVersion=(await db.query('select version from operations_tasks where id=$1',[mailTarget.id])).rows[0].version;
+  await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,{...mailAnalysis,updatedAt:new Date().toISOString()}]);const replayed=(await db.query('select status,version from operations_tasks where id=$1',[mailTarget.id])).rows[0];assert.equal(replayed.status,'pending');assert.equal(replayed.version,reopenedMailVersion,'mail reanalysis is not new completion evidence');
+  const invalidMailId=crypto.randomUUID();await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 잘못된 시각','owner@example.test',$5,'[]')",[invalidMailId,BOX,OWNER,'c'.repeat(64),mailTime]);
+  await assert.rejects(()=>db.query('update private_mail_messages set analysis=$2 where id=$1',[invalidMailId,{...mailAnalysis,source:{...mailAnalysis.source,id:invalidMailId},monthlyUpdates:[{...mailUpdate,sourceId:invalidMailId,sourceAt:'2026-01-01T00:00:00Z'}]}]),/MONTHLY_MAIL_SOURCE/);assert.equal((await db.query('select analysis from private_mail_messages where id=$1',[invalidMailId])).rows[0].analysis,null,'invalid source must roll back mail analysis and native updates together');
+  await db.query('update private_mailboxes set enabled=false where id=$1',[BOX]);assert.equal((await generate('2026-11-28T03:00:00Z')).disabled,true);await db.query('select operations_run_scheduler()');
+  await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+  const ordinary=(await db.query("select to_jsonb(operations_template_action($1,null,'create',$2)) r",[crypto.randomUUID(),{center_code:'001',title:'합성 기존 일일 업무',spec:{fields:[],steps:[],effective_from:'2026-11-01',repeat:{kind:'daily'},owner_ids:[OWNER]}}])).rows[0].r;
+  await db.query("select operations_template_action($1,$2,'approve','{}')",[crypto.randomUUID(),ordinary.id]);await db.exec('reset role;reset "request.jwt.claim.sub"');
+  await db.exec("create or replace function private_mail_generate_monthly(p_now timestamptz default clock_timestamp()) returns jsonb language plpgsql as $$begin raise exception 'SYNTHETIC_PRIVATE_CONTENT';end$$");
+  const scheduled=(await db.query('select operations_run_scheduler() r')).rows[0].r;assert.equal(scheduled.checked,1,'monthly outage must not stop existing center recurring duties');
+  const health=(await db.query("select last_error from operations_automation_state where name='personal-monthly:2a828c2d-9a6f-40d4-8e13-336b591811cc'")).rows[0];assert(health?.last_error);assert(!health.last_error.includes('SYNTHETIC_PRIVATE_CONTENT'),'scheduler health must not retain private exception content');
+  console.log('PASS isolated native monthly materialization: calendar lead, six owner-private templates, task/event reuse, stable monthly IDs, no duplicate reruns, overdue retention and other-actor protection');
+ }finally{await db.close();}
+}
+
+// The existing downloadable-result replay also checks native monthly state, not just mail JSON.
+{
+ const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {replayIsolatedCase,prepareIsolatedMailCase,ISOLATED_STORAGE_SQL_PATHS}=await import('../supabase/functions/onedrive-auth/private-mail-isolated-storage.js');
+ const monthlyPaths=['repo-root/sql/operations-core.sql','repo-root/sql/operations-workflow.sql','repo-root/sql/operations-templates.sql','repo-root/sql/operations-portal.sql','repo-root/sql/operations-scheduler.sql','repo-root/sql/operations-ai.sql','repo-root/sql/operations-trash.sql','supabase/sql/private-mail-portal.sql','supabase/sql/private-mail-work-correction.sql','supabase/sql/private-mail-monthly.sql'];
+ const sqlSources=await Promise.all(ISOLATED_STORAGE_SQL_PATHS.map(path=>readFile(new URL('../'+path,import.meta.url),'utf8'))),monthlySqlSources=Object.fromEntries(await Promise.all(monthlyPaths.map(async path=>[path,await readFile(new URL('../'+path,import.meta.url),'utf8')])));
+ for(const id of ['mail-monthly-approval-complete','mail-monthly-material-only','mail-monthly-wrong-period']){
+  const f=fixtureById(id);let calls=0;const modelContext={resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const proof=f.mime.split('\r\n\r\n').at(-1);const value=calls===1?{intent:{kind:'update',evidence:proof},group:null,summary:[{text:'가상 월간 처리 통보',evidence:proof}],tasks:[],issues:[],waiting:[],updates:[{ref:'source:'+f.monthlyTask.id,status:'complete',evidence:proof,text:'가상 품의 상신 완료',due:null}],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}}:{matchesTarget:true,action:'complete',text:'가상 품의 상신 완료',evidence:proof,details:[],completionEvidence:proof,serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]})}};const result=await runStressCase(id,modelContext);
+  assert.equal(result.automatedChecksPassed,true,JSON.stringify(result.checks));const replay=await replayIsolatedCase(result,{PGlite,pgcrypto,sqlSources,monthlySqlSources});assert.equal(replay.status,'passed',JSON.stringify(replay));assert.equal(replay.monthlyVerified,true);assert.equal(replay.portalTasks[0].id,f.monthlyTask.id);assert.equal(replay.portalTasks[0].status,f.expected.monthly.nativeStatus);assert(replay.noteHtml.includes('월초 품의'));assert.equal(replay.productionWritten,false);assert.equal(replay.oneNoteWritten,false);
+
+  if(id==='mail-monthly-approval-complete'){
+   const session=await prepareIsolatedMailCase(id,{PGlite,pgcrypto,sqlSources,monthlySqlSources});
+   try{assert.equal(session.queued,true);calls=0;const fresh=await runStressCase(id,{...modelContext,stressReceiptId:session.receipt.id});assert.equal(fresh.automatedChecksPassed,true);const flow=await session.finish(fresh);assert.equal(flow.status,'passed',JSON.stringify(flow));assert.equal(flow.monthlyVerified,true);assert.equal(flow.roundTrip.source.id,session.receipt.id);assert.equal(flow.portalTasks[0].status,'completed');assert(flow.noteHtml.includes('가상협동조합'));}finally{await session.close()}
+  }
+  const {issueStressNoteProof,writeStressNote}=await import('../supabase/functions/onedrive-auth/private-mail-stress-notes.js');
+  const {BRIEFING_TARGET}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  let sealed,page=null,html='',writes=0,marker=null;
+  const noteCtx={sealDiagnostic:async value=>{sealed=structuredClone(value);return 'monthly.proof'},openDiagnostic:async()=>structuredClone(sealed),
+   db:async(path,options={})=>{if(options.method==='POST'){marker=options.body;return {}}return marker?[marker]:[]},
+   diagnosticNotes:async action=>action({accessToken:'MOCK_ONLY',notesGranted:true},async(path,access,options={})=>{
+    if(path.includes('/notebooks/'))return Response.json({id:BRIEFING_TARGET.notebookId,userRole:'Owner',isShared:false});
+    if(path.includes('/sections/')&&!path.includes('/pages'))return Response.json({id:BRIEFING_TARGET.sectionId,parentNotebook:{id:BRIEFING_TARGET.notebookId}});
+    if(path.includes('/sections/')&&path.includes('/pages')){if(options.method==='POST'){writes++;page={id:'monthly-note',title:'가상 검증 '+result.saved.source.id,parentSection:{id:BRIEFING_TARGET.sectionId}};html=options.body;return Response.json({id:page.id})}return Response.json({value:page?[page]:[]})}
+    if(path.includes('/content'))return new Response(html);
+    return Response.json(page);
+   })};
+  const proof=await issueStressNoteProof(result,result.saved.source.id,noteCtx);assert.ok(proof);
+  const body={proof,stored:result.saved,portalTasks:replay.portalTasks};
+  await assert.rejects(()=>writeStressNote({...body,portalTasks:replay.portalTasks.map(task=>({...task,title:'UNTRUSTED CLIENT CONTENT'}))},noteCtx),/STRESS_MONTHLY_SQL_MISMATCH/);assert.equal(writes,0);
+  const written=await writeStressNote(body,noteCtx);assert.equal(written.status,'passed');assert.equal(written.readBackVerified,true);assert.equal(written.repeatStatus,'skipped');assert.equal(writes,1);assert(html.includes('가상협동조합'));assert(html.includes('월초 품의'));assert.equal((await writeStressNote(body,noteCtx)).firstStatus,'skipped');assert.equal(writes,1);
+ }
+ console.log('PASS monthly fixed-fixture mail transport → existing isolated intake/SQL/native state/readback/note HTML; no external providers or operating writes');
 }
