@@ -173,6 +173,43 @@ create trigger private_mail_monthly_manual after update of manual_entries on pub
 revoke all on function public.private_mail_monthly_apply_manual() from public,anon,authenticated;
 grant execute on function public.private_mail_monthly_apply_manual() to service_role;
 
+-- Mail analysis and its validated monthly updates commit under the existing analysis transaction.
+create or replace function public.private_mail_monthly_apply_mail() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+declare item jsonb;t public.operations_tasks;event_time timestamptz;request_key uuid;marker jsonb;document jsonb;desired text;
+begin
+ if new.mailbox_id<>'39045005-313e-42e1-b50c-2394b3b6ff26' or new.owner_id<>'2a828c2d-9a6f-40d4-8e13-336b591811cc' or new.analysis is null then return new;end if;
+ if not public.private_mail_manual_allowed(new.mailbox_id,new.owner_id) then raise exception 'MONTHLY_OWNER';end if;
+ if new.analysis->'monthlyUpdates' is null then return new;end if;
+ if jsonb_typeof(new.analysis->'monthlyUpdates')<>'array' or jsonb_array_length(new.analysis->'monthlyUpdates')>100 then raise exception 'MONTHLY_MAIL_SOURCE';end if;
+ event_time=coalesce((to_jsonb(new)->>'received_at')::timestamptz,new.sent_at);
+ for item in select value from jsonb_array_elements(new.analysis->'monthlyUpdates') loop
+  if item->>'sourceId' is distinct from new.id::text or (item->>'sourceAt')::timestamptz is distinct from event_time
+   or item->>'resolution' is distinct from 'monthly_mail_v1' or item->'needsConfirmation' is distinct from 'false'::jsonb
+   or coalesce(item->>'ref','') !~ '^source:[0-9a-f-]{36}$' or coalesce(item->>'status','') not in ('pending','complete')
+   or length(btrim(coalesce(item->>'text',''))) not between 1 and 500 or length(btrim(coalesce(item->>'evidence',''))) not between 1 and 2000
+   or jsonb_typeof(item->'details') is distinct from 'array' or jsonb_array_length(item->'details')>6
+   or (item-array['ref','sourceId','sourceAt','resolution','needsConfirmation','status','text','evidence','details'])<>'{}'::jsonb then raise exception 'MONTHLY_MAIL_SOURCE';end if;
+  select * into t from public.operations_tasks where id=substring(item->>'ref' from 8)::uuid and owner_id=new.owner_id and inputs ? 'personal_monthly' and deleted_at is null for update;
+  if not found then raise exception 'MONTHLY_MAIL_TARGET';end if;
+  request_key=md5('monthly-mail:'||new.id||':'||(item->>'ref')||':'||item::text)::uuid;
+  if exists(select 1 from public.operations_task_events where actor_id=new.owner_id and request_id=request_key) then continue;end if;
+  desired=case when item->>'status'='complete' then 'completed' else t.status end;
+  marker=((t.inputs->'personal_work')-array['ownerFields','lastStateAt'])||jsonb_build_object(
+   'sourceKeys',coalesce(t.inputs->'personal_work'->'sourceKeys','[]')||jsonb_build_array('source:'||new.id),
+   'summary',jsonb_build_array(item->>'text')||(item->'details'),'progress',item->>'text',
+   'status',case desired when 'completed' then 'complete' when 'not_applicable' then 'cancelled' else desired end,
+   'ownerStateAt',null,'verifiedCompletionAt',case when item->>'status'='complete' then event_time else null end);
+  document=jsonb_build_object('id',t.id,'expected_version',t.version,'owner_id',new.owner_id,'center_code',t.center_code,'work_scope',t.work_scope,
+   'title',t.title,'work_date',t.work_date,'due_at',t.due_at,'status',desired,'inputs',jsonb_build_object('personal_work',marker));
+  perform public.private_mail_portal_upsert(new.mailbox_id,new.owner_id,request_key,document);
+ end loop;
+ return new;
+end $$;
+create trigger private_mail_monthly_mail after update of analysis on public.private_mail_messages for each row when(old.analysis is distinct from new.analysis) execute function public.private_mail_monthly_apply_mail();
+revoke all on function public.private_mail_monthly_apply_mail() from public,anon,authenticated;
+grant execute on function public.private_mail_monthly_apply_mail() to service_role;
+
 -- Existing owner correction RPC and native work update commit together; keep the original history writer.
 create or replace function public.private_mail_monthly_owner_correct(p_user uuid,p_work text,p_corrected jsonb,p_patch jsonb) returns void
 language plpgsql security invoker set search_path=public,pg_temp as $$

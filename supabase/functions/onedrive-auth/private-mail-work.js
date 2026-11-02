@@ -237,6 +237,7 @@ export function needsOwnerReview(mail) {
     return false;
   return (
     mail.source?.intent === 'unknown' ||
+    mail.review?.monthlyConfirmation === true ||
     (mail.review?.withheldTasks ?? 0) + (mail.review?.withheldWaiting ?? 0) > 0
   );
 }
@@ -410,6 +411,8 @@ export function dailyWorkItems(
     portalOwnerId,
   } = {},
 ) {
+  const monthlyRoots=new Set(portalTasks.filter(task=>task.inputs?.personal_monthly&&task.owner_id===portalOwnerId).map(task=>task.inputs?.personal_work?.workId));
+  const monthlyLinks=(view.monthlyUpdates??[]).filter(update=>monthlyRoots.has(update.ref)&&update.resolution==='monthly_mail_v1'&&update.needsConfirmation===false&&update.sourceId===update.source?.id);
   const result = [],
     summaries = new Map(),
     references = new Map(),
@@ -419,10 +422,11 @@ export function dailyWorkItems(
       for (const mail of thread.mails ?? []) {
         const routine = isRoutineMail(mail);
         if (routine) routineIds.add(mail.source.id);
-        summaries.set(mail.source.id, mailSummaryTexts(mail));
+        const remaining=monthlyLinks.some(update=>update.sourceId===mail.source.id)?{...mail,summary:(mail.summary??[]).filter(item=>!monthlyLinks.some(update=>update.sourceId===mail.source.id&&(update.evidence===item.evidence||(item.evidence?.length>=10&&update.evidence.includes(item.evidence)))))}:mail;
+        summaries.set(mail.source.id, mailSummaryTexts(remaining));
         references.set(mail.source.id, {
           source: mail.source,
-          summary: mailSummaryTexts(mail),
+          summary: mailSummaryTexts(remaining),
           context: group.name,
           reportKind: routine
             ? 'routine'
@@ -521,6 +525,11 @@ export function dailyWorkItems(
         }),
       );
     }
+  for(const link of monthlyLinks){
+    result.push(normalizeDailyWork({ref:link.ref,linkedWorkRef:link.ref,category:'task',title:link.text,status:'pending',summary:link.details??[],progress:link.text,requestedAt:link.sourceAt,
+      sourceRefs:[sourceRef({...link.source,evidence:link.evidence},'mail','source:'+link.sourceId)]}));
+    if(!(references.get(link.sourceId)?.summary.length))usedSummary.add(link.sourceId);
+  }
   for (const record of references.values())
     if (
       !usedSummary.has(record.source.id) &&

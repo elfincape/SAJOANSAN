@@ -13,7 +13,8 @@ export function IsolatedStorageCheck({
 }) {
   const [busy, setBusy] = useState(false),
     [report, setReport] = useState<Row[]>([]),
-    [status, setStatus] = useState('');
+    [status, setStatus] = useState(''),
+    [receptionCase, setReceptionCase] = useState('mail-old-sent-collected-today');
   const workerRef = useRef<Worker | null>(null);
   const active = useRef(false),
     stop = useRef(false),
@@ -131,13 +132,13 @@ export function IsolatedStorageCheck({
     workerRef.current = worker;
     let modelResult: Row | null = null;
     try {
-      const prepared = await replay({ operation: 'prepare' }, worker, true);
+      const prepared = await replay({ operation: 'prepare', caseId: receptionCase }, worker, true);
       if (prepared.status !== 'queued') throw Error('RECEIPT_NOT_READY');
       if (!alive.current) return;
       setStatus('수신 큐·claim 완료. 고정 합성 메일을 실제 모델로 분석합니다.');
       const receipt = prepared.receipt as Row;
       modelResult = await apiManagement.stressCase(
-        'mail-old-sent-collected-today',
+        receptionCase,
         String(receipt.id),
       );
       if (!alive.current) return;
@@ -189,7 +190,7 @@ export function IsolatedStorageCheck({
       if (alive.current) {
         setReport([
           {
-            caseId: 'mail-old-sent-collected-today',
+            caseId: receptionCase,
             status: 'failed',
             error: 'VIRTUAL_RECEPTION_INCOMPLETE',
             modelTrace: modelResult?.trace ?? null,
@@ -230,7 +231,7 @@ export function IsolatedStorageCheck({
     onBusyChange?.(true);
     setStatus('기존 분석·격리 SQL 결과로 별도 가상 검증 페이지를 저장하고 다시 읽습니다. 모델을 다시 호출하지 않습니다.');
     try {
-      const note = await apiManagement.stressNote(row.noteProof, row.roundTrip);
+      const note = await apiManagement.stressNote(row.noteProof, row.roundTrip, row.portalTasks);
       if (alive.current) {
         setReport([{ ...row, noteCheck: note }]);
         setStatus(note.status === 'passed'
@@ -262,6 +263,14 @@ export function IsolatedStorageCheck({
         않습니다. 처음 실행할 때 격리 DB 엔진을 내려받습니다.
       </p>
       <div className="feature-toolbar">
+        <label>가상 수신 사례
+          <select value={receptionCase} disabled={busy || disabled} onChange={event => setReceptionCase(event.target.value)}>
+            <option value="mail-old-sent-collected-today">과거 메일 · 날짜 보존</option>
+            <option value="mail-monthly-approval-complete">월간 품의 · 완료 근거</option>
+            <option value="mail-monthly-material-only">월간 품의 · 자료 전달</option>
+            <option value="mail-monthly-wrong-period">월간 품의 · 대상기간 불일치</option>
+          </select>
+        </label>
         <button
           type="button"
           className="btn btn-ghost"

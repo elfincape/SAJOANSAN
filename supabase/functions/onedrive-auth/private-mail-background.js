@@ -1,4 +1,4 @@
-import { loadMonthlyPortalTasks } from './private-mail-monthly.js';
+import { loadMonthlyPortalTasks, monthlyMailRelated } from './private-mail-monthly.js';
 import { loadApprovedRemoteMailImages } from './private-mail-remote-images.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
@@ -57,7 +57,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         providerStatus:Number.isInteger(error?.providerStatus)?error.providerStatus:null,
         productionBusinessWritten:false,oneNoteWritten:null,oneNoteWriteStatus:'unconfirmed'}); }
     }
-    if (body.receiptId != null && (body.caseId !== 'mail-old-sent-collected-today' || !uuid(body.receiptId))) throw fail('STRESS_RECEIPT_INVALID',400);
+    if (body.receiptId != null && (!['mail-old-sent-collected-today','mail-monthly-approval-complete','mail-monthly-material-only','mail-monthly-wrong-period'].includes(body.caseId) || !uuid(body.receiptId))) throw fail('STRESS_RECEIPT_INVALID',400);
     const { stressCatalogue, runStressCase } = await import('./private-mail-stress-verify.js');
     if (body.list === true) return json({cases:stressCatalogue(),productionBusinessWritten:false,oneNoteWritten:false});
     try {
@@ -655,7 +655,9 @@ export async function handleMailAutomation(action, body, user, ctx) {
       : ctx;
     if (!uuid(body.id)) throw fail('ANALYSIS_SOURCE');
     const lease = crypto.randomUUID();
+    const monthlyTasks=typeof ctx.loadMonthlyTasks==='function'?await ctx.loadMonthlyTasks():[];
     const result = await analyzePrivateMail({
+      monthlyCandidates:monthlyMailRelated(monthlyTasks,{ownerId:user.id,overrides:current.briefing_overrides??{}}),
       messageId: body.id,
       resolveJevConfiguration: ctx.resolveJevConfiguration,
       intentOverride:

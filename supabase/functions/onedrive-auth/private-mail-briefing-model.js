@@ -71,6 +71,7 @@ export function applyMailIntentOverride(analysis, correction) {
   return {
     ...projected,
     source: { ...analysis.source, intent: 'reference' },
+    ...(analysis.monthlyUpdates?{monthlyUpdates:[],monthlyReview:[]}:{}),
     intent: { kind: 'reference', evidence: null, ownerFeedback: true },
     tasks: [],
     waiting: [],
@@ -880,6 +881,7 @@ export function dailyBriefingView({
   const view = {
     ...identity,
     groups,
+    monthlyUpdates:rows.flatMap(mail=>(mail.monthlyUpdates??[]).map(update=>({...update,source:mail.source}))),
     issues: output.issues,
     tasks: output.tasks,
     waiting: output.waiting.filter((item) => item.status !== 'resolved'),

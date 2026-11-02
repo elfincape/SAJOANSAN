@@ -1,3 +1,5 @@
+import { verifyMonthlyDiagnosticSnapshot } from './private-mail-monthly.js';
+import { renderDailyBriefing } from './private-mail-briefing-model.js';
 import PostalMime from 'postal-mime';
 import {
   fixtureById,
@@ -15,6 +17,7 @@ export const ISOLATED_STORAGE_SQL_PATHS = Object.freeze([
   'supabase/sql/private-mail-message-dates.sql',
   'supabase/sql/private-mail-jev-review.sql',
 ]);
+export const ISOLATED_MONTHLY_SQL_PATHS=Object.freeze(['repo-root/sql/operations-core.sql','repo-root/sql/operations-workflow.sql','repo-root/sql/operations-templates.sql','repo-root/sql/operations-portal.sql','repo-root/sql/operations-scheduler.sql','repo-root/sql/operations-ai.sql','repo-root/sql/operations-trash.sql','supabase/sql/private-mail-portal.sql','supabase/sql/private-mail-work-correction.sql','supabase/sql/private-mail-monthly.sql']);
 const OWNER = APPROVED_MAIL_TARGET.owner_id,
   BOX = APPROVED_MAIL_TARGET.mailbox_id;
 const hash = async (value) =>
@@ -112,6 +115,25 @@ async function setup({ PGlite, pgcrypto, sqlSources }) {
     await db.close();
     throw error;
   }
+}
+async function setupMonthly(db,fixture,dependencies){
+ const sources=dependencies.monthlySqlSources;
+ if(!sources||ISOLATED_MONTHLY_SQL_PATHS.some(path=>typeof sources[path]!=='string'))throw Error('ISOLATED_MONTHLY_SQL_MISSING');
+ await db.exec("reset role;alter table user_profiles add column role text default 'admin',add column email text default 'owner@example.test',add column display_name text default '테스트담당자';create table centers(code text primary key,name text,active boolean default true);insert into centers values('001','가상센터',true);grant usage on schema auth,public,extensions to authenticated,service_role;grant select on centers to authenticated,service_role;create function auth.role() returns text language sql stable as $$select current_user::text$$;create function private_mail_dispatch_report(uuid,date) returns boolean language sql as $$select false$$;");
+ for(const path of ISOLATED_MONTHLY_SQL_PATHS){let sql=sources[path];if(path.endsWith('operations-scheduler.sql'))sql=sql.slice(0,sql.indexOf('create extension if not exists pg_cron'))+'commit;';await db.exec(sql);}
+ await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
+ const template=(await db.query("select to_jsonb(operations_template_action($1,null,'create',$2)) value",[crypto.randomUUID(),{...fixture.monthlyTemplate,center_code:null}])).rows[0].value;
+ const approved=(await db.query("select to_jsonb(operations_template_action($1,$2,'approve','{}')) value",[crypto.randomUUID(),template.id])).rows[0].value;
+ await db.exec('reset role;reset "request.jwt.claim.sub"');
+ // Fixed existing-candidate precondition only. The real INSERT guards validate approved template/owner/occurrence metadata.
+ await db.query("insert into operations_tasks(id,owner_id,created_by,title,work_date,template_id,template_snapshot,occurrence_key,inputs,created_at) values($1,$2,$2,$3,$4,$5,$6,$7,'{\"steps\":{}}',$8)",[fixture.monthlyTask.id,OWNER,fixture.monthlyTask.title,fixture.monthlyTask.inputs.personal_monthly.scheduledDate,approved.id,approved,approved.family_id+':monthly:'+fixture.monthlyTask.inputs.personal_monthly.scheduledMonth+':'+OWNER,fixture.monthlyTask.created_at]);
+ await db.exec("do $$declare r record;begin for r in select tablename from pg_tables where schemaname='public' and tablename like 'operations\\_%' escape '\\' loop execute format('grant all on public.%I to service_role',r.tablename);end loop;for r in select sequencename from pg_sequences where schemaname='public' and sequencename like 'operations\\_%' escape '\\' loop execute format('grant usage,select on sequence public.%I to service_role',r.sequencename);end loop;end$$;set role service_role");
+}
+async function monthlyResult(db,fixture,saved,assert){
+ const portalTasks=(await db.query('select to_jsonb(t) value from operations_tasks t where id=$1',[fixture.monthlyTask.id])).rows.map(row=>row.value);
+ const checked=verifyMonthlyDiagnosticSnapshot(fixture,saved,portalTasks);
+ assert.equal(portalTasks.length,1,'Existing monthly task remains one canonical instance');assert.equal(portalTasks[0].status,fixture.expected.monthly.nativeStatus,'Actual native monthly status matches frozen business expectation');
+ return {monthlyVerified:true,portalTasks, noteHtml:renderDailyBriefing({now:fixture.now,analyses:[saved],portalTasks:checked,portalOwnerId:OWNER}).managedHtml};
 }
 async function history(db, id) {
   return (
@@ -503,6 +525,7 @@ export async function replayIsolatedCase(record, dependencies) {
     const original = JSON.stringify(record.saved);
     assert.ok(original.length <= 1048576, 'Saved extraction is bounded');
     db = await setup(dependencies ?? {});
+    if(fixture.monthlyTemplate)await setupMonthly(db,fixture,dependencies??{});
     const related = Object.fromEntries(
       (fixture.related ?? [])
         .filter(
@@ -559,6 +582,7 @@ export async function replayIsolatedCase(record, dependencies) {
       original,
       'Input archive remains unchanged',
     );
+    if(fixture.monthlyTemplate)Object.assign(report,await monthlyResult(db,fixture,record.saved,assert));
     Object.assign(report, result, {
       status: 'passed',
       relatedReceiptCount: Object.keys(related).length,
@@ -584,7 +608,7 @@ export async function replayIsolatedCase(record, dependencies) {
 
 // One fixed, public synthetic MIME fixture; no caller-supplied mail or destination.
 export async function prepareIsolatedMailCase(caseId, dependencies) {
-  if (caseId !== 'mail-old-sent-collected-today')
+  if (caseId !== 'mail-old-sent-collected-today'&&!fixtureById(caseId)?.monthlyTemplate)
     throw Error('ISOLATED_RECEPTION_CASE');
   const fixture = fixtureById(caseId);
   const bytes = new TextEncoder().encode(fixture.mime);
@@ -607,6 +631,7 @@ export async function prepareIsolatedMailCase(caseId, dependencies) {
     }
   };
   try {
+    if(fixture.monthlyTemplate)await setupMonthly(db,fixture,dependencies??{});
     const intakeLease = crypto.randomUUID();
     const begun = await db.query('select * from private_mail_begin($1,$2)', [
       BOX,
@@ -847,6 +872,7 @@ export async function prepareIsolatedMailCase(caseId, dependencies) {
           originalSaved,
           'Callback extraction object remains unchanged',
         );
+        if(fixture.monthlyTemplate)Object.assign(report,await monthlyResult(db,fixture,saved,assert));
         Object.assign(report, {
           status: 'passed',
           roundTrip: stored.analysis,

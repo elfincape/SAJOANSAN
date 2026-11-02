@@ -1,3 +1,4 @@
+import { monthlyMailRelated } from './private-mail-monthly.js';
 import PostalMime from 'postal-mime';
 import { STRESS_FIXTURES, fixtureById } from './private-mail-stress-fixtures.js';
 import { emlHeaderText, mailBodyText, mailMessageTimes } from './private-mail-body.js';
@@ -47,6 +48,7 @@ function evaluate(fixture, saved, normalized, parser) {
   const tasks = mail ? saved.tasks.length+(saved.imageItems?.tasks?.length??0) : saved.items.filter(item=>['task','dispatch'].includes(item.kind)&&!item.workRef).length;
   const issues = mail ? saved.issues.length : saved.items.filter(item=>item.kind==='issue').length;
   const confirmed = mail ? saved.review?.needsConfirmation===true || saved.review?.withheldTasks>0 : saved.items.some(item=>item.needsConfirmation);
+  if(expected.monthly){const values=saved.monthlyUpdates??[];if(expected.monthly.updateCount!==undefined)checks.monthlyCount=values.length===expected.monthly.updateCount;checks.monthlyCompletion=values.filter(item=>item.status==='complete').length===expected.monthly.completedCount;checks.monthlyTarget=values.every(item=>item.ref===expected.monthly.ref);}
   if (expected.intent!==undefined) checks.intent = saved.source.intent===expected.intent;
   if (expected.taskCount!==undefined) checks.taskCount = tasks===expected.taskCount;
   if (expected.issueCount!==undefined) checks.issueCount = issues===expected.issueCount;
@@ -76,7 +78,7 @@ function evaluate(fixture, saved, normalized, parser) {
 export async function runStressCase(caseId,ctx) {
   const fixture = fixtureById(caseId);
   if(!fixture) throw Error('STRESS_CASE_INVALID');
-  if (ctx.stressReceiptId != null && (caseId !== 'mail-old-sent-collected-today' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(ctx.stressReceiptId))) throw Error('STRESS_RECEIPT_INVALID');
+  if (ctx.stressReceiptId != null && ((caseId !== 'mail-old-sent-collected-today'&&!fixture.monthlyTemplate) || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(ctx.stressReceiptId))) throw Error('STRESS_RECEIPT_INVALID');
   const id = ctx.stressReceiptId ?? syntheticId(fixture), trace = [], replay = [], requests = [];
   // Frozen synthetic input is available even when source validation fails before a provider request.
   const input = structuredClone({kind:fixture.kind,referenceDate:fixture.referenceDate,now:fixture.now,
@@ -134,7 +136,7 @@ export async function runStressCase(caseId,ctx) {
     stage='mail_analysis';
     let leased=false,failureCode=null;
     const store={claim:async()=>{if(leased||saved)return null;leased=true;return{row:{id,uidl_hash:parsed.source.uidl_hash},lease:'isolated-stress'};},finish:async({analysis})=>{saved=structuredClone(analysis);leased=false;return true;},fail:async({code})=>{failureCode=code;leased=false;return true;}};
-    const args={messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
+    const args={monthlyCandidates:fixture.monthlyTask?monthlyMailRelated([fixture.monthlyTask],{ownerId:TARGET.owner_id}):[],messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
     const results=await Promise.all([analyzePrivateMail(args),analyzePrivateMail(args)]);
     status=results[0].status;duplicate=results[1].status;
     if(!saved) return failedResult(results[0].code??failureCode);
@@ -172,7 +174,7 @@ export async function runStressCase(caseId,ctx) {
   }
   stage='projection';
   const note = fixture.kind==='mail' ? renderDailyBriefing({now:fixture.now,analyses:[...prior.filter(item=>item.source),saved]}) : renderDailyBriefing({now:fixture.now,analyses:[],manual:manualDailyView(Object.fromEntries([...prior.filter(item=>item.entryId),saved].map(entry=>[entry.entryId,entry])),fixture.referenceDate)});
-  return{caseId,status,input,requests,diagnostics:diagnostics(),expected:fixture.expected,...evaluate(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:note.managedHtml,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+  return{caseId,status,input,requests,diagnostics:diagnostics(),expected:fixture.expected,...evaluate(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:fixture.monthlyTemplate?null:note.managedHtml,notePreviewRequiresSql:!!fixture.monthlyTemplate,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
   } catch(error) {
     return failedResult(/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_RUNTIME_FAILED');
   }

@@ -2275,7 +2275,7 @@ try{
   await db.exec("create function auth.role() returns text language sql stable as $$select current_user::text$$;create table audit_log(id uuid,table_name text,row_id text,action text,changed_at timestamptz,center_code text,new_data jsonb,old_data jsonb)");
   const aiSql=await readFile(new URL('../repo-root/sql/operations-ai.sql',import.meta.url),'utf8');const aiStart=aiSql.indexOf('create function public.operations_ai_snapshot()');await db.exec(aiSql.slice(aiStart,aiSql.indexOf('end $$;',aiStart)+7));await db.exec('grant execute on function operations_ai_snapshot() to authenticated');
   await db.exec(await readFile(new URL('../repo-root/sql/operations-trash.sql',import.meta.url),'utf8'));
-  await db.exec("alter table private_mail_messages add column analysis jsonb;create function private_mail_dispatch_report(uuid,date) returns boolean language sql as $$select true$$");
+  await db.exec("alter table private_mail_messages add column analysis jsonb,add column analysis_status text default 'ready',add column received_at timestamptz;create function private_mail_dispatch_report(uuid,date) returns boolean language sql as $$select true$$");
   await db.exec(await readFile(new URL('../supabase/sql/private-mail-history.sql',import.meta.url),'utf8'));
 
   await db.exec(await readFile(new URL('../supabase/sql/private-mail-work-correction.sql',import.meta.url),'utf8'));
@@ -2341,6 +2341,15 @@ try{
   const failedReceipt=crypto.randomUUID(),failedInput={...input,entryId:failedReceipt,items:input.items.map(item=>({...item,ref:failedReceipt+':manual:item-001',workflowStatus:'pending',text:'합성 진행 정보'}))};
   await db.exec(`create function isolated_monthly_update_fault() returns trigger language plpgsql as $$begin if new.id='${monthlyTarget.id}'::uuid then raise exception 'SYNTHETIC_MONTHLY_UPDATE_FAILED';end if;return new;end$$;create trigger aaa_isolated_monthly_update_fault before update on operations_tasks for each row execute function isolated_monthly_update_fault()`);
   await assert.rejects(()=>db.query('update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1',[BOX,failedReceipt,failedInput]),/SYNTHETIC_MONTHLY_UPDATE_FAILED/);assert.equal((await db.query('select manual_entries ? $2 value from private_mailboxes where id=$1',[BOX,failedReceipt])).rows[0].value,false,'failed native update must roll back ready receipt write');await db.exec('drop trigger aaa_isolated_monthly_update_fault on operations_tasks');
+  const mailTarget=first[0],mailId=crypto.randomUUID(),mailTime=(await db.query('select clock_timestamp() value')).rows[0].value.toISOString();
+  await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 월간 처리','owner@example.test',$5,'[]')",[mailId,BOX,OWNER,'b'.repeat(64),mailTime]);
+  const mailUpdate={ref:'source:'+mailTarget.id,sourceId:mailId,sourceAt:mailTime,resolution:'monthly_mail_v1',status:'complete',text:'합성 월간 품의 상신 완료',evidence:'합성 월간 품의 상신 완료했습니다.',details:[],needsConfirmation:false};
+  const mailAnalysis={source:{id:mailId,sentAt:mailTime,receivedAt:null,subject:'합성 월간 처리',sender:'owner@example.test',intent:'update'},intent:{kind:'update'},summary:[{text:mailUpdate.text,evidence:mailUpdate.evidence}],tasks:[],issues:[],waiting:[],updates:[],monthlyUpdates:[mailUpdate]};
+  await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,mailAnalysis]);const mailApplied=(await db.query('select to_jsonb(t) value from operations_tasks t where id=$1',[mailTarget.id])).rows[0].value;assert.equal(mailApplied.status,'completed','validated mail update must reach the same native monthly task');assert(mailApplied.inputs.personal_work.sourceKeys.includes('source:'+mailId));assert.deepEqual(mailApplied.inputs.personal_work.summary,[mailUpdate.text]);
+  const mailCorrected=(await db.query("select private_mail_work_correct($1,$2,$3,$4,'{\"done\":false}',null) value",[BOX,OWNER,'source:'+mailTarget.id,actualDay])).rows[0].value;assert.equal(mailCorrected.saved,true);const reopenedMailVersion=(await db.query('select version from operations_tasks where id=$1',[mailTarget.id])).rows[0].version;
+  await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,{...mailAnalysis,updatedAt:new Date().toISOString()}]);const replayed=(await db.query('select status,version from operations_tasks where id=$1',[mailTarget.id])).rows[0];assert.equal(replayed.status,'pending');assert.equal(replayed.version,reopenedMailVersion,'mail reanalysis is not new completion evidence');
+  const invalidMailId=crypto.randomUUID();await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 잘못된 시각','owner@example.test',$5,'[]')",[invalidMailId,BOX,OWNER,'c'.repeat(64),mailTime]);
+  await assert.rejects(()=>db.query('update private_mail_messages set analysis=$2 where id=$1',[invalidMailId,{...mailAnalysis,source:{...mailAnalysis.source,id:invalidMailId},monthlyUpdates:[{...mailUpdate,sourceId:invalidMailId,sourceAt:'2026-01-01T00:00:00Z'}]}]),/MONTHLY_MAIL_SOURCE/);assert.equal((await db.query('select analysis from private_mail_messages where id=$1',[invalidMailId])).rows[0].analysis,null,'invalid source must roll back mail analysis and native updates together');
   await db.query('update private_mailboxes set enabled=false where id=$1',[BOX]);assert.equal((await generate('2026-11-28T03:00:00Z')).disabled,true);await db.query('select operations_run_scheduler()');
   await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
   const ordinary=(await db.query("select to_jsonb(operations_template_action($1,null,'create',$2)) r",[crypto.randomUUID(),{center_code:'001',title:'합성 기존 일일 업무',spec:{fields:[],steps:[],effective_from:'2026-11-01',repeat:{kind:'daily'},owner_ids:[OWNER]}}])).rows[0].r;
@@ -2350,4 +2359,39 @@ try{
   const health=(await db.query("select last_error from operations_automation_state where name='personal-monthly:2a828c2d-9a6f-40d4-8e13-336b591811cc'")).rows[0];assert(health?.last_error);assert(!health.last_error.includes('SYNTHETIC_PRIVATE_CONTENT'),'scheduler health must not retain private exception content');
   console.log('PASS isolated native monthly materialization: calendar lead, six owner-private templates, task/event reuse, stable monthly IDs, no duplicate reruns, overdue retention and other-actor protection');
  }finally{await db.close();}
+}
+
+// The existing downloadable-result replay also checks native monthly state, not just mail JSON.
+{
+ const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {replayIsolatedCase,prepareIsolatedMailCase,ISOLATED_STORAGE_SQL_PATHS}=await import('../supabase/functions/onedrive-auth/private-mail-isolated-storage.js');
+ const monthlyPaths=['repo-root/sql/operations-core.sql','repo-root/sql/operations-workflow.sql','repo-root/sql/operations-templates.sql','repo-root/sql/operations-portal.sql','repo-root/sql/operations-scheduler.sql','repo-root/sql/operations-ai.sql','repo-root/sql/operations-trash.sql','supabase/sql/private-mail-portal.sql','supabase/sql/private-mail-work-correction.sql','supabase/sql/private-mail-monthly.sql'];
+ const sqlSources=await Promise.all(ISOLATED_STORAGE_SQL_PATHS.map(path=>readFile(new URL('../'+path,import.meta.url),'utf8'))),monthlySqlSources=Object.fromEntries(await Promise.all(monthlyPaths.map(async path=>[path,await readFile(new URL('../'+path,import.meta.url),'utf8')])));
+ for(const id of ['mail-monthly-approval-complete','mail-monthly-material-only','mail-monthly-wrong-period']){
+  const f=fixtureById(id);let calls=0;const modelContext={resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const proof=f.mime.split('\r\n\r\n').at(-1);const value=calls===1?{intent:{kind:'update',evidence:proof},group:null,summary:[{text:'가상 월간 처리 통보',evidence:proof}],tasks:[],issues:[],waiting:[],updates:[{ref:'source:'+f.monthlyTask.id,status:'complete',evidence:proof,text:'가상 품의 상신 완료',due:null}],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}}:{matchesTarget:true,action:'complete',text:'가상 품의 상신 완료',evidence:proof,details:[],completionEvidence:proof,serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]})}};const result=await runStressCase(id,modelContext);
+  assert.equal(result.automatedChecksPassed,true,JSON.stringify(result.checks));const replay=await replayIsolatedCase(result,{PGlite,pgcrypto,sqlSources,monthlySqlSources});assert.equal(replay.status,'passed',JSON.stringify(replay));assert.equal(replay.monthlyVerified,true);assert.equal(replay.portalTasks[0].id,f.monthlyTask.id);assert.equal(replay.portalTasks[0].status,f.expected.monthly.nativeStatus);assert(replay.noteHtml.includes('월초 품의'));assert.equal(replay.productionWritten,false);assert.equal(replay.oneNoteWritten,false);
+
+  if(id==='mail-monthly-approval-complete'){
+   const session=await prepareIsolatedMailCase(id,{PGlite,pgcrypto,sqlSources,monthlySqlSources});
+   try{assert.equal(session.queued,true);calls=0;const fresh=await runStressCase(id,{...modelContext,stressReceiptId:session.receipt.id});assert.equal(fresh.automatedChecksPassed,true);const flow=await session.finish(fresh);assert.equal(flow.status,'passed',JSON.stringify(flow));assert.equal(flow.monthlyVerified,true);assert.equal(flow.roundTrip.source.id,session.receipt.id);assert.equal(flow.portalTasks[0].status,'completed');assert(flow.noteHtml.includes('가상협동조합'));}finally{await session.close()}
+  }
+  const {issueStressNoteProof,writeStressNote}=await import('../supabase/functions/onedrive-auth/private-mail-stress-notes.js');
+  const {BRIEFING_TARGET}=await import('../supabase/functions/onedrive-auth/private-mail-briefing-model.js');
+  let sealed,page=null,html='',writes=0,marker=null;
+  const noteCtx={sealDiagnostic:async value=>{sealed=structuredClone(value);return 'monthly.proof'},openDiagnostic:async()=>structuredClone(sealed),
+   db:async(path,options={})=>{if(options.method==='POST'){marker=options.body;return {}}return marker?[marker]:[]},
+   diagnosticNotes:async action=>action({accessToken:'MOCK_ONLY',notesGranted:true},async(path,access,options={})=>{
+    if(path.includes('/notebooks/'))return Response.json({id:BRIEFING_TARGET.notebookId,userRole:'Owner',isShared:false});
+    if(path.includes('/sections/')&&!path.includes('/pages'))return Response.json({id:BRIEFING_TARGET.sectionId,parentNotebook:{id:BRIEFING_TARGET.notebookId}});
+    if(path.includes('/sections/')&&path.includes('/pages')){if(options.method==='POST'){writes++;page={id:'monthly-note',title:'가상 검증 '+result.saved.source.id,parentSection:{id:BRIEFING_TARGET.sectionId}};html=options.body;return Response.json({id:page.id})}return Response.json({value:page?[page]:[]})}
+    if(path.includes('/content'))return new Response(html);
+    return Response.json(page);
+   })};
+  const proof=await issueStressNoteProof(result,result.saved.source.id,noteCtx);assert.ok(proof);
+  const body={proof,stored:result.saved,portalTasks:replay.portalTasks};
+  await assert.rejects(()=>writeStressNote({...body,portalTasks:replay.portalTasks.map(task=>({...task,title:'UNTRUSTED CLIENT CONTENT'}))},noteCtx),/STRESS_MONTHLY_SQL_MISMATCH/);assert.equal(writes,0);
+  const written=await writeStressNote(body,noteCtx);assert.equal(written.status,'passed');assert.equal(written.readBackVerified,true);assert.equal(written.repeatStatus,'skipped');assert.equal(writes,1);assert(html.includes('가상협동조합'));assert(html.includes('월초 품의'));assert.equal((await writeStressNote(body,noteCtx)).firstStatus,'skipped');assert.equal(writes,1);
+ }
+ console.log('PASS monthly fixed-fixture mail transport → existing isolated intake/SQL/native state/readback/note HTML; no external providers or operating writes');
 }

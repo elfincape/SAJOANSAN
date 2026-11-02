@@ -1,3 +1,5 @@
+import { dailyWorkItems } from './private-mail-work.js';
+import { analyzeTargetedManual } from './private-mail-manual.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,4 +65,48 @@ export async function loadMonthlyPortalTasks({db,ownerId,day:reportDay=null}) {
   const values=reportDay===null?rows:await db('rpc/private_mail_portal_snapshots',{method:'POST',body:{p_box:TARGET.mailbox_id,p_user:ownerId,p_day:reportDay}});
   if(!Array.isArray(values))throw Error('MONTHLY_SOURCE');
   return values.filter(row=>ids.has(row.id)&&row.deleted_at==null&&row.owner_id===ownerId&&row.inputs?.personal_monthly?.ownerId===ownerId);
+}
+
+export function monthlyMailRelated(tasks,{ownerId,overrides={}}) {
+ if(ownerId!==TARGET.owner_id)throw Error('MONTHLY_OWNER');
+ return dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},{},{portalTasks:tasks,portalOwnerId:ownerId,workOverrides:overrides})
+  .filter(item=>item.monthly&&['task','issue'].includes(item.category)).slice(0,100)
+  .map(item=>({ref:item.workId,kind:'tasks',text:item.title,evidence:item.title,status:item.status==='complete'?'complete':'pending',ownerId,monthly:item.monthly}));
+}
+export async function normalizeMonthlyMailUpdates({updates,candidates,mail,context,ai,fetcher}) {
+ const accepted=[],review=[],responses=[],seen=new Set(),sourceTime=Date.parse(mail.received_at??mail.sent_at);
+ if(!Number.isFinite(sourceTime))return {updates:[],review:updates.map(update=>({ref:update.ref,reason:'monthly_source_time_confirmation'})),responses};
+ const sourceAt=new Date(sourceTime).toISOString();
+ for(const update of updates){
+  const prior=candidates.find(item=>item.ref===update.ref),evidence=update.evidence;
+  if(!prior||seen.has(update.ref)||typeof evidence!=='string'||!evidence.trim()||evidence.length>2000||!context.currentBody.includes(evidence)){review.push({ref:update.ref,reason:'monthly_source_confirmation'});continue;}
+  seen.add(update.ref);
+  const monthly=prior.monthly,period=monthly.targetPeriod,periodMonth=period?.from.slice(0,7);
+  const explicitPeriod=/(?:(20[0-9]{2})\s*년\s*)?([0-9]{1,2})\s*월\s*분/.exec(evidence);
+  const range=/([0-9]{1,2})\s*일?\s*(?:~|부터)\s*([0-9]{1,2}|말일)\s*일?/.exec(evidence);
+  const wrongPeriod=explicitPeriod&&(!periodMonth||Number(periodMonth.slice(5))!==Number(explicitPeriod[2])||(explicitPeriod[1]&&periodMonth.slice(0,4)!==explicitPeriod[1]));
+  const wrongRange=range&&(!period||Number(period.from.slice(8))!==Number(range[1])||(range[2]!=='말일'&&Number(period.through.slice(8))!==Number(range[2])));
+  const wrongStage=(monthly.advanceKind==='yangsan_first'&&/2차/.test(evidence)&&!/1차/.test(evidence))||(monthly.advanceKind==='yangsan_second'&&/1차/.test(evidence)&&!/2차/.test(evidence));
+  const sameTitle=candidates.some(other=>other.ref!==prior.ref&&other.text===prior.text&&other.status!=='complete');
+  if(wrongPeriod||wrongRange||wrongStage||(sameTitle&&!/(?:20[0-9]{2}|[0-9]{1,2}\s*월|이번\s*달|지난\s*달|전월|당월)/.test(evidence))){review.push({ref:update.ref,reason:'monthly_period_confirmation'});continue;}
+  try{
+   const result=await analyzeTargetedManual({entry:{text:evidence,submittedAt:sourceAt,referenceDate:kstDay(sourceAt),originalContext:JSON.stringify({subject:mail.subject,sender:mail.sender,envelope:mail.envelope,currentBody:context.currentBody,ownerContext:context.ownerContext})},target:{workId:prior.ref,title:prior.text,kind:'task',status:prior.status,monthly,mailContext:{ownerContext:context.ownerContext,intent:mail.intent??'update'}},ai,fetcher});responses.push(result.response);const item=result.reply.items[0];
+   if(item.needsConfirmation||item.workRef!==prior.ref||!['pending','complete'].includes(item.workflowStatus)){review.push({ref:prior.ref,reason:'monthly_meaning_confirmation'});continue;}
+   accepted.push({ref:prior.ref,sourceId:mail.id,sourceAt,resolution:'monthly_mail_v1',status:item.workflowStatus,text:item.text,evidence,details:item.details??[],needsConfirmation:false});
+  }catch{review.push({ref:prior.ref,reason:'monthly_verification_unavailable'});}
+ }
+ return {updates:accepted,review,responses};
+}
+
+// Bind diagnostic output to the fixed synthetic source and actual isolated SQL readback.
+export function verifyMonthlyDiagnosticSnapshot(fixture,saved,tasks){
+ const seed=fixture?.monthlyTask,update=saved?.monthlyUpdates?.[0];
+ if(!fixture?.monthlyTemplate||!seed||!Array.isArray(tasks)||tasks.length!==1||(saved.monthlyUpdates?.length??0)>1)throw Error('STRESS_MONTHLY_SQL_MISMATCH');
+ const task=tasks[0],monthly=seed.inputs.personal_monthly,m=task.inputs?.personal_work,status=update?.status==='complete'?'completed':'pending';
+ const summary=update?[update.text,...update.details]:[],keys=update?['source:'+seed.id,'source:'+saved.source.id]:['source:'+seed.id];
+ if(task.id!==seed.id||task.owner_id!==TARGET.owner_id||task.title!==seed.title||task.status!==status||task.version!==(update?2:1)||task.center_code!==null||task.work_scope!=='delivery_team'||task.work_date!==monthly.visibleFrom||task.due_at!==null||m?.workId!=='source:'+seed.id||m?.ownerId!==TARGET.owner_id||JSON.stringify(m.summary)!==JSON.stringify(summary)||(m.progress??null)!==(update?.text??null)||JSON.stringify([...m.sourceKeys].sort())!==JSON.stringify(keys.sort())||(status==='completed'?Date.parse(task.completed_at)!==Date.parse(update.sourceAt):task.completed_at!=null))throw Error('STRESS_MONTHLY_SQL_MISMATCH');
+ const actual=task.inputs.personal_monthly;
+ for(const key of ['ownerId','familyId','scheduledMonth','scheduledDate','visibleFrom','qualifier','originalSchedule','advanceKind','paymentDate'])if(actual?.[key]!==monthly[key])throw Error('STRESS_MONTHLY_SQL_MISMATCH');
+ if(JSON.stringify([actual.targetPeriod?.from,actual.targetPeriod?.through])!==JSON.stringify([monthly.targetPeriod?.from,monthly.targetPeriod?.through]))throw Error('STRESS_MONTHLY_SQL_MISMATCH');
+ return [{...seed,status,version:task.version,updated_at:task.updated_at,completed_at:task.completed_at,inputs:{personal_monthly:monthly,personal_work:{...seed.inputs.personal_work,status:status==='completed'?'complete':'pending',summary,progress:update?.text??null,verifiedCompletionAt:status==='completed'?update.sourceAt:null,sourceKeys:keys}}}];
 }
