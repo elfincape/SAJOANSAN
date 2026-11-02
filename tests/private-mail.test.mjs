@@ -8062,3 +8062,15 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   const result=await response.json();assert.equal(result.status,'ready');assert.equal(result.items.length,1);assert.equal(result.items[0].workRef,ref);assert.equal(result.items[0].done,false);assert.equal(result.items[0].serviceDate,null);assert.equal(result.items[0].dueDate,null);assert(result.items[0].details.some(t=>t.includes('420,000원')));assert(result.items[0].text.includes('협의 완료'));
  });
 }
+
+{
+ const {test}=await import('node:test');
+ await test('selected update repairs nonverbatim details once without relaxing evidence checks',async()=>{
+  const {analyzeTargetedManual,combinedLunaInference}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const text='임시차 비용 420,000원만 지급하기로 했습니다. 해당 비용은 10월 정산에서 공제될 예정입니다.';
+  const entry={text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02'},target={workId:'72000000-0000-4000-8000-000000000001:issues:0',title:'정산 차감 확인',kind:'issue',status:'in_progress'};
+  const run=async(alwaysInvalid=false)=>{let calls=0;const result=await analyzeTargetedManual({entry,target,ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;if(calls===2)assert(options.body.includes('교정'));return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'비용 협의 완료 · 정산 공제 예정',evidence:text,details:calls===1||alwaysInvalid?['임시차비 42만원 확정']:['임시차 비용 420,000원만 지급하기로 했습니다.'],completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]});}});return{result,calls};};
+  const {result,calls}=await run();assert.equal(calls,2);assert.equal(result.reply.items[0].workRef,target.workId);assert.equal(result.reply.items[0].workflowStatus,'pending');assert(result.reply.items[0].details[0].includes('420,000원'));assert.equal(combinedLunaInference([result.response]).usage.total_tokens,30);
+  await assert.rejects(run(true),/MANUAL_EVIDENCE/);
+ });
+}
