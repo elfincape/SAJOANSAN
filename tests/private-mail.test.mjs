@@ -564,6 +564,16 @@ await assert.rejects(
   (e) => e.status === 403,
   'explicit UUID check even if mock RLS errs',
 );
+{
+ const original=row;
+ row={...row,received_at:null,analysis:{summary:[{text:'가상센터가 월간 마감자료를 전달했습니다.'}],source:{envelope:{to:[{address:'owner@example.test',name:'담당자'}],cc:[]}}}};
+ const detail=await (await handlePrivateMail('private-mail-detail',request({id}),user,ctx)).json();
+ assert.equal(detail.message.received_at,null,'unknown received header must not be replaced with collection time');
+ assert.deepEqual(detail.message.summary,['가상센터가 월간 마감자료를 전달했습니다.']);
+ assert.deepEqual(detail.message.recipients.to,['담당자 <owner@example.test>']);
+ assert(!('analysis' in detail.message),'detail returns display context without raw model/evidence payload');
+ row=original;
+}
 const res = await handlePrivateMail(
     'private-mail-download',
     request({ id, index: 1 }),

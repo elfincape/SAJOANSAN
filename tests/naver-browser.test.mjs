@@ -196,7 +196,7 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const denied={...r,ok:()=>false,status:()=>429,text:async()=>'',headers:()=>({})};
  const rejected={...r,ok:()=>false,status:()=>400,text:async()=>'',headers:()=>({})};
  await assert.rejects(()=>map.browserCourseCapture({...page,waitForResponse:async()=>rejected,goto:async()=>listeners.get('response')?.(rejected)},stops,{addressCache:cache,screenshot:false}),e=>{
-  const shape=e.routeDiagnostics.requestShape;assert.equal(shape.queryLength,null,'route requests do not use the search query field');assert(shape.paramKeys.includes('start')&&shape.paramKeys.includes('goal')&&shape.paramKeys.includes('waypoints'));assert.equal(shape.pointCount,mapStops.length);assert.equal(shape.coordinatesValid,true);return true;
+  const shape=e.routeDiagnostics.requestShape;assert.equal(shape.urlBytes,Buffer.byteLength(query.href));assert.equal(shape.queryBytes,Buffer.byteLength(query.search));assert.match(shape.settingsFingerprint,/^[a-f0-9]{64}$/);assert.equal(shape.queryLength,null,'route requests do not use the search query field');assert(shape.paramKeys.includes('start')&&shape.paramKeys.includes('goal')&&shape.paramKeys.includes('waypoints'));assert.equal(shape.pointCount,mapStops.length);assert.equal(shape.coordinatesValid,true);return true;
  });
 
  const absentCards={...cards,first:()=>({waitFor:async()=>{throw Object.assign(Error('route panel timeout'),{name:'TimeoutError'});}})};
@@ -244,4 +244,27 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const prior=structuredClone(checkpoint);
  await assert.rejects(()=>optimizeCourseCapture({},course,{previous:checkpoint,measure:async(_p,stops)=>({distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,requestSettings:{...settings,cartype:'2'},png:Buffer.from('wrong-settings')})}),error=>error.code==='OPTIMIZATION_SETTINGS_CHANGED');
  assert.deepEqual(checkpoint,prior,'changed conditions never alter the previous checkpoint');
+}
+
+// Different address spellings can resolve to the exact same native route.
+{
+ const places=new Map();
+ for(const [address,label,token]of [['garage','garage','3zp3AJ,2AujZe'],['center','center','3zp3AK,2AujZe'],['alias-a','same delivery','3zp3AL,2AujZe'],['alias-b','same delivery','3zp3AL,2AujZe']])places.set(address,{token:token+','+encodeURIComponent(label)+',,PLACE_POI',label,text:address.startsWith('alias-')?'alias-a alias-b':address,coordinates:map.naverPointFromUrl('https://map.naver.com/p/directions/'+token+','+encodeURIComponent(label)+',,PLACE_POI/-/-/car',address,{label,text:address.startsWith('alias-')?'alias-a alias-b':address}).coordinates});
+ const c={id:'equivalent',stops:['garage','center','alias-a','alias-b','garage']};let calls=0;
+ const measure=async(_p,stops,o)=>{
+  calls++;const plan=map.consecutivePointPlan(stops,stops.map(s=>places.get(s))),r={distanceKm:.06,distanceMeters:60,distanceText:'60m',routeLabel:'거리우선',method:'naver-map-display',requestedStops:[...stops],resolvedStops:stops.map(s=>places.get(s).label),confirmedAddresses:stops.map(s=>places.get(s).text),requestSettings:{cartype:'1'},sourceUrl:map.naverCourseUrl(plan.mapStops,places),legEvidence:{source:'naver-same-route-response',verified:true,totalMeters:60,distancesMeters:[10,20,0,30],pathIdentity:'same-physical-path',logicalPointMapping:{mapStops:plan.mapStops,logicalToMap:plan.logicalToMap,coordinates:stops.map(s=>places.get(s).coordinates),mapDistancesMeters:[10,20,30]}}};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('same route')}:{})};
+ };
+ const output=await optimizeCourseCapture({},c,{measure,addressCache:places});
+ assert.equal(calls,1,'equivalent native URL and logical mapping must not issue a second route request');
+ const routes=coursePermutations(c),second=output.optimization.evaluations[JSON.stringify(routes[1])];
+ const originalAlias=places.get('alias-b');places.set('alias-b',{...originalAlias,label:'different delivery',token:originalAlias.token.replace(encodeURIComponent('same delivery'),encodeURIComponent('different delivery'))});calls=0;await optimizeCourseCapture({},c,{measure,addressCache:places});assert.equal(calls,2,'same coordinates with different native labels cannot share a measurement');places.set('alias-b',originalAlias);
+ assert.deepEqual(second.requestedStops,routes[1],'reuse preserves each original candidate ordering');assert.equal(second.legEvidence.logicalPointMapping.mapStops[2],'alias-b');assert.deepEqual(second.legEvidence.distancesMeters,[10,20,0,30]);assert(captureResultVerified(c,{...output,imagePath:'verified.png'}));
+ const previous={...output.optimization,complete:false,completed:1,failed:[{index:2,code:'NAVER_ROUTE_UNAVAILABLE'}],evaluations:{[JSON.stringify(routes[0])]:output.optimization.evaluations[JSON.stringify(routes[0])]}};
+ calls=0;await optimizeCourseCapture({},c,{previous,addressCache:places,measure:async(...args)=>{assert.equal(args[2].screenshot,true,'a resumed equivalent candidate reuses stored distance; only the missing winner image is revalidated');return measure(...args);}});assert.equal(calls,1);
+ const stale=structuredClone(previous),old=stale.evaluations[JSON.stringify(routes[0])];old.resolvedStops[2]='center';old.legEvidence.distancesMeters=[10,0,20,30];old.legEvidence.logicalPointMapping={...old.legEvidence.logicalPointMapping,mapStops:['garage','center','alias-b','garage'],logicalToMap:[0,1,1,2,3],coordinates:[places.get('garage').coordinates,places.get('center').coordinates,places.get('center').coordinates,places.get('alias-b').coordinates,places.get('garage').coordinates]};
+ let repaired;
+ await assert.rejects(()=>optimizeCourseCapture({},c,{previous:stale,addressCache:places,measure}),e=>{assert.equal(e.code,'CAPTURE_DISTANCE_CHANGED');repaired=e.optimization;return true;});
+ assert.deepEqual(repaired.evaluations[JSON.stringify(routes[1])].legEvidence.distancesMeters,[10,20,0,30],'historical leg evidence cannot propagate through a newly changed alias mapping');
+ assert((await optimizeCourseCapture({},c,{previous:repaired,addressCache:places,measure})).optimization.complete,'retry recovers instead of repeatedly re-seeding stale logical evidence');
+
 }

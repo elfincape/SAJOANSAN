@@ -1480,6 +1480,22 @@ export async function handlePrivateMail(action, req, user, ctx) {
         subject: row.subject,
         sender: row.sender,
         sent_at: row.sent_at,
+        received_at: row.received_at ?? null,
+        summary: (row.analysis?.summary ?? [])
+          .map((item) => item?.text)
+          .filter((text) => typeof text === 'string' && text.trim()),
+        recipients: Object.fromEntries(
+          ['to', 'cc'].map((kind) => [
+            kind,
+            (row.analysis?.source?.envelope?.[kind] ?? [])
+              .filter((person) => typeof person?.address === 'string')
+              .map((person) =>
+                person.name
+                  ? person.name + ' <' + person.address + '>'
+                  : person.address,
+              ),
+          ]),
+        ),
         files: row.files.map((f, index) => ({
           index,
           kind: f.kind,

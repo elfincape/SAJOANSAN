@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
+import type { MailMessage } from '../../domain/portal-mail';
 import type {
   DailyWork,
   DailyMailOverview,
@@ -35,7 +36,7 @@ export function DailyWorkList({
   labels: Record<string, string>;
   day: string;
   busy: boolean;
-  onFollowup?: (text:string,targetWorkId:string) => void;
+  onFollowup?: (text: string, targetWorkId: string) => void;
   onChangeWork: (
     item: DailyWork,
     patch: WorkPatch,
@@ -51,7 +52,9 @@ export function DailyWorkList({
   const [snapshot, setSnapshot] = useState<DailyWork | null>(null);
   const [saving, setSaving] = useState(false),
     [feedback, setFeedback] = useState('');
-  const [drafts,setDrafts]=useState<Record<string,{id:string;text:string}>>({});
+  const [drafts, setDrafts] = useState<
+    Record<string, { id: string; text: string }>
+  >({});
   const [undo, setUndo] = useState<WorkPatch | null>(null);
   const [source, setSource] = useState<{
     text: string;
@@ -78,6 +81,41 @@ export function DailyWorkList({
     all.find((row) => row.workId === activeId) ??
     (snapshot?.workId === activeId ? snapshot : null);
   const itemSummary = item ? workSummaryForDisplay(item) : [];
+  const mailRef = item?.sourceRefs.find((ref) => ref.kind === 'mail');
+  const [mailContext, setMailContext] = useState<MailMessage | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextError, setContextError] = useState(false);
+  const [contextRetry, setContextRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setMailContext(null);
+    setContextError(false);
+    setContextLoading(!!mailRef?.id);
+    if (mailRef?.id)
+      void privateMail
+        .detail(mailRef.id)
+        .then(({ message }) => {
+          if (!cancelled) setMailContext(message);
+        })
+        .catch(() => {
+          if (!cancelled) setContextError(true);
+        })
+        .finally(() => {
+          if (!cancelled) setContextLoading(false);
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, mailRef?.id, contextRetry]);
+  const currentMail = mailContext?.id === mailRef?.id ? mailContext : null;
+  const detailSummary = itemSummary.length
+    ? itemSummary
+    : item?.summary.length ? item.summary : currentMail?.summary ?? [];
+  const attachments =
+    currentMail?.files.filter(
+      (file) => !['eml', 'text', 'html'].includes(file.kind),
+    ) ?? [];
+
   useEffect(() => {
     mounted.current = true;
     const pop = () => {
@@ -160,7 +198,12 @@ export function DailyWorkList({
         correction: result.correction,
         excluded: result.correction.excluded === true,
       });
-      if(patch.activity) setDrafts(current=>{const next={...current};delete next[item.workId];return next;});
+      if (patch.activity)
+        setDrafts((current) => {
+          const next = { ...current };
+          delete next[item.workId];
+          return next;
+        });
       setUndo(restoring || patch.activity ? null : previous);
       setFeedback(
         result.refreshed === false
@@ -294,11 +337,84 @@ export function DailyWorkList({
                   ? '참고 자료'
                   : labels[item.status]}
             </p>
+            {mailRef && (
+              <section aria-label="메일 내용">
+                {contextLoading && (
+                  <p role="status">메일 정보를 불러오는 중…</p>
+                )}
+                {contextError && (
+                  <p role="alert">
+                    발신자·날짜·첨부 정보를 불러오지 못했습니다.{' '}
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setContextRetry((value) => value + 1)}
+                    >
+                      다시 조회
+                    </button>
+                  </p>
+                )}
+                {currentMail && (
+                  <dl className="daily-detail-fields">
+                    {[
+                      ['발신자', currentMail.sender],
+                      [
+                        currentMail.received_at ? '수신' : '발신',
+                        currentMail.received_at || currentMail.sent_at
+                          ? formatBriefingTimestamp(
+                              currentMail.received_at || currentMail.sent_at,
+                            )
+                          : null,
+                      ],
+                      ['받는 사람', currentMail.recipients?.to.join(', ')],
+                      ['참조', currentMail.recipients?.cc.join(', ')],
+                    ]
+                      .filter(([, value]) => value)
+                      .map(([label, value]) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                )}
+                {currentMail && !currentMail.received_at && (
+                  <p className="daily-task-meta">
+                    수신 시각은 저장된 헤더에서 확인되지 않았습니다.
+                    {currentMail.sent_at ? ' 발신 시각을 표시했습니다.' : ''}
+                  </p>
+                )}
+              </section>
+            )}
             <div className="daily-detail-summary">
-              {itemSummary.map((text, index) => (
+              {detailSummary.map((text, index) => (
                 <p key={index}>{text}</p>
               ))}
             </div>
+            {mailRef?.evidence && (
+              <dl className="daily-detail-fields">
+                <div>
+                  <dt>{item.category === 'task' ? '요청사항' : '관련 내용'}</dt>
+                  <dd>{mailRef.evidence}</dd>
+                </div>
+              </dl>
+            )}
+            {attachments.length > 0 && (
+              <section aria-label="첨부파일">
+                <h3>첨부</h3>
+                <ul>
+                  {attachments.map((file) => (
+                    <li key={file.index}>{file.name}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {mailRef && currentMail && !detailSummary.length && (
+              <p className="daily-task-meta">
+                이 화면에서 확인할 핵심 요약이 없습니다. 메일·첨부에서 내용을
+                확인해 주세요.
+              </p>
+            )}
             <dl className="daily-detail-fields">
               {[
                 ['센터', item.center],
@@ -332,7 +448,14 @@ export function DailyWorkList({
                 ))}
             </dl>
             {item.needsConfirmation && (
-              <p className="daily-task-meta">날짜·담당·내용을 확인해 주세요.</p>
+              <p className="daily-task-meta">
+                확인 대상:{' '}
+                {item.summary.find((text) =>
+                  /확인|미정|충돌|누락/.test(text),
+                ) ||
+                  item.nextAction ||
+                  '요청 대상과 필요한 처리 내용을 원문에서 확인해 주세요.'}
+              </p>
             )}
             <label>추가 정보·처리 내용
               <textarea className="app-input" rows={4} maxLength={12000} disabled={disabled}
@@ -347,7 +470,11 @@ export function DailyWorkList({
                   type="button"
                   className="btn btn-ghost"
                   disabled={disabled || !!drafts[item.workId]?.text.trim()}
-                  title={drafts[item.workId]?.text.trim() ? '처리 기록을 먼저 저장해 주세요.' : undefined}
+                  title={
+                    drafts[item.workId]?.text.trim()
+                      ? '처리 기록을 먼저 저장해 주세요.'
+                      : undefined
+                  }
                   onClick={() =>
                     void save({ done: item.status !== 'complete' })
                   }

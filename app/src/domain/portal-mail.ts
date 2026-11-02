@@ -24,6 +24,9 @@ export interface MailMessage {
   subject: string;
   sender: string;
   sent_at: string;
+  received_at?: string | null;
+  summary?: string[];
+  recipients?: { to: string[]; cc: string[] };
   files: MailFile[];
 }
 export interface Mailbox {
