@@ -1086,7 +1086,12 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,focusEvidence:entry.focu
   if(value.action==='complete'){
     const quote=typeof value.completionEvidence==='string'?quoted('completionEvidence',value.completionEvidence,entry.text,1000):'';
     if(entry.focusEvidence!=null&&(!quote||(!quote.includes(entry.focusEvidence)&&!entry.focusEvidence.includes(quote))))conflict=true;
-    if(entry.originalContext?.mode==='same_input_request_result'&&(!entry.originalContext.resultEvidence.includes(quote)||/^\s*(?:>|과거\s*(?:회신|인용)|이전\s*(?:회신|인용))/.test(entry.originalContext.resultEvidence)))conflict=true;
+    if(entry.originalContext?.mode==='same_input_request_result'){
+      const {requestEvidence,resultEvidence}=entry.originalContext;
+      const imperative=/(?:완료|발송|처리|제출|상신|작성)(?:해|하여|시켜)?\s*(?:주세요|주십시오|주시기|부탁|요청)/.test(quote);
+      const refused=/(?:거절|반려)/.test(resultEvidence)&&!/(?:거절|반려)/.test(requestEvidence);
+      if(!resultEvidence.includes(quote)||/^\s*(?:>|과거\s*(?:회신|인용)|이전\s*(?:회신|인용))/.test(resultEvidence)||imperative||refused)conflict=true;
+    }
     const declared=(/(완료|마쳤|확정|보냈|발송했|전달했|처리했)/.test(quote)||(target.monthly&&/(?:상신|품의|발행|마감)(?:했|하였|되었|됐)/.test(quote)))&&!/(아직|미완료|예정|않|못|취소|[?？])/.test(quote);
     const vehicle=/(?:[가-힣]{2,3})?\d{2,3}[가-힣]\d{4}\s+[가-힣]{2,5}\s+010[- ]?\d{4}[- ]?\d{4}/.test(quote);
     const dispatchTarget=!target.monthly&&(targetKind==='dispatch'||/배차|차량\s*섭외/.test(target.title??''));

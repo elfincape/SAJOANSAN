@@ -8106,3 +8106,23 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   const duplicate=await (await call()).json();assert.equal(duplicate.items[0].done,true);assert.equal(calls,2);assert.equal(saves,1);assert.deepEqual(current.manual_entries[id],saved);assert.equal(saved.text,text);
  });
 }
+
+{
+ const {verifyInlineManualResults}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const cases=[
+ ['normal','A 자료 발송 부탁드립니다.','A 자료 발송 완료했습니다.',true],
+ ['future','A 자료 발송 부탁드립니다.','A 자료 발송 완료 예정입니다.',false],
+ ['refused','A 자료 발송 부탁드립니다.','A 자료 요청은 거절 처리 완료했습니다.',false],
+ ['imperative','A 자료 발송 부탁드립니다.','A 자료 발송 완료해주세요.',false],
+ ['quoted','A 자료 발송 부탁드립니다.','> A 자료 발송 완료했습니다.',false],
+ ['cancel','A 자료 발송 부탁드립니다.','A 자료 발송 요청 취소 완료했습니다.',false],
+ ['negative','A 자료 발송 부탁드립니다.','A 자료 발송은 아직 완료하지 못했습니다.',false],
+];
+const rows=[];
+for(const [id,request,result,expected] of cases){
+ const text=request+'\n'+result;const v=await verifyInlineManualResults({value:{items:[{kind:'task',text:'A 자료 발송',evidence:text,requestEvidence:request,resultEvidence:result,needsConfirmation:false}]},entry:{entryId:'73000000-0000-4000-8000-000000000003',text,referenceDate:'2026-11-02',submittedAt:'2026-11-02T11:00:00Z'},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'complete',text:'A 자료 발송',evidence:text,details:[],completionEvidence:result,serviceOriginal:null,dueOriginal:null})}]}]})});
+ const actual=v.value.items[0].workflowStatus==='complete';rows.push({id,expected,actual,passed:expected===actual,input:text});
+}
+assert(rows.every(r=>r.passed),'adversarial completion guard failures');
+
+}
