@@ -8149,3 +8149,23 @@ assert(rows.every(r=>r.passed),'adversarial completion guard failures');
  const lost=evaluateStressResult(fixture,empty,[],null);assert.equal(lost.checks.monthlyCompletion,true);assert.equal(lost.checks.monthlyTarget,true);assert.equal(lost.checks.monthlyCount,false);assert.equal(lost.checks.monthlyProgress,false);assert.equal(lost.automatedChecksPassed,false,'pending by default is not a preserved progress update');
  const present=evaluateStressResult(fixture,{...empty,monthlyReview:[],monthlyUpdates:[{ref:fixture.expected.monthly.ref,status:'pending',text:'10월분 증빙 자료 전달, 품의 상신 대기',details:[]}]},[],null);assert.equal(present.checks.monthlyProgress,true);assert.equal(present.automatedChecksPassed,true);
 }
+
+{
+ const {test}=await import('node:test');
+ await test('recorded monthly material detail paraphrases repair without dropping progress or accepting unsafe correction',async()=>{
+  const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+  const {combinedLunaInference}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const source='2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다. 품의 상신은 아직 하지 않았습니다.';
+  // These detail arrays and progress/matching fields were returned by the real provider. Other response fields below are harness values.
+  const recorded=[['2026년 10월분 증빙 자료 송부 완료','품의 상신은 아직 하지 않음'],['2026년 10월분 선지급 증빙 자료 송부 완료','품의 상신은 아직 하지 않음']];
+  const ref='source:71000000-0000-4000-8000-000000000001',id='74000000-0000-4000-8000-000000000002',candidate={ref,text:'가상협동조합 선지급 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+  const run=async(details,correction,action='progress')=>{let calls=0;const before=structuredClone(candidate);const result=await normalizeMonthlyMailUpdates({updates:[{ref,status:'pending',text:'증빙 자료 송부, 품의 상신 대기',evidence:source}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:source},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;assert(prompt.includes(source));if(calls===2){assert(prompt.includes(JSON.stringify(details)));assert(prompt.includes('focusEvidence'));}return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:calls===1?'progress':action,text:'10월분 증빙 자료 송부, 품의 상신 대기',evidence:source,details:calls===1?details:correction,completionEvidence:calls===2&&action==='complete'?source:null,serviceOriginal:null,dueOriginal:null})}]}]});}});assert.deepEqual(candidate,before);return{result,calls};};
+  for(const original of recorded){
+   const repaired=await run(original,['2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다.','품의 상신은 아직 하지 않았습니다.']);assert.equal(repaired.calls,2);assert.equal(repaired.result.updates.length,1);assert.equal(repaired.result.updates[0].status,'pending');assert.equal(repaired.result.updates[0].evidence,source);assert(repaired.result.updates[0].text.includes('자료 송부'));assert.equal(repaired.result.review.length,0);assert.equal(combinedLunaInference(repaired.result.responses).usage.total_tokens,30);
+   const empty=await run(original,[]);assert.equal(empty.result.updates.length,1);assert.equal(empty.result.updates[0].status,'pending');assert(empty.result.updates[0].text.includes('자료 송부'));
+   const stillInvalid=await run(original,original);assert.equal(stillInvalid.calls,2);assert.equal(stillInvalid.result.updates.length,0);assert.equal(stillInvalid.result.review[0].code,'MANUAL_EVIDENCE');assert.equal(stillInvalid.result.review[0].field,'details');
+   const invented=await run(original,['품의 상신 완료했습니다.']);assert.equal(invented.result.updates.length,0);
+   const wrongComplete=await run(original,[source],'complete');assert.equal(wrongComplete.result.updates.length,0,'a correction cannot turn material delivery plus explicit non-submission into approval completion');
+  }
+ });
+}
