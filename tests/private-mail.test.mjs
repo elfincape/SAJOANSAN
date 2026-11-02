@@ -7981,3 +7981,17 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  const quoted=await normalizeMonthlyMailUpdates({updates:[{ref:monthly.ref,status:'complete',evidence:proof}],candidates:[monthly],mail:{id,sent_at:'2026-11-01T01:00:00Z'},context:{currentBody:'참고 자료 전달드립니다.',ownerContext:{recipientRole:'to',senderIsOwner:false}},ai:{},fetcher:()=>assert.fail('quoted completion must not be sent for a state change')});assert.equal(quoted.updates.length,0);assert.equal(quoted.review.length,1);
  console.log('PASS actual mail analysis contract with monthly candidate, explicit approval completion and separate source-time/usage tracking');
 }
+
+{
+ const {reviewNormalizedMail}=await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+ const id='11111111-1111-4111-8111-111111111111',ref='source:71000000-0000-4000-8000-000000000001',text='2026년 10월분 가상 품의 상신 완료했습니다.';let outgoing;
+ const analysis={source:{id},revision:1,intent:{kind:'update'},tasks:[],issues:[],waiting:[],updates:[],monthlyUpdates:[{ref,text,evidence:text,status:'complete',needsConfirmation:false}]},before=structuredClone(analysis);
+ const review=await reviewNormalizedMail({analysis,mail:{id,text,sender:'sender@example.test'},
+  related:[{ref,kind:'tasks',text:'가상 품의',status:'pending',monthly:{scheduledDate:'2026-11-01',targetPeriod:{from:'2026-10-01',through:'2026-10-31'},paymentDate:'2026-11-10'}}],
+  config:{enabled:true,key:'MOCK_ONLY',approvedSourceIds:[id],fetcher:async(url,options)=>{
+   outgoing=JSON.parse(options.body);
+   return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(outgoing.questions).map(key=>[key,{type:'noul',noul:0.01}]))});
+  }}
+ });
+ assert.equal(review.status,'no_concerns');assert(JSON.stringify(outgoing.state).includes('monthlyUpdates'));assert(JSON.stringify(outgoing.state).includes('2026-10-31'));assert(JSON.stringify(outgoing.state).includes('2026-11-10'));assert.deepEqual(analysis,before,'monthly JEV remains advisory and cannot change the approved extraction or status');
+}
