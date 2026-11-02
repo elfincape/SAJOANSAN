@@ -8187,3 +8187,22 @@ assert(rows.every(r=>r.passed),'adversarial completion guard failures');
   }
  });
 }
+
+{
+ const {readFile}=await import('node:fs/promises');const {stripTypeScriptTypes}=await import('node:module');
+ const source=await readFile(new URL('../app/src/lib/api-management.ts',import.meta.url),'utf8');
+ const start=source.indexOf('export function validateStressCatalogue'),end=source.indexOf('\nexport const apiManagement',start);
+ const js=stripTypeScriptTypes(source.slice(start,end).replace('export function','function'));
+ const validate=new Function(js+';return validateStressCatalogue;')();
+ const cases=Array.from({length:41},(_,i)=>({id:'case-'+i,kind:i%2?'mail':'manual'}));assert.equal(validate(cases).length,41);assert.equal(validate(cases.slice(0,1)).length,1);assert.equal(validate([...cases,...Array.from({length:100},(_,i)=>({id:'future-'+i,kind:'manual'}))]).length,141);
+ for(const invalid of [null,[],[{id:'bad id',kind:'manual'}],[{id:'good',kind:'unknown'}],[cases[0],cases[0]]])assert.throws(()=>validate(invalid),/STRESS_CATALOGUE_INVALID/);
+}
+
+{
+ const {workSummaryForDisplay,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const full='A 자료 작성 완료했습니다. 발송은 아직 하지 않았습니다.',first='A 자료 작성 완료했습니다.',second='발송은 아직 하지 않았습니다.';
+ const item={workId:'75000000-0000-4000-8000-000000000001:manual:item-001',title:'A 자료 작성 및 발송',category:'task',status:'in_progress',summary:[full,first,second,first],progress:full,sourceRefs:[],serviceDate:null};const before=structuredClone(item);
+ assert.deepEqual(workSummaryForDisplay(item),[full]);const html=renderBriefingWorkNote([item]);assert.equal(html.split('작성 완료했습니다').length-1,1);assert.equal(html.split('발송은 아직 하지 않았습니다').length-1,1);assert.deepEqual(item,before,'display compaction cannot rewrite source summary or evidence');
+ const split={...item,summary:[first,second],progress:full};const splitHtml=renderBriefingWorkNote([split]);assert.equal(splitHtml.split('작성 완료했습니다').length-1,1);assert.equal(splitHtml.split('발송은 아직 하지 않았습니다').length-1,1);
+ const facts={...item,summary:['화물 160박스 4P 1.7톤','화물 160박스 4P 1.8톤','발송 예정은 11/4 09:00입니다.','발송 예정은 11/5 09:00입니다.'],progress:null};assert.equal(workSummaryForDisplay(facts).length,4,'conflicting amounts/dates are distinct facts, not duplicate wording');assert.equal(workSummaryForDisplay({...item,summary:['발송 완료?','발송 완료','주소 12 34','주소 1 234'],progress:null}).length,4,'questions and distinct numeric token boundaries must survive compaction');
+}

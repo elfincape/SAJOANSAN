@@ -157,8 +157,6 @@ export function ApiManagement({ editable, stressEnabled = false }: { editable: b
     try {
       const {cases} = await apiManagement.stressCases();
       if (alive.current) setStressCases(cases);
-      if (cases.length < 20 || cases.length > 40 || new Set(cases.map(item=>item.id)).size !== cases.length)
-        throw Error('STRESS_CATALOGUE_INVALID');
       const selected = only ? cases.filter(item=>item.id===only) : cases.slice(0, 20);
       if (!selected.length) throw Error('STRESS_CASE_INVALID');
       for (const [index,item] of selected.entries()) {
