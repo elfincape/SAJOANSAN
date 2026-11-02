@@ -7566,6 +7566,14 @@ const recover=state=>writeDailyBriefing({now,analyses:[],store:state,connected:a
 await recover(pendingImage);assert.equal(pendingImage.state.pendingWrite,null);assert.equal(recoveryPatches,1);assert.equal(pages.length,1);assert(contents.get(first.pageId).includes('OWNER MEMO MUST SURVIVE'));
 const unsafe=createStore({...pendingImage.state,imageProgress:{next:1,fingerprint:pendingImage.state.fingerprint},pendingWrite:{operation:'images',previousHash:pendingImage.state.managedHash,desiredHash:'b'.repeat(64),contentHash:'c'.repeat(64),fingerprint:pendingImage.state.fingerprint,imageProgress:null}});
 await assert.rejects(()=>recover(unsafe),/PAGE_WRITE_UNCERTAIN/);assert.equal(recoveryPatches,1,'nonzero acknowledged image progress cannot use the initial-write recovery');
+
+for(const variant of ['fingerprint-mismatch','missing-acknowledged-progress','page-changed']){
+ const imageIntent={operation:'images',previousHash:pendingImage.state.managedHash,desiredHash:'b'.repeat(64),contentHash:'c'.repeat(64),fingerprint:pendingImage.state.fingerprint,imageProgress:null};
+ const checkpoint=createStore({...pendingImage.state,imageProgress:variant==='missing-acknowledged-progress'?null:{next:0,fingerprint:variant==='fingerprint-mismatch'?'d'.repeat(64):imageIntent.fingerprint},pendingWrite:imageIntent});
+ const oldBody=contents.get(first.pageId);if(variant==='page-changed')contents.set(first.pageId,oldBody.replace('최종 업데이트','OWNER CHANGED MANAGED CONTENT'));
+ const before=JSON.stringify(checkpoint.state);await assert.rejects(()=>recover(checkpoint),/PAGE_WRITE_UNCERTAIN/);assert.equal(recoveryPatches,1,variant+' must not write');assert.equal(JSON.stringify(checkpoint.state),before,variant+' must retain uncertain checkpoint');contents.set(first.pageId,oldBody);
+}
+
 contents.set(first.pageId,contents.get(first.pageId).replace('최종 업데이트','USER EDITED CONTENT'));
 await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_MANAGED_CONFLICT/);assert.equal(writes,1);
 await assert.rejects(()=>writeDailyBriefing({now,analyses:[],store:createStore(),connected:async()=>assert.fail('bad ID must fail before connection'),graph,hash,diagnosticRunId:'261030 일일정리'}),/PAGE_IDENTITY/);
