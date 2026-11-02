@@ -73,7 +73,7 @@ export function monthlyMailRelated(tasks,{ownerId,overrides={}}) {
   .filter(item=>item.monthly&&['task','issue'].includes(item.category)).slice(0,100)
   .map(item=>({ref:item.workId,kind:'tasks',text:item.title,evidence:item.title,status:item.status==='complete'?'complete':'pending',ownerId,monthly:item.monthly}));
 }
-export async function normalizeMonthlyMailUpdates({updates,candidates,mail,context,ai,fetcher}) {
+export async function normalizeMonthlyMailUpdates({updates,candidates,mail,context,ai,fetcher,isolatedVerification=false}) {
  const accepted=[],review=[],responses=[],seen=new Set(),sourceTime=Date.parse(mail.received_at??mail.sent_at);
  if(!Number.isFinite(sourceTime))return {updates:[],review:updates.map(update=>({ref:update.ref,reason:'monthly_source_time_confirmation'})),responses};
  const sourceAt=new Date(sourceTime).toISOString();
@@ -90,7 +90,7 @@ export async function normalizeMonthlyMailUpdates({updates,candidates,mail,conte
   const sameTitle=candidates.some(other=>other.ref!==prior.ref&&other.text===prior.text&&other.status!=='complete');
   if(wrongPeriod||wrongRange||wrongStage||(sameTitle&&!/(?:20[0-9]{2}|[0-9]{1,2}\s*월|이번\s*달|지난\s*달|전월|당월)/.test(evidence))){review.push({ref:update.ref,reason:'monthly_period_confirmation'});continue;}
   try{
-   const result=await analyzeTargetedManual({entry:{text:context.currentBody,focusEvidence:evidence,submittedAt:sourceAt,referenceDate:kstDay(sourceAt),originalContext:JSON.stringify({subject:mail.subject,sender:mail.sender,envelope:mail.envelope,ownerContext:context.ownerContext})},target:{workId:prior.ref,title:prior.text,kind:'task',status:prior.status,monthly,mailContext:{ownerContext:context.ownerContext,intent:mail.intent??'update'}},ai,fetcher});responses.push(result.response);const item=result.reply.items[0];
+   const result=await analyzeTargetedManual({isolatedVerification,entry:{text:context.currentBody,focusEvidence:evidence,submittedAt:sourceAt,referenceDate:kstDay(sourceAt),originalContext:JSON.stringify({subject:mail.subject,sender:mail.sender,envelope:mail.envelope,ownerContext:context.ownerContext})},target:{workId:prior.ref,title:prior.text,kind:'task',status:prior.status,monthly,mailContext:{ownerContext:context.ownerContext,intent:mail.intent??'update'}},ai,fetcher});responses.push(result.response);const item=result.reply.items[0];
    if(item.needsConfirmation||item.workRef!==prior.ref||!['pending','complete'].includes(item.workflowStatus)){review.push({ref:prior.ref,reason:'monthly_meaning_confirmation'});continue;}
    accepted.push({ref:prior.ref,sourceId:mail.id,sourceAt,resolution:'monthly_mail_v1',status:item.workflowStatus,...(item.stateDeclared===true?{stateDeclared:true}:{}),text:item.text,evidence,details:item.details??[],needsConfirmation:false});
   }catch(error){const code=['MANUAL_FORMAT','MANUAL_EVIDENCE','MODEL_RESPONSE','MODEL_TRUNCATED','MODEL_TIMEOUT','MODEL_FAILED','AI_NOT_CONFIGURED'].includes(error?.code??error?.message)?(error.code??error.message):'MONTHLY_VERIFICATION_FAILED';review.push({ref:prior.ref,reason:'monthly_verification_unavailable',code,...(['evidence','details','serviceOriginal','completionEvidence'].includes(error?.targetField)?{field:error.targetField}:{})});}

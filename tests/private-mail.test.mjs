@@ -7559,6 +7559,21 @@ assert.equal((await perform(store)).status,'skipped');assert.equal(writes,1);ass
 const cold=await perform(createStore({createAttempted:true}));assert.equal(cold.status,'skipped');assert.equal(writes,1,'cold retry re-reads exact dedicated page without duplicate create');
 const existingBody=contents.get(first.pageId);contents.set(first.pageId,'<html><body><p>OWNER CONTENT WITHOUT MANAGED BASELINE</p></body></html>');await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_MANAGED_CONFLICT/);contents.set(first.pageId,existingBody);
 const visible=pages.splice(0);await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_CREATE_UNCERTAIN/);assert.equal(writes,1);pages.push(...visible);
+const pendingImage=createStore({...store.state,imageProgress:{next:0,fingerprint:store.state.fingerprint},pendingWrite:{operation:'images',previousHash:store.state.managedHash,desiredHash:'b'.repeat(64),contentHash:'c'.repeat(64),fingerprint:store.state.fingerprint,imageProgress:null}});
+let recoveryPatches=0;
+const recoveryGraph=async(path,access,options={})=>{if(options.method==='PATCH'){recoveryPatches++;const commands=JSON.parse(options.body);assert.equal(commands.length,1);assert.equal(commands[0].action,'replace');assert.notEqual(commands[0].target,'body');const content=commands[0].content.replace(/(<[a-z][a-z0-9]*)(?=[\s>])/g,(_,tag)=>tag+' id="node-'+(++seq)+'"');contents.set(first.pageId,'<html><head><title>'+title+'</title></head><body><p>OWNER MEMO MUST SURVIVE</p>'+content+'</body></html>');return new Response(null,{status:204});}return graph(path,access,options);};
+const recover=state=>writeDailyBriefing({now,analyses:[],store:state,connected:async()=>({accessToken:'MOCK_NOTES',notesGranted:true}),graph:recoveryGraph,hash,diagnosticRunId:runId,beforeCreate:async()=>{staged++}});
+await recover(pendingImage);assert.equal(pendingImage.state.pendingWrite,null);assert.equal(recoveryPatches,1);assert.equal(pages.length,1);assert(contents.get(first.pageId).includes('OWNER MEMO MUST SURVIVE'));
+const unsafe=createStore({...pendingImage.state,imageProgress:{next:1,fingerprint:pendingImage.state.fingerprint},pendingWrite:{operation:'images',previousHash:pendingImage.state.managedHash,desiredHash:'b'.repeat(64),contentHash:'c'.repeat(64),fingerprint:pendingImage.state.fingerprint,imageProgress:null}});
+await assert.rejects(()=>recover(unsafe),/PAGE_WRITE_UNCERTAIN/);assert.equal(recoveryPatches,1,'nonzero acknowledged image progress cannot use the initial-write recovery');
+
+for(const variant of ['fingerprint-mismatch','missing-acknowledged-progress','page-changed']){
+ const imageIntent={operation:'images',previousHash:pendingImage.state.managedHash,desiredHash:'b'.repeat(64),contentHash:'c'.repeat(64),fingerprint:pendingImage.state.fingerprint,imageProgress:null};
+ const checkpoint=createStore({...pendingImage.state,imageProgress:variant==='missing-acknowledged-progress'?null:{next:0,fingerprint:variant==='fingerprint-mismatch'?'d'.repeat(64):imageIntent.fingerprint},pendingWrite:imageIntent});
+ const oldBody=contents.get(first.pageId);if(variant==='page-changed')contents.set(first.pageId,oldBody.replace('최종 업데이트','OWNER CHANGED MANAGED CONTENT'));
+ const before=JSON.stringify(checkpoint.state);await assert.rejects(()=>recover(checkpoint),/PAGE_WRITE_UNCERTAIN/);assert.equal(recoveryPatches,1,variant+' must not write');assert.equal(JSON.stringify(checkpoint.state),before,variant+' must retain uncertain checkpoint');contents.set(first.pageId,oldBody);
+}
+
 contents.set(first.pageId,contents.get(first.pageId).replace('최종 업데이트','USER EDITED CONTENT'));
 await assert.rejects(()=>perform(createStore({createAttempted:true})),/PAGE_MANAGED_CONFLICT/);assert.equal(writes,1);
 await assert.rejects(()=>writeDailyBriefing({now,analyses:[],store:createStore(),connected:async()=>assert.fail('bad ID must fail before connection'),graph,hash,diagnosticRunId:'261030 일일정리'}),/PAGE_IDENTITY/);
@@ -7753,7 +7768,7 @@ console.log('PASS image-only boundary: model request claims remain review withou
 {
  const {STRESS_FIXTURES}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
  const {runStressCase}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
- for(const fixture of STRESS_FIXTURES.slice(26).filter(fixture=>fixture.kind==='manual')){
+ for(const fixture of STRESS_FIXTURES.filter(fixture=>['manual-two-destination-partial-completion','manual-exact-vehicle-replacement','manual-late-reply-is-historical-reference','manual-cargo-weight-only-preserves-known-fields'].includes(fixture.id))){
   const original=JSON.stringify(fixture.related);let calls=0;
   const result=await runStressCase(fixture.id,{resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async()=>{
    calls++;assert.equal(fixture.id,'manual-late-reply-is-historical-reference');
@@ -8072,5 +8087,103 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   const run=async(alwaysInvalid=false)=>{let calls=0;const result=await analyzeTargetedManual({entry,target,ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;if(calls===2)assert(options.body.includes('교정'));return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'비용 협의 완료 · 정산 공제 예정',evidence:text,details:calls===1||alwaysInvalid?['임시차비 42만원 확정']:['임시차 비용 420,000원만 지급하기로 했습니다.'],completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]});}});return{result,calls};};
   const {result,calls}=await run();assert.equal(calls,2);assert.equal(result.reply.items[0].workRef,target.workId);assert.equal(result.reply.items[0].workflowStatus,'pending');assert(result.reply.items[0].details[0].includes('420,000원'));assert.equal(combinedLunaInference([result.response]).usage.total_tokens,30);
   await assert.rejects(run(true),/MANUAL_EVIDENCE/);
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ await test('same-entry request and result preserve per-request completion scope',async()=>{
+  const {verifyInlineManualResults,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const id='73000000-0000-4000-8000-000000000001',a='요청: A 자료 발송 부탁드립니다.\n처리: A 자료 발송 완료했습니다.',b='요청: B 자료 작성 후 발송 부탁드립니다.\n처리: B 자료 작성 완료했습니다. 발송은 예정입니다.',text=a+'\n'+b;
+  const raw=(e,title)=>({kind:'task',text:title,evidence:e,requestEvidence:e.split('\n')[0],resultEvidence:e.split('\n')[1],needsConfirmation:false});
+  let calls=0;const value={items:[raw(a,'A 자료 발송'),raw(b,'B 자료 작성 및 발송')],authoredDate:null};
+  const entry={entryId:id,text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02'};
+  const run=async(value,action)=>verifyInlineManualResults({value,entry,ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const p=JSON.parse(prompt.split('\n').find(l=>l.startsWith('{"selectedTarget"')));const e=p.focusEvidence;const complete=action??(e===a?'complete':'progress');return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:complete,text:'처리 결과',evidence:e,details:[e.split('\n')[1]],completionEvidence:complete==='complete'?e.split('\n')[1]:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+  const verified=await run(value);assert.equal(calls,2);assert.equal(verified.value.items[0].workflowStatus,'complete');assert.equal(verified.value.items[1].workflowStatus,'pending');assert.equal(verified.value.items[0].workRef,undefined);
+  const items=normalizeManualItems(verified.value,{...entry,allowLinks:true,verifiedInlineResults:true});assert.equal(items.length,2);assert.equal(items[0].evidence,a);assert.equal(items[0].declaredAt,entry.submittedAt);assert(items[1].details[0].includes('발송은 예정'));assert.deepEqual(items,normalizeManualItems(verified.value,{...entry,allowLinks:true,verifiedInlineResults:true}));
+  const premature=await run({items:[raw(b,'B 자료 작성 및 발송')]},'complete');assert.notEqual(premature.value.items[0].workflowStatus,'complete');
+  const old='요청: C 자료 발송 부탁드립니다.\n과거 인용: C 자료 발송 완료했습니다.';
+  const oldResult=await verifyInlineManualResults({value:{items:[raw(old,'C 자료 발송')]},entry:{...entry,text:old},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'complete',text:'C 발송',evidence:old,details:[],completionEvidence:old.split('\n')[1],serviceOriginal:null,dueOriginal:null})}]}]})});assert.notEqual(oldResult.value.items[0].workflowStatus,'complete');
+  const view=manualDailyView({[id]:{...entry,status:'ready',items}},'2026-11-02');assert.equal(view.entries[0].items[0].done,true);assert.equal(view.entries[0].items[1].done,false);
+  const crossed=structuredClone(value);crossed.items[0].resultEvidence=b.split('\n')[1];await assert.rejects(run(crossed),/MANUAL_EVIDENCE/);
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ await test('new request with result goes through handler save and duplicate read without new work',async()=>{
+  const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',id='73000000-0000-4000-8000-000000000002',text='A 자료 발송 부탁드립니다.\nA 자료 발송 완료했습니다.';
+  const entry={entryId:id,clientRequestId:id,text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02',items:[],status:'pending'},current={id:'39045005-313e-42e1-b50c-2394b3b6ff26',owner_id:owner,enabled:true,manual_entries:{[id]:entry},briefing_overrides:{}};let calls=0,saves=0;
+  const ctx={isolatedVerification:true,json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),enqueueManualReport:async()=>false,db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path==='rpc/private_mail_manual_claim')return{claimed:current.manual_entries[id].status!=='ready',entry:current.manual_entries[id]};if(path==='rpc/private_mail_manual_finish'){saves++;return current.manual_entries[id]={...entry,status:'ready',items:options.body.p_items};}if(path==='rpc/private_mail_manual_fail')throw Error(options.body.p_code);throw Error(path);},fetcher:async()=>{calls++;const value=calls===1?{items:[{kind:'task',text:'A 자료 발송',evidence:text,requestEvidence:text.split('\n')[0],resultEvidence:text.split('\n')[1],assignee:null,serviceOriginal:null,dueOriginal:null,needsConfirmation:false}],authoredDate:null}:{matchesTarget:true,action:'complete',text:'A 자료 발송 완료',evidence:text,details:[],completionEvidence:text.split('\n')[1],serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});}};
+  const call=()=>handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},ctx);
+  const first=await (await call()).json();assert.equal(first.status,'ready');assert.equal(first.items[0].done,true);assert.equal(calls,2);const saved=structuredClone(current.manual_entries[id]);
+  const duplicate=await (await call()).json();assert.equal(duplicate.items[0].done,true);assert.equal(calls,2);assert.equal(saves,1);assert.deepEqual(current.manual_entries[id],saved);assert.equal(saved.text,text);
+  current.manual_entries[id]={...entry,status:'pending',items:[]};calls=0;const normalCtx={...ctx,isolatedVerification:false,fetcher:async(url,options)=>{calls++;const request=JSON.parse(options.body);assert(!JSON.stringify(request).includes('requestEvidence'));return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({items:[{kind:'task',text:'A 자료 발송',evidence:text,assignee:null,serviceOriginal:null,dueOriginal:null,needsConfirmation:false}],authoredDate:null})}]}]});}};
+  const operating=await (await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id,isolatedVerification:true},{id:owner},normalCtx)).json();assert.equal(operating.status,'ready');assert.equal(operating.items[0].done,false);assert.equal(calls,1,'body cannot enable isolated next-version verification on operating path');
+
+ });
+}
+
+{
+ const {verifyInlineManualResults}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const cases=[
+ ['normal','A 자료 발송 부탁드립니다.','A 자료 발송 완료했습니다.',true],
+ ['future','A 자료 발송 부탁드립니다.','A 자료 발송 완료 예정입니다.',false],
+ ['refused','A 자료 발송 부탁드립니다.','A 자료 요청은 거절 처리 완료했습니다.',false],
+ ['imperative','A 자료 발송 부탁드립니다.','A 자료 발송 완료해주세요.',false],
+ ['quoted','A 자료 발송 부탁드립니다.','> A 자료 발송 완료했습니다.',false],
+ ['cancel','A 자료 발송 부탁드립니다.','A 자료 발송 요청 취소 완료했습니다.',false],
+ ['negative','A 자료 발송 부탁드립니다.','A 자료 발송은 아직 완료하지 못했습니다.',false],
+];
+const rows=[];
+for(const [id,request,result,expected] of cases){
+ const text=request+'\n'+result;const v=await verifyInlineManualResults({value:{items:[{kind:'task',text:'A 자료 발송',evidence:text,requestEvidence:request,resultEvidence:result,needsConfirmation:false}]},entry:{entryId:'73000000-0000-4000-8000-000000000003',text,referenceDate:'2026-11-02',submittedAt:'2026-11-02T11:00:00Z'},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'complete',text:'A 자료 발송',evidence:text,details:[],completionEvidence:result,serviceOriginal:null,dueOriginal:null})}]}]})});
+ const actual=v.value.items[0].workflowStatus==='complete';rows.push({id,expected,actual,passed:expected===actual,input:text});
+}
+assert(rows.every(r=>r.passed),'adversarial completion guard failures');
+
+}
+
+{
+ const {test}=await import('node:test');
+ await test('monthly material progress survives one quote repair while scope and completion checks remain strict',async()=>{
+  const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+  const ref='source:71000000-0000-4000-8000-000000000001',id='74000000-0000-4000-8000-000000000001',anchor='2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다.',extra='다른 업무의 승인 자료도 전달합니다.',body=anchor+' 품의 상신은 아직 하지 않았습니다.\n'+extra;
+  const candidate={ref,text:'가상협동조합 선지급 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+  const run=async(firstDetail,secondDetail,action='progress')=>{let calls=0;const result=await normalizeMonthlyMailUpdates({isolatedVerification:true,updates:[{ref,evidence:anchor,status:'pending'}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:body},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>{calls++;return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action,text:'10월분 증빙 자료 송부, 품의 상신 대기',evidence:anchor,details:[calls===1?firstDetail:secondDetail],completionEvidence:action==='complete'?anchor:null,serviceOriginal:null,dueOriginal:null})}]}]});}});return{result,calls};};
+  const repaired=await run('10월 증빙자료 발송',anchor);assert.equal(repaired.calls,2);assert.equal(repaired.result.updates.length,1);assert.equal(repaired.result.updates[0].status,'pending');assert.equal(repaired.result.updates[0].details[0],anchor);assert.equal(repaired.result.review.length,0);
+  const {combinedLunaInference}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');assert.equal(combinedLunaInference(repaired.result.responses).usage.total_tokens,30);
+  const outOfFocus=await run(extra,anchor);assert.equal(outOfFocus.result.updates.length,1);assert(!outOfFocus.result.updates[0].details.includes(extra));
+  const persistent=await run(extra,extra);assert.equal(persistent.calls,2);assert.equal(persistent.result.updates.length,0);assert.equal(persistent.result.review[0].field,'details');
+  const falseComplete=await run(anchor,anchor,'complete');assert.equal(falseComplete.result.updates.length,0,'material delivery cannot complete the approval duty');
+ });
+}
+
+{
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {evaluateStressResult}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const fixture=fixtureById('mail-monthly-material-only'),empty={tasks:[],issues:[],waiting:[],updates:[],monthlyUpdates:[],monthlyReview:[{ref:fixture.expected.monthly.ref,reason:'monthly_verification_unavailable',code:'MANUAL_EVIDENCE',field:'details'}]};
+ const lost=evaluateStressResult(fixture,empty,[],null);assert.equal(lost.checks.monthlyCompletion,true);assert.equal(lost.checks.monthlyTarget,true);assert.equal(lost.checks.monthlyCount,false);assert.equal(lost.checks.monthlyProgress,false);assert.equal(lost.automatedChecksPassed,false,'pending by default is not a preserved progress update');
+ const present=evaluateStressResult(fixture,{...empty,monthlyReview:[],monthlyUpdates:[{ref:fixture.expected.monthly.ref,status:'pending',text:'10월분 증빙 자료 전달, 품의 상신 대기',details:[]}]},[],null);assert.equal(present.checks.monthlyProgress,true);assert.equal(present.automatedChecksPassed,true);
+}
+
+{
+ const {test}=await import('node:test');
+ await test('recorded monthly material detail paraphrases repair without dropping progress or accepting unsafe correction',async()=>{
+  const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+  const {combinedLunaInference}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const source='2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다. 품의 상신은 아직 하지 않았습니다.';
+  // These detail arrays and progress/matching fields were returned by the real provider. Other response fields below are harness values.
+  const recorded=[['2026년 10월분 증빙 자료 송부 완료','품의 상신은 아직 하지 않음'],['2026년 10월분 선지급 증빙 자료 송부 완료','품의 상신은 아직 하지 않음']];
+  const ref='source:71000000-0000-4000-8000-000000000001',id='74000000-0000-4000-8000-000000000002',candidate={ref,text:'가상협동조합 선지급 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+  const run=async(details,correction,action='progress')=>{let calls=0;const before=structuredClone(candidate);const result=await normalizeMonthlyMailUpdates({isolatedVerification:true,updates:[{ref,status:'pending',text:'증빙 자료 송부, 품의 상신 대기',evidence:source}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:source},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;assert(prompt.includes(source));if(calls===2){assert(prompt.includes(JSON.stringify(details)));assert(prompt.includes('focusEvidence'));}return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:calls===1?'progress':action,text:'10월분 증빙 자료 송부, 품의 상신 대기',evidence:source,details:calls===1?details:correction,completionEvidence:calls===2&&action==='complete'?source:null,serviceOriginal:null,dueOriginal:null})}]}]});}});assert.deepEqual(candidate,before);return{result,calls};};
+  for(const original of recorded){
+   const repaired=await run(original,['2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다.','품의 상신은 아직 하지 않았습니다.']);assert.equal(repaired.calls,2);assert.equal(repaired.result.updates.length,1);assert.equal(repaired.result.updates[0].status,'pending');assert.equal(repaired.result.updates[0].evidence,source);assert(repaired.result.updates[0].text.includes('자료 송부'));assert.equal(repaired.result.review.length,0);assert.equal(combinedLunaInference(repaired.result.responses).usage.total_tokens,30);
+   const empty=await run(original,[]);assert.equal(empty.result.updates.length,1);assert.equal(empty.result.updates[0].status,'pending');assert(empty.result.updates[0].text.includes('자료 송부'));
+   const stillInvalid=await run(original,original);assert.equal(stillInvalid.calls,2);assert.equal(stillInvalid.result.updates.length,0);assert.equal(stillInvalid.result.review[0].code,'MANUAL_EVIDENCE');assert.equal(stillInvalid.result.review[0].field,'details');
+   const invented=await run(original,['품의 상신 완료했습니다.']);assert.equal(invented.result.updates.length,0);
+   const wrongComplete=await run(original,[source],'complete');assert.equal(wrongComplete.result.updates.length,0,'a correction cannot turn material delivery plus explicit non-submission into approval completion');
+  }
  });
 }

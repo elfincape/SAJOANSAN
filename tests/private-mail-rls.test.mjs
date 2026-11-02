@@ -2376,6 +2376,24 @@ try{
   await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,{...mailAnalysis,monthlyUpdates:[{...mailUpdate,text:'구버전 데이터의 과거 재분석'}]}]);
   assert.equal((await db.query("select inputs#>>'{personal_work,progress}' progress from operations_tasks where id=$1",[mailTarget.id])).rows[0].progress,'최신 보완자료 수신','legacy rows must retain latest original-source progress');
 
+
+  // Replay all arrival orders on the same native task; concurrent submissions share PGlite's serialized connection.
+  const chronologicalSources=[
+    [mailId,{...mailAnalysis,monthlyUpdates:[{...mailUpdate,text:'구버전 데이터의 과거 재분석'}]}],
+    [reopenId,{monthlyUpdates:[{...mailUpdate,sourceId:reopenId,sourceAt:reopenAt,status:'pending',stateDeclared:true,text:'품의 완료 취소 후 재개'}]}],
+    [progressId,{monthlyUpdates:[{...mailUpdate,sourceId:progressId,sourceAt:progressAt,status:'pending',text:'최신 보완자료 수신'}]}],
+  ];
+  const applySource=([id,analysis])=>db.query('update private_mail_messages set analysis=$2 where id=$1',[id,analysis]);
+  for(const source of chronologicalSources)await applySource(source);
+  const eventCount=(await db.query('select count(*)::int n from operations_task_events where task_id=$1',[mailTarget.id])).rows[0].n;
+  for(const order of [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]]){
+    await Promise.all(order.map(i=>applySource(chronologicalSources[i])));
+    const actual=(await db.query("select status,inputs#>>'{personal_work,progress}' progress from operations_tasks where id=$1",[mailTarget.id])).rows[0];
+    assert.equal(actual.status,'pending');assert.equal(actual.progress,'최신 보완자료 수신');
+    assert.equal((await db.query('select count(*)::int n from operations_task_events where task_id=$1',[mailTarget.id])).rows[0].n,eventCount,'same source replay cannot duplicate native events');
+  }
+  console.log('PASS six source arrival permutations: latest progress/reopen retained, simultaneous submissions serialized, duplicate events zero; independent-session locking not tested');
+
   const invalidMailId=crypto.randomUUID();await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 잘못된 시각','owner@example.test',$5,'[]')",[invalidMailId,BOX,OWNER,'c'.repeat(64),mailTime]);
   await assert.rejects(()=>db.query('update private_mail_messages set analysis=$2 where id=$1',[invalidMailId,{...mailAnalysis,source:{...mailAnalysis.source,id:invalidMailId},monthlyUpdates:[{...mailUpdate,sourceId:invalidMailId,sourceAt:'2026-01-01T00:00:00Z'}]}]),/MONTHLY_MAIL_SOURCE/);assert.equal((await db.query('select analysis from private_mail_messages where id=$1',[invalidMailId])).rows[0].analysis,null,'invalid source must roll back mail analysis and native updates together');
   await assert.rejects(()=>db.query("select private_mail_portal_upsert($1,$2,$3,$4)",[BOX,OWNER,crypto.randomUUID(),{owner_id:OWNER,work_scope:'delivery_team',inputs:{personal_work:{workId:'source:'+crypto.randomUUID()}}}]),/MONTHLY_EXISTING_TARGET_ONLY/);
@@ -2398,8 +2416,9 @@ try{
  const monthlyPaths=['repo-root/sql/operations-core.sql','repo-root/sql/operations-workflow.sql','repo-root/sql/operations-templates.sql','repo-root/sql/operations-portal.sql','repo-root/sql/operations-scheduler.sql','repo-root/sql/operations-ai.sql','repo-root/sql/operations-trash.sql','supabase/sql/private-mail-portal.sql','supabase/sql/private-mail-work-correction.sql','supabase/sql/private-mail-monthly.sql'];
  const sqlSources=await Promise.all(ISOLATED_STORAGE_SQL_PATHS.map(path=>readFile(new URL('../'+path,import.meta.url),'utf8'))),monthlySqlSources=Object.fromEntries(await Promise.all(monthlyPaths.map(async path=>[path,await readFile(new URL('../'+path,import.meta.url),'utf8')])));
  for(const id of ['mail-monthly-approval-complete','mail-monthly-material-only','mail-monthly-wrong-period']){
-  const f=fixtureById(id);let calls=0;const modelContext={resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const proof=f.mime.split('\r\n\r\n').at(-1);const value=calls===1?{intent:{kind:'update',evidence:proof},group:null,summary:[{text:'가상 월간 처리 통보',evidence:proof}],tasks:[],issues:[],waiting:[],updates:[{ref:'source:'+f.monthlyTask.id,status:'complete',evidence:proof,text:'가상 품의 상신 완료',due:null}],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}}:{matchesTarget:true,action:'complete',text:'가상 품의 상신 완료',evidence:proof,details:[],completionEvidence:proof,serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]})}};const result=await runStressCase(id,modelContext);
+  const f=fixtureById(id);let calls=0;const modelContext={resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),resolveJevConfiguration:async()=>null,fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const proof=f.mime.split('\r\n\r\n').at(-1);const value=calls===1?{intent:{kind:'update',evidence:proof},group:null,summary:[{text:'가상 월간 처리 통보',evidence:proof}],tasks:[],issues:[],waiting:[],updates:[{ref:'source:'+f.monthlyTask.id,status:'complete',evidence:proof,text:'가상 품의 상신 완료',due:null}],imageFacts:[],imageDecisions:[],imageItems:{tasks:[],issues:[],waiting:[]}}:{matchesTarget:true,action:id==='mail-monthly-material-only'?'progress':'complete',text:id==='mail-monthly-material-only'?'10월분 증빙 자료 송부, 품의 상신 대기':'가상 품의 상신 완료',evidence:proof,details:[],completionEvidence:proof,serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]})}};const result=await runStressCase(id,modelContext);
   assert.equal(result.automatedChecksPassed,true,JSON.stringify(result.checks));const replay=await replayIsolatedCase(result,{PGlite,pgcrypto,sqlSources,monthlySqlSources});assert.equal(replay.status,'passed',JSON.stringify(replay));assert.equal(replay.monthlyVerified,true);assert.equal(replay.portalTasks[0].id,f.monthlyTask.id);assert.equal(replay.portalTasks[0].status,f.expected.monthly.nativeStatus);assert(replay.noteHtml.includes('월초 품의'));assert.equal(replay.productionWritten,false);assert.equal(replay.oneNoteWritten,false);
+  if(id==='mail-monthly-material-only'){assert.equal(result.saved.monthlyUpdates.length,1);assert(replay.portalTasks[0].inputs.personal_work.progress.includes('증빙'));assert(replay.portalTasks[0].inputs.personal_work.sourceKeys.includes('source:'+result.saved.source.id));assert(replay.noteHtml.includes('증빙'));}
 
   if(id==='mail-monthly-approval-complete'){
    const session=await prepareIsolatedMailCase(id,{PGlite,pgcrypto,sqlSources,monthlySqlSources});

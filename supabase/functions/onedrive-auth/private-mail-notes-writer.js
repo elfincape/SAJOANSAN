@@ -924,7 +924,9 @@ export async function writeDailyBriefing({
         const unchangedReplacement =
           current.managedHash !== null &&
           current.managedHash === intent.previousHash &&
-          (intent.operation === 'replace' || intent.imageProgress?.next === 0);
+          (intent.operation === 'replace' || intent.imageProgress?.next === 0 ||
+            (intent.operation === 'images' && intent.imageProgress === null &&
+              state.imageProgress?.next === 0 && state.imageProgress.fingerprint === intent.fingerprint));
         if (
           !hex.test(intent.fingerprint ?? '') ||
           !hex.test(intent.desiredHash ?? '') ||

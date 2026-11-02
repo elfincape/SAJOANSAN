@@ -40,7 +40,7 @@ export async function parseStressMail(fixture, remoteFetcher, receiptId) {
     parser:{attachments:files.length,selectedImages:photos.selected.map(file=>file.name),excludedImages:photos.excluded.map(file=>({name:file.name,reason:file.reason})),reviewImages:photos.review.map(file=>file.name),textChars:text.length,reportDay:day(times.reportAt),sentAt:times.sentAt,receivedAt:times.receivedAt},
   };
 }
-function evaluate(fixture, saved, normalized, parser) {
+export function evaluateStressResult(fixture, saved, normalized, parser) {
   const expected = fixture.expected, checks = {};
   const mail = fixture.kind==='mail';
   const records = mail ? [...saved.tasks,...saved.issues,...saved.waiting,...saved.updates,...(saved.imageItems?.tasks??[])] : saved.items;
@@ -48,7 +48,8 @@ function evaluate(fixture, saved, normalized, parser) {
   const tasks = mail ? saved.tasks.length+(saved.imageItems?.tasks?.length??0) : saved.items.filter(item=>['task','dispatch'].includes(item.kind)&&!item.workRef).length;
   const issues = mail ? saved.issues.length : saved.items.filter(item=>item.kind==='issue').length;
   const confirmed = mail ? saved.review?.needsConfirmation===true || saved.review?.withheldTasks>0 : saved.items.some(item=>item.needsConfirmation);
-  if(expected.monthly){const values=saved.monthlyUpdates??[];if(expected.monthly.updateCount!==undefined)checks.monthlyCount=values.length===expected.monthly.updateCount;checks.monthlyCompletion=values.filter(item=>item.status==='complete').length===expected.monthly.completedCount;checks.monthlyTarget=values.every(item=>item.ref===expected.monthly.ref);}
+  if(expected.monthly){const values=saved.monthlyUpdates??[];if(expected.monthly.updateCount!==undefined)checks.monthlyCount=values.length===expected.monthly.updateCount;if(expected.monthly.progressTerms){checks.monthlyProgress=values.some(item=>item.status==='pending'&&expected.monthly.progressTerms.every(options=>options.some(term=>[item.text,...(item.details??[])].join(' ').includes(term))));checks.monthlyProgressVerified=!(saved.monthlyReview??[]).some(item=>item.ref===expected.monthly.ref&&item.reason==='monthly_verification_unavailable');}checks.monthlyCompletion=values.filter(item=>item.status==='complete').length===expected.monthly.completedCount;checks.monthlyTarget=values.every(item=>item.ref===expected.monthly.ref);}
+  if(expected.completedCount!==undefined)checks.completedCount=records.filter(item=>item.workflowStatus==='complete'||item.status==='complete'||item.done===true).length===expected.completedCount;
   if (expected.intent!==undefined) checks.intent = saved.source.intent===expected.intent;
   if (expected.taskCount!==undefined) checks.taskCount = tasks===expected.taskCount;
   if (expected.issueCount!==undefined) checks.issueCount = issues===expected.issueCount;
@@ -136,7 +137,7 @@ export async function runStressCase(caseId,ctx) {
     stage='mail_analysis';
     let leased=false,failureCode=null;
     const store={claim:async()=>{if(leased||saved)return null;leased=true;return{row:{id,uidl_hash:parsed.source.uidl_hash},lease:'isolated-stress'};},finish:async({analysis})=>{saved=structuredClone(analysis);leased=false;return true;},fail:async({code})=>{failureCode=code;leased=false;return true;}};
-    const args={monthlyCandidates:fixture.monthlyTask?monthlyMailRelated([fixture.monthlyTask],{ownerId:TARGET.owner_id}):[],messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
+    const args={isolatedVerification:true,monthlyCandidates:fixture.monthlyTask?monthlyMailRelated([fixture.monthlyTask],{ownerId:TARGET.owner_id}):[],messageId:id,provider:ai.aiProvider,model:ai.aiModel,key:ai.aiKey,now:fixture.now,ownerName:'테스트담당자',loadMail:async()=>parsed.source,fetcher:transport,resolveJevConfiguration:jev,store};
     const results=await Promise.all([analyzePrivateMail(args),analyzePrivateMail(args)]);
     status=results[0].status;duplicate=results[1].status;
     if(!saved) return failedResult(results[0].code??failureCode);
@@ -161,7 +162,7 @@ export async function runStressCase(caseId,ctx) {
       if(path.startsWith('private_mail_messages?'))return[];
       throw Error('STRESS_PERSISTENCE_REJECTED');
     };
-    const adapter={db,json:Response.json,fail:(code)=>Error(code),fetcher:transport,aiKey:ai.aiKey,aiProvider:ai.aiProvider,aiModel:ai.aiModel,resolveJevConfiguration:jev,enqueueManualReport:async()=>false};
+    const adapter={isolatedVerification:true,db,json:Response.json,fail:(code)=>Error(code),fetcher:transport,aiKey:ai.aiKey,aiProvider:ai.aiProvider,aiModel:ai.aiModel,resolveJevConfiguration:jev,enqueueManualReport:async()=>false};
     const body={clientRequestId:id,text:fixture.text,referenceDate:fixture.referenceDate};
     const response=await handleManualMessage('private-mail-manual-add',body,{id:TARGET.owner_id},adapter);
     status=(await response.json()).status;saved=JSON.parse(JSON.stringify(entries[id]));
@@ -174,7 +175,7 @@ export async function runStressCase(caseId,ctx) {
   }
   stage='projection';
   const note = fixture.kind==='mail' ? renderDailyBriefing({now:fixture.now,analyses:[...prior.filter(item=>item.source),saved]}) : renderDailyBriefing({now:fixture.now,analyses:[],manual:manualDailyView(Object.fromEntries([...prior.filter(item=>item.entryId),saved].map(entry=>[entry.entryId,entry])),fixture.referenceDate)});
-  return{caseId,status,input,requests,diagnostics:diagnostics(),expected:fixture.expected,...evaluate(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:fixture.monthlyTemplate?null:note.managedHtml,notePreviewRequiresSql:!!fixture.monthlyTemplate,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
+  return{caseId,status,input,requests,diagnostics:diagnostics(),expected:fixture.expected,...evaluateStressResult(fixture,saved,normalized,parser),parser,normalized,saved,replay,trace,duplicate,noteHtml:fixture.monthlyTemplate?null:note.managedHtml,notePreviewRequiresSql:!!fixture.monthlyTemplate,storage:'isolated-memory',productionBusinessWritten:false,oneNoteWritten:false};
   } catch(error) {
     return failedResult(/^[A-Z_]{1,64}$/.test(error?.message??'')?error.message:'STRESS_RUNTIME_FAILED');
   }
