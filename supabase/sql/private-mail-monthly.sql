@@ -158,7 +158,7 @@ begin
    desired=case when item->>'workflowStatus'='complete' then 'completed' when item->>'workflowStatus'='cancelled' and item->'ownerStateDeclared'='true'::jsonb then 'not_applicable' when item->>'workflowStatus'='pending' and item->'ownerStateDeclared'='true'::jsonb then 'pending' else t.status end;
    marker=((t.inputs->'personal_work')-array['ownerFields','lastStateAt'])||jsonb_build_object(
     'sourceKeys',coalesce(t.inputs->'personal_work'->'sourceKeys','[]')||jsonb_build_array(item->>'ref'),
-    'summary',jsonb_build_array(item->>'text')||coalesce(item->'details','[]'),'progress',item->>'text',
+    'contentSourceAt',event_time,'summary',jsonb_build_array(item->>'text')||coalesce(item->'details','[]'),'progress',item->>'text',
     'status',case desired when 'completed' then 'complete' when 'not_applicable' then 'cancelled' else desired end,
     'ownerStateAt',case when item->'ownerStateDeclared'='true'::jsonb then event_time else null end,
     'verifiedCompletionAt',case when item->>'workflowStatus'='complete' then event_time else null end);
@@ -189,17 +189,18 @@ begin
    or coalesce(item->>'ref','') !~ '^source:[0-9a-f-]{36}$' or coalesce(item->>'status','') not in ('pending','complete')
    or length(btrim(coalesce(item->>'text',''))) not between 1 and 500 or length(btrim(coalesce(item->>'evidence',''))) not between 1 and 2000
    or jsonb_typeof(item->'details') is distinct from 'array' or jsonb_array_length(item->'details')>6
-   or (item-array['ref','sourceId','sourceAt','resolution','needsConfirmation','status','text','evidence','details'])<>'{}'::jsonb then raise exception 'MONTHLY_MAIL_SOURCE';end if;
+   or (item ? 'stateDeclared' and (jsonb_typeof(item->'stateDeclared') is distinct from 'boolean' or (item->'stateDeclared'='true'::jsonb and item->>'status'<>'pending')))
+   or (item-array['stateDeclared','ref','sourceId','sourceAt','resolution','needsConfirmation','status','text','evidence','details'])<>'{}'::jsonb then raise exception 'MONTHLY_MAIL_SOURCE';end if;
   select * into t from public.operations_tasks where id=substring(item->>'ref' from 8)::uuid and owner_id=new.owner_id and inputs ? 'personal_monthly' and deleted_at is null for update;
   if not found then raise exception 'MONTHLY_MAIL_TARGET';end if;
   request_key=md5('monthly-mail:'||new.id||':'||(item->>'ref')||':'||item::text)::uuid;
   if exists(select 1 from public.operations_task_events where actor_id=new.owner_id and request_id=request_key) then continue;end if;
-  desired=case when item->>'status'='complete' then 'completed' else t.status end;
+  desired=case when item->>'status'='complete' then 'completed' when item->'stateDeclared'='true'::jsonb then 'pending' else t.status end;
   marker=((t.inputs->'personal_work')-array['ownerFields','lastStateAt'])||jsonb_build_object(
    'sourceKeys',coalesce(t.inputs->'personal_work'->'sourceKeys','[]')||jsonb_build_array('source:'||new.id),
-   'summary',jsonb_build_array(item->>'text')||(item->'details'),'progress',item->>'text',
+   'contentSourceAt',event_time,'summary',jsonb_build_array(item->>'text')||(item->'details'),'progress',item->>'text',
    'status',case desired when 'completed' then 'complete' when 'not_applicable' then 'cancelled' else desired end,
-   'ownerStateAt',null,'verifiedCompletionAt',case when item->>'status'='complete' then event_time else null end);
+   'ownerStateAt',case when item->'stateDeclared'='true'::jsonb then event_time else null end,'verifiedCompletionAt',case when item->>'status'='complete' then event_time else null end);
   document=jsonb_build_object('id',t.id,'expected_version',t.version,'owner_id',new.owner_id,'center_code',t.center_code,'work_scope',t.work_scope,
    'title',t.title,'work_date',t.work_date,'due_at',t.due_at,'status',desired,'inputs',jsonb_build_object('personal_work',marker));
   perform public.private_mail_portal_upsert(new.mailbox_id,new.owner_id,request_key,document);

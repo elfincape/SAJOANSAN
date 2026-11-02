@@ -92,7 +92,7 @@ export async function normalizeMonthlyMailUpdates({updates,candidates,mail,conte
   try{
    const result=await analyzeTargetedManual({entry:{text:context.currentBody,focusEvidence:evidence,submittedAt:sourceAt,referenceDate:kstDay(sourceAt),originalContext:JSON.stringify({subject:mail.subject,sender:mail.sender,envelope:mail.envelope,ownerContext:context.ownerContext})},target:{workId:prior.ref,title:prior.text,kind:'task',status:prior.status,monthly,mailContext:{ownerContext:context.ownerContext,intent:mail.intent??'update'}},ai,fetcher});responses.push(result.response);const item=result.reply.items[0];
    if(item.needsConfirmation||item.workRef!==prior.ref||!['pending','complete'].includes(item.workflowStatus)){review.push({ref:prior.ref,reason:'monthly_meaning_confirmation'});continue;}
-   accepted.push({ref:prior.ref,sourceId:mail.id,sourceAt,resolution:'monthly_mail_v1',status:item.workflowStatus,text:item.text,evidence,details:item.details??[],needsConfirmation:false});
+   accepted.push({ref:prior.ref,sourceId:mail.id,sourceAt,resolution:'monthly_mail_v1',status:item.workflowStatus,...(item.stateDeclared===true?{stateDeclared:true}:{}),text:item.text,evidence,details:item.details??[],needsConfirmation:false});
   }catch(error){const code=['MANUAL_FORMAT','MANUAL_EVIDENCE','MODEL_RESPONSE','MODEL_TRUNCATED','MODEL_TIMEOUT','MODEL_FAILED','AI_NOT_CONFIGURED'].includes(error?.code??error?.message)?(error.code??error.message):'MONTHLY_VERIFICATION_FAILED';review.push({ref:prior.ref,reason:'monthly_verification_unavailable',code,...(['evidence','details','serviceOriginal','completionEvidence'].includes(error?.targetField)?{field:error.targetField}:{})});}
  }
  return {updates:accepted,review,responses};
