@@ -1,3 +1,4 @@
+import { loadMonthlyPortalTasks } from './private-mail-monthly.js';
 import { createOneDriveStorage } from './storage.js';
 import { inspectBriefingTarget } from './private-mail-briefing.js';
 import { handleMailAutomation } from './private-mail-background.js';
@@ -542,6 +543,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return handleManualMessage(action, body, user, {
       ...ctx,
       resolveJevConfiguration,
+      loadMonthlyTasks:()=>loadMonthlyPortalTasks({db,ownerId:user.id}),
       enqueueManualReport: (day) =>
         db('rpc/private_mail_dispatch_report', {
           method: 'POST',
@@ -639,6 +641,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     return handleMailAutomation(action, body, user, {
       ...ctx,
       resolveJevConfiguration,
+      loadMonthlyTasks:()=>loadMonthlyPortalTasks({db,ownerId:user.id}),
       ...source,
       remoteFetcher,
       diagnosticNotes: (action) => withLock(async holder => action(await ctx.connectedNotes(), async (...args) => {

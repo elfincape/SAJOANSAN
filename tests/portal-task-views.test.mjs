@@ -23,3 +23,16 @@ assert.equal(taskState({status:'in_progress',work_date:'2026-10-11',due_at:'2026
 assert.equal(taskState({status:'completed',work_date:'2026-10-01',due_at:'2026-10-01T00:00:00Z'},now),'completed');
 assert.equal(taskState({status:'not_applicable',work_date:'2026-10-01'},now),'completed');
 console.log('PASS: KST status, completion precedence, Monday weeks, leap months, period navigation, calendar coverage.');
+const monthly={status:'pending',work_date:'2026-10-08',inputs:{personal_monthly:{scheduledDate:'2026-10-11'}}};
+assert.equal(taskState(monthly,new Date('2026-10-09T03:00:00Z')),'active','visibility start is not a monthly deadline');
+assert.equal(taskState(monthly,new Date('2026-10-12T03:00:00Z')),'active','a planned date alone must not invent a deadline');
+assert.equal(taskState({...monthly,due_at:'2026-10-11T08:00:00Z'},new Date('2026-10-12T03:00:00Z')),'delayed','an explicit real deadline still governs monthly task state');
+
+// Exercise the actual React-domain metadata formatter without adding a runtime dependency.
+const {readFile}=await import('node:fs/promises'),{stripTypeScriptTypes}=await import('node:module');
+const domainSource=stripTypeScriptTypes(await readFile(new URL('../app/src/domain/portal-types.ts',import.meta.url),'utf8'));
+const {portalMonthlyFacts,portalCenterName}=await import('data:text/javascript;base64,'+Buffer.from(domainSource).toString('base64'));
+assert.equal(portalCenterName(null),'배송팀');
+assert.deepEqual(portalMonthlyFacts({personal_monthly:{advanceKind:'nonghyup',scheduledDate:'2026-11-01',qualifier:'on',originalSchedule:'월초 품의',targetPeriod:{from:'2026-10-01',through:'2026-10-31'},paymentDate:'2026-11-10'}}),[['품의 예정','2026-11-01 (월초 품의)'],['대상기간','2026-10-01 ~ 2026-10-31'],['지급예정','2026-11-10']]);
+assert.deepEqual(portalMonthlyFacts({personal_monthly:{scheduledDate:'2026-11-08',qualifier:'before',originalSchedule:'8일 이전',targetPeriod:null,paymentDate:null}}),[['처리 예정','2026-11-08 이전']]);
+assert.deepEqual(portalMonthlyFacts({}),[]);

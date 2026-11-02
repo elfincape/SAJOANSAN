@@ -1,3 +1,4 @@
+import { loadMonthlyPortalTasks } from './private-mail-monthly.js';
 import { loadApprovedRemoteMailImages } from './private-mail-remote-images.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
@@ -30,7 +31,7 @@ export function hasBriefingCarryWork({ day: reportDay, analyses, overrides = {},
     !['complete', 'cancelled', 'resolved'].includes(item.status) &&
     (item.category === 'task' || item.category === 'issue' ||
       (item.category === 'reference' && item.reportKind === 'review')) &&
-    item.sourceRefs.some((source) => source.kind === 'manual' || (includeMail && source.kind === 'mail')));
+    (item.monthly?.visibleFrom<=reportDay || item.sourceRefs.some((source) => source.kind === 'manual' || (includeMail && source.kind === 'mail'))));
 }
 
 export async function handleMailAutomation(action, body, user, ctx) {
@@ -382,10 +383,11 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const date = body.day ?? dailyReportIdentity().day;
     if (!day(date)) throw fail('REPORT_DATE');
     const analyses = await reportAnalyses(date);
+    const portalTasks = await loadMonthlyPortalTasks({db,ownerId:user.id,day:date});
     return json(
       dailyBriefingView({
         now: date + 'T12:00:00+09:00',
-        analyses,
+        analyses, portalTasks, portalOwnerId:user.id,
         overrides: current.briefing_overrides ?? {},
         manual: manualDailyView(
           current.manual_entries ?? {},
@@ -732,6 +734,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
       const fresh = await box();
       reportStage = 'analyses';
       const analyses = await reportAnalyses(body.day, fresh);
+      const portalTasks = await loadMonthlyPortalTasks({db,ownerId:user.id,day:body.day});
       const manual = manualDailyView(
         fresh.manual_entries ?? {}, body.day, fresh.briefing_overrides ?? {},
       );
@@ -741,7 +744,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           p_box: current.id, p_day: body.day, p_lease: lease,
           p_token: state.mailRolloverInput,
           p_has_work: hasBriefingCarryWork({ day: body.day, analyses, includeMail: state.mailRolloverMailAllowed !== false,
-            overrides: fresh.briefing_overrides ?? {}, manual }),
+            overrides: fresh.briefing_overrides ?? {}, manual, portalTasks, portalOwnerId:user.id }),
         });
         if (!decision) return json({ status: 'waiting', code: 'ROLLOVER_SNAPSHOT_CHANGED' });
         claim.state = decision.state;
@@ -783,7 +786,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         .sort()
         .at(-1);
       const result = await writeDailyBriefing({
-        manual,
+        manual, portalTasks, portalOwnerId:user.id,
         now: body.day + 'T12:00:00+09:00',
         analyses,
         overrides: fresh.briefing_overrides ?? {},

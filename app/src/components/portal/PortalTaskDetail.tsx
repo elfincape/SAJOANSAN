@@ -1,7 +1,7 @@
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { PortalTask, PortalInputs } from '../../domain/portal-types';
-import { portalStamp } from '../../domain/portal-types';
+import { portalStamp, portalMonthlyFacts } from '../../domain/portal-types';
 import { finished, collectPortalInputs } from '../../domain/portal-model';
 import {
   taskState,
@@ -359,6 +359,7 @@ export function PortalTaskDetail({
       }
     />
   );
+  const monthlyFacts=portalMonthlyFacts(task.inputs??{});
   const body = task.deleted_at ? (
     <>
       <h2>
@@ -440,12 +441,16 @@ export function PortalTaskDetail({
           ) : null}
         </div>
         <dl className="task-detail-info">
-          {[
+          {(monthlyFacts.length ? [
+            ['구분', '배송팀'], ...monthlyFacts,
+            ['담당자', subjectLabel(handler, centerName)],
+            ...(task.due_at ? [['마감',portalStamp(task.due_at)]] : []),
+          ] : [
             ['센터', centerName(task.center_code)],
             ['업무 기간', taskPeriod(task)],
             ['담당자', subjectLabel(handler, centerName)],
             ['마감', task.due_at ? portalStamp(task.due_at) : '미설정'],
-          ].map(([label, value]) => (
+          ]).map(([label, value]) => (
             <span key={label} style={{ display: 'contents' }}>
               <dt>
                 <MentionText>{label}</MentionText>

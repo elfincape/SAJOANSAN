@@ -133,7 +133,8 @@ export function applyPortalWorkSnapshot(work, task, {ownerId}) {
       ||!['on','before'].includes(planned.qualifier)||!clean(planned.originalSchedule,500))throw Error('WORK_MONTHLY');
     let targetPeriod=null;
     if(planned.targetPeriod){const from=calendar(planned.targetPeriod.from),through=calendar(planned.targetPeriod.through);if(!from||!through||from>through)throw Error('WORK_MONTHLY');targetPeriod={from,through};}
-    monthly={scheduledDate,visibleFrom,qualifier:planned.qualifier,originalSchedule:planned.originalSchedule,targetPeriod};
+    const paymentDate=calendar(planned.paymentDate??null);
+    monthly={scheduledDate,visibleFrom,qualifier:planned.qualifier,originalSchedule:planned.originalSchedule,targetPeriod,paymentDate,advanceKind:planned.advanceKind??null};
   }
   return {...work,...projected,portalVersion:task.version,...(monthly?{monthly}:{})};
 }
@@ -568,14 +569,14 @@ export function dailyWorkItems(
         )
       )
         refs.push({
-          kind: item.workRef.includes(':manual:') ? 'manual' : 'mail',
+          kind: item.workRef.includes(':manual:') ? 'manual' : portalTasks.some(task=>task.inputs?.personal_monthly&&task.inputs?.personal_work?.workId===item.workRef)?'linked':'mail',
           id: item.workRef.startsWith('source:')
             ? item.workRef.slice(7)
             : item.workRef.slice(0, 36),
           ref: item.workRef,
           title: item.workRef.includes(':manual:')
             ? '연결된 입력 메시지'
-            : '연결된 원본 메일',
+            : portalTasks.some(task=>task.inputs?.personal_monthly&&task.inputs?.personal_work?.workId===item.workRef)?'연결된 월간 업무':'연결된 원본 메일',
           receivedAt: null,
         });
       result.push(
@@ -716,10 +717,10 @@ export function dailyWorkItems(
     if(view.day && task.work_date>view.day)continue;
     const ref=marker.workId;
     const sourceId=ref?.startsWith('source:')?ref.slice(7):ref?.slice(0,36);
-    const original=projected.get(ref) ?? normalizeDailyWork({
+    const original=projected.get(ref) ?? applyOwnerWorkCorrection(normalizeDailyWork({
       ref,category:marker.category,title:task.title,status:'pending',workScope:marker.scope,
       requestedAt:marker.requestedAt,sourceRefs:[{kind:'linked',id:sourceId,ref}],
-    });
+    }),workOverrides,view.day);
     projected.set(ref,applyPortalWorkSnapshot(original,task,{ownerId:portalOwnerId}));
   }
   return [...projected.values()]
@@ -942,7 +943,7 @@ function compactWorkSummary(item) {
 }
 export function workSummaryForDisplay(item) {
   const planned=item.monthly;
-  const schedule=planned?['처리예정: '+calendar(planned.scheduledDate)+(planned.qualifier==='before'?' 이전':''),...(planned.targetPeriod?['대상기간: '+calendar(planned.targetPeriod.from)+' ~ '+calendar(planned.targetPeriod.through)]:[])]:[];
+  const schedule=planned?['처리예정: '+calendar(planned.scheduledDate)+(planned.qualifier==='before'?' 이전':planned.advanceKind==='nonghyup'?' (월초 품의)':''),...(planned.targetPeriod?['대상기간: '+calendar(planned.targetPeriod.from)+' ~ '+calendar(planned.targetPeriod.through)]:[]),...(planned.paymentDate?['지급예정: '+calendar(planned.paymentDate)]:[])]:[];
   const summary = [...schedule,...compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate))];
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];

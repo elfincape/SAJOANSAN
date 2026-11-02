@@ -28,8 +28,12 @@ begin
    select manual_entries->source_id::text into source_entry from public.private_mailboxes where id='39045005-313e-42e1-b50c-2394b3b6ff26' and owner_id=new.owner_id;
    if source_entry->>'status' is distinct from 'ready' or not exists(select 1 from jsonb_array_elements(coalesce(source_entry->'items','[]')) i
     where i->>'ref'=source_key or source_id::text||':manual:'||(i->>'itemId')=source_key) then raise exception 'WORK_SOURCE'; end if;
-   if source_entry->'workScope' is null or source_entry->'workScope'='null'::jsonb then raise exception 'WORK_SCOPE_REQUIRED'; end if;
-   if source_entry->'workScope' is distinct from m->'scope' then raise exception 'WORK_SCOPE_CONFLICT'; end if;
+   if new.inputs ? 'personal_monthly' and exists(select 1 from jsonb_array_elements(source_entry->'items') linked
+    where linked->>'ref'=source_key and linked->>'workRef'=m->>'workId' and linked->>'resolution' in ('targeted_update_v1','monthly_update_v1') and linked->'needsConfirmation'='false'::jsonb) then null;
+   else
+    if source_entry->'workScope' is null or source_entry->'workScope'='null'::jsonb then raise exception 'WORK_SCOPE_REQUIRED'; end if;
+    if source_entry->'workScope' is distinct from m->'scope' then raise exception 'WORK_SCOPE_CONFLICT'; end if;
+   end if;
   elsif source_key=m->>'workId' and source_id=new.id and new.inputs ? 'personal_monthly'
     and new.inputs->'personal_monthly'->>'ownerId'=new.owner_id::text
     and to_jsonb(new)->'template_snapshot'->'spec'->'personal_monthly'->>'ownerId'=new.owner_id::text
@@ -164,7 +168,7 @@ begin
   update public.operations_tasks set title=p_document->>'title',inputs=t.inputs||jsonb_build_object('personal_work',marker),due_at=(p_document->>'due_at')::timestamptz,status=desired_status,
    completed_at=case when desired_status in ('completed','not_applicable') then coalesce(t.completed_at,proof) end,
    completed_by=case when desired_status in ('completed','not_applicable') then p_user end,version=version+1,updated_at=clock_timestamp() where id=t.id returning * into t;
-  action=case when desired_status in ('completed','not_applicable') then desired_status else 'updated' end;
+  action=case when before_row->>'status' is distinct from desired_status and desired_status in ('completed','not_applicable') then desired_status else 'updated' end;
  end if;
  perform set_config('app.private_mail_portal_source',coalesce(source_flag,''),true);
  insert into public.operations_task_events(task_id,actor_id,request_id,request_body,action,before_value,after_value,occurred_at)

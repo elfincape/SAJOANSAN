@@ -14,7 +14,7 @@
 
 - Lead is exactly 3 KST calendar days, including previous-month/year visibility.
 - Preserve original "before day 8" qualifier; do not turn it into an inclusive day-8 deadline or fabricate a time.
-- Target periods are separate from scheduled dates: previous month 16–last day; current month 1–15. Other target periods remain unspecified.
+- Keep target period, planned approval date, payment date and visibility separate. Yangsan first: current month 1–15 → day 23 approval → month-end payment, visible day 20. Yangsan second: previous month 16–last → day 7 approval → day 15 payment, visible day 4. Nonghyup: previous full month → early-month approval using existing day-1 basis → day-10 payment, visible three days before day 1. Preserve “월초 품의”; this basis is not a legal deadline. Other payment dates/target periods remain unspecified.
 - Exactly one instance per template family, owner and scheduled month, including retries/concurrency/version changes.
 - No holiday shifting; unfinished prior instances stay open; completion/reopen/history remain intact. New month receives a new ID.
 - No extra end-of-month second-advance instance from conflicting notes. No uncertain receipt windows or undated evidence tasks auto-generated.
@@ -47,22 +47,23 @@ Files: reuse the existing draft's `private-mail-portal.js`, core additions in `p
 - [x] Guard monthly templates/tasks by owner and approved source/template identity; fail closed for other actors and changed occurrence metadata. Scope nullable-center support to personal records.
 - [x] Add owner-only restrictive reads and guarded writes for monthly records, including native template/task actions and linked events. Keep all non-monthly permissions unchanged.
 - [x] Project the same portal task ID into personal daily work and OneNote HTML; no shadow task instance. Show planned date/qualifier and target period without invented deadline.
-- [ ] Verify portal→daily and daily→portal correction, completion/reopen, historical views and user notes with isolated SQL and common renderers.
+- [x] Verify portal→daily and daily→portal correction, completion/reopen, historical views and user notes with isolated SQL and common renderers.
 
 ## Task 3: Existing API matching and automatic execution integration
 
 Files: existing `private-mail-manual.js`, `private-mail-background.js`, local SQL manual-target/correction contracts and scheduler hook.
 
-- [ ] Include only eligible owner-private monthly tasks in existing target/global analysis candidates; preserve current source boundaries and original input.
-- [ ] Reuse validated normalized follow-up outcomes and source-event-time state protection; quantity/progress-only input does not imply completion, ambiguous month/target remains confirmation-needed.
-- [ ] Persist validated status transitions in the same canonical task transaction with source/correction history and version checks; retry/partial failure cannot split ledgers.
+- [x] Include owner-private monthly tasks in existing manual target/global analysis candidates; preserve current source boundaries and original input.
+- [ ] Connect mail analysis to monthly canonical duties with the same actor/evidence protection; current existing RFC-only mail update path does not include native monthly tasks.
+- [x] Reuse validated normalized follow-up outcomes and source-event-time state protection; quantity/progress-only input does not imply completion, ambiguous month/target remains confirmation-needed.
+- [x] Persist validated status transitions in the same canonical task transaction with source/correction history and version checks; retry/partial failure cannot split ledgers.
 - [x] Hook eligible monthly materialization into the existing operations scheduler, avoiding a second cron and skipping duplicate generic issuance of private monthly templates.
 - [x] Keep operating activation absent until exact SQL, six-template seed, owner/sharing boundary and app changes are reported for approval.
 
 ## Task 4: Final isolated verification and activation report
 
-- [ ] Run targeted existing private-mail/portal suites, isolated PGlite, build and local mock UI/render verification. Do not use operating tasks as test fixtures.
-- [ ] Review privilege/data-flow changes and calendar/state correctness; fix failures before reporting.
+- [x] Run targeted existing private-mail/portal suites, isolated PGlite, build and local mock UI/render verification. Do not use operating tasks as test fixtures.
+- [x] Review privilege/data-flow changes and calendar/state correctness; fix failures before reporting.
 - [ ] Report implemented vs isolated-tested vs unactivated, exact owner/template/SQL/scheduler changes needed, and remaining real API/Ego verification. Do not claim operating monthly automation is live.
 
 ## Verified checkpoint — local only
@@ -72,5 +73,17 @@ Files: existing `private-mail-manual.js`, `private-mail-background.js`, local SQ
 - Fault injection: one occurrence failure retains five other new instances; retry creates the missing instance only and clears the diagnostic error. Existing eight instances remain byte-for-byte unchanged.
 - Shared HQ AI snapshot excludes private monthly task rows/counts/events even for the owner, because shared caches must not receive private content. Non-recurring monthly issuance and private/shared template-family mixing reject.
 - Projection and existing note renderer use canonical native task IDs and preserve the planned date/target period without exposing source-page IDs.
-- Not implemented yet: runtime daily-overview/background note loading, monthly source target acceptance and global matching, atomic normalized follow-up commit/correction. No operational monthly automation or actual monthly OneNote output is claimed.
+- Implemented after initial checkpoint: actual overview/report/note-writer loading; monthly-only next-day queue; manual target and global clause matching through existing Luna contract; atomic ready-input/native task and owner-correction/native task updates; original source-time ordering; genuine portal-source backup queue and JS delivery contract; monthly-only exclusion/processing-note projection.
+- Not implemented yet: mail→monthly canonical linking. Not executed: real monthly Luna/JEV requests, operational monthly SQL/seed/deployment, actual monthly OneNote write. No operational monthly automation is claimed.
 - No operating SQL, seeds, permissions, data, credentials, deployment or PR111 activation was performed.
+
+## Latest local verification and activation boundary
+
+- Five relevant existing test files passed together: private-mail, private-mail-rls, portal-task-views, portal-model, portal-history. New React-domain formatter and monthly ambiguity regressions also passed. Production build passed after UI integration.
+- Actual local PortalTaskDetail rendered in isolated Playwright with synthetic data, mocked ancillary components, blocked external requests and no writes. Mobile 390px and desktop dates/period/payment readability passed. Screenshots remain in /tmp, not operating OneNote.
+- Existing portal-ai.test survey-draft assertion also fails on unmodified origin/main; isolated baseline reproduced it. It is not counted as a pass or caused by this change.
+- Real history SQL is loaded in monthly PGlite tests. The portal correction payload is saved in its immutable pending delivery queue and restored by the actual JS delivery parser with matching hash/filename. No OneDrive write was made.
+- Native completion/reopen, old input after user reopen, newer verified completion, progress after completion, idempotent replay and transaction rollback under injected native-write failure passed. Progress creates updated, not a duplicate completion event.
+- Read-only operating catalog checks found required native/scheduler/history/correction patch anchors. Operating monthly instance count is zero. No DDL or data writes were performed.
+- Private activation payload prepared only at /tmp/personal-monthly-seed.json (not committed): six distinct template families with native create/approve request IDs, fixed owner, center null/delivery-team scope, source note/confirmation pointers and proposed effective_from 2026-11-01. Pure preview on 2026-11-02 yields two eligible day-1 duties; the other duties appear only at their three-day lead dates.
+- Before any operation: finish mail binding, perform appropriate real synthetic API verification through an approved authenticated app path, review/apply the two SQL changes as a compatible migration, register only the six approved owner-private templates, and promote app/Edge code. Keep generic PR111 activation and staff sharing absent. Actual OneNote/portal behavior then needs owner-authenticated Ego Lite verification. This is an explicit unperformed activation boundary, not an authentication failure.

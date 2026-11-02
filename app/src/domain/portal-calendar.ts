@@ -34,6 +34,7 @@ export function shiftPeriod(value: string, unit: string, direction: number) {
 }
 export function taskState(task: PortalTask, now = new Date()) {
   if (['completed', 'not_applicable'].includes(task.status)) return 'completed';
+  if (task.inputs?.personal_monthly && !task.due_at) return 'active';
   return (
     task.due_at ? new Date(task.due_at) < now : taskEnd(task) < koreaDate(now)
   )
