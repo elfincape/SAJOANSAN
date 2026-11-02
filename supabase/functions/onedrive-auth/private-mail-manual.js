@@ -1070,14 +1070,15 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,submittedAt:entry.submit
   const value=parseModel(response);
   if(!value||Object.keys(schema.properties).some(key=>!Object.hasOwn(value,key))||Object.keys(value).some(key=>!Object.hasOwn(schema.properties,key)))throw Error('MANUAL_FORMAT');
   if(typeof value.matchesTarget!=='boolean'||!['update','progress','complete','reopen','cancel','conflict'].includes(value.action)||!Array.isArray(value.details)||value.details.length>6)throw Error('MANUAL_FORMAT');
-  const evidence=sourceQuote(value.evidence,entry.text),details=value.details.map(text=>sourceQuote(text,entry.text,500));
-  const service=value.serviceOriginal==null?null:sourceQuote(value.serviceOriginal,evidence,100);
+  const quoted=(field,input,source,max)=>{try{return sourceQuote(input,source,max);}catch(error){throw Object.assign(error,{targetField:field});}};
+  const evidence=quoted('evidence',value.evidence,entry.text,2000),details=value.details.map(text=>quoted('details',text,entry.text,500));
+  const service=value.serviceOriginal==null?null:quoted('serviceOriginal',value.serviceOriginal,evidence,100);
   const serviceDay=dateFrom(service,entry.referenceDate);
   const targetKind=['task','dispatch','issue','waiting','reference'].includes(target.kind)?target.kind:'task';
   const mixedCargo=palletQuantities(entry.text).length>1&&!/(정정|수량.{0,20}맞)/.test(entry.text);
   let conflict=(targetKind==='reference'&&value.action==='complete')||mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
   if(value.action==='complete'){
-    const quote=typeof value.completionEvidence==='string'?sourceQuote(value.completionEvidence,entry.text,1000):'';
+    const quote=typeof value.completionEvidence==='string'?quoted('completionEvidence',value.completionEvidence,entry.text,1000):'';
     const declared=(/(완료|마쳤|확정|보냈|발송했|전달했|처리했)/.test(quote)||(target.monthly&&/(?:상신|품의|발행|마감)(?:했|하였|되었|됐)/.test(quote)))&&!/(아직|미완료|예정|않|못|취소|[?？])/.test(quote);
     const vehicle=/(?:[가-힣]{2,3})?\d{2,3}[가-힣]\d{4}\s+[가-힣]{2,5}\s+010[- ]?\d{4}[- ]?\d{4}/.test(quote);
     const dispatchTarget=!target.monthly&&(targetKind==='dispatch'||/배차|차량\s*섭외/.test(target.title??''));

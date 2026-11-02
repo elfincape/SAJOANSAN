@@ -7995,3 +7995,12 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  });
  assert.equal(review.status,'no_concerns');assert(JSON.stringify(outgoing.state).includes('monthlyUpdates'));assert(JSON.stringify(outgoing.state).includes('2026-10-31'));assert(JSON.stringify(outgoing.state).includes('2026-11-10'));assert.deepEqual(analysis,before,'monthly JEV remains advisory and cannot change the approved extraction or status');
 }
+
+{
+ const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+ const ref='source:71000000-0000-4000-8000-000000000001',id='11111111-1111-4111-8111-111111111111',text='2026년 10월분 가상 품의 상신 완료했습니다.';
+ const candidate={ref,text:'가상 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+ const run=details=>normalizeMonthlyMailUpdates({updates:[{ref,evidence:text,status:'complete'}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:text},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',status:'completed',role:'assistant',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'품의 진행',evidence:text,details,completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]})});
+ const valid=await run([]);assert.equal(valid.updates[0].status,'pending','model progress is accepted as progress, never forced to complete');assert.equal(valid.review.length,0);
+ const invalid=await run(['원문에 없는 요약 세부내용']);assert.equal(invalid.updates.length,0);assert.equal(invalid.review[0].code,'MANUAL_EVIDENCE');assert.equal(invalid.review[0].field,'details');assert(!JSON.stringify(invalid.review).includes('원문에 없는'));
+}
