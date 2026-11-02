@@ -2376,6 +2376,24 @@ try{
   await db.query('update private_mail_messages set analysis=$2 where id=$1',[mailId,{...mailAnalysis,monthlyUpdates:[{...mailUpdate,text:'구버전 데이터의 과거 재분석'}]}]);
   assert.equal((await db.query("select inputs#>>'{personal_work,progress}' progress from operations_tasks where id=$1",[mailTarget.id])).rows[0].progress,'최신 보완자료 수신','legacy rows must retain latest original-source progress');
 
+
+  // Replay all arrival orders on the same native task; concurrent submissions share PGlite's serialized connection.
+  const chronologicalSources=[
+    [mailId,{...mailAnalysis,monthlyUpdates:[{...mailUpdate,text:'구버전 데이터의 과거 재분석'}]}],
+    [reopenId,{monthlyUpdates:[{...mailUpdate,sourceId:reopenId,sourceAt:reopenAt,status:'pending',stateDeclared:true,text:'품의 완료 취소 후 재개'}]}],
+    [progressId,{monthlyUpdates:[{...mailUpdate,sourceId:progressId,sourceAt:progressAt,status:'pending',text:'최신 보완자료 수신'}]}],
+  ];
+  const applySource=([id,analysis])=>db.query('update private_mail_messages set analysis=$2 where id=$1',[id,analysis]);
+  for(const source of chronologicalSources)await applySource(source);
+  const eventCount=(await db.query('select count(*)::int n from operations_task_events where task_id=$1',[mailTarget.id])).rows[0].n;
+  for(const order of [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]]){
+    await Promise.all(order.map(i=>applySource(chronologicalSources[i])));
+    const actual=(await db.query("select status,inputs#>>'{personal_work,progress}' progress from operations_tasks where id=$1",[mailTarget.id])).rows[0];
+    assert.equal(actual.status,'pending');assert.equal(actual.progress,'최신 보완자료 수신');
+    assert.equal((await db.query('select count(*)::int n from operations_task_events where task_id=$1',[mailTarget.id])).rows[0].n,eventCount,'same source replay cannot duplicate native events');
+  }
+  console.log('PASS six source arrival permutations: latest progress/reopen retained, simultaneous submissions serialized, duplicate events zero; independent-session locking not tested');
+
   const invalidMailId=crypto.randomUUID();await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 잘못된 시각','owner@example.test',$5,'[]')",[invalidMailId,BOX,OWNER,'c'.repeat(64),mailTime]);
   await assert.rejects(()=>db.query('update private_mail_messages set analysis=$2 where id=$1',[invalidMailId,{...mailAnalysis,source:{...mailAnalysis.source,id:invalidMailId},monthlyUpdates:[{...mailUpdate,sourceId:invalidMailId,sourceAt:'2026-01-01T00:00:00Z'}]}]),/MONTHLY_MAIL_SOURCE/);assert.equal((await db.query('select analysis from private_mail_messages where id=$1',[invalidMailId])).rows[0].analysis,null,'invalid source must roll back mail analysis and native updates together');
   await assert.rejects(()=>db.query("select private_mail_portal_upsert($1,$2,$3,$4)",[BOX,OWNER,crypto.randomUUID(),{owner_id:OWNER,work_scope:'delivery_team',inputs:{personal_work:{workId:'source:'+crypto.randomUUID()}}}]),/MONTHLY_EXISTING_TARGET_ONLY/);
