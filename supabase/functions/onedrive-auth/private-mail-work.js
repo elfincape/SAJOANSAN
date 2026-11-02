@@ -932,7 +932,10 @@ export function renderWorkSections(items) {
 
 function displayClauses(text) {
   return String(text??'').normalize('NFKC').split(/(?<=[.!?。])\s+|\r?\n|\s+[·•]\s+/)
-    .map(clause=>clause.replace(/[.。]+$/,'').replace(/\s+/g,' ').trim()).filter(Boolean);
+    .map(clause=>clause.replace(/[.。]+$/,'').replace(/\s+/g,' ').trim()
+      .replace(/^처리\s*[:：]\s*/,'')
+      .replace(/완료(?:했습니다|하였습니다|하였음|함|되었습니다|됐습니다)$/,'완료')
+      .replace(/예정(?:입니다|임)$/,'예정')).filter(Boolean);
 }
 function compactDisplayLines(lines) {
   const rows=lines.map(text=>({text,clauses:displayClauses(text)}));
