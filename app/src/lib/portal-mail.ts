@@ -120,6 +120,7 @@ export interface WorkCorrection extends WorkPatch {
   updatedAt?: string;
 }
 export interface DailyWork {
+  monthly?: { scheduledDate: string; visibleFrom: string; qualifier: 'on' | 'before'; originalSchedule: string; targetPeriod: { from: string; through: string } | null };
   correction?: WorkCorrection;
   uncorrected?: Pick<
     DailyWork,

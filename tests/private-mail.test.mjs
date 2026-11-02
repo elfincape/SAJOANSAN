@@ -7892,3 +7892,21 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  const earlier={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:19:00Z',updatedAt:'2026-11-01T12:19:00Z'}};assert.equal(applyOwnerWorkCorrection(item,earlier,'2026-11-01').status,'pending','new explicit source reopen supersedes older checkbox completion');
  const later={'work:selected':{actor:'owner',done:true,doneAt:'2026-11-01T12:22:00Z',updatedAt:'2026-11-01T12:22:00Z'}};assert.equal(applyOwnerWorkCorrection(item,later,'2026-11-01').status,'complete','subsequent explicit checkbox still wins');
 }
+
+{
+ const {monthlyWorkOccurrences}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+ const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc';
+ const definitions=[[1,'on',null],[1,'on',null],[7,'on','previous_second_half'],[8,'before',null],[10,'on',null],[23,'on','current_first_half']];
+ const templates=definitions.map(([date,qualifier,targetPeriod],i)=>({id:`10000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,family_id:`20000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,version:1,status:'approved',title:'합성 월별 업무 '+(i+1),spec:{effective_from:'2026-11-01',repeat:{kind:'monthly',day:date},personal_monthly:{ownerId:owner,leadDays:3,qualifier,targetPeriod,originalSchedule:date+'일'+(qualifier==='before'?' 이전':''),source:{kind:'onenote',pageId:'isolated-monthly-source'}}}}));
+ assert.equal(monthlyWorkOccurrences(templates,{now:'2026-10-28T14:59:59Z',ownerId:owner}).length,0);
+ const first=monthlyWorkOccurrences(templates,{now:'2026-10-28T15:00:00Z',ownerId:owner});assert.equal(first.length,2);assert(first.every(i=>i.scheduledDate==='2026-11-01'&&i.visibleFrom==='2026-10-29'&&i.targetPeriod===null));
+ assert.equal(monthlyWorkOccurrences(templates,{now:'2026-11-04T03:00:00Z',ownerId:owner}).length,3);
+ const before=monthlyWorkOccurrences(templates,{now:'2026-11-05T03:00:00Z',ownerId:owner}).find(i=>i.qualifier==='before');assert.equal(before.scheduledDate,'2026-11-08');assert.equal(before.originalSchedule,'8일 이전');assert.equal(before.dueAt,null);
+ const six=monthlyWorkOccurrences(templates,{now:'2026-11-20T03:00:00Z',ownerId:owner});assert.equal(six.length,6);assert.deepEqual(six.find(i=>i.scheduledDate==='2026-11-07').targetPeriod,{from:'2026-10-16',through:'2026-10-31'});assert.deepEqual(six.find(i=>i.scheduledDate==='2026-11-23').targetPeriod,{from:'2026-11-01',through:'2026-11-15'});
+ assert.equal(monthlyWorkOccurrences(templates,{now:'2026-11-20T03:00:00Z',ownerId:owner,existing:six.map(i=>({occurrenceKey:i.occurrenceKey,status:'completed'}))}).length,0,'completed and pending existing month instances are never regenerated');
+ const year=monthlyWorkOccurrences(templates.map(t=>({...t,spec:{...t.spec,effective_from:'2027-01-01'}})),{now:'2026-12-28T15:00:00Z',ownerId:owner});assert.equal(year.length,2);assert(year.every(i=>i.scheduledMonth==='2027-01'&&i.visibleFrom==='2026-12-29'));
+ const leap=monthlyWorkOccurrences([templates[2]].map(t=>({...t,spec:{...t.spec,effective_from:'2028-03-01'}})),{now:'2028-03-04T03:00:00Z',ownerId:owner});assert.deepEqual(leap[0].targetPeriod,{from:'2028-02-16',through:'2028-02-29'});
+ assert.throws(()=>monthlyWorkOccurrences(templates,{now:'2026-11-20T03:00:00Z',ownerId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}),/OWNER/);
+ const next=monthlyWorkOccurrences(templates,{now:'2026-11-28T03:00:00Z',ownerId:owner,existing:six});assert.equal(next.length,2);assert(next.every(i=>i.scheduledMonth==='2026-12'&&!six.some(old=>old.occurrenceKey===i.occurrenceKey)));
+ console.log('PASS isolated monthly contract: six templates, KST lead/month/year/leap boundaries, strict-before qualifier, separate target periods and completed-instance deduplication');
+}
