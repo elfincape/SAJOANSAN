@@ -71,7 +71,7 @@ await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s)=>{
 assert.equal(checkpoint.completed,5);assert.equal(checkpoint.complete,false);
 let retryMeasures=0;winner=await optimizeCourseCapture({},course,{previous:checkpoint,measure:async(_p,s,{screenshot})=>{if(!screenshot)retryMeasures++;return {distanceKm:7,distanceText:'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('retry')}: {})};}});assert.equal(retryMeasures,1);assert(winner.optimization.complete);
 let checks=0;await assert.rejects(()=>optimizeCourseCapture({},course,{checkActive:async()=>{if(++checks===3)throw Object.assign(Error('cancelled'),{code:'CAPTURE_PAUSED'});},measure:roadMeasure}),e=>e.code==='CAPTURE_PAUSED');
-await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:screenshot?8:7,distanceText:screenshot?'8km':'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('changed')}: {})})}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');
+await assert.rejects(()=>optimizeCourseCapture({},course,{measure:async(_p,s,{screenshot})=>({distanceKm:screenshot?8:7,distanceText:screenshot?'8km':'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:s,...(screenshot?{png:Buffer.from('changed')}: {})})}),e=>{assert.equal(e.code,'CAPTURE_DISTANCE_CHANGED');assert.deepEqual(e.captureComparison.mismatches,['distanceKm']);assert.equal(e.captureComparison.expected.distanceKm,7);assert.equal(e.captureComparison.observed.distanceKm,8);return true;});
 console.log('Exact address selection, fixed-stop permutations, road-distance ranking, ties, checkpoints, retry, cancel and capture verification passed');
 
 let snapshotQueries=0,snapshotCaptures=0;
@@ -117,7 +117,7 @@ await reviewCheck('same-total changed legs cannot resume a winning proof',async(
  const c={id:'raw',stops:['G','C','A','G']};const old={distanceKm:3,distanceMeters:3000,distanceText:'3km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:c.stops,resolvedStops:c.stops,sourceUrl:'https://map.naver.com/p/directions/start/goal/via/car',legEvidence:{source:'naver-same-route-response',verified:true,totalMeters:3000,distancesMeters:[1000,1000,1000],pathIdentity:'old',providerOption:{main:9,sub:1}}};
  const first=await optimizeCourseCapture({},c,{measure:async(_p,_s,o)=>({...old,...(o.screenshot||o.captureIf?.(old)?{png:Buffer.from('old')}: {})})});
  const changed={...old,legEvidence:{...old.legEvidence,distancesMeters:[500,1000,1500],pathIdentity:'changed'}};
- await assert.rejects(()=>optimizeCourseCapture({},c,{previous:first.optimization,measure:async()=>({...changed,png:Buffer.from('new')})}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');
+ await assert.rejects(()=>optimizeCourseCapture({},c,{previous:first.optimization,measure:async()=>({...changed,png:Buffer.from('new')})}),e=>{assert.equal(e.code,'CAPTURE_DISTANCE_CHANGED');assert.deepEqual(e.captureComparison.mismatches,['routeEvidence']);assert.equal(e.captureComparison.evidenceMatch.path,false);assert.equal(e.captureComparison.evidenceMatch.legs,false);assert.equal(e.captureComparison.expected.distanceMeters,e.captureComparison.observed.distanceMeters);assert(!JSON.stringify(e.captureComparison).includes('start/goal'));return true;});
  assert(!captureResultVerified(c,{...first,imagePath:'winner.png',...changed}));
 });
 await reviewCheck('waypoints cannot stand in for a missing goal',async()=>{

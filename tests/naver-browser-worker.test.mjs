@@ -140,3 +140,10 @@ assert.equal(providerQueries,1,'A common search rejection must not poison every 
  assert(courseLocalRouteFailure(isolated));
  for(const error of [{...isolated,httpStatus:429},{...isolated,httpStatus:403},{...isolated,code:'NAVER_SEARCH_UNAVAILABLE'},{...isolated,reason:'PROVIDER_ACCESS_RESTRICTED'},{...isolated,routeDiagnostics:undefined},{...isolated,routeDiagnostics:{responseEvidence:{restrictionConfirmed:true}}}])assert.equal(courseLocalRouteFailure(error),false);
 }
+
+// Final mismatch evidence reaches the checkpoint without uploading or replacing other successes.
+{
+ const c={id:'diagnostic',stops:['G','C','A','G']},writes=[];let uploads=0;
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:[c],addresses:[c.id],results:{keep:{imagePath:'keep.png'}}}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return[{status:'running'}];writes.push(sql);return[];},capture:async(_p,stops,o)=>({distanceKm:o.screenshot?8:7,distanceText:o.screenshot?'8km':'7km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:stops,...(o.screenshot?{png:Buffer.from('mismatch')}: {})}),saveCapture:async()=>{uploads++;return'bad.png'},log:()=>{}});
+ assert.equal(uploads,0);assert(writes.some(sql=>sql.includes('captureComparison')&&sql.includes('distanceKm')&&sql.includes('observed')));assert(!writes.some(sql=>/set results\s*=\s*'/.test(sql)));assert(writes.some(sql=>sql.includes('cursor=1')),'diagnostic failure must not block independent work');
+}
