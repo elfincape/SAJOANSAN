@@ -974,6 +974,7 @@ export async function analyzePrivateMail({
   intentOverride,
   resolveJevConfiguration,
   monthlyCandidates = [],
+  isolatedVerification = false,
   ownerName = '장희성',
 }) {
   if (
@@ -1253,7 +1254,7 @@ export async function analyzePrivateMail({
       throw Error('ANALYSIS_SUMMARY_EMPTY');
     reconcileMailItems(analysis, row.analysis);
     if(monthlyCandidates.length&&intentOverride!=='reference'&&!['reference','routine'].includes(ownership.intent.kind)){
-     const monthly=await normalizeMonthlyMailUpdates({updates:(parsed.updates??[]).filter(update=>monthlyCandidates.some(item=>item.ref===update.ref)),candidates:monthlyCandidates,mail,context,ai:{aiKey:key,aiProvider:provider,aiModel:model},fetcher});
+     const monthly=await normalizeMonthlyMailUpdates({updates:(parsed.updates??[]).filter(update=>monthlyCandidates.some(item=>item.ref===update.ref)),candidates:monthlyCandidates,mail,context,ai:{aiKey:key,aiProvider:provider,aiModel:model},fetcher,isolatedVerification});
      analysis.monthlyUpdates=monthly.updates;analysis.monthlyReview=monthly.review;
      if(monthly.review.length)analysis.review.monthlyConfirmation=true;
      analysis.inference=combinedLunaInference([response,...monthly.responses]);

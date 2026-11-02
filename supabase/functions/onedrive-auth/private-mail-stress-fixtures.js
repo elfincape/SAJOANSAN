@@ -305,6 +305,17 @@ for(const [id,body,complete]of [
  ['mail-monthly-wrong-period','2026년 11월분 가상협동조합 선지급 품의 상신 완료했습니다. 10월분 건에 대한 통보는 아닙니다.',false],
 ])cases.push({id,kind:'mail',...common,mime:mime({id,subject:'가상 월간 품의 통보',text:body}),monthlyTemplate:{family_id:monthlyFamilyId,title:monthlyTask.title,spec:monthlySpec},monthlyTask,
  expected:{taskCount:0,monthly:{...((complete||id==='mail-monthly-material-only')?{updateCount:1}:{}),...(id==='mail-monthly-material-only'?{progressTerms:[['증빙','자료'],['송부','전달','수신']]}:{}),completedCount:complete?1:0,nativeStatus:complete?'completed':'pending',ref:'source:'+monthlyTaskId},mustNot:['material_delivery_completes_approval','different_period_updates_current_duty','duplicate_monthly_task','payment_day_becomes_approval_completion']}});
+const inlineCases=[
+ ['manual-inline-request-complete','요청: A 자료를 발송해 주세요.\n처리: A 자료 발송 완료했습니다.',1,1],
+ ['manual-inline-request-partial','요청: A 자료 작성 후 발송해 주세요.\n처리: A 자료 작성 완료했습니다. 발송은 아직 하지 않았습니다.',1,0],
+ ['manual-inline-multiple-partial','요청: A 자료 발송해 주세요.\n처리: A 자료 발송 완료했습니다.\n요청: B 자료 작성 후 발송해 주세요.\n처리: B 자료 작성 완료했습니다. 발송은 예정입니다.',2,1],
+ ['manual-inline-completion-imperative','요청: A 자료를 발송해 주세요.\n추가 요청: A 자료 발송 완료해주세요.',1,0],
+ ['manual-inline-request-refused','요청: A 자료를 발송해 주세요.\n처리: A 자료 요청은 거절 처리 완료했습니다.',1,0],
+ ['manual-inline-old-quote','현재 요청: A 자료를 발송해 주세요.\n과거 인용: 지난달 A 자료 발송 완료했습니다. 이번 요청의 처리 결과는 아닙니다.',1,0],
+ ['manual-inline-wrong-period','요청: 2026년 10월분 A 정산자료 발송해 주세요.\n처리: 2026년 11월분 A 정산자료 발송 완료했습니다. 10월분 자료는 아직 발송하지 않았습니다.',1,0],
+ ['manual-inline-long-tail',Array.from({length:75},(_,i)=>'참고 문서번호 ABC-'+String(i).padStart(3,'0')+' 기록 보관.').join('\n')+'\n요청: A 자료를 발송해 주세요.\n처리: A 자료 발송 완료했습니다.',1,1],
+];
+for(const [id,text,taskCount,completedCount] of inlineCases)cases.push({id,kind:'manual',...common,text,expected:{taskCount,completedCount,dueDate:null,dueAt:null,mustNot:['invent_completion','lose_processing_evidence','mix_requests','duplicate_retry']}});
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {
   return STRESS_FIXTURES.find((fixture) => fixture.id === id) ?? null;
