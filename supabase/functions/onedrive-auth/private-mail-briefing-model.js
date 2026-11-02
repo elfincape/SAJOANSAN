@@ -951,6 +951,7 @@ export function renderDailyBriefing({ now, analyses, overrides, manual = {}, por
     ...(manual.entries ?? []).map((item) => item.updatedAt ?? item.submittedAt),
     ...[...view.workItems, ...(view.excludedWorkItems ?? [])]
       .flatMap((item) => [
+        item.portalUpdatedAt,
         item.ownerStateAt,
         item.closedAt,
         item.correction?.updatedAt,

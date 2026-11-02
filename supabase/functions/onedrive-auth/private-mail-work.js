@@ -136,7 +136,7 @@ export function applyPortalWorkSnapshot(work, task, {ownerId}) {
     const paymentDate=calendar(planned.paymentDate??null);
     monthly={scheduledDate,visibleFrom,qualifier:planned.qualifier,originalSchedule:planned.originalSchedule,targetPeriod,paymentDate,advanceKind:planned.advanceKind??null};
   }
-  return {...work,...projected,portalVersion:task.version,...(monthly?{monthly}:{})};
+  return {...work,...projected,portalVersion:task.version,portalUpdatedAt:updatedAt,...(monthly?{monthly}:{})};
 }
 export function normalizeDailyWork(input) {
   if (

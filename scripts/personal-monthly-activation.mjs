@@ -24,9 +24,25 @@ export function monthlyActivationSql(core, monthly) {
   if (!scoped.endsWith('commit;') || !monthly.includes('\nbegin;')) throw Error('MONTHLY_ACTIVATION_CONTRACT');
   return scoped.slice(0, -7) + monthly.replace('\nbegin;', '\n');
 }
+// Existing installations need only these function bodies; keep rows, policies and grants.
+export function monthlyReviewUpgradeSql(core, monthly) {
+  const definitions = [
+    [monthlyOwnerOnlyCore(core), 'private_mail_portal_upsert'],
+    [monthly, 'private_mail_monthly_apply_manual'],
+    [monthly, 'private_mail_monthly_apply_mail'],
+  ].map(([source, name]) => {
+    const pattern = new RegExp('create (?:or replace )?function public\\.' + name + '\\(');
+    const start = source.search(pattern), end = source.indexOf('end $$;', start);
+    if (start < 0 || end < 0) throw Error('MONTHLY_UPGRADE_CONTRACT');
+    return source.slice(start, end + 7).replace(/^create (?:or replace )?function/, 'create or replace function');
+  });
+  const signatures = ['private_mail_portal_upsert(uuid,uuid,uuid,jsonb)', 'private_mail_monthly_apply_manual()', 'private_mail_monthly_apply_mail()'];
+  const guard = signatures.map(name => "to_regprocedure('public." + name + "') is null").join(' or ');
+  return "begin;\ndo $$begin if " + guard + " then raise exception 'MONTHLY_UPGRADE_REQUIRES_ACTIVATION';end if;end$$;\n" + definitions.join('\n') + '\ncommit;\n';
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv[2] !== '--print') throw Error('Only --print is supported; no database operation is performed');
+  if (!['--print', '--print-review-upgrade'].includes(process.argv[2])) throw Error('Use --print or --print-review-upgrade; no database operation is performed');
   const [core, monthly] = await Promise.all(['private-mail-portal.sql', 'private-mail-monthly.sql'].map(name =>
     readFile(new URL('../supabase/sql/' + name, import.meta.url), 'utf8')));
-  process.stdout.write(monthlyActivationSql(core, monthly));
+  process.stdout.write((process.argv[2] === '--print-review-upgrade' ? monthlyReviewUpgradeSql : monthlyActivationSql)(core, monthly));
 }

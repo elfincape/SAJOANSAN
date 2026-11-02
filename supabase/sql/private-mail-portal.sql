@@ -96,13 +96,13 @@ end $$;
 
 create function public.private_mail_portal_upsert(p_box uuid,p_user uuid,p_request uuid,p_document jsonb) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare t public.operations_tasks; prior public.operations_task_events; before_row jsonb; marker jsonb; oldm jsonb; body jsonb; ref text;
- task_id uuid; expected integer; key text; action text; desired_status text; proof timestamptz; owner_at timestamptz; source_owner_at timestamptz; state_allowed boolean; source_flag text;
+ task_id uuid; expected integer; key text; action text; desired_status text; proof timestamptz; owner_at timestamptz; source_owner_at timestamptz; state_allowed boolean; source_flag text; content_at timestamptz;
 begin
  if not public.private_mail_manual_allowed(p_box,p_user) then raise exception 'WORK_PORTAL_OWNER'; end if;
  if p_request is null or p_document->>'owner_id' is distinct from p_user::text or jsonb_typeof(p_document->'inputs') is distinct from 'object'
  or ((p_document->'inputs')-'personal_work')<>'{}' or jsonb_typeof(p_document->'inputs'->'personal_work') is distinct from 'object' then raise exception 'WORK_FORMAT'; end if;
  marker=p_document->'inputs'->'personal_work';ref=marker->>'workId';
- if (marker-array['schema','workId','ownerId','scope','sourceKeys','category','reportKind','status','summary','nextAction','progress','waitingFor','customer','requester','requestedAt','dueDate','serviceDate','needsConfirmation','confirmationReasons','ownerStateAt','verifiedCompletionAt','inferredStateAt','closedAt'])<>'{}'::jsonb then raise exception 'WORK_FORMAT'; end if;
+ if (marker-array['schema','workId','ownerId','scope','sourceKeys','category','reportKind','status','summary','nextAction','progress','waitingFor','customer','requester','requestedAt','dueDate','serviceDate','needsConfirmation','confirmationReasons','ownerStateAt','verifiedCompletionAt','inferredStateAt','closedAt','contentSourceAt'])<>'{}'::jsonb then raise exception 'WORK_FORMAT'; end if;
  if coalesce(marker->>'category','') not in ('task','issue') then raise exception 'WORK_NOT_ACTIONABLE'; end if;
  if p_document->>'work_scope'='center' then
   if not exists(select 1 from public.centers where code=p_document->>'center_code' and active) or length(btrim(coalesce(marker->'scope'->>'workCategory','')))=0 then raise exception 'WORK_SCOPE'; end if;
@@ -145,6 +145,22 @@ begin
    elsif key='dueAt' then p_document=jsonb_set(p_document,'{due_at}',coalesce(to_jsonb(t.due_at),'null'));
    else marker=jsonb_set(marker,array[key],coalesce(oldm->key,'null')); end if;
   end loop;
+  -- Existing rows recover their content clock from original receipts, never retry time.
+  content_at=(oldm->>'contentSourceAt')::timestamptz;
+  if content_at is null and t.inputs ? 'personal_monthly' then
+   select max(source_at) into content_at from (
+    select coalesce((to_jsonb(m)->>'received_at')::timestamptz,m.sent_at) source_at
+     from public.private_mail_messages m where m.owner_id=p_user and oldm->'sourceKeys' ? ('source:'||m.id::text)
+    union all
+    select (e.value->>'submittedAt')::timestamptz from public.private_mailboxes b cross join lateral jsonb_each(b.manual_entries) e
+     where b.id=p_box and b.owner_id=p_user and exists(select 1 from jsonb_array_elements_text(oldm->'sourceKeys') k where k like e.key||':manual:%')
+   ) receipts;
+  end if;
+  -- Keep older reanalysis in the event ledger without rolling current content back.
+  if content_at is not null and ((marker->>'contentSourceAt')::timestamptz is null
+    or (marker->>'contentSourceAt')::timestamptz<content_at) then
+   marker=marker||jsonb_build_object('summary',oldm->'summary','progress',oldm->'progress','contentSourceAt',content_at);
+  end if;
   marker=marker||jsonb_build_object('ownerFields',coalesce(oldm->'ownerFields','[]'),'ownerStateAt',oldm->'ownerStateAt');
   -- Source event time, rather than retry execution time, governs state changes.
   state_allowed=proof is not null and (owner_at is null or proof>owner_at)

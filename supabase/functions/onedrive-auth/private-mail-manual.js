@@ -1072,12 +1072,13 @@ ${JSON.stringify({selectedTarget:target,text:entry.text,focusEvidence:entry.focu
   if(typeof value.matchesTarget!=='boolean'||!['update','progress','complete','reopen','cancel','conflict'].includes(value.action)||!Array.isArray(value.details)||value.details.length>6)throw Error('MANUAL_FORMAT');
   const quoted=(field,input,source,max)=>{try{return sourceQuote(input,source,max);}catch(error){throw Object.assign(error,{targetField:field});}};
   const evidence=quoted('evidence',value.evidence,entry.text,2000),details=value.details.map(text=>quoted('details',text,entry.text,500));
-  if(entry.focusEvidence!=null){const anchor=quoted('evidence',entry.focusEvidence,entry.text,2000);if(!evidence.includes(anchor)&&!anchor.includes(evidence))throw Object.assign(Error('MANUAL_EVIDENCE'),{targetField:'evidence'});}
+  if(entry.focusEvidence!=null){const anchor=quoted('evidence',entry.focusEvidence,entry.text,2000);if(!evidence.includes(anchor)&&!anchor.includes(evidence))throw Object.assign(Error('MANUAL_EVIDENCE'),{targetField:'evidence'});if(details.some(text=>!anchor.includes(text)))throw Object.assign(Error('MANUAL_EVIDENCE'),{targetField:'details'});}
   const service=value.serviceOriginal==null?null:quoted('serviceOriginal',value.serviceOriginal,evidence,100);
   const serviceDay=dateFrom(service,entry.referenceDate);
   const targetKind=['task','dispatch','issue','waiting','reference'].includes(target.kind)?target.kind:'task';
-  const mixedCargo=palletQuantities(entry.text).length>1&&!/(정정|수량.{0,20}맞)/.test(entry.text);
-  let conflict=(targetKind==='reference'&&value.action==='complete')||mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(entry.text)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
+  const scopedText=entry.focusEvidence??entry.text;
+  const mixedCargo=palletQuantities(scopedText).length>1&&!/(정정|수량.{0,20}맞)/.test(scopedText);
+  let conflict=(targetKind==='reference'&&value.action==='complete')||mixedCargo||/(?:이전|과거|교체\s*전)\s*(?:차량\s*)?회신|현재.*변경\s*없/.test(scopedText)||!value.matchesTarget||value.action==='conflict'||(serviceDay&&target.serviceDate&&serviceDay!==target.serviceDate);
   if(value.action==='complete'){
     const quote=typeof value.completionEvidence==='string'?quoted('completionEvidence',value.completionEvidence,entry.text,1000):'';
     if(entry.focusEvidence!=null&&(!quote||(!quote.includes(entry.focusEvidence)&&!entry.focusEvidence.includes(quote))))conflict=true;
@@ -1118,7 +1119,7 @@ export async function linkMonthlyManualItems({value,entry,work,ai,fetcher}) {
   const target=candidates.find(item=>item.workId===match.workId);if(!target)throw Error('MANUAL_SOURCE');
   if(candidates.some(item=>item.workId!==target.workId&&item.title===target.title)&&!/(?:20[0-9]{2}|[0-9]{1,2}\s*월|이번\s*달|지난\s*달|전월|당월)/.test(raw.evidence)){confirmation(index);continue;}
   try{
-   const result=await analyzeTargetedManual({entry:{...entry,text:raw.evidence,originalContext:entry.text},target:{workId:target.workId,title:target.title,kind:'task',monthly:target.monthly,status:target.status,summary:target.summary??[]},ai,fetcher});responses.push(result.response);items[index]=result.reply.items[0];
+   const result=await analyzeTargetedManual({entry:{...entry,focusEvidence:raw.evidence},target:{workId:target.workId,title:target.title,kind:'task',monthly:target.monthly,status:target.status,summary:target.summary??[]},ai,fetcher});responses.push(result.response);items[index]=result.reply.items[0];
   }catch{confirmation(index);}
  }
  return {responses,reply:{origin:'manual',sourceText:entry.text,authoredDate:value.authoredDate??null,resolution:'monthly_update_v1',items}};
