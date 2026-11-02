@@ -8046,3 +8046,19 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   assert(renderDailyBriefing({now:'2026-11-02T13:00:00+09:00',analyses:[],portalTasks:[task],portalOwnerId:owner}).managedHtml.includes('최종 업데이트: 2026-11-02 12:30'));
  });
 }
+
+{
+ const {test}=await import('node:test');
+ await test('selected mail issue carries requested action and current stage into follow-up verification',async()=>{
+  const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',mailId='72000000-0000-4000-8000-000000000001',id='72000000-0000-4000-8000-000000000002',ref=mailId+':issues:0';
+  const text='10/06 가상센터 지연 비용을 협의 완료했습니다. 임시차 비용 420,000원만 지급하기로 했습니다. 해당 비용은 10월 정산에서 공제될 예정입니다.';
+  const entry={entryId:id,clientRequestId:id,status:'pending',text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02',targetWorkId:ref,items:[]},current={id:box,owner_id:owner,enabled:true,manual_entries:{[id]:entry},briefing_overrides:{}};
+  const latest='10월 정산에서 지연 비용 차감 반영을 요청했습니다.',issue={text:'가상센터 지연 비용 발생',status:'in_progress',impact:'10월 정산 차감 필요',latest,evidence:'10월 정산 시 해당 비용 차감 부탁드립니다.',itemIndex:0};let selected;
+  const response=await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},{json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),enqueueManualReport:async()=>false,
+   db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path.startsWith('private_mail_messages?'))return[{analysis:{source:{id:mailId,sentAt:'2026-11-02T05:00:00Z'},issues:[issue]},analysis_excluded:false}];if(path==='rpc/private_mail_manual_claim')return{claimed:true,entry};if(path==='rpc/private_mail_manual_finish'){current.manual_entries[id]={...entry,status:'ready',items:options.body.p_items};return current.manual_entries[id];}if(path==='rpc/private_mail_manual_fail')return{...entry,status:'failed',error:options.body.p_code};throw Error('UNEXPECTED_DB '+path);},
+   fetcher:async(url,options)=>{const prompt=JSON.parse(options.body).input[0].content[0].text;selected=JSON.parse(prompt.split('\n').find(line=>line.startsWith('{"selectedTarget"'))).selectedTarget;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'지연 비용 협의 완료 · 정산 공제 예정',evidence:text,details:['임시차 비용 420,000원만 지급하기로 했습니다.','해당 비용은 10월 정산에서 공제될 예정입니다.'],completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+  assert(selected,JSON.stringify(await response.clone().json()));assert.equal(selected.kind,'issue');assert.equal(selected.status,'in_progress');assert(selected.summary.includes(latest));
+  const result=await response.json();assert.equal(result.status,'ready');assert.equal(result.items.length,1);assert.equal(result.items[0].workRef,ref);assert.equal(result.items[0].done,false);assert.equal(result.items[0].serviceDate,null);assert.equal(result.items[0].dueDate,null);assert(result.items[0].details.some(t=>t.includes('420,000원')));assert(result.items[0].text.includes('협의 완료'));
+ });
+}
