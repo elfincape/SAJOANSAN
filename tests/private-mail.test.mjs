@@ -8126,3 +8126,26 @@ for(const [id,request,result,expected] of cases){
 assert(rows.every(r=>r.passed),'adversarial completion guard failures');
 
 }
+
+{
+ const {test}=await import('node:test');
+ await test('monthly material progress survives one quote repair while scope and completion checks remain strict',async()=>{
+  const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+  const ref='source:71000000-0000-4000-8000-000000000001',id='74000000-0000-4000-8000-000000000001',anchor='2026년 10월분 가상협동조합 선지급 증빙 자료 송부 완료했습니다.',extra='다른 업무의 승인 자료도 전달합니다.',body=anchor+' 품의 상신은 아직 하지 않았습니다.\n'+extra;
+  const candidate={ref,text:'가상협동조합 선지급 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+  const run=async(firstDetail,secondDetail,action='progress')=>{let calls=0;const result=await normalizeMonthlyMailUpdates({updates:[{ref,evidence:anchor,status:'pending'}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:body},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>{calls++;return Response.json({model:'gpt-6-luna',status:'completed',usage:{input_tokens:10,output_tokens:5,total_tokens:15},output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action,text:'10월분 증빙 자료 송부, 품의 상신 대기',evidence:anchor,details:[calls===1?firstDetail:secondDetail],completionEvidence:action==='complete'?anchor:null,serviceOriginal:null,dueOriginal:null})}]}]});}});return{result,calls};};
+  const repaired=await run('10월 증빙자료 발송',anchor);assert.equal(repaired.calls,2);assert.equal(repaired.result.updates.length,1);assert.equal(repaired.result.updates[0].status,'pending');assert.equal(repaired.result.updates[0].details[0],anchor);assert.equal(repaired.result.review.length,0);
+  const {combinedLunaInference}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');assert.equal(combinedLunaInference(repaired.result.responses).usage.total_tokens,30);
+  const outOfFocus=await run(extra,anchor);assert.equal(outOfFocus.result.updates.length,1);assert(!outOfFocus.result.updates[0].details.includes(extra));
+  const persistent=await run(extra,extra);assert.equal(persistent.calls,2);assert.equal(persistent.result.updates.length,0);assert.equal(persistent.result.review[0].field,'details');
+  const falseComplete=await run(anchor,anchor,'complete');assert.equal(falseComplete.result.updates.length,0,'material delivery cannot complete the approval duty');
+ });
+}
+
+{
+ const {fixtureById}=await import('../supabase/functions/onedrive-auth/private-mail-stress-fixtures.js');
+ const {evaluateStressResult}=await import('../supabase/functions/onedrive-auth/private-mail-stress-verify.js');
+ const fixture=fixtureById('mail-monthly-material-only'),empty={tasks:[],issues:[],waiting:[],updates:[],monthlyUpdates:[],monthlyReview:[{ref:fixture.expected.monthly.ref,reason:'monthly_verification_unavailable',code:'MANUAL_EVIDENCE',field:'details'}]};
+ const lost=evaluateStressResult(fixture,empty,[],null);assert.equal(lost.checks.monthlyCompletion,true);assert.equal(lost.checks.monthlyTarget,true);assert.equal(lost.checks.monthlyCount,false);assert.equal(lost.checks.monthlyProgress,false);assert.equal(lost.automatedChecksPassed,false,'pending by default is not a preserved progress update');
+ const present=evaluateStressResult(fixture,{...empty,monthlyReview:[],monthlyUpdates:[{ref:fixture.expected.monthly.ref,status:'pending',text:'10월분 증빙 자료 전달, 품의 상신 대기',details:[]}]},[],null);assert.equal(present.checks.monthlyProgress,true);assert.equal(present.automatedChecksPassed,true);
+}
