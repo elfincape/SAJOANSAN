@@ -8074,3 +8074,35 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
   await assert.rejects(run(true),/MANUAL_EVIDENCE/);
  });
 }
+
+{
+ const {test}=await import('node:test');
+ await test('same-entry request and result preserve per-request completion scope',async()=>{
+  const {verifyInlineManualResults,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const id='73000000-0000-4000-8000-000000000001',a='요청: A 자료 발송 부탁드립니다.\n처리: A 자료 발송 완료했습니다.',b='요청: B 자료 작성 후 발송 부탁드립니다.\n처리: B 자료 작성 완료했습니다. 발송은 예정입니다.',text=a+'\n'+b;
+  const raw=(e,title)=>({kind:'task',text:title,evidence:e,requestEvidence:e.split('\n')[0],resultEvidence:e.split('\n')[1],needsConfirmation:false});
+  let calls=0;const value={items:[raw(a,'A 자료 발송'),raw(b,'B 자료 작성 및 발송')],authoredDate:null};
+  const entry={entryId:id,text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02'};
+  const run=async(value,action)=>verifyInlineManualResults({value,entry,ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{calls++;const prompt=JSON.parse(options.body).input[0].content[0].text;const p=JSON.parse(prompt.split('\n').find(l=>l.startsWith('{"selectedTarget"')));const e=p.focusEvidence;const complete=action??(e===a?'complete':'progress');return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:complete,text:'처리 결과',evidence:e,details:[e.split('\n')[1]],completionEvidence:complete==='complete'?e.split('\n')[1]:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+  const verified=await run(value);assert.equal(calls,2);assert.equal(verified.value.items[0].workflowStatus,'complete');assert.equal(verified.value.items[1].workflowStatus,'pending');assert.equal(verified.value.items[0].workRef,undefined);
+  const items=normalizeManualItems(verified.value,{...entry,allowLinks:true,verifiedInlineResults:true});assert.equal(items.length,2);assert.equal(items[0].evidence,a);assert.equal(items[0].declaredAt,entry.submittedAt);assert(items[1].details[0].includes('발송은 예정'));assert.deepEqual(items,normalizeManualItems(verified.value,{...entry,allowLinks:true,verifiedInlineResults:true}));
+  const premature=await run({items:[raw(b,'B 자료 작성 및 발송')]},'complete');assert.notEqual(premature.value.items[0].workflowStatus,'complete');
+  const old='요청: C 자료 발송 부탁드립니다.\n과거 인용: C 자료 발송 완료했습니다.';
+  const oldResult=await verifyInlineManualResults({value:{items:[raw(old,'C 자료 발송')]},entry:{...entry,text:old},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'complete',text:'C 발송',evidence:old,details:[],completionEvidence:old.split('\n')[1],serviceOriginal:null,dueOriginal:null})}]}]})});assert.notEqual(oldResult.value.items[0].workflowStatus,'complete');
+  const view=manualDailyView({[id]:{...entry,status:'ready',items}},'2026-11-02');assert.equal(view.entries[0].items[0].done,true);assert.equal(view.entries[0].items[1].done,false);
+  const crossed=structuredClone(value);crossed.items[0].resultEvidence=b.split('\n')[1];await assert.rejects(run(crossed),/MANUAL_EVIDENCE/);
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ await test('new request with result goes through handler save and duplicate read without new work',async()=>{
+  const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',id='73000000-0000-4000-8000-000000000002',text='A 자료 발송 부탁드립니다.\nA 자료 발송 완료했습니다.';
+  const entry={entryId:id,clientRequestId:id,text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02',items:[],status:'pending'},current={id:'39045005-313e-42e1-b50c-2394b3b6ff26',owner_id:owner,enabled:true,manual_entries:{[id]:entry},briefing_overrides:{}};let calls=0,saves=0;
+  const ctx={json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),enqueueManualReport:async()=>false,db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path==='rpc/private_mail_manual_claim')return{claimed:current.manual_entries[id].status!=='ready',entry:current.manual_entries[id]};if(path==='rpc/private_mail_manual_finish'){saves++;return current.manual_entries[id]={...entry,status:'ready',items:options.body.p_items};}if(path==='rpc/private_mail_manual_fail')throw Error(options.body.p_code);throw Error(path);},fetcher:async()=>{calls++;const value=calls===1?{items:[{kind:'task',text:'A 자료 발송',evidence:text,requestEvidence:text.split('\n')[0],resultEvidence:text.split('\n')[1],assignee:null,serviceOriginal:null,dueOriginal:null,needsConfirmation:false}],authoredDate:null}:{matchesTarget:true,action:'complete',text:'A 자료 발송 완료',evidence:text,details:[],completionEvidence:text.split('\n')[1],serviceOriginal:null,dueOriginal:null};return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});}};
+  const call=()=>handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},ctx);
+  const first=await (await call()).json();assert.equal(first.status,'ready');assert.equal(first.items[0].done,true);assert.equal(calls,2);const saved=structuredClone(current.manual_entries[id]);
+  const duplicate=await (await call()).json();assert.equal(duplicate.items[0].done,true);assert.equal(calls,2);assert.equal(saves,1);assert.deepEqual(current.manual_entries[id],saved);assert.equal(saved.text,text);
+ });
+}
