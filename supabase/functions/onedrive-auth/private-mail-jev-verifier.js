@@ -10,6 +10,7 @@ export const MAIL_INTERPRETATION_RULES = Object.freeze([
   'P는 팔레트 수량이며 차량 톤수가 아니다.',
   '차량 배정 완료는 배차 준비의 완료일 수 있지만 실제 운행·하차 완료를 뜻하지 않는다.',
   '현재 발신자의 직접 요청과 참고로 전달한 문서 속 타인의 요청을 구분한다.',
+  '월간 품의는 대상기간과 종류가 일치하는 처리 근거가 있어야 완료다. 자료 전달·물량 보충·지급예정일은 품의 완료가 아니다. 처리예정일·대상기간·지급예정일을 구분한다.',
 ]);
 
 async function boundedJson(response) {
@@ -264,7 +265,7 @@ export async function reviewNormalizedMail({
   if (!mail.text.trim())
     return { ...metadata, status: 'unavailable', code: 'BODY_ONLY_REQUIRED' };
   const items = [];
-  for (const kind of ['updates', 'tasks', 'issues', 'waiting']) {
+  for (const kind of ['monthlyUpdates', 'updates', 'tasks', 'issues', 'waiting']) {
     for (const [offset, item] of (analysis[kind] ?? []).entries()) {
       items.push({
         id: `${mail.id}:${kind}:${item.itemIndex ?? offset}`,
@@ -294,7 +295,7 @@ export async function reviewNormalizedMail({
       }),
     });
   }
-  const refs = new Set((analysis.updates ?? []).map((item) => item.ref));
+  const refs = new Set([...(analysis.updates ?? []),...(analysis.monthlyUpdates ?? [])].map((item) => item.ref));
   const candidates = related
     .filter((item) => refs.has(item.ref))
     .slice(0, 8)
@@ -303,6 +304,7 @@ export async function reviewNormalizedMail({
       kind: item.kind,
       text: item.text,
       status: item.status,
+      ...(item.monthly ? {monthly:Object.fromEntries(['scheduledDate','targetPeriod','paymentDate','advanceKind','qualifier'].map(key=>[key,item.monthly[key]??null]))} : {}),
     }));
   return review({
     id: mail.id,
