@@ -7995,3 +7995,27 @@ for(const [label,receivedAt,ownerAt] of [['old-message-late-reanalysis','2026-11
  });
  assert.equal(review.status,'no_concerns');assert(JSON.stringify(outgoing.state).includes('monthlyUpdates'));assert(JSON.stringify(outgoing.state).includes('2026-10-31'));assert(JSON.stringify(outgoing.state).includes('2026-11-10'));assert.deepEqual(analysis,before,'monthly JEV remains advisory and cannot change the approved extraction or status');
 }
+
+{
+ const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+ const ref='source:71000000-0000-4000-8000-000000000001',id='11111111-1111-4111-8111-111111111111',text='2026년 10월분 가상 품의 상신 완료했습니다.';
+ const candidate={ref,text:'가상 품의',status:'pending',monthly:{advanceKind:'nonghyup',targetPeriod:{from:'2026-10-01',through:'2026-10-31'}}};
+ const run=details=>normalizeMonthlyMailUpdates({updates:[{ref,evidence:text,status:'complete'}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:text},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',status:'completed',role:'assistant',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'품의 진행',evidence:text,details,completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]})});
+ const valid=await run([]);assert.equal(valid.updates[0].status,'pending','model progress is accepted as progress, never forced to complete');assert.equal(valid.review.length,0);
+ const invalid=await run(['원문에 없는 요약 세부내용']);assert.equal(invalid.updates.length,0);assert.equal(invalid.review[0].code,'MANUAL_EVIDENCE');assert.equal(invalid.review[0].field,'details');assert(!JSON.stringify(invalid.review).includes('원문에 없는'));
+}
+
+// Replay the exact saved monthly failure: the verifier quoted the current-body greeting omitted by extraction.
+{
+ const {normalizeMonthlyMailUpdates}=await import('../supabase/functions/onedrive-auth/private-mail-monthly.js');
+ const id='11111111-1111-4111-8111-111111111111',ref='source:71000000-0000-4000-8000-000000000001';
+ const body='테스트담당자님, 요청하신 2026년 10월분 가상협동조합 선지급 품의 상신 완료했습니다.',anchor='2026년 10월분 가상협동조합 선지급 품의 상신 완료했습니다.';
+ const recorded={matchesTarget:true,action:'progress',text:'2026년 10월분 가상협동조합 선지급 품의 상신 완료 안내',evidence:body,details:[],completionEvidence:null,serviceOriginal:null,dueOriginal:null};
+ const candidate={ref,text:'가상협동조합 선지급 품의',status:'pending',monthly:{advanceKind:'nonghyup',scheduledDate:'2026-11-01',targetPeriod:{from:'2026-10-01',through:'2026-10-31'},paymentDate:'2026-11-10'}};
+ let prompt;
+ const run=value=>normalizeMonthlyMailUpdates({updates:[{ref,status:'complete',evidence:anchor,text:'2026년 10월분 가상협동조합 선지급 품의 상신 완료',due:null}],candidates:[candidate],mail:{id,sent_at:'2026-11-02T01:00:00Z'},context:{currentBody:body,ownerContext:{recipientRole:'to',senderIsOwner:false}},ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{prompt=JSON.parse(options.body).input[0].content[0].text;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',status:'completed',role:'assistant',content:[{type:'output_text',text:JSON.stringify(value)}]}]})}});
+ const replay=await run(recorded);assert.equal(replay.review.length,0,JSON.stringify(replay.review));assert.equal(replay.updates[0].status,'pending','recorded progress is never coerced into completion');assert(prompt.includes('focusEvidence'));assert(prompt.includes('결재 승인·지급 완료를 기다리는 업무가 아닙니다'));
+ const completed=await run({...recorded,action:'complete',completionEvidence:body});assert.equal(completed.updates[0].status,'complete');
+ const invented=await run({...recorded,evidence:body.replace('요청하신','요청하셨던')});assert.equal(invented.updates.length,0);assert.equal(invented.review[0].code,'MANUAL_EVIDENCE');
+ const unrelated=await run({...recorded,evidence:'테스트담당자님'});assert.equal(unrelated.updates.length,0);assert.equal(unrelated.review[0].code,'MANUAL_EVIDENCE','current-body text without the selected evidence anchor cannot update the duty');
+}
