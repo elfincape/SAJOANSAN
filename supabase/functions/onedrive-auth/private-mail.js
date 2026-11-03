@@ -542,6 +542,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
   ) {
     return handleManualMessage(action, body, user, {
       ...ctx,
+      verifiedUpdatesEnabled:user.id===APPROVED_MAIL_TARGET.owner_id,
       resolveJevConfiguration,
       loadMonthlyTasks:()=>loadMonthlyPortalTasks({db,ownerId:user.id}),
       enqueueManualReport: (day) =>
@@ -640,6 +641,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       });
     return handleMailAutomation(action, body, user, {
       ...ctx,
+      verifiedUpdatesEnabled:user.id===APPROVED_MAIL_TARGET.owner_id,
       resolveJevConfiguration,
       loadMonthlyTasks:()=>loadMonthlyPortalTasks({db,ownerId:user.id}),
       ...source,
