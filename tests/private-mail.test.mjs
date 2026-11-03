@@ -8187,3 +8187,41 @@ assert(rows.every(r=>r.passed),'adversarial completion guard failures');
   }
  });
 }
+
+{
+ const {test}=await import('node:test');
+ await test('selected mail reinput retains original request after prior linked progress',async()=>{
+  const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',mailId='72000000-0000-4000-8000-000000000001',id='72000000-0000-4000-8000-000000000002',ref=mailId+':issues:0';
+  const text='10/06 가상센터 지연 비용을 협의 완료했습니다. 임시차 비용 420,000원만 지급하기로 했습니다. 해당 비용은 10월 정산에서 공제될 예정입니다.';
+  const entry={entryId:id,clientRequestId:id,status:'pending',text,submittedAt:'2026-11-02T11:00:00Z',referenceDate:'2026-11-02',targetWorkId:ref,items:[]},current={id:box,owner_id:owner,enabled:true,manual_entries:{[id]:entry},briefing_overrides:{}};
+  const latest='10월 정산에서 지연 비용 차감 반영을 요청했습니다.',issue={text:'가상센터 지연 비용 발생',status:'in_progress',impact:'10월 정산 차감 필요',latest,evidence:'10월 정산 시 해당 비용 차감 부탁드립니다.',itemIndex:0};let selected;
+  const priorId='72000000-0000-4000-8000-000000000003';current.manual_entries[priorId]={entryId:priorId,status:'ready',text,submittedAt:'2026-11-02T10:00:00Z',referenceDate:'2026-11-02',items:[{itemId:'item-001',ref:priorId+':manual:item-001',workRef:ref,kind:'issue',text:'지연 비용 420,000원 합의 · 공제 예정',evidence:text,details:['420,000원 합의','10월 정산 공제 예정'],workflowStatus:'pending',done:false,completedAt:null,completionEvents:[],needsConfirmation:false,submittedAt:'2026-11-02T10:00:00Z',receivedAt:'2026-11-02T10:00:00Z',declaredAt:'2026-11-02T10:00:00Z',visibleFrom:'2026-11-02'}]};
+  const response=await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},{json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiProvider:'openai',aiModel:'gpt-6-luna',aiKey:'MOCK_ONLY'}),enqueueManualReport:async()=>false,
+   db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path.startsWith('private_mail_messages?'))return[{analysis:{source:{id:mailId,sentAt:'2026-11-02T05:00:00Z'},issues:[issue]},analysis_excluded:false}];if(path==='rpc/private_mail_manual_claim')return{claimed:true,entry};if(path==='rpc/private_mail_manual_finish'){current.manual_entries[id]={...entry,status:'ready',items:options.body.p_items};return current.manual_entries[id];}if(path==='rpc/private_mail_manual_fail')return{...entry,status:'failed',error:options.body.p_code};throw Error('UNEXPECTED_DB '+path);},
+   fetcher:async(url,options)=>{const prompt=JSON.parse(options.body).input[0].content[0].text;selected=JSON.parse(prompt.split('\n').find(line=>line.startsWith('{"selectedTarget"'))).selectedTarget;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'progress',text:'지연 비용 협의 완료 · 정산 공제 예정',evidence:text,details:['임시차 비용 420,000원만 지급하기로 했습니다.','해당 비용은 10월 정산에서 공제될 예정입니다.'],completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+  assert(selected,JSON.stringify(await response.clone().json()));assert.equal(selected.kind,'issue');assert.equal(selected.status,'in_progress');assert(selected.summary.includes(latest));assert.equal(selected.originalRequest.title,issue.text);assert.equal(selected.originalRequest.evidence,issue.evidence);
+  const result=await response.json();assert.equal(result.status,'ready');assert.equal(result.items.length,1);assert.equal(result.items[0].workRef,ref);assert.equal(result.items[0].done,false);assert.equal(result.items[0].serviceDate,null);assert.equal(result.items[0].dueDate,null);assert(result.items[0].details.some(t=>t.includes('420,000원')));assert(result.items[0].text.includes('협의 완료'));
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ await test('remaining settlement action replaces incident title on the same work and survives old receipt replay',async()=>{
+  const {analyzeTargetedManual,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  const {dailyWorkItems,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+  const amount='420,000',source='가상센터 지연 비용은 임시차 2건 비용 '+amount+'원만 지불 하기로 했습니다. 해당 비용은 10월 정산에서 공제 될 예정입니다.',proof='해당 비용은 10월 정산에서 공제 될 예정입니다.';
+  const ref='77000000-0000-4000-8000-000000000001:issues:0',title='10월 정산에서 '+amount+'원 공제',target={workId:ref,title:'가상센터 지연 비용 발생',kind:'issue',status:'in_progress',originalRequest:{title:'가상센터 지연 비용 발생',summary:['10월 정산 차감 요청'],evidence:'10월 정산 차감 부탁드립니다.'}};
+  let prompt;const run=async({text=source,id='77000000-0000-4000-8000-000000000002',at='2026-11-03T01:00:00Z',action='progress',next=proof,matches=true}={})=>{
+   const entry={entryId:id,text,submittedAt:at,referenceDate:'2026-11-03'},response=await analyzeTargetedManual({entry,target,ai:{aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async(url,options)=>{prompt=JSON.parse(options.body).input[0].content[0].text;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:matches,action,text:action==='complete'?'10월 정산 공제 반영 완료':title,evidence:text,details:[text],nextActionEvidence:next,completionEvidence:action==='complete'?text:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
+   const items=normalizeManualItems(response.reply,{...entry,allowLinks:true,verifiedDispatchReply:true,replyDetailsByItem:response.reply.items.map(i=>i.details??[])});return {...entry,status:'ready',items};
+  };
+  const current=await run(),before=structuredClone(current);assert(prompt.includes('원래 업무가 아직 끝나지 않았으면'));assert(prompt.includes(target.originalRequest.evidence));assert.equal(current.items[0].text,title);assert.equal(current.items[0].nextAction,proof);assert.equal(current.items[0].workflowStatus,'pending');assert.equal(current.items[0].workRef,ref);
+  const oldId='77000000-0000-4000-8000-000000000003',old={...current,entryId:oldId,submittedAt:'2026-11-02T01:00:00Z',items:current.items.map(item=>({...item,ref:oldId+':manual:item-001',text:'가상센터 지연 비용 발생',nextAction:null,receivedAt:'2026-11-02T01:00:00Z',submittedAt:'2026-11-02T01:00:00Z',declaredAt:'2026-11-02T01:00:00Z',visibleFrom:'2026-11-02'}))};
+  const project=(entries,workOverrides={})=>dailyWorkItems({day:'2026-11-03',groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,'2026-11-03',workOverrides),{workOverrides});
+  for(const entries of [{[oldId]:old,[current.entryId]:current},{[current.entryId]:current,[oldId]:{...old,updatedAt:'2026-11-04T01:00:00Z'}}]){const work=project(entries);assert.equal(work.length,1);assert.equal(work[0].workId,ref);assert.equal(work[0].title,title);assert.equal(work[0].nextAction,proof);assert.notEqual(work[0].status,'complete');const html=renderBriefingWorkNote(work);assert(html.includes(title));assert(html.includes(amount));assert(html.includes('10월 정산'));}
+  const completed=await run({id:'77000000-0000-4000-8000-000000000004',at:'2026-11-03T02:00:00Z',text:'10월 정산에서 '+amount+'원 공제 반영 완료했습니다.',action:'complete',next:null});const work=project({[completed.entryId]:completed,[oldId]:old,[current.entryId]:current});assert.equal(work.length,1);assert.equal(work[0].workId,ref);assert.equal(work[0].status,'complete');assert.equal(work[0].nextAction,null);assert.deepEqual(current,before);const owner={['work:'+ref]:{actor:'owner',done:false,updatedAt:'2026-11-03T03:00:00Z'}};const reopened=project({[completed.entryId]:completed,[current.entryId]:current},owner);assert.equal(reopened[0].status,'pending');assert(reopened[0].sourceRefs.some(s=>s.ref===current.items[0].ref));assert.deepEqual(current,before);
+  const conflict=await run({matches:false});assert.equal(conflict.items[0].needsConfirmation,true);assert.equal(conflict.items[0].workRef,undefined);assert.equal(conflict.items[0].nextAction,undefined);
+  await assert.rejects(run({next:'10월 정산에서 없는 금액을 공제'}),/MANUAL_EVIDENCE/);
+ });
+}
