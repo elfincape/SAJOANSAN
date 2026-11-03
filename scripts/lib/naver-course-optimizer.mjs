@@ -2,6 +2,7 @@ export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
 export const SHORTLIST_WEB_POLICY='naver-api-top3-web-meters-v1';
 
 import {routeSettingsKey} from './naver-route-evidence.mjs';
+import {createHash} from 'node:crypto';
 import {naverCourseUrl,consecutivePointPlan,addressSearch,addressCandidateMatches} from './naver-map-browser.mjs';
 import {coursePermutations} from '../../supabase/functions/naver-relations/course-permutations.js';
 export {coursePermutations};
@@ -18,6 +19,22 @@ export function comparisonScope(course,candidatePlan){
 }
 const pointKey=url=>{try{const p=new URL(url).pathname.split('/');return p[6]==='car'?p.slice(3,6):null;}catch{return null;}};
 const evidenceKey=r=>JSON.stringify([r.distanceMeters??null,r.legEvidence?.source??null,r.legEvidence?.verified??null,r.legEvidence?.pathIdentity??null,r.legEvidence?.totalMeters??null,r.legEvidence?.distancesMeters??null,r.legEvidence?.logicalPointMapping??null,r.legEvidence?.providerOption?[r.legEvidence.providerOption.main,r.legEvidence.providerOption.sub]:null,r.requestSettings?Object.entries(r.requestSettings).sort(([a],[b])=>a.localeCompare(b)):null,pointKey(r.sourceUrl)]);
+function captureComparison(expected,captured,selected){
+ const mismatches=[];
+ if(!validDistance(captured))mismatches.push('invalidDistance');
+ if(captured.distanceKm!==expected.distanceKm)mismatches.push('distanceKm');
+ if(captured.routeLabel!==expected.routeLabel)mismatches.push('routeLabel');
+ if(evidenceKey(captured)!==evidenceKey(expected))mismatches.push('routeEvidence');
+ if(!captured.png?.length)mismatches.push('missingImage');
+ if(JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected))mismatches.push('requestedOrder');
+ if(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))mismatches.push('resolvedOrder');
+ const summary=value=>({distanceKm:Number.isFinite(value.distanceKm)?value.distanceKm:null,distanceMeters:Number.isSafeInteger(value.distanceMeters)?value.distanceMeters:null,
+  routeLabel:typeof value.routeLabel==='string'?value.routeLabel.slice(0,60):null,pathIdentity:value.legEvidence?.pathIdentity??null,measuredAt:value.measuredAt??null,requestedCount:value.requestedStops?.length??null,resolvedCount:value.resolvedStops?.length??null,
+  legCount:value.legEvidence?.distancesMeters?.length??null,legTotalMeters:value.legEvidence?.totalMeters??null});
+ return {mismatches,expected:summary(expected),observed:summary(captured),evidenceMatch:{path:expected.legEvidence?.pathIdentity===captured.legEvidence?.pathIdentity,
+  nativePoints:JSON.stringify(pointKey(expected.sourceUrl))===JSON.stringify(pointKey(captured.sourceUrl)),settings:routeSettingsKey(expected.requestSettings)===routeSettingsKey(captured.requestSettings),
+  legs:JSON.stringify(expected.legEvidence?.distancesMeters??null)===JSON.stringify(captured.legEvidence?.distancesMeters??null),mapping:JSON.stringify(expected.legEvidence?.logicalPointMapping??null)===JSON.stringify(captured.legEvidence?.logicalPointMapping??null)}};
+}
 export function captureResultVerified(course,result){
  try{
   const state=result?.optimization,scope=comparisonScope(course,state?.selection),routes=scope.routes,keys=routes.map(stops=>JSON.stringify(stops)),selected=JSON.stringify(result?.orderedStops);
@@ -91,8 +108,11 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
  const captured=bestCapture?.key===JSON.stringify(selected)?bestCapture.result:await lookup(selected,{screenshot:true,checkActive});
  await checkActive();
  if(!validDistance(captured)||captured.distanceKm!==expected.distanceKm||captured.routeLabel!==expected.routeLabel||evidenceKey(captured)!==evidenceKey(expected)||!captured.png?.length||JSON.stringify(captured.requestedStops??selected)!==JSON.stringify(selected)||(expected.resolvedStops&&JSON.stringify(captured.resolvedStops)!==JSON.stringify(expected.resolvedStops))) {
+  const keep=value=>structuredClone(Object.fromEntries(['method','distanceKm','distanceMeters','distanceText','routeLabel','measuredAt','requestedStops','resolvedStops','sourceUrl','legEvidence','requestSettings','requestProof'].filter(key=>value[key]!==undefined).map(key=>[key,value[key]])));
+  // Full route evidence belongs only to the existing owner-private checkpoint, never console logs.
+  const captureEvidence={version:1,comparedAt:new Date().toISOString(),selectedStops:[...selected],expected:keep(expected),observed:keep(captured),image:{bytes:captured.png?.length??0,sha256:captured.png?.length?createHash('sha256').update(captured.png).digest('hex'):null}};
   delete evaluations[JSON.stringify(selected)];cache.delete(cacheKeyFor(selected));await report();
-  throw Object.assign(Error('최종 캡처의 순서·거리가 비교 결과와 달라 최단 검증을 완료하지 못했습니다. 재시도해 주세요.'),{code:'CAPTURE_DISTANCE_CHANGED',optimization:structuredClone(state)});
+  throw Object.assign(Error('최종 캡처의 순서·거리가 비교 결과와 달라 최단 검증을 완료하지 못했습니다. 재시도해 주세요.'),{code:'CAPTURE_DISTANCE_CHANGED',captureComparison:captureComparison(expected,captured,selected),captureEvidence,optimization:structuredClone(state)});
  }
  state.complete=true;state.failed=[];await report();
  return {...captured,orderedStops:selected,optimization:structuredClone(state),metrics:{...metrics,elapsedMs:performance.now()-started}};

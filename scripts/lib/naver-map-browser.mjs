@@ -260,13 +260,15 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
  const plan=consecutivePointPlan(stops,stops.map(s=>cachedPoint(s,addressCache))),mapStops=plan.mapStops,folded=mapStops.length!==stops.length;
  if(mapStops.length<2)throw Error('모든 방문지가 동일한 좌표여서 네이버 주행 경로를 표시할 수 없습니다.');
  const url=naverCourseUrl(mapStops,addressCache);
- const routeStarted=performance.now(),navigation={startedAt:Date.now(),frame:page.mainFrame(),url};let revision=0;const responses=new Set();
+ const routeStarted=performance.now(),navigation={startedAt:Date.now(),frame:page.mainFrame(),url};let revision=0,requestProof;const responses=new Set();
  const matches=response=>{try{return naverCourseRequestMatches(response.request(),mapStops,addressCache,navigation);}catch{return false;}};
  watchRoute=response=>{if(matches(response)&&!responses.has(response.request())){responses.add(response.request());revision++;}};
  page.on('response',watchRoute);
  const routeResponse=page.waitForResponse(matches,{timeout:45000}).then(async response=>{
   if(!response.ok())throw await providerFailure(response,undefined,'route');
   const settings=routeSettings(response.url());if(routeContext.settings&&routeSettingsKey(routeContext.settings)!==routeSettingsKey(settings))throw Object.assign(Error('저장된 비교와 차량·주행 옵션이 다릅니다. 기존 진행은 보존했습니다.'),{code:'OPTIMIZATION_SETTINGS_CHANGED'});routeContext.settings=settings;
+  const requestUrl=new URL(response.url()),q=requestUrl.searchParams,points=[q.get('start'),...(q.get('waypoints')?.split('|')??[]),q.get('goal')];
+  requestProof={method:response.request().method?.()??null,path:requestUrl.pathname,coordinates:points.map(point=>point.split(',').slice(0,2).map(Number)),labels:points.map(point=>Buffer.from(point.match(/(?:^|,)name=([^,]+)/)?.[1]??'','base64url').toString('utf8')),logicalToMap:[...plan.logicalToMap]};
   return decodeNaverDirections(await response.body());
  }).catch(error=>({error}));
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000});
@@ -302,7 +304,7 @@ export async function browserCourseCapture(page,stops,{screenshot=true,captureIf
  timings.optionCompareMs=performance.now()-optionStarted;
  const chosen=routeOptions[index],legEvidence={source:'naver-same-route-response',verified:chosen.legsVerified,distancesMeters:chosen.legDistancesMeters,totalMeters:chosen.distanceMeters,rawRouteIndex:chosen.rawRouteIndex,pathIdentity:chosen.pathIdentity,providerOption:chosen.providerOption,...(chosen.legIssue?{issue:chosen.legIssue}:{})};
  if(folded)legEvidence.logicalPointMapping={mapStops,logicalToMap:plan.logicalToMap,coordinates:stops.map(s=>cachedPoint(s,addressCache).coordinates),mapDistancesMeters:raw.routes[chosen.rawRouteIndex].legDistancesMeters};
- const result={...distance,distanceMeters:chosen.distanceMeters,legEvidence,routeOptions,method:'naver-map-display',requestedStops:[...stops],resolvedStops,confirmedAddresses:stops.map(address=>cachedPoint(address,addressCache).text.split('\n').map(line=>line.trim()).find(line=>addressCandidateMatches(addressSearch(address),line))||cachedPoint(address,addressCache).text),sourceUrl:page.url(),measuredAt:new Date().toISOString(),timings,requestSettings:routeContext.settings};
+ const result={...distance,distanceMeters:chosen.distanceMeters,legEvidence,routeOptions,method:'naver-map-display',requestedStops:[...stops],resolvedStops,confirmedAddresses:stops.map(address=>cachedPoint(address,addressCache).text.split('\n').map(line=>line.trim()).find(line=>addressCandidateMatches(addressSearch(address),line))||cachedPoint(address,addressCache).text),sourceUrl:page.url(),measuredAt:new Date().toISOString(),timings,requestSettings:routeContext.settings,requestProof};
  if(revision!==measuredRevision)throw Error('네이버 경로 응답이 변경되어 동일 결과 검증을 중단했습니다.');
  timings.totalMs=performance.now()-started;
  if(!screenshot&&!captureIf?.(result))return result;
