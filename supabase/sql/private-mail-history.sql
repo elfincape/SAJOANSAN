@@ -66,7 +66,7 @@ begin
  if source_kind='mail' then
   if not exists(select 1 from public.private_mail_messages m where m.id=source_id and m.mailbox_id=b.id
    and m.owner_id=b.owner_id) then raise exception 'HISTORY_SOURCE'; end if;
- elsif to_jsonb(b)->'manual_entries'->source_id::text->>'status' is distinct from 'ready' then raise exception 'HISTORY_SOURCE';
+ elsif to_jsonb(b)->'manual_entries'->source_id::text->>'status' is distinct from 'ready' and not exists(select 1 from public.private_mail_analysis_history h where h.history_id=p_history_id and h.payload=p_payload and h.mailbox_id=b.id and h.owner_id=b.owner_id and h.source_kind='manual' and h.source_id=(record->'source'->>'id')::uuid) then raise exception 'HISTORY_SOURCE';
  end if;
  name='analysis-history_'||source_kind||'_'||source_id::text||'_'||p_history_id||'.json';
  insert into public.private_mail_analysis_history(history_id,mailbox_id,owner_id,source_kind,source_id,file_name,payload)
