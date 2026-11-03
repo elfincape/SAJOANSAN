@@ -1729,6 +1729,13 @@ for(const [label,mutate] of [
 ]) {const e=await seed(),r=review(e);mutate(r);const before=await history();await assert.rejects(()=>save(e,r),/JEV_REVIEW_FORMAT/,label);assert.equal((await row(e)).jevReview,undefined,label);assert.deepEqual(await history(),before,label);}
 const large=await seed(), unavailable={...review(large),status:'unavailable',code:'INVALID_INPUT',findings:[],reviewIds:[],coverageChecked:false,coverageUnavailable:'INPUT_TOO_LARGE'};assert.equal(await save(large,unavailable),true);assert.deepEqual((await row(large)).jevReview,unavailable);
 const prior=await row(current);assert.equal(await save(current,v2),false);assert.deepEqual(await row(current),prior);
+const readyBeforeReprocess=await row(current),historyBeforeReprocess=await history();
+await db.query("update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1",[BOX,current.entryId,{...readyBeforeReprocess,status:'pending'}]);
+assert.equal((await row(current)).status,'pending');assert.equal((await row(current)).text,readyBeforeReprocess.text);assert.deepEqual((await row(current)).items,readyBeforeReprocess.items);assert.deepEqual(await history(),historyBeforeReprocess,'archived ready analysis must be immutable during requeue');
+await assert.rejects(()=>db.query('select private_mail_history_capture_manual($1,$2)',[current.entryId,{...readyBeforeReprocess,items:[{...readyBeforeReprocess.items[0],text:'UNSAVED NEW VERSION'}]}]),/HISTORY_SOURCE/,'pending sources cannot enqueue an unarchived result');
+await db.query("update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2],$3) where id=$1",[BOX,current.entryId,{...readyBeforeReprocess,updatedAt:'2026-11-03T01:01:00Z',inference:{model:'synthetic-reanalysis'}}]);
+const afterReanalysis=await history();for(const old of historyBeforeReprocess)assert(afterReanalysis.some(value=>value.history_id===old.history_id&&value.payload===old.payload));assert(afterReanalysis.length>historyBeforeReprocess.length);
+console.log('PASS ready reanalysis history: exact archived version replay accepted while pending, new unarchived pending result rejected, source/items and old/new versions preserved');
 console.log('PASS local PGlite JEV SQL: v1/v2 save/read, tightly typed coverage and entry identity, malformed flags rejected, prior v1 immutable, original items/history preserved; network disabled');
 } finally {await db.close();}
 }
