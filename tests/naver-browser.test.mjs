@@ -186,6 +186,7 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const page={on:(k,fn)=>listeners.set(k,fn),off:k=>listeners.delete(k),setDefaultTimeout(){},setViewportSize:async()=>{},mainFrame:()=>frame,waitForResponse:async predicate=>{assert(predicate(r));return r;},goto:async requested=>{assert.equal(requested,url);listeners.get('response')?.(r);},locator:()=>cards,getByRole:()=>({evaluateAll:async()=>mapStops.map(s=>cache.get(s).label)}),mouse:{move:async()=>{}},waitForFunction:async()=>{},url:()=>url};
  const result=await map.browserCourseCapture(page,stops,{addressCache:cache,screenshot:false});
  assert.deepEqual(result.requestedStops,stops);assert.equal(result.resolvedStops.length,6);assert.equal(result.distanceMeters,211800);
+ assert.deepEqual(result.requestProof.coordinates,mapStops.map(s=>cache.get(s).coordinates));assert.deepEqual(result.requestProof.labels,mapStops.map(s=>cache.get(s).label));assert.deepEqual(result.requestProof.logicalToMap,[0,1,2,2,3,4]);assert.equal(result.requestProof.path,'/p/api/directions/car');
  assert.deepEqual(result.legEvidence.distancesMeters,[43594,50828,0,42665,74713]);assert(result.legEvidence.verified);
  assert.deepEqual(result.legEvidence.logicalPointMapping.logicalToMap,[0,1,2,2,3,4]);
  assert.deepEqual(result.legEvidence.logicalPointMapping.mapDistancesMeters,[43594,50828,42665,74713]);
@@ -267,4 +268,15 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  assert.deepEqual(repaired.evaluations[JSON.stringify(routes[1])].legEvidence.distancesMeters,[10,20,0,30],'historical leg evidence cannot propagate through a newly changed alias mapping');
  assert((await optimizeCourseCapture({},c,{previous:repaired,addressCache:places,measure})).optimization.complete,'retry recovers instead of repeatedly re-seeding stale logical evidence');
 
+}
+
+// Diagnostics retain the exact compared proof privately while public logs stay bounded.
+{
+ const c={id:'diagnostic-proof',stops:['G','C','A','G']},settings={cartype:'1',fueltype:'1'},points={method:'GET',path:'/p/api/directions/car',coordinates:[[127,37],[127.1,37.1],[127.2,37.2],[127,37]],labels:['G','C','A','G']};
+ const old={distanceKm:3,distanceMeters:3000,distanceText:'3km',routeLabel:'거리우선',method:'naver-map-display',requestedStops:c.stops,resolvedStops:c.stops,sourceUrl:'https://map.naver.com/p/directions/start/goal/via/car',measuredAt:'2026-11-01T01:00:00Z',requestSettings:settings,requestProof:points,legEvidence:{source:'naver-same-route-response',verified:true,totalMeters:3000,distancesMeters:[1000,1000,1000],pathIdentity:'old',providerOption:{main:9,sub:1}}};
+ const first=await optimizeCourseCapture({},c,{measure:async()=>({...old,png:Buffer.from('original')})});
+ const changed={...old,measuredAt:'2026-11-03T01:00:00Z',legEvidence:{...old.legEvidence,pathIdentity:'new',distancesMeters:[500,1000,1500]},png:Buffer.from('diagnostic-only')};
+ await assert.rejects(()=>optimizeCourseCapture({},c,{previous:first.optimization,measure:async()=>changed}),e=>{
+  assert.equal(e.code,'CAPTURE_DISTANCE_CHANGED');assert.equal(e.captureEvidence.expected.legEvidence.pathIdentity,'old');assert.equal(e.captureEvidence.observed.legEvidence.pathIdentity,'new');assert.deepEqual(e.captureEvidence.expected.requestProof.coordinates,points.coordinates);assert.deepEqual(e.captureEvidence.observed.requestedStops,c.stops);assert.equal(e.captureEvidence.image.bytes,changed.png.length);assert.match(e.captureEvidence.image.sha256,/^[a-f0-9]{64}$/);assert(!JSON.stringify(e.captureEvidence).includes('diagnostic-only'));assert.equal(e.captureComparison.expected.pathIdentity,'old');assert.equal(e.captureComparison.observed.pathIdentity,'new');return true;
+ });
 }
