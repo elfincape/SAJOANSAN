@@ -714,6 +714,7 @@ export function dailyWorkItems(
       combined.verifiedCompletionAt = state.verifiedCompletionAt ?? null;
       combined.closedAt = state.closedAt;
     }
+    if (combined.status === 'complete') combined.nextAction = null;
     merged.set(key, combined);
   }
   const projected = new Map([...merged.values()]
