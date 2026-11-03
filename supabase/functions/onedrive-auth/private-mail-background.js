@@ -119,6 +119,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           ownerContext: { recipientRole: 'to', senderIsOwner: false },
         };
         const result = await analyzePrivateMail({
+          isolatedVerification:ctx.verifiedUpdatesEnabled===true,
           messageId: id,
           provider: ai.aiProvider,
           model: ai.aiModel,
@@ -657,6 +658,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const lease = crypto.randomUUID();
     const monthlyTasks=typeof ctx.loadMonthlyTasks==='function'?await ctx.loadMonthlyTasks():[];
     const result = await analyzePrivateMail({
+          isolatedVerification:ctx.verifiedUpdatesEnabled===true,
       monthlyCandidates:monthlyMailRelated(monthlyTasks,{ownerId:user.id,overrides:current.briefing_overrides??{}}),
       messageId: body.id,
       resolveJevConfiguration: ctx.resolveJevConfiguration,
