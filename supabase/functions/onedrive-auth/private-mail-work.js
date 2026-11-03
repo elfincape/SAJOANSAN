@@ -931,6 +931,23 @@ export function renderWorkSections(items) {
   return chunks.join('');
 }
 
+function displayClauses(text) {
+  return String(text??'').normalize('NFKC').split(/(?<=[.!?。])\s+|\r?\n|\s+[·•]\s+/)
+    .map(clause=>clause.replace(/[.。]+$/,'').replace(/\s+/g,' ').trim()
+      .replace(/^처리\s*[:：]\s*/,'')
+      .replace(/완료(?:했습니다|하였습니다|하였음|함|되었습니다|됐습니다)$/,'완료')
+      .replace(/예정(?:입니다|임)$/,'예정')).filter(Boolean);
+}
+function compactDisplayLines(lines) {
+  const rows=lines.map(text=>({text,clauses:displayClauses(text)}));
+  return rows.filter((row,index)=>row.clauses.length&&!rows.some((other,j)=>j!==index&&
+    row.clauses.every(clause=>other.clauses.includes(clause))&&
+    (other.clauses.some(clause=>!row.clauses.includes(clause))||j<index))).map(row=>row.text);
+}
+function displayCovered(text,lines) {
+  const clauses=displayClauses(text),covered=lines.flatMap(displayClauses);
+  return clauses.length>0&&clauses.every(clause=>covered.includes(clause));
+}
 // Presentation only: use the confirmed service day, never a collection or processing deadline.
 function compactWorkSummary(item) {
   const title = briefingWorkTitle(item.title, item.serviceDate);
@@ -954,7 +971,7 @@ function compactWorkSummary(item) {
 export function workSummaryForDisplay(item) {
   const planned=item.monthly;
   const schedule=planned?['처리예정: '+calendar(planned.scheduledDate)+(planned.qualifier==='before'?' 이전':planned.advanceKind==='nonghyup'?' (월초 품의)':''),...(planned.targetPeriod?['대상기간: '+calendar(planned.targetPeriod.from)+' ~ '+calendar(planned.targetPeriod.through)]:[]),...(planned.paymentDate?['지급예정: '+calendar(planned.paymentDate)]:[])]:[];
-  const summary = [...schedule,...compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate))];
+  const summary = compactDisplayLines([...schedule,...compactWorkSummary(item).map(text=>briefingWorkTitle(text,item.serviceDate))]);
   const day = calendar(item.serviceDate);
   if (!day) return [...summary];
   const weekday = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(day+'T00:00:00+09:00'));
@@ -1072,7 +1089,7 @@ export function renderBriefingWorkNote(items) {
           ['다음 조치', item.nextAction],
           ['회신 대기', item.waitingFor],
         ])
-          if (text && text !== item.title && !item.summary.includes(text))
+          if (text && !displayCovered(text,[item.title,...displaySummary]))
             detailLines.push('<li style="list-style-type:disc;' + paragraph + '">' + label + ': ' + escape(text) + '</li>');
       }
       const latestNote = (item.correction?.reportNotes ?? item.correction?.processingNotes)?.at(-1);

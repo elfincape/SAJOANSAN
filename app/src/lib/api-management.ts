@@ -58,9 +58,16 @@ export interface ApiCompatibilityResult {
     retryAfterSeconds?: number | null;
   }[];
 }
+export function validateStressCatalogue(value: unknown): {id:string;kind:string}[] {
+  if (!Array.isArray(value) || !value.length || value.some(item =>
+    !item || typeof item.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(item.id) ||
+    !['mail','manual'].includes(item.kind)) || new Set(value.map(item => item.id)).size !== value.length)
+    throw Error('STRESS_CATALOGUE_INVALID');
+  return value;
+}
 export const apiManagement = {
   stressCases: () => oneDriveCall<{cases:{id:string;kind:string}[]}>(
-    'private-mail-stress-verify', {confirmation:'isolated-stress',list:true}, false, 30000),
+    'private-mail-stress-verify', {confirmation:'isolated-stress',list:true}, false, 30000).then(result=>({...result,cases:validateStressCatalogue(result.cases)})),
   stressCase: (caseId:string,receiptId?:string) => oneDriveCall<Record<string,unknown>>(
     'private-mail-stress-verify', {confirmation:'isolated-stress',caseId,...(receiptId?{receiptId}:{})}, false, 180000),
   stressNote: (proof:string,stored:unknown,portalTasks?:unknown) => oneDriveCall<Record<string,unknown>>(
