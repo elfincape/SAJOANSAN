@@ -61,7 +61,7 @@ export async function runWorker({db=query,lookup=browserDistance,capture=browser
       }
       const onProgress=async state=>{optimization=state;await db("update public.naver_browser_jobs set results=results||jsonb_build_object("+quote(address)+','+quote(JSON.stringify({optimization:state,...(diagnosticHistory.length?{diagnosticHistory}:{})}))+"::jsonb),updated_at=now() where id="+quote(job.id)+"::uuid and worker_id="+quote(worker)+"::uuid and status='running'");};
       if(job.shortlist_job_id&&!job.candidate_plans?.[address])throw Object.assign(Error('이 코스의 서버 API 후보 증거가 없습니다.'),{code:'SHORTLIST_INVALID_INPUT'});
-      const {png,...details}=await optimizeCourseCapture(page,course,{measure:capture,previous:optimization,candidatePlan:job.candidate_plans?.[address],onProgress,checkActive,cache:routeCache,addressCache,routeContext});
+      const {png,...details}=await optimizeCourseCapture(page,course,{measure:capture,previous:optimization,candidatePlan:job.candidate_plans?.[address],refreshComparisons:Array.isArray(saved?.captureComparison?.mismatches)&&saved.captureComparison.mismatches.some(key=>['distanceKm','routeEvidence'].includes(key)),onProgress,checkActive,cache:routeCache,addressCache,routeContext});
       await checkActive();const uploadStarted=performance.now(),imagePath=await saveCapture(job,course,worker,png,undefined,{checkActive});details.metrics.uploadMs=performance.now()-uploadStarted;await checkActive();result={...details,imagePath};
       }
      }

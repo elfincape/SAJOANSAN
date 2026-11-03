@@ -46,7 +46,7 @@ export function captureResultVerified(course,result){
   return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel&&evidenceKey(result)===evidenceKey(winner);
  }catch{return false;}
 }
-export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={},now=Date.now}={}) {
+export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={},now=Date.now,refreshComparisons=false}={}) {
  const started=performance.now(),metrics={routeLookups:0,routeCacheHits:0,addressResolutionMs:0,searchRefreshMs:0,routeRequestMs:0,optionCompareMs:0,captureMs:0,addressQueries:0,addressCacheHits:0,routeRequests:0,networkAddressRequests:0};
  const changedSettings=()=>Object.assign(Error('저장된 비교와 차량·주행 옵션이 다릅니다. 기존 진행은 보존했습니다.'),{code:'OPTIMIZATION_SETTINGS_CHANGED'});
  let expectedSettings=routeContext.settings;
@@ -59,8 +59,9 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
  if(savedSettings.length){if(savedSettings.length!==Object.keys(evaluations).length||savedSettings.some(value=>routeSettingsKey(value)!==routeSettingsKey(savedSettings[0]))||(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(savedSettings[0])))throw Object.assign(changedSettings(),{optimization:structuredClone(previous)});expectedSettings=structuredClone(savedSettings[0]);routeContext.settings??=structuredClone(savedSettings[0]);}
  // A bounded three-candidate web round can be refreshed without restarting other courses.
  const fresh=value=>{const at=Date.parse(value?.measuredAt),age=now()-at;return Number.isFinite(at)&&age>=0&&age<=WEB_COMPARISON_MAX_AGE_MS;};
- if(candidatePlan&&Object.values(evaluations).some(value=>!fresh(value))){
-  state.refreshHistory=[...(state.refreshHistory??[]),{reason:'stale_web_comparisons',at:new Date(now()).toISOString(),evaluations:structuredClone(evaluations)}];
+ const refreshing=!!candidatePlan&&(refreshComparisons||Object.values(evaluations).some(value=>!fresh(value)));
+ if(refreshing){
+  state.refreshHistory=[...(state.refreshHistory??[]),{reason:refreshComparisons?'route_evidence_changed':'stale_web_comparisons',at:new Date(now()).toISOString(),evaluations:structuredClone(evaluations)}];
   for(const key of Object.keys(evaluations))delete evaluations[key];
  }
  const nativeRoute=stops=>{
@@ -81,6 +82,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
   if(copy.legEvidence?.logicalPointMapping)copy.legEvidence.logicalPointMapping={...copy.legEvidence.logicalPointMapping,mapStops:target.mapStops,logicalToMap:target.logicalToMap,coordinates:target.points.map(p=>p.coordinates)};
   return copy;
  };
+ if(refreshing)for(const stops of routes)cache.delete(cacheKeyFor(stops));
  // Equivalent address aliases keep separate original visits but share the exact native route proof.
  for(const stops of routes){const value=evaluations[JSON.stringify(stops)],native=nativeRoute(stops);if(value&&native&&nativeProofMatches(value,stops,native))cache.set(cacheKeyFor(stops),value);}
  const report=async()=>{state.completed=Object.keys(evaluations).length;await onProgress(structuredClone(state));};

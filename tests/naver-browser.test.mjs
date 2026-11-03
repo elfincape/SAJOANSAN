@@ -302,6 +302,9 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
  const sharedCache=new Map(),first=await optimizeCourseCapture(null,c,{candidatePlan:plan,cache:sharedCache,now:()=>past,measure:measure(past,[3000,1000,2000])}),before=structuredClone(first.optimization);calls.length=0;
  const fresh=await optimizeCourseCapture(null,c,{candidatePlan:plan,cache:sharedCache,previous:first.optimization,now:()=>current,measure:measure(current,[3000,4000,2000])});
  assert.equal(calls.filter(c=>!c.screenshot).length,3,'old shortlist candidates must be compared together, not mixed with a new winning screenshot');assert.equal(fresh.distanceMeters,2000);assert.deepEqual(fresh.optimization.refreshHistory[0].evaluations,before.evaluations);assert.deepEqual(first.optimization,before);assert(captureResultVerified(c,{...first,imagePath:'completed-old.png',sourceUrl:'https://map.naver.com/p/directions/a/b/c/car'}),'age cannot invalidate a previously verified completed capture');
+ calls.length=0;
+ const changed=await optimizeCourseCapture(null,c,{candidatePlan:plan,cache:sharedCache,previous:fresh.optimization,refreshComparisons:true,now:()=>current+30000,measure:measure(current+30000,[3500,4500,2500])});
+ assert.equal(calls.filter(c=>!c.screenshot).length,3,'a confirmed changed route invalidates even recent equivalent cached proofs');assert.equal(changed.distanceMeters,2500);assert.equal(changed.optimization.refreshHistory.at(-1).reason,'route_evidence_changed');
  const partial=structuredClone(fresh.optimization);delete partial.evaluations[JSON.stringify(routes[indexes[0]])];partial.complete=false;calls.length=0;
  await optimizeCourseCapture(null,c,{candidatePlan:plan,previous:partial,now:()=>current+60000,measure:measure(current+60000,[3000,4000,2000])});assert.equal(calls.filter(c=>!c.screenshot).length,1,'recent completed candidate queries are not repeated on a short interruption');
 }
