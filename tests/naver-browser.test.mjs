@@ -280,3 +280,28 @@ assert.throws(()=>map.consecutivePointPlan(['a','b'],[{coordinates:[NaN,37]},{co
   assert.equal(e.code,'CAPTURE_DISTANCE_CHANGED');assert.equal(e.captureEvidence.expected.legEvidence.pathIdentity,'old');assert.equal(e.captureEvidence.observed.legEvidence.pathIdentity,'new');assert.deepEqual(e.captureEvidence.expected.requestProof.coordinates,points.coordinates);assert.deepEqual(e.captureEvidence.observed.requestedStops,c.stops);assert.equal(e.captureEvidence.image.bytes,changed.png.length);assert.match(e.captureEvidence.image.sha256,/^[a-f0-9]{64}$/);assert(!JSON.stringify(e.captureEvidence).includes('diagnostic-only'));assert.equal(e.captureComparison.expected.pathIdentity,'old');assert.equal(e.captureComparison.observed.pathIdentity,'new');return true;
  });
 }
+
+// JSONB changes object key order; it must not change the meaning of a route proof.
+{
+ const c={id:'key-order',stops:['G','C','A','G']},mapping={mapStops:['G','C','A','G'],coordinates:[[127,37],[127.1,37],[127.2,37],[127,37]],logicalToMap:[0,1,2,3],mapDistancesMeters:[1000,1000,1000]};
+ const base={method:'naver-map-display',distanceKm:3,distanceMeters:3000,distanceText:'3km',routeLabel:'free',requestedStops:c.stops,resolvedStops:c.stops,legEvidence:{source:'naver-same-route-response',verified:true,totalMeters:3000,distancesMeters:[1000,1000,1000],pathIdentity:'same',logicalPointMapping:mapping}};
+ const first=await optimizeCourseCapture(null,c,{measure:async()=>({...base,png:Buffer.from('first')})});
+ const reordered={...base,legEvidence:{...base.legEvidence,logicalPointMapping:{mapDistancesMeters:mapping.mapDistancesMeters,logicalToMap:mapping.logicalToMap,coordinates:mapping.coordinates,mapStops:mapping.mapStops}},png:Buffer.from('same')};
+ assert.deepEqual(reordered.legEvidence.logicalPointMapping,mapping);
+ const result=await optimizeCourseCapture(null,c,{previous:first.optimization,measure:async()=>reordered});assert.equal(result.distanceMeters,3000);assert(result.optimization.complete);
+ for(const change of [m=>{m.coordinates[1][0]+=.001;},m=>{m.logicalToMap=[0,2,1,3];},m=>{m.mapStops=['G','A','C','G'];},m=>{m.mapDistancesMeters=[500,1000,1500];}]){const changed=structuredClone(reordered);change(changed.legEvidence.logicalPointMapping);await assert.rejects(()=>optimizeCourseCapture(null,c,{previous:first.optimization,measure:async()=>changed}),e=>e.code==='CAPTURE_DISTANCE_CHANGED');}
+}
+
+// Only incomplete API shortlists refresh old web proofs; valid completed captures stay reusable.
+{
+ const {createShortlistPlan,rankShortlist}=await import('../scripts/lib/naver-candidate-shortlist.mjs');
+ const c={id:'shortlist-age',stops:['G','C','A','B','D','G']},past=Date.parse('2026-11-02T03:28:04Z'),current=past+37*3600000,points=Object.fromEntries(['G','C','A','B','D'].map((a,i)=>[a,{coordinates:[127+i*.01,37]}]));
+ const p=createShortlistPlan(c,points),plan=rankShortlist(p,p.edges.filter(e=>!e.zeroCost).map(e=>({key:e.key,distanceMeters:100,option:'traoptimal',measuredAt:new Date(past).toISOString()})),{now:new Date(past).toISOString()});
+ const indexes=plan.candidates.map(p=>p.index).sort((a,b)=>a-b),routes=coursePermutations(c),calls=[];
+ const measure=(at,distances)=>async(_p,stops,o)=>{const index=indexes.indexOf(routes.findIndex(r=>JSON.stringify(r)===JSON.stringify(stops)));calls.push({index,screenshot:o.screenshot});const r={method:'naver-map-display',distanceKm:distances[index]/1000,distanceMeters:distances[index],distanceText:'web route',routeLabel:'free',sourceUrl:'https://map.naver.com/p/directions/a/b/c/car',requestedStops:stops,measuredAt:new Date(at).toISOString(),requestSettings:{cartype:'1'}};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('proof-'+index)}:{})};};
+ const sharedCache=new Map(),first=await optimizeCourseCapture(null,c,{candidatePlan:plan,cache:sharedCache,now:()=>past,measure:measure(past,[3000,1000,2000])}),before=structuredClone(first.optimization);calls.length=0;
+ const fresh=await optimizeCourseCapture(null,c,{candidatePlan:plan,cache:sharedCache,previous:first.optimization,now:()=>current,measure:measure(current,[3000,4000,2000])});
+ assert.equal(calls.filter(c=>!c.screenshot).length,3,'old shortlist candidates must be compared together, not mixed with a new winning screenshot');assert.equal(fresh.distanceMeters,2000);assert.deepEqual(fresh.optimization.refreshHistory[0].evaluations,before.evaluations);assert.deepEqual(first.optimization,before);assert(captureResultVerified(c,{...first,imagePath:'completed-old.png',sourceUrl:'https://map.naver.com/p/directions/a/b/c/car'}),'age cannot invalidate a previously verified completed capture');
+ const partial=structuredClone(fresh.optimization);delete partial.evaluations[JSON.stringify(routes[indexes[0]])];partial.complete=false;calls.length=0;
+ await optimizeCourseCapture(null,c,{candidatePlan:plan,previous:partial,now:()=>current+60000,measure:measure(current+60000,[3000,4000,2000])});assert.equal(calls.filter(c=>!c.screenshot).length,1,'recent completed candidate queries are not repeated on a short interruption');
+}

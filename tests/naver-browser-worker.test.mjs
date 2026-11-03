@@ -150,3 +150,11 @@ assert.equal(providerQueries,1,'A common search rejection must not poison every 
  assert(writes.some(sql=>sql.includes('captureEvidence')&&sql.includes('PRIVATE_DIAGNOSTIC_LABEL')));assert(logs.some(line=>line.includes('captureComparison')));assert(!logs.some(line=>line.includes('PRIVATE_DIAGNOSTIC_LABEL')||line.includes('127,37')),'full coordinates and labels stay in the private checkpoint, not CI console logs');
  assert.equal(uploads,0);assert(writes.some(sql=>sql.includes('captureComparison')&&sql.includes('distanceKm')&&sql.includes('observed')));assert(!writes.some(sql=>/set results\s*=\s*'/.test(sql)));assert(writes.some(sql=>sql.includes('cursor=1')),'diagnostic failure must not block independent work');
 }
+
+// A successful retry keeps the previous mismatch diagnosis in the same private result.
+{
+ const c={id:'preserved-diagnosis',stops:['G','C','A','G']},old={issue:'old mismatch',measuredAt:'2026-11-03T01:00:00Z',captureComparison:{mismatches:['distanceKm']},captureEvidence:{comparedAt:'2026-11-03T01:00:00Z',expected:{distanceMeters:377723},observed:{distanceMeters:382582}}},writes=[];
+ old.diagnosticHistory=[structuredClone(old)];const snapshot=structuredClone(old);let uploads=0;
+ await runWorker({jobId:job.id,browserFactory:async()=>({newPage:async()=>({}),close:async()=>{}}),db:async sql=>{if(sql.startsWith('with next'))return[{...job,kind:'capture',courses:[c],addresses:[c.id],results:{[c.id]:old,keep:{imagePath:'existing-21.png'}}}];if(sql.startsWith('select status')||sql.endsWith('returning status'))return[{status:'running'}];writes.push(sql);return[];},capture:async(_p,stops,o)=>{const r={method:'naver-map-display',distanceKm:3,distanceMeters:3000,distanceText:'3km',routeLabel:'free',requestedStops:stops};return{...r,...(o.screenshot||o.captureIf?.(r)?{png:Buffer.from('verified')}:{})};},saveCapture:async()=>{uploads++;return'new-verified.png';},log:()=>{}});
+ assert.equal(uploads,1);const finalWrite=writes.find(sql=>sql.includes('new-verified.png'));assert(finalWrite?.includes('diagnosticHistory'));assert.equal(finalWrite.match(/old mismatch/g)?.length,1,'a diagnostic already archived at checkpoint is not duplicated');assert(writes.filter(sql=>sql.includes('set results=')).every(sql=>sql.includes('jsonb_build_object')));assert.deepEqual(old,snapshot);
+}

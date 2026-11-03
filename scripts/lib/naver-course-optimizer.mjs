@@ -1,5 +1,6 @@
 export const COMPARISON_POLICY='naver-all-driving-options-meters-v2';
 export const SHORTLIST_WEB_POLICY='naver-api-top3-web-meters-v1';
+const WEB_COMPARISON_MAX_AGE_MS=30*60*1000;
 
 import {routeSettingsKey} from './naver-route-evidence.mjs';
 import {createHash} from 'node:crypto';
@@ -18,7 +19,9 @@ export function comparisonScope(course,candidatePlan){
  return {routes:ordered.map(c=>c.stops),policy:SHORTLIST_WEB_POLICY,inputKey:JSON.stringify([SHORTLIST_WEB_POLICY,course.rotation??0,course.stops,candidatePlan.inputKey,ordered.map(c=>c.index)]),selection:candidatePlan};
 }
 const pointKey=url=>{try{const p=new URL(url).pathname.split('/');return p[6]==='car'?p.slice(3,6):null;}catch{return null;}};
-const evidenceKey=r=>JSON.stringify([r.distanceMeters??null,r.legEvidence?.source??null,r.legEvidence?.verified??null,r.legEvidence?.pathIdentity??null,r.legEvidence?.totalMeters??null,r.legEvidence?.distancesMeters??null,r.legEvidence?.logicalPointMapping??null,r.legEvidence?.providerOption?[r.legEvidence.providerOption.main,r.legEvidence.providerOption.sub]:null,r.requestSettings?Object.entries(r.requestSettings).sort(([a],[b])=>a.localeCompare(b)):null,pointKey(r.sourceUrl)]);
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+const mappingKey=value=>JSON.stringify(canonical(value??null));
+const evidenceKey=r=>JSON.stringify([r.distanceMeters??null,r.legEvidence?.source??null,r.legEvidence?.verified??null,r.legEvidence?.pathIdentity??null,r.legEvidence?.totalMeters??null,r.legEvidence?.distancesMeters??null,mappingKey(r.legEvidence?.logicalPointMapping),r.legEvidence?.providerOption?[r.legEvidence.providerOption.main,r.legEvidence.providerOption.sub]:null,r.requestSettings?Object.entries(r.requestSettings).sort(([a],[b])=>a.localeCompare(b)):null,pointKey(r.sourceUrl)]);
 function captureComparison(expected,captured,selected){
  const mismatches=[];
  if(!validDistance(captured))mismatches.push('invalidDistance');
@@ -33,7 +36,7 @@ function captureComparison(expected,captured,selected){
   legCount:value.legEvidence?.distancesMeters?.length??null,legTotalMeters:value.legEvidence?.totalMeters??null});
  return {mismatches,expected:summary(expected),observed:summary(captured),evidenceMatch:{path:expected.legEvidence?.pathIdentity===captured.legEvidence?.pathIdentity,
   nativePoints:JSON.stringify(pointKey(expected.sourceUrl))===JSON.stringify(pointKey(captured.sourceUrl)),settings:routeSettingsKey(expected.requestSettings)===routeSettingsKey(captured.requestSettings),
-  legs:JSON.stringify(expected.legEvidence?.distancesMeters??null)===JSON.stringify(captured.legEvidence?.distancesMeters??null),mapping:JSON.stringify(expected.legEvidence?.logicalPointMapping??null)===JSON.stringify(captured.legEvidence?.logicalPointMapping??null)}};
+  legs:JSON.stringify(expected.legEvidence?.distancesMeters??null)===JSON.stringify(captured.legEvidence?.distancesMeters??null),mapping:mappingKey(expected.legEvidence?.logicalPointMapping)===mappingKey(captured.legEvidence?.logicalPointMapping)}};
 }
 export function captureResultVerified(course,result){
  try{
@@ -43,16 +46,23 @@ export function captureResultVerified(course,result){
   return evaluations.every(validDistance)&&result.distanceKm===Math.min(...evaluations.map(r=>r.distanceKm))&&result.distanceKm===winner.distanceKm&&result.routeLabel===winner.routeLabel&&evidenceKey(result)===evidenceKey(winner);
  }catch{return false;}
 }
-export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={}}={}) {
+export async function optimizeCourseCapture(page,course,{measure,previous,candidatePlan,onProgress=async()=>{},checkActive=async()=>{},cache=new Map(),addressCache=new Map(),routeContext={},now=Date.now}={}) {
  const started=performance.now(),metrics={routeLookups:0,routeCacheHits:0,addressResolutionMs:0,searchRefreshMs:0,routeRequestMs:0,optionCompareMs:0,captureMs:0,addressQueries:0,addressCacheHits:0,routeRequests:0,networkAddressRequests:0};
  const changedSettings=()=>Object.assign(Error('저장된 비교와 차량·주행 옵션이 다릅니다. 기존 진행은 보존했습니다.'),{code:'OPTIMIZATION_SETTINGS_CHANGED'});
  let expectedSettings=routeContext.settings;
- const lookup=async(stops,options)=>{metrics.routeLookups++;const result=await measure(page,stops,{...options,addressCache,routeContext});if(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(result.requestSettings))throw changedSettings();if(result.requestSettings){expectedSettings??=structuredClone(result.requestSettings);routeContext.settings??=structuredClone(result.requestSettings);}for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
+ const lookup=async(stops,options)=>{metrics.routeLookups++;const result={...await measure(page,stops,{...options,addressCache,routeContext})};result.measuredAt??=new Date(now()).toISOString();if(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(result.requestSettings))throw changedSettings();if(result.requestSettings){expectedSettings??=structuredClone(result.requestSettings);routeContext.settings??=structuredClone(result.requestSettings);}for(const key of Object.keys(metrics))if(typeof result.timings?.[key]==='number')metrics[key]+=result.timings[key];return result;};
  const scope=comparisonScope(course,candidatePlan),{routes,inputKey}=scope;
  const evaluations={},state={version:1,policy:scope.policy,inputKey,total:routes.length,completed:0,failed:[],evaluations,complete:false,...(scope.selection?{selection:scope.selection,allPermutations:scope.selection.totalPermutations,globalMinimumGuaranteed:false}:{})};
  if(previous?.version===1&&previous.inputKey===inputKey)for(const stops of routes){const key=JSON.stringify(stops),saved=previous.evaluations?.[key];if(validDistance(saved))evaluations[key]=saved;}
+ if(previous?.inputKey===inputKey&&previous.refreshHistory?.length)state.refreshHistory=structuredClone(previous.refreshHistory);
  const savedSettings=Object.values(evaluations).map(value=>value.requestSettings).filter(Boolean);
  if(savedSettings.length){if(savedSettings.length!==Object.keys(evaluations).length||savedSettings.some(value=>routeSettingsKey(value)!==routeSettingsKey(savedSettings[0]))||(expectedSettings&&routeSettingsKey(expectedSettings)!==routeSettingsKey(savedSettings[0])))throw Object.assign(changedSettings(),{optimization:structuredClone(previous)});expectedSettings=structuredClone(savedSettings[0]);routeContext.settings??=structuredClone(savedSettings[0]);}
+ // A bounded three-candidate web round can be refreshed without restarting other courses.
+ const fresh=value=>{const at=Date.parse(value?.measuredAt),age=now()-at;return Number.isFinite(at)&&age>=0&&age<=WEB_COMPARISON_MAX_AGE_MS;};
+ if(candidatePlan&&Object.values(evaluations).some(value=>!fresh(value))){
+  state.refreshHistory=[...(state.refreshHistory??[]),{reason:'stale_web_comparisons',at:new Date(now()).toISOString(),evaluations:structuredClone(evaluations)}];
+  for(const key of Object.keys(evaluations))delete evaluations[key];
+ }
  const nativeRoute=stops=>{
   try{const points=stops.map(stop=>addressCache.get(stop)??addressCache.get(addressSearch(stop).original));if(points.some(p=>!p))return null;const plan=consecutivePointPlan(stops,points),url=naverCourseUrl(plan.mapStops,addressCache);return url?{...plan,url,points}:null;}catch{return null;}
  };
@@ -64,7 +74,7 @@ export async function optimizeCourseCapture(page,course,{measure,previous,candid
   return !saved||JSON.stringify(saved.logicalToMap)===JSON.stringify(native.logicalToMap)&&JSON.stringify(saved.mapStops)===JSON.stringify(native.mapStops)&&JSON.stringify(saved.coordinates)===JSON.stringify(native.points.map(p=>p.coordinates));
  };
  const cachedFor=(result,stops)=>{
-  if(!validDistance(result))return null;if(nativeRoute(stops)&&!nativeProofMatches(result,result.requestedStops??[]))return null;if(JSON.stringify(result.requestedStops)===JSON.stringify(stops))return result;
+  if(!validDistance(result)||(candidatePlan&&!fresh(result)))return null;if(nativeRoute(stops)&&!nativeProofMatches(result,result.requestedStops??[]))return null;if(JSON.stringify(result.requestedStops)===JSON.stringify(stops))return result;
   const target=nativeRoute(stops),source=nativeRoute(result.requestedStops??[]);
   if(!target||!source||target.url!==source.url||JSON.stringify(target.logicalToMap)!==JSON.stringify(source.logicalToMap)||JSON.stringify(pointKey(result.sourceUrl))!==JSON.stringify(pointKey(target.url)))return null;
   const copy=structuredClone(result);copy.requestedStops=[...stops];copy.resolvedStops=target.points.map(p=>p.label);copy.confirmedAddresses=target.points.map((p,i)=>p.text.split('\n').map(line=>line.trim()).find(line=>addressCandidateMatches(addressSearch(stops[i]),line))||p.text);
