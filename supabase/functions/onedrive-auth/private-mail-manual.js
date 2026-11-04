@@ -844,6 +844,7 @@ function publicItem(
     sourceType: 'manual',
     evidenceSource: item.evidenceSource ?? 'text',
     imageId: item.imageId ?? null,
+    imageContentHash: item.imageContentHash ?? null,
     completedSteps: item.completedSteps ?? [],
     remainingSteps: item.remainingSteps ?? [],
     origin: item.origin ?? 'manual',
