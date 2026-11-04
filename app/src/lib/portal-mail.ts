@@ -227,6 +227,7 @@ export interface MailRulePreview {
   unresolved: { id: string; subject?: string; code: string; reason?: string }[];
 }
 export interface MailManualItem {
+  workRef?: string | null;
   details?: string[];
   entryId?: string;
   itemId: string;
@@ -261,6 +262,7 @@ export interface MailManualUpload {
   data: string;
 }
 export interface MailManualEntry {
+  reusedReady?: boolean;
   images?: MailManualImage[];
   privacyConfirmed?: boolean;
   entryId: string;

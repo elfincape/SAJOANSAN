@@ -357,6 +357,7 @@ export function MailBriefingManualEntries({
     id: string;
     retry?: boolean;
     entryId?: string;
+    reusedReady?: boolean;
   } | null>(null);
   useEffect(() => {
     setTargetWorkId(initialDraft?.targetWorkId ?? null);
@@ -520,6 +521,7 @@ export function MailBriefingManualEntries({
       if (!mounted.current) return;
       if (submission.current?.id === clientRequestId) {
         submission.current.entryId = result.entryId;
+        if (result.reusedReady) submission.current.reusedReady = true;
         submission.current.retry = result.status === 'failed';
       }
       const deadline = Date.now() + 180000;
@@ -534,6 +536,31 @@ export function MailBriefingManualEntries({
             submission.current.retry = true;
           setProgress('분석 실패 · 원문과 사진은 유지됩니다.');
           setFeedback(failure({ code: entry.error }));
+          await load();
+          onChanged?.();
+          return;
+        }
+        if (
+          entry.status === 'ready' &&
+          submission.current?.reusedReady &&
+          (!status.callProgress || status.callProgress.finished)
+        ) {
+          setProgress(
+            '중복 메시지 · 새 JEV 판단이나 API 분석 없이 기존 결과를 불러왔습니다.',
+          );
+          const unresolved = entry.items.filter((item) => !item.done).length;
+          const unlinked = entry.items.filter((item) => !item.workRef).length;
+          const reportLabel =
+            status.report.status === 'failed'
+              ? `오류 (${status.report.error ?? '확인 필요'})`
+              : status.report.status === 'complete'
+                ? '기존 결과 동기화 확인'
+                : status.report.status === 'not_needed'
+                  ? '저장 대상 없음'
+                  : '저장 대기';
+          setFeedback(
+            `기존 접수 ${formatBriefingTimestamp(entry.submittedAt)} · 미완료 ${unresolved}건 · 기존 업무 연결 없음 ${unlinked}건${entry.needsConfirmation ? ' · 확인 필요' : ''} · 보고서: ${reportLabel}. 보고서 상태는 기존 분석 결과 기준이며, 이번 입력의 정보 추가·업무 연결을 새로 검증한 것이 아닙니다. 원문과 기존 결과를 확인해 주세요.`,
+          );
           await load();
           onChanged?.();
           return;
@@ -899,6 +926,12 @@ export function MailBriefingManualEntries({
             )}
             {callProgress && (
               <section aria-label="실제 API 호출 현황">
+                {submission.current?.reusedReady && (
+                  <p>
+                    기존 접수의 호출 기록입니다. 이번 저장에서 새로 호출하지
+                    않았습니다.
+                  </p>
+                )}
                 <p className="daily-task-meta">
                   최근 호출 최대 24건입니다. 응답 완료와 업무 근거 검증·저장
                   완료는 구분됩니다.
