@@ -17,11 +17,12 @@ const MANUAL_INTENTS = Object.freeze({
   new: '현재 사용자를 향한 독립 새 업무 요청이나 명시적 새 수행 약속이 있는가? 기존 요청의 결과보고는 새 요청이 아니다.',
   update: '기존 요청의 진행·부분 처리·정보 보충·정정 또는 남은 행동이 있는가? 일부 완료와 남은 의무를 함께 보존한다.',
   completion: '실제 처리 완료나 확정된 배차 배정 결과를 알리는 부분이 있는가? 요청·예정·과거 인용·물량 보충은 완료 근거가 아니다. 전체 완료인지는 후속 검증이 판단한다.',
-  reference: '별도 실행 요청 없이 관련 자료·사진·서류·사실을 참고로 전달하는 부분이 있는가?',
+  reference: '별도 실행 요청 없이 업무 관련 자료·사진·서류·사실을 참고로 전달하는 부분이 있는가? 순수 인사·사적인 잡담은 업무 참고가 아니다.',
   cancel: '원 요청의 명시적 취소·철회·재개 또는 잘못된 상태의 정정을 통보하는가? 거절만으로 취소를 추정하지 않는다.',
   mixed: '서로 다른 업무, 또는 요청과 처리 결과/참고/남은 행동 등 여러 의도가 함께 있는가? 하나의 분류로 전체 메시지를 축소하면 안 된다.',
-  context: '대상 업무·사건·날짜·주체가 불명확하거나 여러 후보가 가능하여 문맥 확인이 필요한가?',
+  context: '업무 관련 내용이 있지만 대상 업무·사건·날짜·주체가 불명확하거나 여러 후보가 가능하여 문맥 확인이 필요한가? 순수 인사·잡담에 업무 대상이 없다는 이유만으로 true가 아니다.',
   waiting: '외부인의 명시적 수행 약속이나 외부 응답 대기가 있는가? 발신자와 사용자·실행자를 같은 사람으로 추정하지 않는다.',
+  non_work: '입력 전체가 업무와 무관한 인사·감사·사적 잡담뿐인가? 업무 요청·진행·완료·참고·애매한 업무 언급 또는 관련 사진이 하나라도 섞이면 false다.',
 });
 
 // Ephemeral advisory: never changes state, drops input, or grants completion authority.
@@ -95,7 +96,7 @@ export async function verifyMailExtraction({
     source.length > 80000 ||
     !Array.isArray(items) ||
     items.length < 1 ||
-    items.length > 8 ||
+    items.length > (items.every(item=>item?.reviewType==='intent')?9:8) ||
     new Set(items.map((item) => item?.id)).size !== items.length ||
     items.some(
       (item) =>
