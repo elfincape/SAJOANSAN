@@ -287,7 +287,18 @@ export interface MailManualStatus {
     status: 'waiting' | 'not_needed' | 'failed' | 'complete' | 'pending';
     error: string | null;
   };
-  stagesAvailable: false;
+  stagesAvailable: boolean;
+  callProgress: null | {
+    finished: boolean;
+    calls: {
+      id: number;
+      kind: 'jev' | 'api';
+      status: 'started' | 'completed' | 'failed' | 'skipped';
+      startedAt: string | null;
+      finishedAt: string | null;
+      code: string | null;
+    }[];
+  };
 }
 export const privateMail = {
   manualStatus: (entryId: string) =>

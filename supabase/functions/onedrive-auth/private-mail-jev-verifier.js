@@ -82,7 +82,7 @@ async function boundedJson(response) {
   }
 }
 
-export async function verifyMailExtraction({
+async function verifyMailExtractionRequest({
   source,
   items,
   key,
@@ -421,4 +421,20 @@ export async function reviewNormalizedManual({ entry, related = [], config }) {
       candidates,
     },
   });
+}
+
+export async function verifyMailExtraction(args) {
+  const observer=args.fetcher?.manualCallProgress;
+  if(typeof observer!=='function')return verifyMailExtractionRequest(args);
+  let id=null;
+  const emit=event=>{try{return observer({kind:'jev',...event});}catch{return null;}};
+  const fetcher=(...params)=>{if(id===null)id=emit({status:'started'});return args.fetcher(...params);};
+  try {
+    const result=await verifyMailExtractionRequest({...args,fetcher});
+    emit({id,status:id===null?'skipped':result.findings?'completed':'failed',code:result.code??null});
+    return result;
+  } catch(error) {
+    emit({id,status:id===null?'skipped':'failed',code:'UNKNOWN'});
+    throw error;
+  }
 }
