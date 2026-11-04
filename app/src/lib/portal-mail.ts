@@ -262,6 +262,7 @@ export interface MailManualUpload {
   data: string;
 }
 export interface MailManualEntry {
+  retryScheduled?: boolean;
   reusedReady?: boolean;
   images?: MailManualImage[];
   privacyConfirmed?: boolean;
@@ -285,8 +286,10 @@ export interface MailManualList {
 }
 export interface MailManualStatus {
   entry: MailManualEntry;
+  retryScheduled?: boolean;
   report: {
-    status: 'waiting' | 'not_needed' | 'failed' | 'complete' | 'pending';
+    status:
+      'waiting' | 'not_needed' | 'failed' | 'complete' | 'pending' | 'retrying';
     error: string | null;
   };
   stagesAvailable: boolean;
