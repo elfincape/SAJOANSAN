@@ -53,7 +53,7 @@ begin
  and e->>'lease' is null and e->>'leaseUntil' is null
  and (e->>'nextAt')::timestamptz<=received then attempts=0; end if;
  if attempts>=3 then return jsonb_build_object('entry',e||jsonb_build_object('status','failed','error','RETRY_LIMIT'),'claimed',false); end if;
- e=e||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
+ e=(e-'callProgress')||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
  'attempts',attempts+1,'error',null,'updatedAt',received);
  candidate=jsonb_set(entries,array[entry_id::text],e);
  if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;
@@ -359,7 +359,7 @@ begin
  and e->>'lease' is null and e->>'leaseUntil' is null
  and (e->>'nextAt')::timestamptz<=received then attempts=0; end if;
  if attempts>=3 then return jsonb_build_object('entry',e||jsonb_build_object('status','failed','error','RETRY_LIMIT'),'claimed',false); end if;
- e=e||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
+ e=(e-'callProgress')||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
  'attempts',attempts+1,'error',null,'updatedAt',received);
  candidate=jsonb_set(entries,array[entry_id::text],e);
  if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;

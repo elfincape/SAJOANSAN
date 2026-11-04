@@ -6,6 +6,7 @@ import type {
   MailManualEntry,
   MailManualItem,
   MailManualList,
+  MailManualStatus,
 } from '../../lib/portal-mail';
 
 type DraftImage = {
@@ -345,6 +346,8 @@ export function MailBriefingManualEntries({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [progress, setProgress] = useState('');
+  const [callProgress, setCallProgress] =
+    useState<MailManualStatus['callProgress']>(null);
   const mounted = useRef(false);
   const locked = useRef(false);
   const request = useRef(0);
@@ -424,7 +427,10 @@ export function MailBriefingManualEntries({
     };
   }, [hasPending, load, onChanged]);
   useEffect(() => {
-    if (inputOpen) setFeedback('');
+    if (inputOpen) {
+      setFeedback('');
+      setCallProgress(null);
+    }
   }, [inputOpen]);
   async function act(action: () => Promise<void>) {
     if (locked.current || disabled) return;
@@ -521,6 +527,7 @@ export function MailBriefingManualEntries({
       while (mounted.current && draftVersion.current === version) {
         status = await privateMail.manualStatus(result.entryId);
         if (!mounted.current || draftVersion.current !== version) return;
+        setCallProgress(status.callProgress ?? null);
         const entry = status.entry;
         if (entry.status === 'failed') {
           if (submission.current?.id === clientRequestId)
@@ -531,7 +538,11 @@ export function MailBriefingManualEntries({
           onChanged?.();
           return;
         }
-        if (entry.status === 'ready' && entry.needsConfirmation) {
+        if (
+          entry.status === 'ready' &&
+          entry.needsConfirmation &&
+          (!status.callProgress || status.callProgress.finished)
+        ) {
           setProgress('분석 결과 확인 필요 · 자동으로 닫지 않습니다.');
           setFeedback(
             '날짜·대상·업무 내용을 목록에서 확인해 주세요. 접수된 결과는 유지됩니다.',
@@ -542,10 +553,33 @@ export function MailBriefingManualEntries({
         }
         if (
           entry.status === 'ready' &&
-          ['complete', 'not_needed'].includes(status.report.status)
-        )
+          ['complete', 'not_needed'].includes(status.report.status) &&
+          (!status.callProgress || status.callProgress.finished)
+        ) {
+          if (
+            status.callProgress?.calls.some(
+              (call) =>
+                call.status === 'failed' ||
+                (call.status === 'skipped' && call.code),
+            )
+          ) {
+            setProgress(
+              '메시지 처리는 끝났지만 일부 호출 오류가 있어 확인이 필요합니다.',
+            );
+            setFeedback(
+              '아래 호출 결과와 정리된 업무를 확인해 주세요. 접수 내용을 다시 저장할 필요는 없습니다.',
+            );
+            await load();
+            onChanged?.();
+            return;
+          }
           break;
-        if (entry.status === 'ready' && status.report.status === 'failed') {
+        }
+        if (
+          entry.status === 'ready' &&
+          status.report.status === 'failed' &&
+          (!status.callProgress || status.callProgress.finished)
+        ) {
           setProgress('분석 완료 · OneNote 자동 저장 확인 필요');
           setFeedback(
             'OneNote 저장 상태: ' +
@@ -560,8 +594,14 @@ export function MailBriefingManualEntries({
           entry.status === 'pending'
             ? '접수 완료 · 분석 대기 중'
             : entry.status === 'processing'
-              ? '분석 처리 중 · JEV 판단·API 분석의 개별 호출 단계는 서버에서 제공하지 않습니다.'
-              : '분석 완료 · OneNote 자동 저장을 확인하는 중',
+              ? status.stagesAvailable
+                ? '분석 처리 중 · 아래에 실제 호출 상태를 표시합니다.'
+                : '분석 처리 중 · 호출 기록을 아직 확인하지 못했습니다.'
+              : status.callProgress &&
+                  !status.callProgress.finished &&
+                  ['complete', 'not_needed'].includes(status.report.status)
+                ? '업무 처리 완료 · 후속 호출 결과를 확인하는 중'
+                : '분석 완료 · OneNote 자동 저장을 확인하는 중',
         );
         if (Date.now() >= deadline) {
           setProgress('처리 확인 시간 초과 · 서버 처리는 계속될 수 있습니다.');
@@ -856,6 +896,48 @@ export function MailBriefingManualEntries({
               <p role="status" aria-live="polite" aria-atomic="true">
                 {progress}
               </p>
+            )}
+            {callProgress && (
+              <section aria-label="실제 API 호출 현황">
+                <p className="daily-task-meta">
+                  최근 호출 최대 24건입니다. 응답 완료와 업무 근거 검증·저장
+                  완료는 구분됩니다.
+                </p>
+                <ol>
+                  {callProgress.calls.map((call) => (
+                    <li key={call.id}>
+                      {call.kind === 'jev' ? 'JEV 판단' : '분석 API'} #{call.id}{' '}
+                      ·{' '}
+                      {call.status === 'started'
+                        ? '요청 시작 · 응답 미확인'
+                        : call.status === 'completed'
+                          ? '응답 확인 완료'
+                          : call.status === 'failed'
+                            ? call.code === 'TIMEOUT'
+                              ? '시간 초과'
+                              : '호출 오류'
+                            : '호출하지 못함'}
+                      {call.code ? ` (${call.code})` : ''}
+                      <span className="daily-task-meta">
+                        {' '}
+                        · 시작{' '}
+                        {call.startedAt
+                          ? new Date(call.startedAt).toLocaleTimeString(
+                              'ko-KR',
+                              { timeZone: 'Asia/Seoul' },
+                            )
+                          : '미호출'}
+                        {call.finishedAt
+                          ? ` · 종료 ${new Date(call.finishedAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+                          : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+                {!callProgress.calls.length && (
+                  <p>아직 기록된 JEV·분석 API 호출이 없습니다.</p>
+                )}
+              </section>
             )}
             {feedback ? <p role="alert">{feedback}</p> : null}
           </div>

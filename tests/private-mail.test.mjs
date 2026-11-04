@@ -8562,3 +8562,21 @@ for(const args of [[{entryId:'not-a-uuid'},{id:owner}],[{entryId:crypto.randomUU
 assert.equal(writes,0);console.log('PASS read-only owner-scoped status: pending/processing/failed, report missing/dirty/uncertain/pending-write/rollover never complete, clean page complete, empty result not-needed, invalid/missing/other-owner denied. MOCK DB');
 
 });}
+
+{const {test}=await import('node:test');test('manual actual call progress is bounded metadata and never repeats model requests',async()=>{
+const {callLuna}=await import('../supabase/functions/_shared/luna.js');
+const {verifyMailExtraction}=await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+const {createManualCallProgress}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const snapshots=[];const tracker=createManualCallProgress(async x=>{snapshots.push(structuredClone(x));return true;});await tracker.flush();
+let release;const fetcher=Object.assign(()=>new Promise(resolve=>release=resolve),{manualCallProgress:tracker.observe});
+const pending=callLuna({key:'PRIVATE_KEY',provider:'openai',model:'gpt-6-luna',prompt:'PRIVATE_SOURCE',fetcher});await tracker.flush();assert.equal(snapshots.at(-1).calls[0].status,'started');
+release(Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'PRIVATE_OUTPUT'}]}]}));await pending;await tracker.flush();assert.equal(snapshots.at(-1).calls[0].status,'completed');
+for(const mode of ['http','invalid','timeout']){const f=Object.assign(async()=>{if(mode==='timeout')throw new DOMException('SECRET_FAILURE','TimeoutError');return mode==='http'?Response.json({secret:'PRIVATE_HTTP'},{status:429}):Response.json({secret:'PRIVATE_JSON'});},{manualCallProgress:tracker.observe});await assert.rejects(()=>callLuna({key:'PRIVATE_KEY',provider:'openai',model:'gpt-6-luna',prompt:'PRIVATE_SOURCE',fetcher:f}));await tracker.flush();assert.equal(snapshots.at(-1).calls.at(-1).status,'failed');if(mode==='timeout')assert.equal(snapshots.at(-1).calls.at(-1).code,'TIMEOUT');}
+await assert.rejects(()=>callLuna({key:null,provider:'openai',model:'gpt-6-luna',prompt:'PRIVATE_SOURCE',fetcher}));await tracker.flush();assert.equal(snapshots.at(-1).calls.at(-1).status,'skipped');assert.equal(snapshots.at(-1).calls.at(-1).startedAt,null);
+for(const mode of ['ready','timeout','auth']){const f=Object.assign(mode==='timeout'?()=>new Promise(()=>{}):async()=>mode==='auth'?Response.json({},{status:401}):Response.json({model:'jev-1.14.0',answers:{q0:{type:'noul',noul:.1}}}),{manualCallProgress:tracker.observe});const result=await verifyMailExtraction({source:'PRIVATE_SOURCE',items:[{id:'q',text:'PRIVATE_TEXT'}],key:'PRIVATE_KEY',timeoutMs:10,fetcher:f});await tracker.flush();assert.equal(snapshots.at(-1).calls.at(-1).status,mode==='ready'?'completed':'failed');if(mode==='timeout')assert.equal(result.code,'TIMEOUT');}
+const count=snapshots.at(-1).calls.length;await tracker.finish();assert.equal(snapshots.at(-1).finished,true);tracker.observe({kind:'api',status:'started'});await tracker.flush();assert.equal(snapshots.at(-1).calls.length,count);assert.ok(!JSON.stringify(snapshots).includes('PRIVATE_'));assert.ok(!JSON.stringify(snapshots).includes('SECRET_FAILURE'));
+let last;const bounded=createManualCallProgress(async x=>{last=x;return true;});for(let i=0;i<30;i++){const id=bounded.observe({kind:'api',status:'started'});bounded.observe({id,kind:'api',status:'completed'});}await bounded.finish();assert.equal(last.calls.length,24);assert.equal(last.calls[0].id,7);assert.equal(last.calls.at(-1).id,30);
+const broken=createManualCallProgress(async()=>{throw Error('DB_DOWN');});await broken.flush();let paid=0;await callLuna({key:'MOCK',provider:'openai',model:'gpt-6-luna',prompt:'x',fetcher:Object.assign(async()=>{paid++;return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'{}'}]}]});},{manualCallProgress:broken.observe})});await broken.finish();assert.equal(paid,1);
+console.log('PASS actual adapter start/validated-response/failure/timeout/skipped; JEV timeout/auth/fallback; no secrets/source/output; latest24; frozen final; telemetry DB failure does not repeat paid call. MOCK NETWORK');
+
+});}

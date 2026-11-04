@@ -186,7 +186,7 @@ function outputContractFailure(value, rule, path = '$', depth = 0) {
   return invalid('unsupported_schema');
 }
 
-export async function callLuna({
+async function callLunaRequest({
   key,
   provider = 'aiapiflow',
   model: requestedModel,
@@ -480,4 +480,22 @@ export function lunaInference(response) {
     model: response.model,
     usage: { ...response.usage },
   };
+}
+
+// Per-request observer only. Never pass source, model output, headers, or credentials.
+export async function callLuna(args) {
+  const observer=args.fetcher?.manualCallProgress;
+  if(typeof observer!=='function')return callLunaRequest(args);
+  let id=null;
+  const emit=event=>{try{return observer({kind:'api',...event});}catch{return null;}};
+  const fetcher=(...params)=>{if(id===null)id=emit({status:'started'});return args.fetcher(...params);};
+  try {
+    const result=await callLunaRequest({...args,fetcher});
+    if(id!==null)emit({id,status:'completed'});
+    return result;
+  } catch(error) {
+    const code=error?.reason==='timeout'?'TIMEOUT':error?.reason==='network'?'NETWORK':error?.code??'UNKNOWN';
+    emit({id,status:id===null?'skipped':'failed',code});
+    throw error;
+  }
 }
