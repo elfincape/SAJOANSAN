@@ -8463,3 +8463,21 @@ const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDa
 console.log('PASS inline request/result -> existing match -> independent original-scope verification -> one completed original work; ambiguous/conflict/network/unknown cannot retain standalone completion; genuinely new inline completion preserved. MOCK MODEL ONLY');
 
 });}
+
+{const {test}=await import('node:test');test('manual failure diagnostics expose stages and fields without source text',async()=>{
+
+const {linkExistingManualItems}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const text='가상V13 검수표 전달까지 완료했습니다.',ref='aa000000-0000-4000-8000-000000000001:manual:item-001';
+const output=x=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(x)}]}]});
+for(const field of ['linkageEvidence','completionEvidence','completedSteps','remainingSteps','valid']){
+ const logs=[],info=console.info;let calls=0;let result;
+ try{console.info=(name,payload)=>{if(name==='PRIVATE_MANUAL_LINK_DECISION')logs.push(JSON.parse(payload));};
+ result=await linkExistingManualItems({entry:{entryId:'v13-diagnostic-test',text,referenceDate:'2026-11-04',submittedAt:'2026-11-04T04:00:00Z'},value:{items:[{kind:'task',text:'검수표 전달',evidence:text}]},work:[{workId:ref,title:'검수표 전달',kind:'task',status:'in_progress'}],isolatedVerification:true,ai:{aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>output(++calls===1?{matches:[{itemIndex:0,workId:ref,relation:'followup',actor:'not_needed',linkageEvidence:field==='linkageEvidence'?'원문에 없는 문구':text,actorEvidence:null,promiseEvidence:null}]}:{matchesTarget:true,action:'complete',text:'검수표 전달',evidence:text,details:[],completionEvidence:field==='completionEvidence'?'원문에 없는 문구':text,serviceOriginal:null,dueOriginal:null,nextActionEvidence:null,completedSteps:field==='completedSteps'?['원문에 없는 문구']:[text],remainingSteps:field==='remainingSteps'?['원문에 없는 문구']:[]})});
+ }finally{console.info=info;}
+ if(field==='valid'){assert.equal(result.reply.items[0].workRef,ref);assert.equal(result.reply.items[0].workflowStatus,'complete');assert.deepEqual(logs.map(x=>x.reason),['match','target_started','target_verified','linked']);}
+ else{const failure=logs.find(x=>x.reason==='MANUAL_EVIDENCE');assert.equal(failure.field,field);assert.equal(failure.stage,field==='linkageEvidence'?'linkage':'target');assert.equal(result.reply.items[0].workRef,undefined);assert.equal(result.reply.items[0].needsConfirmation,true);assert.equal(calls,field==='linkageEvidence'?1:2);}
+ assert.equal(JSON.stringify(logs).includes(text),false);assert.equal(JSON.stringify(logs).includes('원문에 없는 문구'),false);
+}
+console.log('PASS exact stage/field logs distinguish linkage vs target completion/step quote failures; source/model text never logged; rejection and valid completion unchanged');
+
+});}

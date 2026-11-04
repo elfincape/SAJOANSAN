@@ -1155,8 +1155,8 @@ ${JSON.stringify({selectedTarget:target,jevIntent:entry.jevIntent??null,text:ent
   if(value.action==='reopen'&&!/(재개|미완료|다시|완료\s*취소)/.test(evidence))conflict=true;
   const stepQuotes=key=>{
     if(value[key]==null)return [];
-    if(!Array.isArray(value[key])||value[key].length>6)throw Error('MANUAL_EVIDENCE');
-    return value[key].map(text=>({text:sourceQuote(text,entry.focusEvidence??entry.text,500),evidenceSource:'text'}));
+    if(!Array.isArray(value[key])||value[key].length>6)throw Object.assign(Error('MANUAL_EVIDENCE'),{targetField:key});
+    return value[key].map(text=>({text:quoted(key,text,entry.focusEvidence??entry.text,500),evidenceSource:'text'}));
   };
   const completedSteps=stepQuotes('completedSteps'),remainingSteps=stepQuotes('remainingSteps');
   if(value.action==='complete'&&remainingSteps.length)conflict=true;
@@ -1293,7 +1293,7 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
  if(!eligible.length)return null;
  for(const {item}of eligible)sourceQuote(item.evidence,entry.text);
  const trace=(index,reason,extra={})=>console.info('PRIVATE_MANUAL_LINK_DECISION',JSON.stringify({entryId:entry.entryId,itemIndex:index,reason,candidateCount:candidates.length,...extra}));
- const items=value.items.map(item=>({...item})),confirmation=(index,reason='unverified')=>{trace(index,reason);items[index]={...items[index],...(items[index].workflowStatus==='complete'?{workflowStatus:'pending',stateDeclared:false}:{}),needsConfirmation:true};};
+ const items=value.items.map(item=>({...item})),confirmation=(index,reason='unverified',diagnostic={})=>{trace(index,reason,diagnostic);items[index]={...items[index],...(items[index].workflowStatus==='complete'?{workflowStatus:'pending',stateDeclared:false}:{}),needsConfirmation:true};};
  const assignmentPacket=resolveDispatchAssignment(entry.text,{},entry.referenceDate,entry.submittedAt);
  const schema=schemaObject({matches:{type:'array',maxItems:eligible.length,items:schemaObject({itemIndex:{type:'integer',enum:eligible.map(({index})=>index)},workId:schemaNullable({type:'string',enum:candidates.map(item=>item.workId)}),relation:{type:'string',enum:['new','followup','reference','ambiguous']},linkageEvidence:schemaNullable(schemaText(1000)),actor:{type:'string',enum:['owner','external','not_needed','unknown']},actorEvidence:schemaNullable(schemaText(500)),promiseEvidence:schemaNullable(schemaText(500))})}});
  let matches;
@@ -1321,8 +1321,9 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
    const packetOrigins=explicitLoadingPlaces(entry.text);
    if(!packetDay || packetDay!==target.serviceDate || (origins.size && (!packetOrigins.size || [...origins].some(place=>!packetOrigins.has(place))))){confirmation(index);continue;}
   }
+  let verificationStage='linkage';
   try {
-   const linkage=sourceQuote(match.linkageEvidence,raw.evidence,1000);
+   const linkage=sourceQuote(match.linkageEvidence,raw.evidence,1000,'linkageEvidence');
    const sameTitle=candidates.filter(item=>item.title.normalize('NFKC')===target.title.normalize('NFKC'));
    if(sameTitle.length>1){
     const service=dateFrom(raw.serviceOriginal,entry.referenceDate);
@@ -1332,15 +1333,19 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
      if(!monthlyDate||sameTitle.filter(item=>JSON.stringify(item.monthly?.targetPeriod??null)===JSON.stringify(target.monthly.targetPeriod??null)).length!==1){confirmation(index,'identity_period_ambiguous');continue;}
     }
     if(!target.serviceDate&&!target.monthly){
+     verificationStage='identity';
      const identity=await verifyAutomaticIdentity({entry,focusEvidence:raw.evidence,target,candidates,ai,fetcher});responses.push(identity.response);
      if(!identity.accepted){confirmation(index,'identity_not_unique');continue;}
     }
    }
    if(raw.serviceOriginal&&target.serviceDate&&dateFrom(raw.serviceOriginal,entry.referenceDate)!==target.serviceDate){confirmation(index);continue;}
-   const actor=match.actor==='external'?sourceQuote(match.actorEvidence,raw.evidence,500):null,promise=match.actor==='external'?sourceQuote(match.promiseEvidence,raw.evidence,500):null;
+   verificationStage='actor';
+   const actor=match.actor==='external'?sourceQuote(match.actorEvidence,raw.evidence,500,'actorEvidence'):null,promise=match.actor==='external'?sourceQuote(match.promiseEvidence,raw.evidence,500,'promiseEvidence'):null;
    const verificationTarget=target.verificationScope?{...target,originalRequest:target.verificationScope}:target;
+   verificationStage='target';trace(index,'target_started');
    const verified=await analyzeTargetedManual({isolatedVerification,entry:{...entry,selectionMode:'automatic',focusEvidence:raw.evidence},target:verificationTarget,ai,fetcher});responses.push(verified.response);
    const result=verified.reply.items[0];
+   verificationStage='state';trace(index,'target_verified',{status:result.workflowStatus,needsConfirmation:!!result.needsConfirmation,hasWorkRef:!!result.workRef});
    if(result.workflowStatus==='complete'&&(target.originalScopeComplete===false||(target.originalScopeComplete===true&&!target.verificationScope))){confirmation(index);continue;}
    if(result.needsConfirmation||result.workRef!==target.workId){confirmation(index,'target_conflict');continue;}
    const details=[...new Set([...(raw.details??[]),...(result.details??[]),...(actor?[actor,promise]:[])])];
@@ -1359,7 +1364,7 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
     items[index]={...items[index],kind:'reference',text:target.title,workflowStatus:'pending',stateDeclared:false,needsConfirmation:true};
    }
    trace(index,'linked',{target:target.workId,status:items[index].workflowStatus});
-  }catch(error){confirmation(index,['MANUAL_EVIDENCE','MANUAL_FORMAT','MODEL_RESPONSE','MODEL_FAILED','MODEL_TRUNCATED'].includes(error?.message)?error.message:'target_verification');}
+  }catch(error){confirmation(index,['MANUAL_EVIDENCE','MANUAL_FORMAT','MODEL_RESPONSE','MODEL_FAILED','MODEL_TRUNCATED'].includes(error?.message)?error.message:'target_verification',{stage:verificationStage,field:['linkageEvidence','actorEvidence','promiseEvidence','evidence','details','nextActionEvidence','serviceOriginal','completionEvidence','completedSteps','remainingSteps'].includes(error?.targetField)?error.targetField:'unknown'});}
  }
  return {responses,reply:{...value,origin:value.origin??'manual',sourceText:entry.text,resolution:'existing_update_v1',items}};
 }
