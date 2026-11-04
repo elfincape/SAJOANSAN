@@ -1680,6 +1680,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   } catch (error) {
     const raw = error?.code ?? error?.message,
       code = errors.has(raw) ? raw : phase;
+    if(code==='IMAGE_EVIDENCE')console.warn('PRIVATE_MANUAL_IMAGE_VALIDATION',JSON.stringify({entryId:entry.entryId,code,stage:['quote','extraction_shape','fact_shape','item_evidence','request_evidence','completion_evidence','verification_shape','step_shape','completed_steps','remaining_steps'].includes(error?.imageEvidenceStage)?error.imageEvidenceStage:'unknown'}));
     if(code==='MANUAL_EVIDENCE')console.warn('PRIVATE_MANUAL_VALIDATION',JSON.stringify({entryId:entry.entryId,code,field:['evidence','details','serviceOriginal','completionEvidence'].includes(error?.targetField)?error.targetField:'normalization'}));
     const failed = await rpc('private_mail_manual_fail', {
       p_entry: entry.entryId,
