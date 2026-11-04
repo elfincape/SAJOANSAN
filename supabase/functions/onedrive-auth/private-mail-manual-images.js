@@ -222,6 +222,7 @@ export async function analyzeManualPhotos({
     const completedSteps = steps('completedSteps'),
       remainingSteps = steps('remainingSteps');
     const trusted =
+      !target?.matchingPoolTruncated &&
       check.accepted &&
       fact.confidence === 'readable' &&
       (['owner','external'].includes(check.actor) || (check.actor === 'not_needed' && raw.kind === 'reference' && raw.action === 'reference' && !completedSteps.length && !remainingSteps.length));

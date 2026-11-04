@@ -1298,7 +1298,7 @@ export async function linkMonthlyManualItems({value,entry,work,ai,fetcher,isolat
  }
  return {responses,reply:{origin:'manual',sourceText:entry.text,authoredDate:value.authoredDate??null,resolution:'monthly_update_v1',items}};
 }
-export async function buildManualWorkCandidates({current,monthlyTasks=[],db,ownerId,day}) {
+export async function buildManualWorkCandidates({current,monthlyTasks=[],db,ownerId,day,entry=null}) {
  if(ownerId!==TARGET.owner_id||current?.owner_id!==ownerId||current?.id!==TARGET.mailbox_id||!validDay(day))throw Error('MANUAL_SOURCE');
  const {dailyBriefingView,applyMailIntentOverride,projectMailDates}=await import('./private-mail-briefing-model.js');
  const overrides=current.briefing_overrides??{},cutoff=new Date(Date.parse(day+'T00:00:00Z')-30*86400000).toISOString().slice(0,10);
@@ -1322,13 +1322,30 @@ export async function buildManualWorkCandidates({current,monthlyTasks=[],db,owne
  manual.entries.sort((a,b)=>a.submittedAt.localeCompare(b.submittedAt)||a.entryId.localeCompare(b.entryId));
  const view=dailyBriefingView({now:day+'T03:00:00Z',analyses,overrides,manual,portalTasks:monthlyTasks,portalOwnerId:ownerId});
  const candidates=(view.workItems??[]).filter(item=>!item.excluded&&validWorkRef(item.workId)&&!excludedIds.has(item.workId.startsWith('source:')?item.workId.slice(7):item.workId.slice(0,36))&&!(item.sourceRefs??[]).some(source=>source.kind==='mail'&&excludedIds.has(source.id))&&(item.monthly||originals.has(item.workId)||originals.has(item.originRef))&&(!['complete','cancelled'].includes(item.status)||String(item.closedAt??item.requestedAt??'').slice(0,10)>=cutoff));
+ // Rank structured dispatch identity before the context cap; never infer completion here.
+ const packet=entry?.text?resolveDispatchAssignment(entry.text,{},entry.referenceDate,entry.submittedAt):null;
+ const packetDay=packet?dateFrom(packet.items[0].serviceOriginal,entry.referenceDate):null;
+ const packetOrigins=packet?explicitLoadingPlaces(entry.text):new Set();
+ const routeScore=item=>{
+  if(!packet||item.serviceDate!==packetDay)return 0;
+  const original=originals.get(item.workId)??originals.get(item.originRef);
+  if(original?.kind!=='dispatch')return 0;
+  const scope=original.evidence??'',origins=explicitLoadingPlaces(scope);
+  const destinations=[...scope.matchAll(/(?:^|\n)\s*(?:하차지|도착지)\s*[:：]\s*([^\n]+)/g)].map(m=>m[1].trim().replace(/\s/g,''));
+  const tonnes=[...scope.matchAll(/(?:톤급|차량톤수)\s*[:：]\s*(\d+(?:\.\d+)?)\s*톤/g)].map(m=>Number(m[1]));
+  return origins.size===1&&packetOrigins.size===1&&[...origins].every(place=>packetOrigins.has(place))&&
+   destinations.length>0&&destinations.every(place=>place===packet.assignmentDestination)&&
+   (packet.assignmentTonnage==null||!tonnes.length||tonnes.every(value=>value===packet.assignmentTonnage))?1:0;
+ };
+ const matchingCount=candidates.filter(item=>routeScore(item)>0).length;
  const stamp=item=>String(item.ownerStateAt??item.inferredStateAt??item.requestedAt??'');
- candidates.sort((a,b)=>Number(['complete','cancelled'].includes(a.status))-Number(['complete','cancelled'].includes(b.status))||stamp(b).localeCompare(stamp(a))||a.workId.localeCompare(b.workId));
+ candidates.sort((a,b)=>routeScore(b)-routeScore(a)||Number(['complete','cancelled'].includes(a.status))-Number(['complete','cancelled'].includes(b.status))||stamp(b).localeCompare(stamp(a))||a.workId.localeCompare(b.workId));
  const incomplete=candidates.filter(item=>!['complete','cancelled'].includes(item.status)),history=candidates.filter(item=>['complete','cancelled'].includes(item.status)).slice(0,8);
  const compactText=(value,max=300)=>typeof value==='string'?value.slice(0,max):null;
  const compactList=(values,count=3,max=200)=>(Array.isArray(values)?values:[]).filter(value=>typeof value==='string').slice(0,count).map(value=>compactText(value,max));
  let budget=60000;
- return [...incomplete.slice(0,40-history.length),...history].flatMap(item=>{
+ const selected=packet?candidates.slice(0,40):[...incomplete.slice(0,40-history.length),...history];
+ const compacted=selected.flatMap(item=>{
   const original=originals.get(item.workId)??originals.get(item.originRef),kind=original?.kind??(item.category==='reference'?'reference':item.category==='issue'?'issue':'task');
   const request=original??item.originalRequest;
   const verificationScope=request?{title:request.title,evidence:request.evidence,summary:Array.isArray(request.summary)?request.summary.filter(value=>typeof value==='string'):[],requestedAt:request.requestedAt??null}:null;
@@ -1343,6 +1360,9 @@ export async function buildManualWorkCandidates({current,monthlyTasks=[],db,owne
   if(originalScopeComplete)Object.defineProperty(compact,'verificationScope',{value:verificationScope});
   return [compact];
  }).slice(0,40);
+ if(matchingCount>compacted.filter(item=>routeScore(item)>0).length)
+  for(const item of compacted)if(routeScore(item)>0)item.matchingPoolTruncated=true;
+ return compacted;
 
 }
 async function verifyAutomaticIdentity({entry,focusEvidence,target,candidates,ai,fetcher}) {
@@ -1392,6 +1412,7 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
   }
   if(match.relation==='ambiguous'||!match.workId){confirmation(index,'identity_ambiguous');continue;}
   const target=candidates.find(item=>item.workId===match.workId);
+  if(target.matchingPoolTruncated){confirmation(index,'identity_pool_truncated');continue;}
   if(assignmentPacket && target.kind==='dispatch'){
    // A nullable model field cannot erase the date or loading place in a parsed reply.
    const packetDay=dateFrom(assignmentPacket.items[0].serviceOriginal,entry.referenceDate);
@@ -1430,7 +1451,7 @@ export async function linkExistingManualItems({value,entry,work,ai,fetcher,isola
    verificationStage='state';trace(index,'target_verified',{status:result.workflowStatus,needsConfirmation:!!result.needsConfirmation,hasWorkRef:!!result.workRef});
    if(result.workflowStatus==='complete'&&(target.originalScopeComplete===false||(target.originalScopeComplete===true&&!target.verificationScope))){confirmation(index);continue;}
    if(result.needsConfirmation||result.workRef!==target.workId){confirmation(index,'target_conflict');continue;}
-   const details=[...new Set([...(raw.details??[]),...(result.details??[]),...(actor?[actor,promise]:[])])];
+   const details=[...new Set([...(target.kind==='dispatch'?dispatchVehicleDetails(raw.evidence):[]),...(raw.details??[]),...(result.details??[]),...(actor?[actor,promise]:[])])];
    if(details.length>6){confirmation(index);continue;}
    const reference=match.relation==='reference';
    const supplemental=/사진|서류|차량\s*(?:정보|번호)|물량|첨부/.test(raw.evidence),dispatch=target.kind==='dispatch'||/배차|차량\s*섭외/.test(target.title);
@@ -1673,7 +1694,7 @@ export async function handleManualMessage(action, body, user, ctx) {
     const monthlyTasks=!structured&&typeof ctx.loadMonthlyTasks==='function'?await ctx.loadMonthlyTasks():[];
     const monthlyWork=monthlyTasks.length?dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},{},{portalTasks:monthlyTasks,portalOwnerId:user.id,workOverrides:current.briefing_overrides??{}}):[];
     monthlyRelated=monthlyWork.map(item=>({ref:item.workId,kind:'task',text:item.title,status:item.status,serviceDate:null}));
-    if((verifiedUpdates && !entry.targetWorkId && !structured) || entry.images?.length)candidateWork=await buildManualWorkCandidates({current,monthlyTasks,db,ownerId:user.id,day:kstDay(entry.submittedAt)});
+    if((verifiedUpdates && !entry.targetWorkId && !structured) || entry.images?.length)candidateWork=await buildManualWorkCandidates({current,monthlyTasks,db,ownerId:user.id,day:kstDay(entry.submittedAt),entry});
     let reply = structured
       ? null
       : resolveExistingManualWork(
@@ -1770,7 +1791,7 @@ export async function handleManualMessage(action, body, user, ctx) {
       const loaded = [];
       for(const image of entry.images)loaded.push(await ctx.loadManualImage(entry.entryId,image.id));
       const candidates=candidateWork.filter(item=>!item.excluded&&(!entry.targetWorkId||item.workId===entry.targetWorkId)).slice(0,40).map(item=>{
-        const candidate={workId:item.workId,title:item.title,kind:item.kind??(item.category==='reference'?'reference':'task'),status:item.status,serviceDate:item.serviceDate,summary:item.summary??[],nextAction:item.nextAction??null,originalRequest:item.originalRequest??null,originalScopeComplete:item.originalScopeComplete};
+        const candidate={workId:item.workId,title:item.title,kind:item.kind??(item.category==='reference'?'reference':'task'),status:item.status,serviceDate:item.serviceDate,summary:item.summary??[],nextAction:item.nextAction??null,originalRequest:item.originalRequest??null,originalScopeComplete:item.originalScopeComplete,matchingPoolTruncated:item.matchingPoolTruncated===true};
         if(item.verificationScope)Object.defineProperty(candidate,'verificationScope',{value:item.verificationScope});
         return candidate;
       });
