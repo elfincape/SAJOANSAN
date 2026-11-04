@@ -8371,3 +8371,19 @@ for(const mode of ['reference','ambiguous','forged_completion']){
 
  });
 }
+
+{const {test}=await import('node:test');test('manual candidate identity context stays separate from completion evidence',async()=>{
+const {buildManualWorkCandidates,normalizeManualItems}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const entryId='a8000000-0000-4000-8000-000000000001',at='2026-11-04T03:00:00Z',text='가상업체 청록Q8 / 업무일 2026-12-18. 보고서를 작성하고 내부 검토자에게 전달해 주세요.',evidence='보고서를 작성하고 내부 검토자에게 전달해 주세요.';
+const items=normalizeManualItems({items:[{kind:'task',text:'보고서 작성 및 전달',evidence,needsConfirmation:false}]},{text,entryId,submittedAt:at,referenceDate:'2026-11-04'});
+const current={id:'39045005-313e-42e1-b50c-2394b3b6ff26',owner_id:'2a828c2d-9a6f-40d4-8e13-336b591811cc',manual_entries:{[entryId]:{entryId,text,status:'ready',submittedAt:at,items}},briefing_overrides:{}};
+const [c]=await buildManualWorkCandidates({current,ownerId:current.owner_id,day:'2026-11-04',db:async()=>[]});assert.ok(c.sourceContext?.includes('청록Q8'));assert.equal(c.verificationScope.evidence,evidence);console.log('PASS header retained as context, never substituted for item completion evidence');
+
+});}
+
+{const {test}=await import('node:test');test('empty manual extraction with business signals keeps confirmation reference',async()=>{
+const {handleManualMessage}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',id='a8000000-0000-4000-8000-000000000002',text='가상 업체 보고서를 작성하고 전달해 주세요.';let saved;
+const result=await(await handleManualMessage('private-mail-manual-add',{clientRequestId:id,text},{id:owner},{json:Response.json,fail:x=>Error(x),verifiedUpdatesEnabled:true,aiKey:'MOCK',resolveJevConfiguration:async()=>({enabled:true,approvedSourceIds:[id],key:'MOCK',fetcher:async(_,o)=>{const p=JSON.parse(o.body);return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(p.questions).map(k=>[k,{type:'noul',noul:.9}]))});}}),fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({items:[],authoredDate:null})}]}]}),db:async(path,o)=>{if(path.startsWith('private_mailboxes?'))return[{id:box,owner_id:owner,enabled:true,manual_entries:{}}];if(path.startsWith('private_mail_messages?'))return[];if(path.endsWith('_claim'))return{claimed:true,entry:{entryId:id,text,status:'processing',textHash:o.body.p_hash,submittedAt:'2026-11-04T03:00:00Z',referenceDate:'2026-11-04'}};if(path.endsWith('_finish'))return saved={entryId:id,text,status:'ready',submittedAt:'2026-11-04T03:00:00Z',items:o.body.p_items};if(path.endsWith('_jev_review'))return null;throw Error(path);}})).json();assert.equal(result.status,'ready');assert.equal(saved.items.length,1);assert.equal(saved.items[0].kind,'reference');assert.equal(saved.items[0].needsConfirmation,true);assert.equal(saved.items[0].evidence,text);assert.notEqual(saved.items[0].workflowStatus,'complete');console.log('PASS empty extraction with Jev business signal retains confirmation reference, not invented executable/completed task');
+
+});}
