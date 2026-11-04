@@ -108,19 +108,27 @@ export interface DailyMailOverview {
 export type WorkCategory =
   'task' | 'reference' | 'routine' | 'issue' | 'review';
 export interface WorkPatch {
-  activity?: {id:string;text:string};
+  activity?: { id: string; text: string };
   category?: WorkCategory | null;
   excluded?: boolean;
   reason?: 'spam' | 'manual' | null;
   done?: boolean | null;
 }
 export interface WorkCorrection extends WorkPatch {
-  processingNotes?: {id:string;text:string;at:string}[];
+  processingNotes?: { id: string; text: string; at: string }[];
   currentDone?: boolean | null;
   updatedAt?: string;
 }
 export interface DailyWork {
-  monthly?: { scheduledDate: string; visibleFrom: string; qualifier: 'on' | 'before'; originalSchedule: string; paymentDate?: string | null; advanceKind?: 'yangsan_first' | 'yangsan_second' | 'nonghyup' | null; targetPeriod: { from: string; through: string } | null };
+  monthly?: {
+    scheduledDate: string;
+    visibleFrom: string;
+    qualifier: 'on' | 'before';
+    originalSchedule: string;
+    paymentDate?: string | null;
+    advanceKind?: 'yangsan_first' | 'yangsan_second' | 'nonghyup' | null;
+    targetPeriod: { from: string; through: string } | null;
+  };
   correction?: WorkCorrection;
   uncorrected?: Pick<
     DailyWork,
@@ -239,7 +247,22 @@ export interface MailManualItem {
   completedAt: string | null;
   needsConfirmation?: boolean;
 }
+export interface MailManualImage {
+  id: string;
+  name: string;
+  mediaType: 'image/jpeg' | 'image/png';
+  width: number;
+  height: number;
+  contentHash: string;
+  byteLength: number;
+}
+export interface MailManualUpload {
+  name: string;
+  data: string;
+}
 export interface MailManualEntry {
+  images?: MailManualImage[];
+  privacyConfirmed?: boolean;
   entryId: string;
   status: 'ready' | 'pending' | 'processing' | 'failed';
   submittedAt: string;
@@ -261,6 +284,8 @@ export interface MailManualList {
 export const privateMail = {
   manualSource: (entryId: string) =>
     oneDriveCall<{
+      images?: MailManualImage[];
+      privacyConfirmed?: boolean;
       entryId: string;
       text: string;
       clientRequestId: string;
@@ -270,7 +295,14 @@ export const privateMail = {
       referenceDate: string | null;
       authoredDate: string | null;
     }>('private-mail-manual-source', { entryId }),
+  manualSourceImage: (entryId: string, imageId: string) =>
+    oneDriveCall<{ image: { data: string; mediaType: string; name: string } }>(
+      'private-mail-manual-source',
+      { entryId, imageId },
+    ),
   manualEnqueue: (body: {
+    images?: MailManualUpload[];
+    privacyConfirmed?: boolean;
     targetWorkId?: string | null;
     text: string;
     clientRequestId: string;
@@ -278,6 +310,8 @@ export const privateMail = {
     retry?: boolean;
   }) => oneDriveCall<MailManualEntry>('private-mail-manual-enqueue', body),
   manualAdd: (body: {
+    images?: MailManualUpload[];
+    privacyConfirmed?: boolean;
     text: string;
     clientRequestId: string;
     referenceDate?: string | null;

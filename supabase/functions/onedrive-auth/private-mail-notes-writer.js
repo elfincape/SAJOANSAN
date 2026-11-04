@@ -438,7 +438,7 @@ function describeImages(images, sourceIds) {
       )
         throw Error('NOTES_IMAGE_DIMENSIONS');
       const expectedUrl =
-        'https://sajoansan.vercel.app/portal/?view=mail&message=' +
+        'https://sajoansan.vercel.app/portal/?view=mail&' + (image.sourceType === 'manual' ? 'manual=' : 'message=') +
         image.sourceId;
       if (image.sourceUrl !== expectedUrl) throw Error('NOTES_IMAGE_SOURCE');
       const byteSize =

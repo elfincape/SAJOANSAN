@@ -35,8 +35,9 @@ export async function authorizeMailWork(
     let imageRequest;
     try {
       const text = await request.clone().text();
-      if (text.length > 4096) denied();
+      if (text.length > 4 * 1024 * 1024 + 4096) denied();
       imageRequest = JSON.parse(text);
+      if (imageRequest?.operation !== 'analyze' && text.length > 4096) denied();
     } catch {
       denied();
     }
@@ -98,7 +99,7 @@ export async function authorizeMailWork(
     if (
       text.length >
       (action === 'private-mail-background-work'
-        ? 4096
+        ? 4 * 1024 * 1024 + 4096
         : 4 * 1024 * 1024 + 4096)
     )
       denied();
@@ -136,7 +137,7 @@ export async function authorizeMailWork(
     )
       denied();
   } else if (session.kind === 'analyze') {
-    if (body.operation !== 'analyze' || body.id !== session.target) denied();
+    if (!['analyze', 'manual-photo-source'].includes(body.operation) || body.id !== session.target) denied();
   } else if (session.kind === 'history') {
     if (body.operation !== 'history' || body.id !== session.target) denied();
   } else if (

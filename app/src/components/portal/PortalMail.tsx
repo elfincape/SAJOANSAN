@@ -17,6 +17,98 @@ import type {
 import { portalStamp } from '../../domain/portal-types';
 import { useDownload } from '../useDownload';
 import { MailBriefingConnection } from './MailBriefingConnection';
+import { Modal, ModalClose } from '../Modal';
+import { StoredManualPhotos } from './MailBriefingManualEntries';
+function ManualSourceDialog({
+  id,
+  onClose,
+}: {
+  id: string;
+  onClose: () => void;
+}) {
+  const [source, setSource] = useState<Awaited<
+    ReturnType<typeof privateMail.manualSource>
+  > | null>(null);
+  const [error, setError] = useState(false);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setSource(null);
+    setError(false);
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        id,
+      )
+    ) {
+      setError(true);
+      return;
+    }
+    void privateMail
+      .manualSource(id)
+      .then((result) => {
+        if (active) setSource(result);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, version]);
+  return (
+    <Modal label="입력 메시지 원문" onClose={onClose} width="xl">
+      <div className="daily-message-dialog">
+        <div className="daily-dialog-heading">
+          <h2>입력 메시지 원문</h2>
+          <ModalClose className="btn btn-ghost">닫기</ModalClose>
+        </div>
+        {error ? (
+          <div role="alert">
+            <p>
+              원문을 불러오지 못했습니다. 본인 계정으로 로그인했는지 확인하고
+              다시 시도해 주세요.
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setVersion((value) => value + 1)}
+            >
+              다시 불러오기
+            </button>
+          </div>
+        ) : source ? (
+          <>
+            <p className="daily-task-meta">
+              접수: {portalStamp(source.submittedAt)}
+            </p>
+            {source.text ? (
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {source.text}
+              </pre>
+            ) : (
+              <p>사진으로 접수한 메시지입니다.</p>
+            )}
+            {source.images?.length ? (
+              <StoredManualPhotos
+                key={id}
+                entryId={id}
+                images={source.images}
+              />
+            ) : null}
+          </>
+        ) : (
+          <p role="status">원문을 불러오는 중…</p>
+        )}
+      </div>
+    </Modal>
+  );
+}
 function MailReceipt({
   onCollected,
   initialProgress,
@@ -213,6 +305,7 @@ function MailDetail({ id, current }: { id: string; current: () => boolean }) {
         const link = new URL(location.href);
         link.searchParams.set('view', 'mail');
         link.searchParams.set('message', id);
+        link.searchParams.delete('manual');
         history.replaceState(history.state, '', link);
         const file =
           mail.files.find((f) => f.kind === 'text') ||
@@ -374,6 +467,7 @@ function MailDetail({ id, current }: { id: string; current: () => boolean }) {
 }
 export function PortalMail() {
   const { state, profile, message } = usePortal(),
+    [manualId, setManualId] = useState<string | null>(null),
     [box, setBox] = useState<Mailbox | null>(null),
     [status, setStatus] = useState('loading'),
     [input, setInput] = useState(''),
@@ -403,7 +497,10 @@ export function PortalMail() {
     setInput('');
     setQuery('');
     setOffset(0);
-    requested.current = new URL(location.href).searchParams.get('message');
+    const params = new URL(location.href).searchParams;
+    const manual = params.get('manual');
+    setManualId(manual);
+    requested.current = manual ? null : params.get('message');
     void privateMail
       .status()
       .then((result) => {
@@ -490,6 +587,18 @@ export function PortalMail() {
   }
   return (
     <>
+      {manualId && profile.id === MAIL_DIAGNOSTIC_OWNER_ID ? (
+        <ManualSourceDialog
+          key={manualId}
+          id={manualId}
+          onClose={() => {
+            setManualId(null);
+            const url = new URL(location.href);
+            url.searchParams.delete('manual');
+            history.replaceState(history.state, '', url);
+          }}
+        />
+      ) : null}
       <section id="quick-actions" className="quick-actions">
         {profile.id === MAIL_DIAGNOSTIC_OWNER_ID ? (
           <>

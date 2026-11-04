@@ -2,11 +2,190 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
 import type {
+  MailManualImage,
   MailManualEntry,
   MailManualItem,
   MailManualList,
 } from '../../lib/portal-mail';
 
+type DraftImage = {
+  name: string;
+  data: string;
+  preview: string;
+  hash: string;
+  byteLength: number;
+  pixelCount: number;
+};
+function headerDimensions(bytes: Uint8Array, png: boolean) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (
+    png &&
+    bytes.length >= 24 &&
+    view.getUint32(8) === 13 &&
+    view.getUint32(12) === 0x49484452
+  )
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  if (!png) {
+    let offset = 2;
+    while (offset + 3 < bytes.length) {
+      if (bytes[offset++] !== 255) break;
+      while (bytes[offset] === 255) offset++;
+      const marker = bytes[offset++];
+      if (marker === 0xda || marker === 0xd9) break;
+      if (marker === 1 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 2 > bytes.length) break;
+      const length = view.getUint16(offset);
+      if (length < 2 || offset + length > bytes.length) break;
+      if (
+        [
+          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd,
+          0xce, 0xcf,
+        ].includes(marker) &&
+        length >= 8
+      )
+        return {
+          height: view.getUint16(offset + 3),
+          width: view.getUint16(offset + 5),
+        };
+      offset += length;
+    }
+  }
+  throw Error(
+    '사진 크기 정보를 읽지 못했습니다. JPEG 또는 PNG 원본을 확인해 주세요.',
+  );
+}
+function validDimensions(width: number, height: number) {
+  if (
+    !width ||
+    !height ||
+    width > 8000 ||
+    height > 8000 ||
+    width * height > 13000000
+  )
+    throw Error(
+      '사진 가로·세로는 각각 8,000픽셀 이하, 사진당 1,300만 / 합계 1,600만 픽셀 이하여야 합니다.',
+    );
+}
+async function readImage(file: File): Promise<DraftImage> {
+  if (file.type === 'image/webp' || /\.webp$/i.test(file.name))
+    throw Error(
+      'OneNote 호환을 위해 WebP는 사용할 수 없습니다. JPEG 또는 PNG를 첨부해 주세요.',
+    );
+  if (!['image/jpeg', 'image/png'].includes(file.type))
+    throw Error('JPEG 또는 PNG 사진만 첨부할 수 있습니다.');
+  if (!file.size || file.size > 6000000)
+    throw Error('사진 원본 한 장은 6,000,000바이트 이하여야 합니다.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const png =
+    bytes[0] === 137 &&
+    bytes[1] === 80 &&
+    bytes[2] === 78 &&
+    bytes[3] === 71 &&
+    bytes[4] === 13 &&
+    bytes[5] === 10 &&
+    bytes[6] === 26 &&
+    bytes[7] === 10;
+  const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  if (
+    (file.type === 'image/png' && !png) ||
+    (file.type === 'image/jpeg' && !jpeg)
+  )
+    throw Error('사진 형식이 올바르지 않습니다.');
+  const dimensions = headerDimensions(bytes, png);
+  validDimensions(dimensions.width, dimensions.height);
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+    (value) => value.toString(16).padStart(2, '0'),
+  ).join('');
+  const preview = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () =>
+      reject(Error('사진을 읽지 못했습니다. 다시 첨부해 주세요.'));
+    reader.readAsDataURL(file);
+  });
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    validDimensions(bitmap.width, bitmap.height);
+  } catch {
+    throw Error('사진을 열지 못했습니다. JPEG 또는 PNG 원본을 확인해 주세요.');
+  } finally {
+    bitmap?.close();
+  }
+  return {
+    name: file.name,
+    data: preview.slice(preview.indexOf(',') + 1),
+    preview,
+    hash,
+    byteLength: bytes.length,
+    pixelCount: dimensions.width * dimensions.height,
+  };
+}
+export function StoredManualPhotos({
+  entryId,
+  images,
+}: {
+  entryId: string;
+  images: MailManualImage[];
+}) {
+  const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [error, setError] = useState('');
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const pending = useRef(false);
+  async function show(image: MailManualImage) {
+    if (pending.current) return;
+    pending.current = true;
+    setLoadingId(image.id);
+    setError('');
+    try {
+      const result = await privateMail.manualSourceImage(entryId, image.id);
+      if (
+        !['image/jpeg', 'image/png'].includes(result.image.mediaType) ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(result.image.data)
+      )
+        throw Error('invalid image');
+      setPhotos((previous) => ({
+        ...previous,
+        [image.id]: `data:${result.image.mediaType};base64,${result.image.data}`,
+      }));
+    } catch {
+      setError('원본 사진을 불러오지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      pending.current = false;
+      setLoadingId(null);
+    }
+  }
+  return (
+    <details>
+      <summary>원본 사진 {images.length}장</summary>
+      {images.map((image) => (
+        <div key={image.id}>
+          <p>
+            {image.name} · {image.width} × {image.height}
+          </p>
+          {photos[image.id] ? (
+            <img
+              src={photos[image.id]}
+              alt={image.name}
+              style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain' }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={loadingId !== null}
+              onClick={() => void show(image)}
+            >
+              {loadingId === image.id ? '불러오는 중…' : '사진 보기'}
+            </button>
+          )}
+        </div>
+      ))}
+      {error && <p role="alert">{error}</p>}
+    </details>
+  );
+}
 export function formatBriefingTimestamp(value?: string | null) {
   if (!value) return '확인 필요';
   const parsed = new Date(value);
@@ -38,10 +217,32 @@ function failure(error: unknown) {
     (
       {
         OWNER_REQUIRED: '본인 계정에서만 메시지를 추가할 수 있습니다.',
-        MANUAL_TARGET_CONFLICT: '같은 메시지가 다른 대상 범위로 이미 접수돼 있습니다. 기존 접수건을 확인해 주세요.',
+        MANUAL_TARGET_CONFLICT:
+          '같은 메시지가 다른 대상 범위로 이미 접수돼 있습니다. 기존 접수건을 확인해 주세요.',
         MANUAL_SCHEMA_REQUIRED:
           '메시지 저장 준비 중입니다. 잠시 후 다시 시도해 주세요.',
         AI_NOT_CONFIGURED: '메시지 분석 연결이 준비되지 않았습니다.',
+        IMAGE_LIMIT: '사진 개수나 원본 크기 제한을 확인해 주세요.',
+        IMAGE_DIMENSIONS:
+          '사진 가로·세로는 각각 8,000픽셀 이하, 사진당 1,300만 / 합계 1,600만 픽셀 이하여야 합니다.',
+        IMAGE_PREPARE_FAILED:
+          '원본 사진은 보관되어 있습니다. 사진 변환에 실패했으니 다시 시도해 주세요.',
+        IMAGE_WORKER_REQUIRED:
+          '원본 사진은 보관되어 있습니다. 사진 처리 연결을 확인한 뒤 다시 시도해 주세요.',
+        IMAGE_MANIFEST:
+          '사진 원본 확인에 실패했습니다. 저장된 원본을 확인한 뒤 다시 시도해 주세요.',
+        IMAGE_FORMAT:
+          '사진을 읽지 못했습니다. JPEG 또는 PNG 원본을 확인해 주세요.',
+        IMAGE_PRIVACY_REVIEW:
+          '보호가 필요한 정보가 있는 사진은 분석할 수 없습니다. 신분증·비밀번호 사진이 없는지 확인해 주세요.',
+        UNSUPPORTED_IMAGE_TYPE:
+          'OneNote 호환을 위해 JPEG·PNG만 지원합니다. WebP는 사용할 수 없습니다.',
+        MANUAL_IMAGE_INVALID:
+          '사진 형식·크기·개수를 확인해 주세요. JPEG·PNG만 지원합니다.',
+        MANUAL_PRIVACY_REQUIRED:
+          '사진의 외부 AI 분석 및 OneNote 전송 동의를 확인해 주세요.',
+        MANUAL_IMAGE_PRIVACY_REQUIRED:
+          '사진의 외부 AI 분석 및 OneNote 전송 동의를 확인해 주세요.',
         MANUAL_TEXT_INVALID: '메시지는 12,000자 이내로 입력해 주세요.',
         MANUAL_REFERENCE_INVALID: '메시지 기준일을 다시 확인해 주세요.',
         MANUAL_INPUT_INVALID:
@@ -64,7 +265,12 @@ export function MailBriefingManualEntries({
   refreshKey = 0,
   onInputClose,
 }: {
-  initialDraft?: {id:string;text:string;targetWorkId?:string;autoSubmit?:boolean};
+  initialDraft?: {
+    id: string;
+    text: string;
+    targetWorkId?: string;
+    autoSubmit?: boolean;
+  };
   refreshKey?: number;
   inputOpen?: boolean;
   onInputClose?: () => void;
@@ -75,7 +281,64 @@ export function MailBriefingManualEntries({
   onChanged?: () => void;
 }) {
   const [text, setText] = useState('');
-  const [targetWorkId,setTargetWorkId]=useState<string | null>(null);
+  const [images, setImages] = useState<DraftImage[]>([]);
+  const imagesRef = useRef<DraftImage[]>([]);
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [readingImages, setReadingImages] = useState(false);
+  const reading = useRef(false);
+  const imageGeneration = useRef(0);
+  async function attach(files: File[]) {
+    if (reading.current || locked.current || disabled || !files.length) return;
+    reading.current = true;
+    setReadingImages(true);
+    const generation = imageGeneration.current;
+    const next = [...imagesRef.current];
+    const errors: string[] = [];
+    try {
+      for (const file of files) {
+        try {
+          const image = await readImage(file);
+          if (generation !== imageGeneration.current || !mounted.current)
+            return;
+          if (next.some((existing) => existing.hash === image.hash)) {
+            errors.push('중복 사진은 한 번만 첨부합니다.');
+            continue;
+          }
+          if (next.length >= 3)
+            throw Error('사진은 최대 3장까지 첨부할 수 있습니다.');
+          if (
+            next.reduce((sum, item) => sum + item.byteLength, 0) +
+              image.byteLength >
+            8000000
+          )
+            throw Error(
+              '사진 원본 전체 크기는 8,000,000바이트 이하여야 합니다.',
+            );
+          if (
+            next.reduce((sum, item) => sum + item.pixelCount, 0) +
+              image.pixelCount >
+            16000000
+          )
+            throw Error('사진당 1,300만 / 합계 1,600만 픽셀 이하여야 합니다.');
+          next.push(image);
+        } catch (error) {
+          errors.push(
+            error instanceof Error ? error.message : '사진을 읽지 못했습니다.',
+          );
+        }
+      }
+      if (generation !== imageGeneration.current || !mounted.current) return;
+      imagesRef.current = next;
+      setImages(next);
+      setPrivacyConfirmed(false);
+      draftVersion.current++;
+      setFeedback([...new Set(errors)].join(' '));
+    } finally {
+      reading.current = false;
+      if (mounted.current) setReadingImages(false);
+    }
+  }
+  const [targetWorkId, setTargetWorkId] = useState<string | null>(null);
   const [referenceDate, setReferenceDate] = useState('');
   const [data, setData] = useState<MailManualList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,9 +353,33 @@ export function MailBriefingManualEntries({
     id: string;
     retry?: boolean;
   } | null>(null);
-  useEffect(()=>{setTargetWorkId(initialDraft?.targetWorkId??null);if(!initialDraft)return;setText(initialDraft.text);setReferenceDate('');submission.current=null;draftVersion.current++;},[initialDraft?.id]);
-  const autoSubmitted=useRef<string | null>(null);
-  useEffect(()=>{if(!inputOpen||!initialDraft?.autoSubmit||autoSubmitted.current===initialDraft.id||text!==initialDraft.text||targetWorkId!==(initialDraft.targetWorkId??null)||disabled||busy)return;autoSubmitted.current=initialDraft.id;void add();},[inputOpen,initialDraft?.id,text,targetWorkId,disabled,busy]);
+  useEffect(() => {
+    setTargetWorkId(initialDraft?.targetWorkId ?? null);
+    if (!initialDraft) return;
+    imageGeneration.current++;
+    imagesRef.current = [];
+    setImages([]);
+    setPrivacyConfirmed(false);
+    setText(initialDraft.text);
+    setReferenceDate('');
+    submission.current = null;
+    draftVersion.current++;
+  }, [initialDraft?.id]);
+  const autoSubmitted = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !inputOpen ||
+      !initialDraft?.autoSubmit ||
+      autoSubmitted.current === initialDraft.id ||
+      text !== initialDraft.text ||
+      targetWorkId !== (initialDraft.targetWorkId ?? null) ||
+      disabled ||
+      busy
+    )
+      return;
+    autoSubmitted.current = initialDraft.id;
+    void add();
+  }, [inputOpen, initialDraft?.id, text, targetWorkId, disabled, busy]);
   const load = useCallback(async () => {
     const id = ++request.current;
     setLoading(true);
@@ -164,6 +451,7 @@ export function MailBriefingManualEntries({
         referenceDate: source.requestedReference,
         targetWorkId: source.targetWorkId,
         retry: true,
+        privacyConfirmed: source.privacyConfirmed,
       });
       if (!mounted.current) return;
       await load();
@@ -180,9 +468,23 @@ export function MailBriefingManualEntries({
   async function add() {
     const input = text.trim(),
       basis = referenceDate || null;
-    if (!input || input.length > 12000 || (basis && !validDay(basis))) return;
-    const key = JSON.stringify({ text: input, referenceDate: basis,
-        targetWorkId });
+    if (
+      locked.current ||
+      reading.current ||
+      disabled ||
+      (!input && !images.length) ||
+      input.length > 12000 ||
+      (images.length > 0 && !privacyConfirmed) ||
+      (basis && !validDay(basis))
+    )
+      return;
+    const key = JSON.stringify({
+      text: input,
+      referenceDate: basis,
+      targetWorkId,
+      images: images.map((image) => image.hash),
+      privacyConfirmed,
+    });
     if (submission.current?.key !== key)
       submission.current = { key, id: crypto.randomUUID() };
     const clientRequestId = submission.current.id,
@@ -195,6 +497,8 @@ export function MailBriefingManualEntries({
         referenceDate: basis,
         targetWorkId,
         retry,
+        images: images.map(({ name, data }) => ({ name, data })),
+        privacyConfirmed,
       });
       if (!mounted.current) return;
       if (result.status === 'failed') {
@@ -209,6 +513,10 @@ export function MailBriefingManualEntries({
       submission.current = null;
       if (draftVersion.current === version) {
         setText('');
+        imageGeneration.current++;
+        imagesRef.current = [];
+        setImages([]);
+        setPrivacyConfirmed(false);
         setReferenceDate('');
       }
       onInputClose?.();
@@ -282,6 +590,9 @@ export function MailBriefingManualEntries({
             ? ` · 완료: ${formatBriefingTimestamp(item.completedAt)}`
             : ''}
         </p>
+        {entry.images?.length ? (
+          <StoredManualPhotos entryId={entry.entryId} images={entry.images} />
+        ) : null}
         <details className="manual-basis">
           <summary>날짜 해석 기준</summary>
           <p>
@@ -307,14 +618,31 @@ export function MailBriefingManualEntries({
           dismissable={!busy}
           width="xl"
         >
-          <div className="daily-message-dialog">
+          <div
+            className="daily-message-dialog"
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.items)
+                .filter((item) => item.kind === 'file')
+                .map((item) => item.getAsFile())
+                .filter((file): file is File => file !== null);
+              if (files.length) {
+                if (!event.clipboardData.getData('text/plain'))
+                  event.preventDefault();
+                void attach(files);
+              }
+            }}
+          >
             <div className="daily-dialog-heading">
               <h2>메시지 입력</h2>
               <ModalClose className="btn btn-ghost" disabled={busy}>
                 닫기
               </ModalClose>
             </div>
-            {targetWorkId && <p className="daily-task-meta">선택한 업무에 반영합니다. 대상이 다른 내용은 확인이 필요합니다.</p>}
+            {targetWorkId && (
+              <p className="daily-task-meta">
+                선택한 업무에 반영합니다. 대상이 다른 내용은 확인이 필요합니다.
+              </p>
+            )}
             <label className="manual-message-label" htmlFor="manual-message">
               카톡 메시지·직접 입력
               <textarea
@@ -323,6 +651,7 @@ export function MailBriefingManualEntries({
                 className="app-input"
                 rows={4}
                 maxLength={12000}
+                disabled={busy}
                 value={text}
                 onChange={(event) => {
                   draftVersion.current++;
@@ -330,6 +659,86 @@ export function MailBriefingManualEntries({
                 }}
               />
             </label>
+            <label htmlFor="manual-images">
+              사진 첨부 또는 붙여넣기
+              <input
+                id="manual-images"
+                type="file"
+                accept="image/jpeg,image/png"
+                multiple
+                disabled={busy || disabled || readingImages}
+                onChange={(event) => {
+                  void attach(Array.from(event.target.files || []));
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            <p className="daily-task-meta">
+              JPEG·PNG 원본 최대 3장 · 장당 6,000,000바이트 · 합계
+              8,000,000바이트 · 가로·세로 각각 8,000픽셀 및 사진당 1,300만 /
+              합계 1,600만 픽셀 이하. 원본을 보관하며 서버에서 분석용 사진을
+              최적화합니다. OneNote 호환을 위해 WebP는 지원하지 않습니다.
+            </p>
+            {readingImages && <p role="status">사진을 확인하는 중…</p>}
+            {images.length > 0 && (
+              <>
+                <ul
+                  aria-label="첨부 사진"
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 16,
+                    padding: 0,
+                    listStyle: 'none',
+                  }}
+                >
+                  {images.map((image) => (
+                    <li key={image.hash} style={{ maxWidth: 180 }}>
+                      <img
+                        src={image.preview}
+                        alt={image.name}
+                        width={160}
+                        height={100}
+                        style={{ objectFit: 'contain', maxWidth: '100%' }}
+                      />
+                      <p style={{ overflowWrap: 'anywhere' }}>{image.name}</p>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={busy || readingImages}
+                        aria-label={`${image.name} 사진 삭제`}
+                        onClick={() => {
+                          const next = imagesRef.current.filter(
+                            (item) => item.hash !== image.hash,
+                          );
+                          imagesRef.current = next;
+                          setImages(next);
+                          setPrivacyConfirmed(false);
+                          draftVersion.current++;
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <label className="daily-task-check">
+                  <input
+                    type="checkbox"
+                    checked={privacyConfirmed}
+                    disabled={busy || readingImages}
+                    onChange={(event) => {
+                      setPrivacyConfirmed(event.target.checked);
+                      draftVersion.current++;
+                    }}
+                  />
+                  <span>
+                    사진이 외부 AI 분석 및 OneNote로 전송되는 데 동의합니다.
+                    신분증·비밀번호 사진이 없는지 확인했습니다.
+                  </span>
+                </label>
+              </>
+            )}
             <div className="daily-filter-actions">
               <label className="manual-reference" htmlFor="manual-reference">
                 메시지 기준일 (선택)
@@ -337,6 +746,7 @@ export function MailBriefingManualEntries({
                   id="manual-reference"
                   className="app-input"
                   type="date"
+                  disabled={busy}
                   value={referenceDate}
                   onChange={(event) => {
                     draftVersion.current++;
@@ -350,7 +760,9 @@ export function MailBriefingManualEntries({
                 disabled={
                   busy ||
                   disabled ||
-                  !text.trim() ||
+                  readingImages ||
+                  (!text.trim() && images.length === 0) ||
+                  (images.length > 0 && !privacyConfirmed) ||
                   text.trim().length > 12000 ||
                   (Boolean(referenceDate) && !validDay(referenceDate))
                 }
@@ -385,6 +797,12 @@ export function MailBriefingManualEntries({
                   ? '정리 중'
                   : '분석 실패 · 원문이 보존되어 있습니다.'}
               </p>
+              {entry.images?.length ? (
+                <StoredManualPhotos
+                  entryId={entry.entryId}
+                  images={entry.images}
+                />
+              ) : null}
               {entry.status === 'failed' ? (
                 <button
                   className="btn btn-ghost"

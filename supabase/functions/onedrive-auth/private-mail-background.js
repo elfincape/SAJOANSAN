@@ -545,6 +545,17 @@ export async function handleMailAutomation(action, body, user, ctx) {
     throw fail('WORKER_AUTH_REQUIRED', 403);
   if (body.mailbox !== current.id) throw fail('MAILBOX_TARGET_REJECTED', 403);
   if (body.operation === 'image-authorize') return json({ authorized: true });
+  if (body.operation === 'manual-photo-source') {
+    if(!uuid(body.id))throw fail('MANUAL_SOURCE');
+    const entry=current.manual_entries?.[body.id];
+    const pending=(entry?.images??[]).filter(image=>image.derivation==='pending');
+    if(body.imageId==null)return json({images:pending.map(({id,name,contentHash,byteLength})=>({id,name,contentHash,byteLength}))});
+    if(!pending.some(image=>image.id===body.imageId)||entry.privacyConfirmed!==true)throw fail('MANUAL_SOURCE');
+    const image=await ctx.loadManualImage(body.id,body.imageId,{original:true});
+    let binary='';for(let n=0;n<image.bytes.length;n+=8192)binary+=String.fromCharCode(...image.bytes.subarray(n,n+8192));
+    return json({image:{id:image.id,name:image.name,contentHash:image.contentHash,data:btoa(binary)}});
+  }
+
   if (body.operation === 'history') {
     if (!uuid(body.id)) throw fail('HISTORY_SOURCE');
     const lease = crypto.randomUUID();
@@ -636,6 +647,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
         'private-mail-manual-add',
         {
           text: manual.text,
+          targetWorkId: manual.targetWorkId ?? null,
           clientRequestId: manual.clientRequestId,
           referenceDate: manual.requestedReference ?? null,
           retry: manual.status === 'failed',
@@ -643,6 +655,8 @@ export async function handleMailAutomation(action, body, user, ctx) {
         { id: current.owner_id },
         {
           ...ctx,
+          preparedManualPhotos:body.preparedPhotos,
+          photoPreparationError:body.photoPreparationError,
           enqueueManualReport: (date) =>
             rpc('private_mail_dispatch_report', {
               p_box: current.id,
@@ -771,6 +785,15 @@ export async function handleMailAutomation(action, body, user, ctx) {
                 item.source.id,
             })),
         );
+      for(const entry of manual.entries) {
+        if(entry.status !== 'ready' || !entry.items?.length)continue;
+        for(const image of fresh.manual_entries?.[entry.entryId]?.images ?? []) {
+          if(!entry.items.some(item=>item.imageId===image.id && item.evidenceSource==='image'))continue;
+          const {file,original,...descriptor}=image;
+          images.push({...descriptor,sourceType:'manual',sourceId:entry.entryId,byteSize:image.byteLength,
+            sourceUrl:'https://sajoansan.vercel.app/portal/?view=mail&manual='+entry.entryId});
+        }
+      }
       const unsupportedPhotos = analyses.some(
         (item) =>
           !item.source.excluded &&

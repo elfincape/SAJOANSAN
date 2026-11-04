@@ -540,8 +540,10 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'private-mail-manual-verify',
     ].includes(action)
   ) {
+    const source = createMailSource({db, withLock, renew, mailbox, environment, graph, verify, privateDestination, privatePermissions});
     return handleManualMessage(action, body, user, {
       ...ctx,
+      ...source,
       verifiedUpdatesEnabled:user.id===APPROVED_MAIL_TARGET.owner_id,
       resolveJevConfiguration,
       loadMonthlyTasks:()=>loadMonthlyPortalTasks({db,ownerId:user.id}),
@@ -624,6 +626,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
     const source = createMailSource({
       db,
       withLock,
+      renew,
       mailbox,
       environment,
       graph,

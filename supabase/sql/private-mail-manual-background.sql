@@ -271,4 +271,240 @@ end; $$;
 revoke all on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) from public,anon,authenticated;
 grant execute on function public.private_mail_manual_target_enqueue(uuid,uuid,uuid,text,text,date,boolean,text) to service_role;
 
+-- Manual photo originals stay in the existing private OneDrive folder. Metadata only.
+create or replace function public.private_mail_manual_photo_submit(p_box uuid,p_user uuid,p_request uuid,p_text text,p_hash text,p_reference date,p_lease uuid,p_retry boolean,p_images jsonb,p_consent boolean,p_target text,p_enqueue boolean)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; e jsonb; candidate jsonb; entries jsonb; entry_id uuid;
+ received timestamptz=clock_timestamp(); d date; attempts integer;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;
+ if not public.private_mail_manual_allowed(p_box,p_user) then raise exception 'MANUAL_SCOPE'; end if;
+ if p_request is null or p_lease is null or p_text is null or length(btrim(p_text)) not between 0 and 12000
+ or p_hash is null or p_hash !~ '^[0-9a-f]{64}$' then raise exception 'MANUAL_INPUT_INVALID'; end if;
+ if p_consent is distinct from true or jsonb_typeof(p_images) is distinct from 'array'
+ or jsonb_array_length(p_images) not between 1 and 3 or octet_length(p_images::text)>24000 then raise exception 'IMAGE_MANIFEST'; end if;
+ if exists(select 1 from jsonb_array_elements(p_images) i where
+   coalesce(i->>'contentHash','') !~ '^[0-9a-f]{64}$' or coalesce(i->>'mediaType','') not in ('image/jpeg','image/png')
+   or coalesce((i->>'byteLength')::integer,0) not between 1 and (case when i->>'derivation'='pending' then 6000000 else 2100000 end)
+   or (i->>'width')::bigint*(i->>'height')::bigint>13000000
+   or coalesce((i->>'width')::integer,0) not between 1 and 8000 or coalesce((i->>'height')::integer,0) not between 1 and 8000
+   or length(coalesce(i->>'name','')) not between 1 and 300 or i ? 'bytes' or i ? 'data'
+   or jsonb_typeof(i->'file') is distinct from 'object'
+   or length(coalesce(i->'file'->>'item_id','')) not between 1 and 512
+   or (i->'file'->>'byte_size')::integer is distinct from (i->>'byteLength')::integer
+   or i->'file'->>'file_name' is distinct from 'manual_'||(i->>'contentHash')||'.bin'
+   or i->'file'->>'content_hash' is distinct from rtrim(translate(encode(decode(i->>'contentHash','hex'),'base64'),'+/','-_'),'='))
+ or (select sum((photo->>'byteLength')::integer) from jsonb_array_elements(p_images) photo)>(case when exists(select 1 from jsonb_array_elements(p_images) x where x->>'derivation'='pending') then 8000000 else 3000000 end)
+ or (select count(distinct coalesce(i->'original'->>'contentHash',i->>'contentHash')) from jsonb_array_elements(p_images) i)<>jsonb_array_length(p_images)
+ then raise exception 'IMAGE_MANIFEST'; end if;
+ if exists(select 1 from jsonb_array_elements(p_images) i where i ? 'original' and (
+   coalesce(i->>'derivation','') not in ('imagescript-3.13.1-v1','identity-v1') or coalesce(i->'original'->>'contentHash','') !~ '^[0-9a-f]{64}$'
+   or coalesce(i->'original'->>'mediaType','') not in ('image/jpeg','image/png')
+   or coalesce((i->'original'->>'byteLength')::integer,0) not between 1 and 6000000
+   or coalesce((i->'original'->>'width')::integer,0) not between 1 and 8000
+   or coalesce((i->'original'->>'height')::integer,0) not between 1 and 8000
+   or (i->'original'->>'width')::bigint*(i->'original'->>'height')::bigint>13000000
+   or i->'original' ? 'bytes' or i->'original' ? 'data'
+   or length(coalesce(i->'original'->'file'->>'item_id','')) not between 1 and 512
+   or i->'original'->'file'->>'file_name' is distinct from 'manual_'||(i->'original'->>'contentHash')||'.bin'
+   or (i->'original'->'file'->>'byte_size')::integer is distinct from (i->'original'->>'byteLength')::integer
+   or i->'original'->'file'->>'content_hash' is distinct from rtrim(translate(encode(decode(i->'original'->>'contentHash','hex'),'base64'),'+/','-_'),'=')))
+ or (select sum(coalesce((i->'original'->>'byteLength')::integer,(i->>'byteLength')::integer)) from jsonb_array_elements(p_images) i)>8000000
+ then raise exception 'IMAGE_MANIFEST'; end if;
+ if (select sum(coalesce((i->'original'->>'width')::bigint*(i->'original'->>'height')::bigint,(i->>'width')::bigint*(i->>'height')::bigint)) from jsonb_array_elements(p_images) i)>16000000 then raise exception 'IMAGE_DIMENSIONS'; end if;
+ if p_target is not null and length(p_target)>160 then raise exception 'MANUAL_SOURCE'; end if;
+ d=(received at time zone 'Asia/Seoul')::date;entries=b.manual_entries;
+ select value into e from jsonb_each(entries) where value->>'clientRequestId'=p_request::text or coalesce(value->'requestIds','[]'::jsonb) ? p_request::text limit 1;
+ if e is not null and (e->>'textHash' is distinct from p_hash or
+ (case when coalesce(e->'requestReferences','{}'::jsonb) ? p_request::text then e->'requestReferences'->>p_request::text
+ else e->>'requestedReference' end) is distinct from p_reference::text)
+ then raise exception 'MANUAL_REQUEST_CONFLICT'; end if;
+ if e is null then
+  select value into e from jsonb_each(entries) where value->>'textHash'=p_hash
+  and (value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul'>=d::timestamp
+  and (value->>'submittedAt')::timestamptz at time zone 'Asia/Seoul'<(d+1)::timestamp
+  and value->>'referenceDate'=coalesce(p_reference,d)::text limit 1;
+ end if;
+ if e is not null and (e->>'targetWorkId' is distinct from p_target or e->>'privacyConfirmed' is distinct from 'true') then raise exception 'MANUAL_REQUEST_CONFLICT'; end if;
+ if e is null then
+  if (select count(*) from jsonb_each(entries))>=500 then raise exception 'MANUAL_LIMIT'; end if;
+  entry_id=gen_random_uuid();
+  e=jsonb_build_object('entryId',entry_id,'clientRequestId',p_request,'requestIds',jsonb_build_array(p_request),
+   'requestReferences',jsonb_build_object(p_request::text,p_reference),'text',btrim(p_text),'textHash',p_hash,
+   'submittedAt',received,'referenceDate',coalesce(p_reference,d),'requestedReference',p_reference,
+   'referenceSource',case when p_reference is null then 'received' else 'owner' end,
+   'images',(select jsonb_agg(i||jsonb_build_object('id',entry_id::text||':'||(n-1)::text)) from jsonb_array_elements(p_images) with ordinality a(i,n)),
+   'privacyConfirmed',true,'targetWorkId',p_target,'status','pending','attempts',0,'items','[]'::jsonb,'authoredDate',null,'error',null);
+ else
+  entry_id=(e->>'entryId')::uuid;
+  if not (coalesce(e->'requestIds',jsonb_build_array(e->>'clientRequestId')) ? p_request::text) then
+   if jsonb_array_length(coalesce(e->'requestIds','[]'::jsonb))>=100 then raise exception 'MANUAL_LIMIT'; end if;
+   e=e||jsonb_build_object('requestIds',coalesce(e->'requestIds',jsonb_build_array(e->>'clientRequestId'))||jsonb_build_array(p_request),
+    'requestReferences',coalesce(e->'requestReferences','{}'::jsonb)||jsonb_build_object(p_request::text,p_reference));
+   entries=jsonb_set(entries,array[entry_id::text],e);
+   if octet_length(entries::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;
+   update public.private_mailboxes set manual_entries=entries where id=p_box;
+  end if;
+ end if;
+ if e->>'status'='ready' or (e->>'leaseUntil')::timestamptz>received
+ or (e->>'nextAt')::timestamptz>received then return jsonb_build_object('entry',e,'claimed',false); end if;
+ attempts=coalesce((e->>'attempts')::integer,0);
+ if attempts>=3 and e->>'status'='processing' and coalesce((e->>'leaseUntil')::timestamptz,'-infinity')<=received then
+  e=(e-'lease'-'leaseUntil')||jsonb_build_object('status','failed','error','RETRY_LIMIT','nextAt',received,'updatedAt',received);
+  entries=jsonb_set(entries,array[entry_id::text],e);
+  update public.private_mailboxes set manual_entries=entries where id=p_box;
+ end if;
+ -- Only an explicit owner retry can begin another batch after a confirmed terminal failure.
+ if attempts>=3 and coalesce(p_retry,false) and e->>'status'='failed'
+ and e->>'lease' is null and e->>'leaseUntil' is null
+ and (e->>'nextAt')::timestamptz<=received then attempts=0; end if;
+ if attempts>=3 then return jsonb_build_object('entry',e||jsonb_build_object('status','failed','error','RETRY_LIMIT'),'claimed',false); end if;
+ e=e||jsonb_build_object('status','processing','lease',p_lease,'leaseUntil',received+interval '4 minutes',
+ 'attempts',attempts+1,'error',null,'updatedAt',received);
+ candidate=jsonb_set(entries,array[entry_id::text],e);
+ if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;
+ update public.private_mailboxes set manual_entries=candidate where id=p_box;
+ if p_enqueue then
+  e=(e-'lease'-'leaseUntil')||jsonb_build_object('status','pending','attempts',attempts);
+  update public.private_mailboxes set manual_entries=jsonb_set(manual_entries,array[entry_id::text],e) where id=p_box;
+  perform public.private_mail_dispatch_core(p_box,null::date,entry_id,false);
+ end if;
+ return jsonb_build_object('entry',e,'claimed',not p_enqueue);
+end; $$;
+
+revoke all on function public.private_mail_manual_photo_submit(uuid,uuid,uuid,text,text,date,uuid,boolean,jsonb,boolean,text,boolean) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_photo_submit(uuid,uuid,uuid,text,text,date,uuid,boolean,jsonb,boolean,text,boolean) to service_role;
+
+create or replace function public.private_mail_manual_photo_finish(p_box uuid,p_user uuid,p_entry uuid,p_lease uuid,p_items jsonb,p_authored date default null,p_inference jsonb default '{}')
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; e jsonb; item jsonb; candidate jsonb; n integer=0; d date; completed_day date; usage_value jsonb; source_text text; source_value jsonb;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;e=b.manual_entries->p_entry::text;
+ if not public.private_mail_manual_allowed(p_box,p_user) or e is null or p_lease is null
+ or e->>'status' is distinct from 'processing' or e->>'lease' is distinct from p_lease::text
+ or (e->>'leaseUntil')::timestamptz is null or (e->>'leaseUntil')::timestamptz<=clock_timestamp() then return null; end if;
+ if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items)>30 or octet_length(p_items::text)>100000 then raise exception 'MANUAL_FORMAT'; end if;
+ if jsonb_typeof(p_inference) is distinct from 'object' or octet_length(p_inference::text)>4096 then raise exception 'MANUAL_INFERENCE'; end if;
+ if p_inference<>'{}'::jsonb then
+  usage_value=p_inference->'usage';
+  if exists(select 1 from jsonb_object_keys(p_inference) k where k not in ('provider','model','usage'))
+  or coalesce(p_inference->>'provider','') not in ('aiapiflow','openai')
+  or jsonb_typeof(p_inference->'model') is distinct from 'string' or coalesce(p_inference->>'model','') !~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'
+  or jsonb_typeof(usage_value) is distinct from 'object' then raise exception 'MANUAL_INFERENCE'; end if;
+  if exists(select 1 from jsonb_each(usage_value) u where u.key not in ('input_tokens','output_tokens','total_tokens','cached_input_tokens','reasoning_tokens')
+   or case when jsonb_typeof(u.value)='number' and u.value::text ~ '^[0-9]+$'
+    then (u.value::text)::numeric>9007199254740991 else true end)
+  then raise exception 'MANUAL_INFERENCE'; end if;
+ end if;
+ d=((e->>'submittedAt')::timestamptz at time zone 'Asia/Seoul')::date;
+ source_text=e->>'text';
+ if left(ltrim(source_text),1)='{' then
+  begin source_value=source_text::jsonb;
+  exception when invalid_text_representation then source_value=null; end;
+  if source_value->>'schema'='sajo-daily-work-v1' then
+   if jsonb_typeof(source_value->'sourceText') is distinct from 'string' then raise exception 'MANUAL_FORMAT'; end if;
+   source_text=source_value->>'sourceText';
+  end if;
+ end if;
+ for item in select value from jsonb_array_elements(p_items) loop
+  n=n+1;
+  if jsonb_typeof(item) is distinct from 'object' or item->>'itemId' is distinct from 'item-'||lpad(n::text,3,'0')
+  or item->>'ref' is distinct from (p_entry::text||':manual:'||(item->>'itemId'))
+  or coalesce(item->>'kind','') not in ('task','dispatch','issue','reference','waiting')
+  or length(btrim(coalesce(item->>'text',''))) not between 1 and 500
+  or length(btrim(coalesce(item->>'evidence',''))) not between 1 and 2000
+  or (case when item->>'evidenceSource'='image' then
+   not exists(select 1 from jsonb_array_elements(e->'images') image where image->>'id'=item->>'imageId' and image->>'contentHash'=item->>'imageContentHash')
+   or item->>'resolution' is distinct from 'manual_image_verified_v1'
+   or coalesce(item->>'workflowStatus','') not in ('pending','in_progress','complete')
+   or (item->>'workflowStatus'='complete' and (
+     item->'needsConfirmation' is distinct from 'false'::jsonb
+     or item->'imageVerification'->>'accepted' is distinct from 'true'
+     or item->'imageVerification'->>'currentResult' is distinct from 'true'
+     or item->'imageVerification'->>'allObligationsComplete' is distinct from 'true'
+     or item->'imageVerification'->>'actor' is distinct from 'owner'
+     or coalesce(jsonb_array_length(item->'remainingSteps'),-1)<>0
+     or length(coalesce(item->>'completionEvidence',''))=0
+     or (item->>'workRef' is null and (item->'imageVerification'->>'requestConfirmed' is distinct from 'true' or length(coalesce(item->>'requestEvidence',''))=0))
+     or (item->>'workRef' is not null and item->'imageVerification'->>'sameTarget' is distinct from 'true')))
+   else source_text is null or position((item->>'evidence') in source_text)=0 end)
+  or item->>'visibleFrom' is distinct from d::text
+  or (item->>'receivedAt')::timestamptz is distinct from (e->>'submittedAt')::timestamptz
+  or (item->>'submittedAt')::timestamptz is distinct from (e->>'submittedAt')::timestamptz
+  or item->'done' is distinct from 'false'::jsonb or item->'completedAt' is distinct from 'null'::jsonb
+  or item->'completionEvents' is distinct from '[]'::jsonb
+  or jsonb_typeof(item->'needsConfirmation') is distinct from 'boolean' then raise exception 'MANUAL_FORMAT'; end if;
+ end loop;
+ e=(e-'lease'-'leaseUntil'-'nextAt')||jsonb_build_object('status','ready','items',p_items,'authoredDate',p_authored,'inference',p_inference,'error',null,'updatedAt',clock_timestamp());
+ candidate=jsonb_set(b.manual_entries,array[p_entry::text],e);
+ if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;
+ update public.private_mailboxes set manual_entries=candidate where id=p_box;
+ if n>0 then
+  perform public.private_mail_manual_dirty(p_box,d);
+  completed_day=(clock_timestamp() at time zone 'Asia/Seoul')::date;
+  if completed_day<>d then perform public.private_mail_manual_dirty(p_box,completed_day); end if;
+ end if;
+ return e;
+end; $$;
+
+revoke all on function public.private_mail_manual_photo_finish(uuid,uuid,uuid,uuid,jsonb,date,jsonb) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_photo_finish(uuid,uuid,uuid,uuid,jsonb,date,jsonb) to service_role;
+
+-- Fence derived metadata to the worker lease and the exact stored original descriptors.
+create or replace function public.private_mail_manual_photo_prepare(p_box uuid,p_user uuid,p_entry uuid,p_lease uuid,p_images jsonb)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; e jsonb; i jsonb; old jsonb; n integer=0; candidate jsonb;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;e=b.manual_entries->p_entry::text;
+ if not public.private_mail_manual_allowed(p_box,p_user) or e is null or p_lease is null
+ or e->>'status' is distinct from 'processing' or e->>'lease' is distinct from p_lease::text
+ or (e->>'leaseUntil')::timestamptz is null or (e->>'leaseUntil')::timestamptz<=clock_timestamp() then return null; end if;
+ if jsonb_typeof(p_images) is distinct from 'array' or jsonb_array_length(p_images)<>jsonb_array_length(e->'images')
+ or jsonb_array_length(p_images) not between 1 and 3 or octet_length(p_images::text)>24000 then raise exception 'IMAGE_MANIFEST'; end if;
+ for i in select value from jsonb_array_elements(p_images) loop
+  old=e->'images'->n;n=n+1;
+  if old->>'derivation' is distinct from 'pending' then
+   if i is distinct from old then raise exception 'IMAGE_MANIFEST'; end if;
+   continue;
+  end if;
+  if i->'original' is distinct from old or i->>'id' is distinct from old->>'id'
+  or coalesce(i->>'derivation','') not in ('imagescript-3.13.1-v1','identity-v1')
+  or coalesce(i->>'contentHash','') !~ '^[0-9a-f]{64}$' or coalesce(i->>'mediaType','') not in ('image/jpeg','image/png')
+  or coalesce((i->>'byteLength')::integer,0) not between 1 and 1000000
+  or coalesce((i->>'width')::integer,0) not between 1 and 8000 or coalesce((i->>'height')::integer,0) not between 1 and 8000
+  or (i->>'width')::bigint*(i->>'height')::bigint>13000000
+  or i ? 'bytes' or i ? 'data' or jsonb_typeof(i->'file') is distinct from 'object'
+  or length(coalesce(i->'file'->>'item_id','')) not between 1 and 512
+  or (i->'file'->>'byte_size')::integer is distinct from (i->>'byteLength')::integer
+  or i->'file'->>'file_name' is distinct from 'manual_'||(i->>'contentHash')||'.bin'
+  or i->'file'->>'content_hash' is distinct from rtrim(translate(encode(decode(i->>'contentHash','hex'),'base64'),'+/','-_'),'=')
+  then raise exception 'IMAGE_MANIFEST'; end if;
+ end loop;
+ if (select sum((photo->>'byteLength')::integer) from jsonb_array_elements(p_images) photo)>3000000 then raise exception 'IMAGE_LIMIT'; end if;
+ e=e||jsonb_build_object('images',p_images,'updatedAt',clock_timestamp());
+ candidate=jsonb_set(b.manual_entries,array[p_entry::text],e);
+ if octet_length(candidate::text)>4194304 then raise exception 'MANUAL_LIMIT'; end if;
+ update public.private_mailboxes set manual_entries=candidate where id=p_box;
+ return e;
+end; $$;
+revoke all on function public.private_mail_manual_photo_prepare(uuid,uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_photo_prepare(uuid,uuid,uuid,uuid,jsonb) to service_role;
+
+create or replace function public.private_mail_manual_fail(p_box uuid,p_user uuid,p_entry uuid,p_lease uuid,p_code text)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare b public.private_mailboxes; e jsonb;
+begin
+ select * into b from public.private_mailboxes where id=p_box for update;e=b.manual_entries->p_entry::text;
+ if not public.private_mail_manual_allowed(p_box,p_user) or e is null or p_lease is null
+ or e->>'status' is distinct from 'processing' or e->>'lease' is distinct from p_lease::text
+ or (e->>'leaseUntil')::timestamptz is null or (e->>'leaseUntil')::timestamptz<=clock_timestamp() then return null; end if;
+ if p_code is null or p_code not in ('AI_NOT_CONFIGURED','RATE_LIMITED','MODEL_FAILED','MODEL_RESPONSE','MODEL_TRUNCATED','MANUAL_FORMAT','MANUAL_EVIDENCE','MANUAL_LIMIT','MANUAL_SOURCE',
+ 'IMAGE_FORMAT','IMAGE_MANIFEST','IMAGE_PREPARE_FAILED','IMAGE_WORKER_REQUIRED','IMAGE_DIMENSIONS','IMAGE_LIMIT','IMAGE_EVIDENCE','IMAGE_PRIVACY_REVIEW','NOTES_IMAGE_SOURCE') then raise exception 'MANUAL_ERROR'; end if;
+ e=(e-'lease'-'leaseUntil')||jsonb_build_object('status','failed','error',p_code,'updatedAt',clock_timestamp(),
+ 'nextAt',clock_timestamp()+make_interval(secs=>15*coalesce((e->>'attempts')::integer,1)));
+ update public.private_mailboxes set manual_entries=jsonb_set(manual_entries,array[p_entry::text],e) where id=p_box;return e;
+end; $$;
+revoke all on function public.private_mail_manual_fail(uuid,uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.private_mail_manual_fail(uuid,uuid,uuid,uuid,text) to service_role;
+
 commit;
