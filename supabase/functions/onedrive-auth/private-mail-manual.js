@@ -1289,11 +1289,11 @@ async function verifyAutomaticIdentity({entry,focusEvidence,target,candidates,ai
 export async function linkExistingManualItems({value,entry,work,ai,fetcher,isolatedVerification=false}) {
  const candidates=work.filter(item=>!item.excluded&&validWorkRef(item.workId)&&!requiresMailPrivacyReview(JSON.stringify(item))).slice(0,40),responses=[];
  if(!candidates.length||!Array.isArray(value?.items))return null;
- const eligible=value.items.map((item,index)=>({item,index})).filter(({item})=>!item.workRef&&!item.portalTaskId&&!(item.kind==='reference'&&/(?:이전|과거)\s*(?:회신|인용)|교체\s*전\s*자료/.test(item.evidence)&&/참고|변경\s*없/.test(item.evidence))&&!(item.requestEvidence&&item.resultEvidence&&item.workflowStatus!=null));
+ const eligible=value.items.map((item,index)=>({item,index})).filter(({item})=>!item.workRef&&!item.portalTaskId&&!(item.kind==='reference'&&/(?:이전|과거)\s*(?:회신|인용)|교체\s*전\s*자료/.test(item.evidence)&&/참고|변경\s*없/.test(item.evidence)));
  if(!eligible.length)return null;
  for(const {item}of eligible)sourceQuote(item.evidence,entry.text);
  const trace=(index,reason,extra={})=>console.info('PRIVATE_MANUAL_LINK_DECISION',JSON.stringify({entryId:entry.entryId,itemIndex:index,reason,candidateCount:candidates.length,...extra}));
- const items=value.items.map(item=>({...item})),confirmation=(index,reason='unverified')=>{trace(index,reason);items[index]={...items[index],needsConfirmation:true};};
+ const items=value.items.map(item=>({...item})),confirmation=(index,reason='unverified')=>{trace(index,reason);items[index]={...items[index],...(items[index].workflowStatus==='complete'?{workflowStatus:'pending',stateDeclared:false}:{}),needsConfirmation:true};};
  const assignmentPacket=resolveDispatchAssignment(entry.text,{},entry.referenceDate,entry.submittedAt);
  const schema=schemaObject({matches:{type:'array',maxItems:eligible.length,items:schemaObject({itemIndex:{type:'integer',enum:eligible.map(({index})=>index)},workId:schemaNullable({type:'string',enum:candidates.map(item=>item.workId)}),relation:{type:'string',enum:['new','followup','reference','ambiguous']},linkageEvidence:schemaNullable(schemaText(1000)),actor:{type:'string',enum:['owner','external','not_needed','unknown']},actorEvidence:schemaNullable(schemaText(500)),promiseEvidence:schemaNullable(schemaText(500))})}});
  let matches;

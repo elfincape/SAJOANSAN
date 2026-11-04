@@ -8442,3 +8442,24 @@ const unique=await run([target]);assert.equal(unique.calls,2);assert.equal(uniqu
 console.log('PASS duplicate titles/source-unique anchors link partial; conflict/forged/shared/ambiguous/third-party missing evidence reject; closed targets stay references; unique target retains existing flow. MOCK MODEL ONLY');
 
 });}
+
+{const {test}=await import('node:test');test('inline result verification cannot bypass existing work identity',async()=>{
+
+const {verifyInlineManualResults,linkExistingManualItems,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const id='a9000000-0000-4000-8000-000000000001',next='a9000000-0000-4000-8000-000000000002',ref=id+':manual:item-001',day='2026-11-04',request='가상남빛상사U12 검수표 작성 및 전달 건입니다.',result='검수표 작성과 전달 모두 완료했습니다.',text=request+' '+result;
+const entry={entryId:next,text,referenceDate:day,submittedAt:day+'T04:00:00Z'},ai={aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'},raw={kind:'task',text:'검수표 작성 및 전달',evidence:text,requestEvidence:request,resultEvidence:result,needsConfirmation:false};
+const target={workId:ref,title:'검수표 전달',kind:'task',status:'in_progress',originalScopeComplete:true,originalRequest:{title:'검수표 작성 및 전달',evidence:request},verificationScope:{title:'검수표 작성 및 전달',evidence:request}};
+const output=x=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(x)}]}]});
+async function run(mode='followup'){const calls=[];const fetcher=async(_,o)=>{const prompt=JSON.parse(o.body).input[0].content[0].text;if(prompt.startsWith('새 입력')){calls.push('match');if(mode==='network')throw Error('synthetic failure');return output({matches:[{itemIndex:0,relation:mode==='new'?'new':mode==='ambiguous'?'ambiguous':'followup',actor:mode==='unknown'?'unknown':mode==='not_needed'?'not_needed':'owner',workId:['new','ambiguous'].includes(mode)?null:ref,linkageEvidence:request,actorEvidence:null,promiseEvidence:null}]});}const inline=prompt.includes('"mode":"same_input_request_result"');calls.push(inline?'inline':'target');return output({matchesTarget:mode!=='conflict'||inline,action:'complete',text:raw.text,evidence:text,details:[],completionEvidence:result,serviceOriginal:null,dueOriginal:null,nextActionEvidence:null,completedSteps:[result],remainingSteps:[]});};const inline=await verifyInlineManualResults({value:{items:[raw]},entry,ai,fetcher});assert.equal(inline.value.items[0].workflowStatus,'complete');const linked=await linkExistingManualItems({value:inline.value,entry,work:[target],ai,fetcher,isolatedVerification:true});return{item:linked?.reply.items[0],calls};}
+const linked=await run();assert.deepEqual(linked.calls,['inline','match','target']);assert.equal(linked.item.workRef,ref);assert.equal(linked.item.workflowStatus,'complete');
+for(const mode of ['ambiguous','conflict','network','unknown']){const r=await run(mode);assert.ok(r.calls.includes('match'));assert.notEqual(r.item.workflowStatus,'complete',mode);assert.equal(r.item.needsConfirmation,true,mode);}
+const noActorNeeded=await run('not_needed');assert.equal(noActorNeeded.item.workRef,ref);assert.equal(noActorNeeded.item.workflowStatus,'complete');
+const fresh=await run('new');assert.deepEqual(fresh.calls,['inline','match']);assert.equal(fresh.item.workRef,undefined);assert.equal(fresh.item.workflowStatus,'complete');
+const old=normalizeManualItems({items:[{kind:'task',text:raw.text,evidence:request,needsConfirmation:false}]},{text:request,entryId:id,referenceDate:day,submittedAt:day+'T01:00:00Z'});
+const updates=normalizeManualItems({items:[linked.item]},{text,entryId:next,referenceDate:day,submittedAt:entry.submittedAt,allowLinks:true,verifiedInlineResults:true,verifiedReplyRef:ref,replyDetailsByItem:[linked.item.details]});
+const entries={[id]:{entryId:id,status:'ready',text:request,submittedAt:day+'T01:00:00Z',referenceDate:day,items:old},[next]:{...entry,status:'ready',items:updates}};
+const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day));assert.equal(work.length,1);assert.equal(work[0].workId,ref);assert.equal(work[0].status,'complete');
+console.log('PASS inline request/result -> existing match -> independent original-scope verification -> one completed original work; ambiguous/conflict/network/unknown cannot retain standalone completion; genuinely new inline completion preserved. MOCK MODEL ONLY');
+
+});}
