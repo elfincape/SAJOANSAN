@@ -203,6 +203,18 @@ function contentSignature(node) {
   flush();
   return blocks;
 }
+function isOneNoteResourceUrl(value) {
+  try {
+    const resource = new URL(value);
+    // Graph readback may use an owner-qualified OData URL and $value.
+    // Only resource content on the exact Graph origin is acceptable.
+    return resource.origin === 'https://graph.microsoft.com' &&
+      !resource.username && !resource.password && !resource.hash && !resource.search &&
+      /^\/v1\.0\/(?:me|users\/[A-Za-z0-9@._~-]+|users\('[A-Za-z0-9@._~-]+'\))\/onenote\/resources\/[A-Za-z0-9!._~-]+\/(?:content|\$value)$/.test(decodeURIComponent(resource.pathname));
+  } catch {
+    return false;
+  }
+}
 async function snapshot({ html, marker, hash }) {
   const { nodes } = scanHtml(html);
   const bodies = nodes.filter((node) => node.tag === 'body');
@@ -875,20 +887,7 @@ export async function writeDailyBriefing({
           !isDescendant(node, current.managed)
         )
           continue;
-        let resource;
-        try {
-          resource = new URL(node.attrs.src);
-        } catch {
-          throw Error('PAGE_WRITE_UNCERTAIN');
-        }
-        if (
-          resource.origin !== 'https://graph.microsoft.com' ||
-          resource.username ||
-          resource.password ||
-          resource.hash ||
-          !resource.pathname.startsWith('/v1.0/me/onenote/resources/') ||
-          !resource.pathname.endsWith('/content')
-        )
+        if (!isOneNoteResourceUrl(node.attrs.src))
           throw Error('PAGE_WRITE_UNCERTAIN');
       }
       await save({

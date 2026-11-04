@@ -39,6 +39,12 @@ function calendar(value) {
     throw Error('WORK_DATE');
   return value;
 }
+function imageProvenance(source) {
+  return typeof source.imageId === 'string' && source.imageId.startsWith(source.id + ':') &&
+    source.imageId.length <= 200 && /^[0-9a-f]{64}$/.test(source.imageContentHash ?? '')
+    ? { imageId: source.imageId, imageContentHash: source.imageContentHash }
+    : {};
+}
 function sourceRef(source, kind, ref) {
   if (!uuid.test(source?.id ?? '')) throw Error('WORK_SOURCE');
   return {
@@ -51,6 +57,7 @@ function sourceRef(source, kind, ref) {
       kind === 'mail' ? (source.receivedAt ? 'received' : 'sent') : 'input',
     collectedAt: stamp(source.collectedAt),
     evidence: clean(source.evidence, 3000),
+    ...imageProvenance(source),
     intentCorrected: source.intentCorrected === true,
   };
 }
@@ -170,6 +177,7 @@ export function normalizeDailyWork(input) {
         source.dateBasis ?? (source.kind === 'mail' ? 'sent' : 'input'),
       collectedAt: stamp(source.collectedAt),
       evidence: clean(source.evidence, 3000),
+      ...imageProvenance(source),
       intentCorrected: source.intentCorrected === true,
     };
   });
@@ -562,6 +570,9 @@ export function dailyWorkItems(
           origin === 'assistant' ? '직접 작성한 일일정리' : '입력 메시지',
         receivedAt: entry.submittedAt,
         evidence: item.evidence,
+        ...(item.evidenceSource === 'image'
+          ? { imageId: item.imageId, imageContentHash: item.imageContentHash }
+          : {}),
       };
       const status = item.done
         ? 'complete'
@@ -1096,6 +1107,15 @@ export function renderBriefingWorkNote(items) {
           if (text && !displayCovered(text,[item.title,...displaySummary]))
             detailLines.push('<li style="list-style-type:disc;' + paragraph + '">' + label + ': ' + escape(text) + '</li>');
       }
+      const imageEvidence = new Set();
+      for (const source of item.sourceRefs)
+        if (source.kind === 'manual' && source.imageId && source.imageContentHash && source.evidence) {
+          const key = source.imageId + ':' + source.imageContentHash + ':' + source.evidence;
+          if (!imageEvidence.has(key)) {
+            imageEvidence.add(key);
+            detailLines.push('<li style="list-style-type:disc;' + supporting + '">사진 근거: ' + escape(source.evidence) + '</li>');
+          }
+        }
       const latestNote = (item.correction?.reportNotes ?? item.correction?.processingNotes)?.at(-1);
       if (latestNote) detailLines.push('<li style="list-style-type:disc;' + paragraph + '">처리 기록: ' + escape(latestNote.text.split(/\r?\n/).find(line=>line.trim())?.slice(0,180) ?? '') + '</li>');
       if (detailLines.length) chunks.push('<ul style="list-style-type:disc">' + detailLines.join('') + '</ul>');
