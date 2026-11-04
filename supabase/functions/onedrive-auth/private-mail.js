@@ -535,6 +535,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'private-mail-manual-add',
       'private-mail-manual-enqueue',
       'private-mail-manual-list',
+      'private-mail-manual-status',
       'private-mail-manual-update',
       'private-mail-manual-source',
       'private-mail-manual-verify',

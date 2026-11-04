@@ -8546,3 +8546,19 @@ const contradiction=await run(mixed,'non_work',[item],['non_work']);assert.equal
 console.log('PASS greetings/pure chat original retained but work/notes/report queue empty; mixed business preserved despite Jev contradiction; uncertain/unknown-kind/Jev failure preserved for confirmation; nonempty work never discarded. MOCK SERVICES ONLY');
 
 });}
+
+{const {test}=await import('node:test');test('manual processing status is read-only and never infers report completion',async()=>{
+const {handleManualMessage,normalizeManualItems}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',id='ae000000-0000-4000-8000-000000000001',day='2026-11-04';
+const entry={entryId:id,text:'검수표 작성 요청',submittedAt:day+'T03:00:00Z',status:'ready',items:normalizeManualItems({items:[{kind:'task',text:'검수표 작성',evidence:'검수표 작성 요청',needsConfirmation:false}]},{text:'검수표 작성 요청',entryId:id,submittedAt:day+'T03:00:00Z',referenceDate:day})};
+let writes=0;const ctx=(current)=>({json:Response.json,fail:(code)=>Error(code),db:async(path,options)=>{assert.ok(path.includes('briefing_pages'));if(options?.method){writes++;throw Error('WRITE_FORBIDDEN');}return[current];}});
+for(const [status,report,expected] of [['pending',{},'waiting'],['processing',{},'waiting'],['failed',{},'waiting'],['ready',{},'pending'],['ready',{pageId:'page',dirty:true},'pending'],['ready',{pageId:'page',dirty:false,error:'PAGE_WRITE_UNCERTAIN'},'failed'],['ready',{pageId:'page',dirty:false,pendingWrite:{}},'pending'],['ready',{pageId:'page',dirty:false,mailRolloverPending:true},'pending'],['ready',{pageId:'page',dirty:false},'complete']]){
+const current={id:box,owner_id:owner,enabled:true,manual_entries:{[id]:{...entry,status}},briefing_pages:{[day]:report}};
+const result=await(await handleManualMessage('private-mail-manual-status',{entryId:id},{id:owner},ctx(current))).json();assert.equal(result.report.status,expected);assert.equal(result.entry.status,status);assert.equal(result.stagesAvailable,false);
+}
+const current={id:box,owner_id:owner,enabled:true,manual_entries:{[id]:{...entry,items:[]}},briefing_pages:{}};
+assert.equal((await(await handleManualMessage('private-mail-manual-status',{entryId:id},{id:owner},ctx(current))).json()).report.status,'not_needed');
+for(const args of [[{entryId:'not-a-uuid'},{id:owner}],[{entryId:crypto.randomUUID()},{id:owner}],[{entryId:id},{id:crypto.randomUUID()}]])await assert.rejects(()=>handleManualMessage('private-mail-manual-status',...args,ctx(current)));
+assert.equal(writes,0);console.log('PASS read-only owner-scoped status: pending/processing/failed, report missing/dirty/uncertain/pending-write/rollover never complete, clean page complete, empty result not-needed, invalid/missing/other-owner denied. MOCK DB');
+
+});}
