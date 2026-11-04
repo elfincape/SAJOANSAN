@@ -729,7 +729,14 @@ export function dailyWorkItems(
     if(item.category === 'reference') {
       for(const field of ['category','title','status','nextAction','progress','waitingFor','serviceDate','dueAt','dueDate','duePrecision','ownerStateAt','inferredStateAt','verifiedCompletionAt','closedAt'])combined[field]=previous[field];
     }
-    if (combined.status === 'complete') combined.nextAction = null;
+    const closed = ['complete', 'cancelled'].includes(combined.status);
+    const supersededActions = closed ? [previous.nextAction, item.nextAction] :
+      combined.nextAction && combined.nextAction !== previous.nextAction ? [previous.nextAction] : [];
+    if(supersededActions.some(Boolean)) {
+      // Superseded actions remain in source evidence, not the current summary.
+      combined.summary = combined.summary.filter(value => !supersededActions.some(action => action && value.trim() === action.trim()));
+    }
+    if (closed) combined.nextAction = null;
     merged.set(key, combined);
   }
   const projected = new Map([...merged.values()]

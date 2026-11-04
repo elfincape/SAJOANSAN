@@ -8481,3 +8481,29 @@ for(const field of ['linkageEvidence','completionEvidence','completedSteps','rem
 console.log('PASS exact stage/field logs distinguish linkage vs target completion/step quote failures; source/model text never logged; rejection and valid completion unchanged');
 
 });}
+
+{const {test}=await import('node:test');test('current summary retires superseded actions while source history stays immutable',async()=>{
+
+const {normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems,workSummaryForDisplay,renderBriefingWorkNote}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const id='ab000000-0000-4000-8000-000000000001',pid='ab000000-0000-4000-8000-000000000002',cid='ab000000-0000-4000-8000-000000000003',ref=id+':manual:item-001',day='2026-11-04',request='가상W14 검수표를 작성하고 내부 검토자에게 전달해 주세요.',done='모의검수표 작성은 완료했습니다.',pending='가상 내부 검토자에게 전달은 아직 미완료이며, 전달만 남아 있습니다.',partial=done+' '+pending,complete='모의검수표 작성과 전달 모두 완료되어 남은 할 일은 없습니다.';
+function entry(id,text,raw,hour){const at=day+'T'+hour+':00:00Z',items=normalizeManualItems({items:[raw]},{text,entryId:id,referenceDate:day,submittedAt:at,allowLinks:!!raw.workRef,verifiedReplyRef:raw.workRef??null,replyDetailsByItem:[raw.details??[]]});return{entryId:id,text,status:'ready',referenceDate:day,submittedAt:at,items};}
+const entries={[id]:entry(id,request,{kind:'task',text:'검수표 작성 및 전달',evidence:request,needsConfirmation:false},'01'),[pid]:entry(pid,partial,{kind:'task',text:'검수표 전달',evidence:partial,details:[done,pending],nextAction:pending,completedSteps:[{text:done,evidenceSource:'text'}],remainingSteps:[{text:pending,evidenceSource:'text'}],workflowStatus:'in_progress',workRef:ref,needsConfirmation:false},'02')};
+const view=()=>dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day))[0];
+assert.ok(view().summary.includes(pending));const before=JSON.stringify(entries);
+entries[cid]=entry(cid,complete,{kind:'task',text:'검수표 작성 및 전달 완료',evidence:complete,details:[],completedSteps:[{text:complete,evidenceSource:'text'}],remainingSteps:[],workflowStatus:'complete',workRef:ref,needsConfirmation:false},'03');
+const result=view();assert.equal(result.status,'complete');assert.equal(result.nextAction,null);assert.equal(result.summary.includes(pending),false);assert.equal(workSummaryForDisplay(result).includes(pending),false);assert.ok(result.sourceRefs.some(source=>source.evidence?.includes(pending)));assert.equal(JSON.stringify({...entries,[cid]:undefined}),before);assert.ok(result.summary.includes(done));
+console.log('PASS complete current summary excludes superseded next action; verified completed fact and immutable source evidence/history preserved; shared UI/OneNote display clean');
+assert.equal(renderBriefingWorkNote([result]).includes(pending),false);
+const finished=entries[cid];
+entries[cid]=entry(cid,'관련 자료 참고입니다.',{kind:'reference',text:'관련 자료 참고',evidence:'관련 자료 참고입니다.',details:['관련 자료 참고입니다.'],workRef:ref,needsConfirmation:false},'03');
+assert.equal(view().status,'in_progress');assert.equal(view().nextAction,pending);assert.ok(view().summary.includes(pending));
+const newer='수정본 검토 및 전달만 남아 있습니다.';
+entries[cid]=entry(cid,newer,{kind:'task',text:'수정본 전달',evidence:newer,details:[newer],nextAction:newer,workflowStatus:'in_progress',workRef:ref,needsConfirmation:false},'03');
+assert.equal(view().nextAction,newer);assert.ok(!view().summary.includes(pending));assert.ok(view().summary.includes(newer));
+entries[cid]=entry(cid,'해당 업무는 취소했습니다.',{kind:'task',text:'검수표 전달 취소',evidence:'해당 업무는 취소했습니다.',workflowStatus:'cancelled',stateDeclared:true,workRef:ref,needsConfirmation:false},'03');
+assert.equal(view().status,'cancelled');assert.equal(view().nextAction,null);assert.ok(!view().summary.includes(pending));
+entries[cid]=finished;
+console.log('PASS shared OneNote summary clean; references preserve ongoing action; replacement actions supersede only exact old action; cancellation clears action without erasing history');
+
+});}
