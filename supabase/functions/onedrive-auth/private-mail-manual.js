@@ -1414,7 +1414,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   if (user?.id !== TARGET.owner_id) throw fail('OWNER_REQUIRED', 403);
   const current = (
     await db(
-      'private_mailboxes?select=id,owner_id,enabled,manual_entries,briefing_overrides,automation_config&id=eq.' +
+      'private_mailboxes?select=id,owner_id,enabled,manual_entries,briefing_overrides,automation_config,briefing_pages&id=eq.' +
         TARGET.mailbox_id,
     )
   )[0];
@@ -1481,6 +1481,18 @@ export async function handleManualMessage(action, body, user, ctx) {
       referenceDate: entry.referenceDate,
       authoredDate: entry.authoredDate ?? null,
     });
+  }
+  if (action === 'private-mail-manual-status') {
+    if (!uuid.test(body.entryId ?? '')) throw fail('MANUAL_SOURCE');
+    const entry = current.manual_entries[body.entryId];
+    if (!entry) throw fail('MANUAL_SOURCE', 404);
+    const report = current.briefing_pages?.[kstDay(entry.submittedAt)];
+    const reportState = entry.status !== 'ready' ? 'waiting'
+      : !(entry.items?.length) ? 'not_needed'
+      : report?.error ? 'failed'
+      : report?.pageId && report.dirty === false && !report.mailRolloverPending && !report.pendingWrite ? 'complete'
+      : 'pending';
+    return json({entry:publicEntry(entry,(entry.items??[]).map(item=>publicItem(item,entry.entryId))),report:{status:reportState,error:report?.error??null},stagesAvailable:false});
   }
   if (action === 'private-mail-manual-list')
     return json(

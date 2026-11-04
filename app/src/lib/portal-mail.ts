@@ -281,7 +281,22 @@ export interface MailManualList {
   tasks: MailManualItem[];
   issues: MailManualItem[];
 }
+export interface MailManualStatus {
+  entry: MailManualEntry;
+  report: {
+    status: 'waiting' | 'not_needed' | 'failed' | 'complete' | 'pending';
+    error: string | null;
+  };
+  stagesAvailable: false;
+}
 export const privateMail = {
+  manualStatus: (entryId: string) =>
+    oneDriveCall<MailManualStatus>(
+      'private-mail-manual-status',
+      { entryId },
+      false,
+      15000,
+    ),
   manualSource: (entryId: string) =>
     oneDriveCall<{
       images?: MailManualImage[];

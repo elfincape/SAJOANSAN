@@ -344,6 +344,7 @@ export function MailBriefingManualEntries({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [progress, setProgress] = useState('');
   const mounted = useRef(false);
   const locked = useRef(false);
   const request = useRef(0);
@@ -352,6 +353,7 @@ export function MailBriefingManualEntries({
     key: string;
     id: string;
     retry?: boolean;
+    entryId?: string;
   } | null>(null);
   useEffect(() => {
     setTargetWorkId(initialDraft?.targetWorkId ?? null);
@@ -433,7 +435,12 @@ export function MailBriefingManualEntries({
     try {
       await action();
     } catch (error) {
-      if (mounted.current) setFeedback(failure(error));
+      if (mounted.current) {
+        setFeedback(failure(error));
+        setProgress(
+          '요청 결과를 확인하지 못했습니다. 입력과 접수 번호를 유지합니다.',
+        );
+      }
     } finally {
       locked.current = false;
       if (mounted.current) {
@@ -491,25 +498,83 @@ export function MailBriefingManualEntries({
       retry = submission.current.retry === true,
       version = draftVersion.current;
     await act(async () => {
-      const result = await privateMail.manualEnqueue({
-        text: input,
-        clientRequestId,
-        referenceDate: basis,
-        targetWorkId,
-        retry,
-        images: images.map(({ name, data }) => ({ name, data })),
-        privacyConfirmed,
-      });
+      setProgress('메시지를 접수하는 중입니다. 아직 분석 완료가 아닙니다.');
+      const result =
+        submission.current?.entryId && !retry
+          ? (await privateMail.manualStatus(submission.current.entryId)).entry
+          : await privateMail.manualEnqueue({
+              text: input,
+              clientRequestId,
+              referenceDate: basis,
+              targetWorkId,
+              retry,
+              images: images.map(({ name, data }) => ({ name, data })),
+              privacyConfirmed,
+            });
       if (!mounted.current) return;
-      if (result.status === 'failed') {
-        if (submission.current?.id === clientRequestId)
-          submission.current.retry = true;
-        setFeedback(
-          '메시지를 접수했지만 분석하지 못했습니다. 입력 내용을 유지합니다. 다시 시도해 주세요.',
-        );
-        await load();
-        return;
+      if (submission.current?.id === clientRequestId) {
+        submission.current.entryId = result.entryId;
+        submission.current.retry = result.status === 'failed';
       }
+      const deadline = Date.now() + 180000;
+      let status;
+      while (mounted.current && draftVersion.current === version) {
+        status = await privateMail.manualStatus(result.entryId);
+        if (!mounted.current || draftVersion.current !== version) return;
+        const entry = status.entry;
+        if (entry.status === 'failed') {
+          if (submission.current?.id === clientRequestId)
+            submission.current.retry = true;
+          setProgress('분석 실패 · 원문과 사진은 유지됩니다.');
+          setFeedback(failure({ code: entry.error }));
+          await load();
+          onChanged?.();
+          return;
+        }
+        if (entry.status === 'ready' && entry.needsConfirmation) {
+          setProgress('분석 결과 확인 필요 · 자동으로 닫지 않습니다.');
+          setFeedback(
+            '날짜·대상·업무 내용을 목록에서 확인해 주세요. 접수된 결과는 유지됩니다.',
+          );
+          await load();
+          onChanged?.();
+          return;
+        }
+        if (
+          entry.status === 'ready' &&
+          ['complete', 'not_needed'].includes(status.report.status)
+        )
+          break;
+        if (entry.status === 'ready' && status.report.status === 'failed') {
+          setProgress('분석 완료 · OneNote 자동 저장 확인 필요');
+          setFeedback(
+            'OneNote 저장 상태: ' +
+              (status.report.error || '확인 필요') +
+              '. 메시지를 다시 제출하지 말고 상태를 다시 확인해 주세요.',
+          );
+          await load();
+          onChanged?.();
+          return;
+        }
+        setProgress(
+          entry.status === 'pending'
+            ? '접수 완료 · 분석 대기 중'
+            : entry.status === 'processing'
+              ? '분석 처리 중 · JEV 판단·API 분석의 개별 호출 단계는 서버에서 제공하지 않습니다.'
+              : '분석 완료 · OneNote 자동 저장을 확인하는 중',
+        );
+        if (Date.now() >= deadline) {
+          setProgress('처리 확인 시간 초과 · 서버 처리는 계속될 수 있습니다.');
+          setFeedback(
+            '입력과 접수 번호를 유지합니다. 상태 다시 확인을 눌러 기존 접수건을 조회해 주세요.',
+          );
+          await load();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+      if (!mounted.current || draftVersion.current !== version || !status)
+        return;
       submission.current = null;
       if (draftVersion.current === version) {
         setText('');
@@ -520,7 +585,12 @@ export function MailBriefingManualEntries({
         setReferenceDate('');
       }
       onInputClose?.();
-      setFeedback('저장했습니다. 정리가 끝나면 목록에 반영됩니다.');
+      setProgress('');
+      setFeedback(
+        status.report.status === 'not_needed'
+          ? '분석을 마쳤습니다. 일일정리에 추가할 업무가 없습니다.'
+          : '분석과 OneNote 자동 저장을 완료했습니다.',
+      );
       await load();
       onChanged?.();
     });
@@ -768,13 +838,25 @@ export function MailBriefingManualEntries({
                 }
                 onClick={() => void add()}
               >
-                {busy ? '저장 중…' : '저장'}
+                {busy
+                  ? '처리 확인 중…'
+                  : submission.current?.entryId && !submission.current.retry
+                    ? '상태 다시 확인'
+                    : '저장'}
               </button>
               <ModalClose className="btn btn-ghost" disabled={busy}>
                 취소
               </ModalClose>
             </div>
-            <p className="daily-task-meta">저장 후 닫아도 정리는 계속됩니다.</p>
+            <p className="daily-task-meta">
+              분석과 필요한 OneNote 저장을 확인하면 자동으로 닫힙니다. 확인
+              필요·오류·시간 초과 시 입력을 유지합니다.
+            </p>
+            {progress && (
+              <p role="status" aria-live="polite" aria-atomic="true">
+                {progress}
+              </p>
+            )}
             {feedback ? <p role="alert">{feedback}</p> : null}
           </div>
         </Modal>
