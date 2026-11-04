@@ -36,8 +36,8 @@ jobs:
         run: node scripts/apply-onedrive-migration.mjs
       - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 3.0.0
       - name: Deploy authenticated handler and OAuth callback
         # Callback carries Microsoft code/state, not a Supabase JWT.
         # handler.js verifies Supabase JWT and role on every non-callback action.
-        run: supabase functions deploy onedrive-auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+        run: supabase functions deploy onedrive-auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --yes

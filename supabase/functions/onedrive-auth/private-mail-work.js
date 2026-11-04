@@ -714,6 +714,10 @@ export function dailyWorkItems(
       combined.verifiedCompletionAt = state.verifiedCompletionAt ?? null;
       combined.closedAt = state.closedAt;
     }
+    // Linked reference material adds evidence, never replaces the target's workflow.
+    if(item.category === 'reference') {
+      for(const field of ['category','title','status','nextAction','progress','waitingFor','serviceDate','dueAt','dueDate','duePrecision','ownerStateAt','inferredStateAt','verifiedCompletionAt','closedAt'])combined[field]=previous[field];
+    }
     if (combined.status === 'complete') combined.nextAction = null;
     merged.set(key, combined);
   }
@@ -925,7 +929,7 @@ export function renderWorkSections(items) {
   // Source identity stays in the work ledger and portal. OneNote only needs
   // invisible anchors for the separately verified business-photo writer.
   for (const source of sources.values()) {
-    if (source.kind === 'mail')
+    if (['mail','manual','assistant'].includes(source.kind))
       chunks.push('<div data-id="sajo-mail-photos-' + source.id + '"></div>');
   }
   return chunks.join('');
@@ -1097,7 +1101,7 @@ export function renderBriefingWorkNote(items) {
       if (detailLines.length) chunks.push('<ul style="list-style-type:disc">' + detailLines.join('') + '</ul>');
       chunks.push('</li>');
       for (const source of item.sourceRefs)
-        if (source.kind === 'mail') sources.set(source.id, source);
+        if (['mail','manual','assistant'].includes(source.kind)) sources.set(source.id, source);
     }
     if (rows.length) chunks.push('</ol>');
     if (heading === '참고사항' && routine.length) {

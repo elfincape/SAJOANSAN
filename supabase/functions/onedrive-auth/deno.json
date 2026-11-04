@@ -1,1 +1,6 @@
-{ "imports": { "postal-mime": "npm:postal-mime@4.0.7" } }
+{
+  "imports": {
+    "postal-mime": "npm:postal-mime@4.0.7",
+    "imagescript": "npm:imagescript@3.13.1"
+  }
+}

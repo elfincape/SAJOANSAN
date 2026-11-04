@@ -602,3 +602,63 @@ export function inspectMailImage(input) {
     throw Error('IMAGE_DIMENSIONS');
   return { mediaType, width, height };
 }
+
+// Originals are preserved separately from the bounded analysis/OneNote derivative.
+export const MANUAL_PHOTO_LIMITS = Object.freeze({count:3,perImageBytes:6000000,totalBytes:8000000,maxDimension:8000,maxPixels:13000000,totalPixels:16000000});
+export async function validateManualPhotos(input, text = '', consent = false, {derive = true} = {}) {
+  if (!Array.isArray(input) || input.length > MANUAL_PHOTO_LIMITS.count) throw Error('IMAGE_LIMIT');
+  if (input.length && consent !== true) throw Error('IMAGE_PRIVACY_REVIEW');
+  const result = [], hashes = new Set();
+  let total = 0, derivedTotal = 0, totalPixels = 0;
+  async function decode(data, limit) {
+    if(typeof data !== 'string' || !data.length || data.length > Math.ceil(limit/3)*4)throw Error('IMAGE_LIMIT');
+    const padding=data.endsWith('==')?2:data.endsWith('=')?1:0;
+    if(data.length%4!==0 || /[^A-Za-z0-9+/]/.test(data.slice(0,data.length-padding)))throw Error('IMAGE_FORMAT');
+    const binary=atob(data),bytes=new Uint8Array(binary.length);
+    for(let n=0;n<binary.length;n++)bytes[n]=binary.charCodeAt(n);
+    if(!bytes.length||bytes.length>limit)throw Error('IMAGE_LIMIT');
+    const info=inspectMailImage(bytes);
+    if(!['image/jpeg','image/png'].includes(info.mediaType))throw Error('UNSUPPORTED_IMAGE_TYPE');
+    if(info.width*info.height>MANUAL_PHOTO_LIMITS.maxPixels)throw Error('IMAGE_DIMENSIONS');
+    const contentHash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+    return {...info,contentHash,byteLength:bytes.length,bytes};
+  }
+  for(const file of input) {
+    if(!file||typeof file.name!=='string'||!file.name.trim()||file.name.length>300||/[\x00-\x1f\\/]/.test(file.name))throw Error('IMAGE_FORMAT');
+    if(requiresMailPrivacyReview(text+'\n'+file.name))throw Error('IMAGE_PRIVACY_REVIEW');
+    const original=await decode(file.data,MANUAL_PHOTO_LIMITS.perImageBytes);
+    total+=original.byteLength;
+    totalPixels+=original.width*original.height;
+    if(totalPixels>MANUAL_PHOTO_LIMITS.totalPixels)throw Error('IMAGE_DIMENSIONS');
+    if(total>MANUAL_PHOTO_LIMITS.totalBytes)throw Error('IMAGE_LIMIT');
+    if(file.derived !== undefined)throw Error('IMAGE_MANIFEST');
+    if(!derive){if(!hashes.has(original.contentHash)){hashes.add(original.contentHash);result.push({name:file.name.trim(),...original,derivation:'pending'});}continue;}
+    const {Image}=await import('imagescript');
+    let bitmap;
+    try { bitmap=await Image.decode(original.bytes,{maxPixels:MANUAL_PHOTO_LIMITS.maxPixels,applyOrientation:true,threads:1}); }
+    catch { throw Error('IMAGE_FORMAT'); }
+    if(original.mediaType==='image/jpeg'&&(bitmap.width!==original.width||bitmap.height!==original.height))throw Error('IMAGE_DIMENSIONS');
+    if(bitmap.width>8000||bitmap.height>8000||bitmap.width*bitmap.height>MANUAL_PHOTO_LIMITS.maxPixels)throw Error('IMAGE_DIMENSIONS');
+    let image=original;
+    if(original.byteLength>1000000 || original.mediaType==='image/jpeg') {
+      const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
+      bitmap.resize(Math.max(1,Math.round(bitmap.width*scale)),Math.max(1,Math.round(bitmap.height*scale)));
+      bitmap=new Image(bitmap.width,bitmap.height).fill(0xffffffff).composite(bitmap);
+      let data;
+      for(const quality of [85,65,45]) {
+        data=await bitmap.encodeJPEG({quality});
+        if(data.length<=1000000)break;
+      }
+      if(data.length>1000000)throw Error('IMAGE_LIMIT');
+      image={...inspectMailImage(data),bytes:data,byteLength:data.length,
+        contentHash:[...new Uint8Array(await crypto.subtle.digest('SHA-256',data))].map(v=>v.toString(16).padStart(2,'0')).join('')};
+    }
+    derivedTotal+=image.byteLength;
+    if(image.byteLength>MAIL_PHOTO_LIMITS.perImageBytes||derivedTotal>MAIL_PHOTO_LIMITS.totalBytes)throw Error('IMAGE_LIMIT');
+
+    if(hashes.has(original.contentHash))continue;
+    hashes.add(original.contentHash);
+    result.push({name:file.name.trim(),...image,...(image!==original?{original,derivation:'imagescript-3.13.1-v1'}:{})});
+  }
+  return result;
+}

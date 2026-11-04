@@ -638,7 +638,7 @@ function normalizeUpdates(updates, related, mail) {
   });
 }
 
-async function prepareImages(images) {
+export async function prepareImages(images) {
   if (images == null) return [];
   if (!Array.isArray(images) || images.length > 5) throw Error('IMAGE_LIMIT');
   const ids = new Set(),

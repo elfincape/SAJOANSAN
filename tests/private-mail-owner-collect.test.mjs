@@ -812,6 +812,8 @@ const workerOptions = {
       return Response.json({ job: { id: body.id, cycleId: null } });
     if (body.operation === 'job-finish')
       return Response.json({ job: { status: 'queued' } });
+    if (body.operation === 'manual-photo-source')
+      return Response.json({ images: [] });
     if (body.operation === 'analyze') return Response.json({ status: 'done' });
     if (body.operation === 'report')
       return Response.json({ status: 'updated' });
@@ -854,7 +856,7 @@ assert.equal(workerCollectCalls, 1);
 assert.deepEqual(workerOps, ['job-claim', 'job-finish']);
 workerOps = [];
 await handlePrivateMailWorker(workerRequest('analyze'), workerOptions);
-assert.deepEqual(workerOps, ['analyze']);
+assert.deepEqual(workerOps, ['manual-photo-source', 'analyze']);
 assert.equal(workerCollectCalls, 1);
 workerOps = [];
 await handlePrivateMailWorker(workerRequest('report'), workerOptions);
@@ -895,6 +897,8 @@ const capabilityOptions = {
         assert.equal(body.progress.phase, 'complete');
         return Response.json({ job: { status: 'done' } });
       }
+      if (body.operation === 'manual-photo-source')
+        return Response.json({ images: [] });
       if (body.operation === 'analyze') {
         assert.equal(body.id, '00000000-0000-4000-8000-000000000097');
         return Response.json({ status: 'done' });
@@ -973,8 +977,8 @@ for (const kind of ['analyze', 'report']) {
   );
   assert.deepEqual(
     capabilityOps,
-    [kind],
-    'Analysis/report are forwarded once for Edge validation',
+    kind === 'analyze' ? ['manual-photo-source', kind] : [kind],
+    'Analysis fetches scoped photo manifest before Edge validation; report forwards once',
   );
   assert.equal(capabilityPopCalls, 1);
 }
@@ -1025,7 +1029,11 @@ for (const [label, kind, requestJob] of [
         const forwarded = JSON.parse(options.body);
         assert.equal(
           forwarded.operation,
-          kind === 'collect' ? 'job-claim' : kind,
+          kind === 'collect'
+            ? 'job-claim'
+            : kind === 'analyze'
+              ? 'manual-photo-source'
+              : kind,
         );
         if (kind === 'collect') assert.equal(forwarded.id, requestJob);
         assert.equal(options.headers.Authorization, capabilityAuthorization);

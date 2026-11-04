@@ -1,6 +1,16 @@
 import { downloadPublicMailImage } from './private-mail-public-image.mjs';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { validateManualPhotos } from '../supabase/functions/onedrive-auth/private-mail-images.js';
 import { handleOwnerCollect } from './private-mail-owner-collect.mjs';
+let manualPhotoDecodeQueue = Promise.resolve();
+async function serializePhotoValidation(validate, input) {
+  const pending = manualPhotoDecodeQueue.then(() => validate(input, '', true));
+  manualPhotoDecodeQueue = pending.then(
+    () => undefined,
+    () => undefined,
+  );
+  return pending;
+}
 const BRIDGE =
   'https://vvrppotrnpwrwpwqaiet.supabase.co/functions/v1/onedrive-auth/private-mail-background-work';
 const BOX = '39045005-313e-42e1-b50c-2394b3b6ff26';
@@ -39,6 +49,7 @@ export async function handlePrivateMailWorker(
     collect = handleOwnerCollect,
     logger = (entry) => console.warn(entry),
     downloadImage = downloadPublicMailImage,
+    validatePhotos = validateManualPhotos,
   } = {},
 ) {
   const json = (value, status = 200) =>
@@ -180,17 +191,122 @@ export async function handlePrivateMailWorker(
   }
   try {
     if (['analyze', 'report', 'history'].includes(body.kind)) {
-      const result = await edge(
-        {
-          operation: body.kind,
-          ...(body.kind === 'history'
-            ? { id: body.historyId }
-            : body.kind === 'analyze'
-              ? { id: body.messageId }
-              : { day: body.day }),
-        },
-        210000,
-      );
+      let preparedPhotos, photoPreparationError;
+      if (body.kind === 'analyze') {
+        const manifest = await edge({
+          operation: 'manual-photo-source',
+          id: body.messageId,
+        });
+        const descriptors = manifest?.images;
+        const allowed = new Set([
+          'IMAGE_FORMAT',
+          'IMAGE_LIMIT',
+          'IMAGE_DIMENSIONS',
+          'IMAGE_MANIFEST',
+          'IMAGE_PRIVACY_REVIEW',
+        ]);
+        const preparationFailure = (error) =>
+          allowed.has(error?.message) ? error.message : 'IMAGE_PREPARE_FAILED';
+        if (!Array.isArray(descriptors) || descriptors.length > 3)
+          photoPreparationError = 'IMAGE_MANIFEST';
+        else if (descriptors.length) {
+          preparedPhotos = [];
+          const ids = new Set();
+          let totalBytes = 0,
+            totalPixels = 0;
+          for (const descriptor of descriptors) {
+            if (
+              !descriptor ||
+              typeof descriptor.id !== 'string' ||
+              !descriptor.id.length ||
+              descriptor.id.length > 200 ||
+              ids.has(descriptor.id) ||
+              !/^[a-f0-9]{64}$/.test(descriptor.contentHash ?? '') ||
+              !Number.isSafeInteger(descriptor.byteLength) ||
+              descriptor.byteLength < 1 ||
+              descriptor.byteLength > 6000000
+            ) {
+              photoPreparationError = 'IMAGE_MANIFEST';
+              break;
+            }
+            ids.add(descriptor.id);
+            // Keep bridge authentication/transport failures outside image-validation recovery.
+            const source = await edge({
+              operation: 'manual-photo-source',
+              id: body.messageId,
+              imageId: descriptor.id,
+            });
+            try {
+              const image = source?.image;
+              if (
+                image?.id !== descriptor.id ||
+                image.name !== descriptor.name ||
+                image.contentHash !== descriptor.contentHash ||
+                typeof image.data !== 'string' ||
+                image.data.length > 8000000
+              )
+                throw Error('IMAGE_MANIFEST');
+              const bytes = Buffer.from(image.data, 'base64');
+              if (
+                bytes.length !== descriptor.byteLength ||
+                createHash('sha256').update(bytes).digest('hex') !==
+                  descriptor.contentHash
+              )
+                throw Error('IMAGE_MANIFEST');
+              const validated = await serializePhotoValidation(validatePhotos, [
+                { name: image.name, data: image.data },
+              ]);
+              if (!Array.isArray(validated) || validated.length !== 1)
+                throw Error('IMAGE_MANIFEST');
+              const derived = validated[0],
+                original = derived.original ?? derived;
+              if (
+                original.contentHash !== descriptor.contentHash ||
+                original.byteLength !== descriptor.byteLength ||
+                !derived.bytes ||
+                derived.bytes.length !== derived.byteLength ||
+                derived.byteLength > 1000000
+              )
+                throw Error('IMAGE_MANIFEST');
+              totalBytes += original.byteLength;
+              totalPixels += original.width * original.height;
+              if (totalBytes > 8000000) throw Error('IMAGE_LIMIT');
+              if (!Number.isSafeInteger(totalPixels) || totalPixels > 16000000)
+                throw Error('IMAGE_DIMENSIONS');
+              preparedPhotos.push({
+                id: descriptor.id,
+                originalHash: descriptor.contentHash,
+                data: Buffer.from(derived.bytes).toString('base64'),
+                derivation: derived.derivation ?? 'identity-v1',
+              });
+            } catch (error) {
+              photoPreparationError = preparationFailure(error);
+              break;
+            }
+          }
+          if (photoPreparationError) preparedPhotos = undefined;
+        }
+      }
+      const payload = {
+        operation: body.kind,
+        ...(body.kind === 'history'
+          ? { id: body.historyId }
+          : body.kind === 'analyze'
+            ? {
+                id: body.messageId,
+                ...(photoPreparationError
+                  ? { photoPreparationError }
+                  : preparedPhotos
+                    ? { preparedPhotos }
+                    : {}),
+              }
+            : { day: body.day }),
+      };
+      if (Buffer.byteLength(JSON.stringify(payload)) > 4 * 1024 * 1024) {
+        delete payload.preparedPhotos;
+        payload.photoPreparationError = 'IMAGE_LIMIT';
+      }
+      const result = await edge(payload, 210000);
       return json({
         status: [
           'done',

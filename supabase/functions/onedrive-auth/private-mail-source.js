@@ -42,6 +42,7 @@ function hexHash(value) {
 export function createMailSource({
   db,
   withLock,
+  renew = async () => {},
   mailbox,
   environment,
   graph,
@@ -336,7 +337,53 @@ export function createMailSource({
       related: await related([...thread.inReplyTo, ...thread.references]),
     };
   }
+  async function saveManualImages(images) {
+    return withLock(async holder => {
+      const box = await mailbox(TARGET.mailbox_id), env = await environment();
+      const owner = await privateDestination(box, env), saved = [];
+      async function save(image) {
+        await renew(holder);
+        const file = {kind: 'attachment', original_name: image.name,
+          file_name: 'manual_' + image.contentHash + '.bin',
+          byte_size: image.byteLength, content_hash: btoa(String.fromCharCode(...image.contentHash.match(/../g).map(v => parseInt(v, 16)))).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')};
+        const path = '/drives/' + enc(box.drive_id) + '/items/' + enc(box.folder_id) + ':/' + enc(file.file_name);
+        const old = await graph(path, env.access, {allowMissing: true});
+        const item = old ? await old.json() : await (await graph(path + ':/content?@microsoft.graph.conflictBehavior=fail', env.access,
+          {method: 'PUT', headers: {'Content-Type': 'application/octet-stream'}, body: image.bytes})).json();
+        await privatePermissions(box, item.id, env, owner, item);
+        await verify({...file, drive_id: box.drive_id, folder_id: box.folder_id}, item, env.access);
+        const {bytes, original, ...descriptor} = image;
+        return {...descriptor, file: {...file, item_id: item.id}};
+      }
+      for(const image of images) {
+        const original=image.original?await save({...image.original,name:image.name}):null;
+        saved.push({...await save(image),...(original?{original}:{})});
+      }
+      return saved;
+    });
+  }
+  async function loadManualImage(entryId, imageId, options = {}) {
+    const box = await mailbox(TARGET.mailbox_id);
+    if(box.id!==TARGET.mailbox_id||box.owner_id!==TARGET.owner_id||!box.enabled)throw Error('NOTES_IMAGE_SOURCE');
+    const entry = box.manual_entries?.[entryId];
+    const stored = entry?.images?.find(image => image.id === imageId);
+    const descriptor = options.original && stored?.original ? {...stored.original,id:stored.id,name:stored.name} : stored;
+    if (!descriptor || entry.privacyConfirmed !== true) throw Error('NOTES_IMAGE_SOURCE');
+    const data = await access({owner_id: box.owner_id, mailbox_id: box.id, files: [descriptor.file]},
+      ({bytes}) => bytes(descriptor.file, options.original ? 6000000 : 2100000));
+    const info = inspectMailImage(data);
+    if (hexHash(descriptor.file.content_hash) !== descriptor.contentHash || data.length !== descriptor.byteLength ||
+        info.mediaType !== descriptor.mediaType || info.width !== descriptor.width || info.height !== descriptor.height)
+      throw Error('NOTES_IMAGE_SOURCE');
+    if(!(await db('rpc/private_mail_manual_allowed',{method:'POST',body:{p_box:box.id,p_user:TARGET.owner_id}})))throw Error('NOTES_IMAGE_SOURCE');
+    return {...descriptor, bytes: data};
+  }
   async function loadImage(descriptor) {
+    if (descriptor.sourceType === 'manual') {
+      const image = await loadManualImage(descriptor.sourceId, descriptor.id);
+      if (image.contentHash !== descriptor.contentHash) throw Error('NOTES_IMAGE_SOURCE');
+      return {...descriptor, bytes: image.bytes};
+    }
     const row = (
       await db(
         'private_mail_messages?select=*&id=eq.' +
@@ -401,6 +448,8 @@ export function createMailSource({
     return { ...descriptor, bytes: data };
   }
   return {
+    saveManualImages,
+    loadManualImage,
     loadText,
     loadMail,
     loadImage,
