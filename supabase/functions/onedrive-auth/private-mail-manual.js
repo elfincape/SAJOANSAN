@@ -910,10 +910,14 @@ function publicCallProgress(entry){
   if(!progress||!Array.isArray(progress.calls)||progress.calls.length>24||(entry.status==='processing'&&progress.runId!==entry.lease))return null;
   return {finished:progress.finished===true,calls:progress.calls.map(({id,kind,status,startedAt,finishedAt,code})=>({id,kind,status,startedAt,finishedAt,code}))};
 }
+function manualRetryScheduled(entry) {
+ return entry.status==='failed' && Number.isInteger(entry.attempts) && entry.attempts>=1 && entry.attempts<3 && typeof entry.nextAt==='string' && Number.isFinite(Date.parse(entry.nextAt));
+}
 function publicEntry(entry, items) {
   return {
     entryId: entry.entryId,
     status: entry.status,
+    retryScheduled: manualRetryScheduled(entry),
     submittedAt: entry.submittedAt,
     receivedAt: entry.submittedAt,
     reportDay: kstDay(entry.submittedAt),
@@ -1558,10 +1562,12 @@ export async function handleManualMessage(action, body, user, ctx) {
     const report = current.briefing_pages?.[kstDay(entry.submittedAt)];
     const reportState = entry.status !== 'ready' ? 'waiting'
       : !(entry.items?.length) ? 'not_needed'
+      : report?.error === 'ONEDRIVE_CONNECTION_BUSY' && report.dirty === true && !report.hold && !report.ownerPreviewHold ? 'retrying'
       : report?.error ? 'failed'
       : report?.pageId && report.dirty === false && !report.mailRolloverPending && !report.pendingWrite ? 'complete'
       : 'pending';
-    return json({entry:publicEntry(entry,(entry.items??[]).map(item=>publicItem(item,entry.entryId))),report:{status:reportState,error:report?.error??null},stagesAvailable:!!publicCallProgress(entry),callProgress:publicCallProgress(entry)});
+    const retryScheduled=manualRetryScheduled(entry);
+    return json({entry:publicEntry(entry,(entry.items??[]).map(item=>publicItem(item,entry.entryId))),retryScheduled,report:{status:reportState,error:report?.error??null},stagesAvailable:!!publicCallProgress(entry),callProgress:publicCallProgress(entry)});
   }
   if (action === 'private-mail-manual-list')
     return json(

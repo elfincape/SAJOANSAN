@@ -6,7 +6,6 @@ import type {
   MailManualEntry,
   MailManualItem,
   MailManualList,
-  MailManualStatus,
 } from '../../lib/portal-mail';
 
 type DraftImage = {
@@ -346,8 +345,10 @@ export function MailBriefingManualEntries({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [progress, setProgress] = useState('');
-  const [callProgress, setCallProgress] =
-    useState<MailManualStatus['callProgress']>(null);
+  const [queued, setQueued] = useState<
+    { entryId: string; startedAt: number; reused: boolean }[]
+  >([]);
+  const [queueFeedback, setQueueFeedback] = useState('');
   const mounted = useRef(false);
   const locked = useRef(false);
   const request = useRef(0);
@@ -410,8 +411,9 @@ export function MailBriefingManualEntries({
       request.current++;
     };
   }, [load, refreshKey]);
-  const hasPending = data?.entries.some((entry) =>
-    ['pending', 'processing'].includes(entry.status),
+  const hasPending = data?.entries.some(
+    (entry) =>
+      ['pending', 'processing'].includes(entry.status) || entry.retryScheduled,
   );
   useEffect(() => {
     if (!hasPending) return;
@@ -428,9 +430,66 @@ export function MailBriefingManualEntries({
     };
   }, [hasPending, load, onChanged]);
   useEffect(() => {
+    if (!queued.length) return;
+    let stopped = false,
+      running = false;
+    const timer = setInterval(async () => {
+      if (running || stopped) return;
+      running = true;
+      try {
+        for (const job of queued) {
+          if (stopped) return;
+          let message: string | null = null;
+          try {
+            const status = await privateMail.manualStatus(job.entryId);
+            if (stopped) return;
+            if (status.entry.status === 'failed' && !status.retryScheduled)
+              message =
+                '자동 재시도 후에도 분석하지 못했습니다. 접수 목록에서 원문을 확인해 주세요.';
+            else if (
+              status.entry.status === 'ready' &&
+              status.report.status === 'failed'
+            )
+              message =
+                'OneNote 저장 확인이 필요합니다. 접수한 메시지는 보존되어 있습니다.';
+            else if (
+              status.entry.status === 'ready' &&
+              ['complete', 'not_needed'].includes(status.report.status) &&
+              (!status.callProgress || status.callProgress.finished)
+            )
+              message = status.entry.needsConfirmation
+                ? '처리 결과에 확인할 내용이 있습니다. 접수 목록을 확인해 주세요.'
+                : job.reused
+                  ? '기존 접수의 저장 상태를 확인했습니다.'
+                  : '접수한 메시지 처리를 마쳤습니다.';
+          } catch {
+            /* Read failures never enqueue or repeat analysis. */
+          }
+          if (stopped) return;
+          if (!message && Date.now() - job.startedAt >= 180000)
+            message =
+              '처리가 지연되고 있습니다. 서버는 계속 처리하며 접수 목록에서 확인할 수 있습니다.';
+          if (message) {
+            setQueueFeedback(message);
+            setQueued((current) =>
+              current.filter((item) => item.entryId !== job.entryId),
+            );
+            await load();
+            if (!stopped) onChanged?.();
+          }
+        }
+      } finally {
+        running = false;
+      }
+    }, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [queued, load, onChanged]);
+  useEffect(() => {
     if (inputOpen) {
       setFeedback('');
-      setCallProgress(null);
     }
   }, [inputOpen]);
   async function act(action: () => Promise<void>) {
@@ -524,125 +583,30 @@ export function MailBriefingManualEntries({
         if (result.reusedReady) submission.current.reusedReady = true;
         submission.current.retry = result.status === 'failed';
       }
-      const deadline = Date.now() + 180000;
-      let status;
-      while (mounted.current && draftVersion.current === version) {
-        status = await privateMail.manualStatus(result.entryId);
-        if (!mounted.current || draftVersion.current !== version) return;
-        setCallProgress(status.callProgress ?? null);
-        const entry = status.entry;
-        if (entry.status === 'failed') {
-          if (submission.current?.id === clientRequestId)
-            submission.current.retry = true;
-          setProgress('분석 실패 · 원문과 사진은 유지됩니다.');
-          setFeedback(failure({ code: entry.error }));
-          await load();
-          onChanged?.();
-          return;
-        }
-        if (
-          entry.status === 'ready' &&
-          submission.current?.reusedReady &&
-          (!status.callProgress || status.callProgress.finished)
-        ) {
-          setProgress(
-            '중복 메시지 · 새 JEV 판단이나 API 분석 없이 기존 결과를 불러왔습니다.',
-          );
-          const unresolved = entry.items.filter((item) => !item.done).length;
-          const unlinked = entry.items.filter((item) => !item.workRef).length;
-          const reportLabel =
-            status.report.status === 'failed'
-              ? `오류 (${status.report.error ?? '확인 필요'})`
-              : status.report.status === 'complete'
-                ? '기존 결과 동기화 확인'
-                : status.report.status === 'not_needed'
-                  ? '저장 대상 없음'
-                  : '저장 대기';
-          setFeedback(
-            `기존 접수 ${formatBriefingTimestamp(entry.submittedAt)} · 미완료 ${unresolved}건 · 기존 업무 연결 없음 ${unlinked}건${entry.needsConfirmation ? ' · 확인 필요' : ''} · 보고서: ${reportLabel}. 보고서 상태는 기존 분석 결과 기준이며, 이번 입력의 정보 추가·업무 연결을 새로 검증한 것이 아닙니다. 원문과 기존 결과를 확인해 주세요.`,
-          );
-          await load();
-          onChanged?.();
-          return;
-        }
-        if (
-          entry.status === 'ready' &&
-          entry.needsConfirmation &&
-          (!status.callProgress || status.callProgress.finished)
-        ) {
-          setProgress('분석 결과 확인 필요 · 자동으로 닫지 않습니다.');
-          setFeedback(
-            '날짜·대상·업무 내용을 목록에서 확인해 주세요. 접수된 결과는 유지됩니다.',
-          );
-          await load();
-          onChanged?.();
-          return;
-        }
-        if (
-          entry.status === 'ready' &&
-          ['complete', 'not_needed'].includes(status.report.status) &&
-          (!status.callProgress || status.callProgress.finished)
-        ) {
-          if (
-            status.callProgress?.calls.some(
-              (call) =>
-                call.status === 'failed' ||
-                (call.status === 'skipped' && call.code),
-            )
-          ) {
-            setProgress(
-              '메시지 처리는 끝났지만 일부 호출 오류가 있어 확인이 필요합니다.',
-            );
-            setFeedback(
-              '아래 호출 결과와 정리된 업무를 확인해 주세요. 접수 내용을 다시 저장할 필요는 없습니다.',
-            );
-            await load();
-            onChanged?.();
-            return;
-          }
-          break;
-        }
-        if (
-          entry.status === 'ready' &&
-          status.report.status === 'failed' &&
-          (!status.callProgress || status.callProgress.finished)
-        ) {
-          setProgress('분석 완료 · OneNote 자동 저장 확인 필요');
-          setFeedback(
-            'OneNote 저장 상태: ' +
-              (status.report.error || '확인 필요') +
-              '. 메시지를 다시 제출하지 말고 상태를 다시 확인해 주세요.',
-          );
-          await load();
-          onChanged?.();
-          return;
-        }
-        setProgress(
-          entry.status === 'pending'
-            ? '접수 완료 · 분석 대기 중'
-            : entry.status === 'processing'
-              ? status.stagesAvailable
-                ? '분석 처리 중 · 아래에 실제 호출 상태를 표시합니다.'
-                : '분석 처리 중 · 호출 기록을 아직 확인하지 못했습니다.'
-              : status.callProgress &&
-                  !status.callProgress.finished &&
-                  ['complete', 'not_needed'].includes(status.report.status)
-                ? '업무 처리 완료 · 후속 호출 결과를 확인하는 중'
-                : '분석 완료 · OneNote 자동 저장을 확인하는 중',
-        );
-        if (Date.now() >= deadline) {
-          setProgress('처리 확인 시간 초과 · 서버 처리는 계속될 수 있습니다.');
-          setFeedback(
-            '입력과 접수 번호를 유지합니다. 상태 다시 확인을 눌러 기존 접수건을 조회해 주세요.',
-          );
-          await load();
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      }
-      if (!mounted.current || draftVersion.current !== version || !status)
+      if (result.status === 'failed' && !result.retryScheduled) {
+        setProgress('분석 실패 · 원문과 사진은 유지됩니다.');
+        setFeedback(failure({ code: result.error }));
+        await load();
         return;
-      submission.current = null;
+      }
+      setQueued((current) =>
+        current.some((job) => job.entryId === result.entryId)
+          ? current
+          : [
+              ...current,
+              {
+                entryId: result.entryId,
+                startedAt: Date.now(),
+                reused: result.reusedReady === true,
+              },
+            ],
+      );
+      setQueueFeedback(
+        result.reusedReady
+          ? '이미 접수된 메시지입니다. 기존 건의 저장 상태를 뒤에서 확인합니다.'
+          : '접수했습니다. 분석과 저장은 뒤에서 처리합니다.',
+      );
+      if (submission.current?.id === clientRequestId) submission.current = null;
       if (draftVersion.current === version) {
         setText('');
         imageGeneration.current++;
@@ -650,16 +614,13 @@ export function MailBriefingManualEntries({
         setImages([]);
         setPrivacyConfirmed(false);
         setReferenceDate('');
+        onInputClose?.();
+        setProgress('');
+        setFeedback('');
       }
-      onInputClose?.();
-      setProgress('');
-      setFeedback(
-        status.report.status === 'not_needed'
-          ? '분석을 마쳤습니다. 일일정리에 추가할 업무가 없습니다.'
-          : '분석과 OneNote 자동 저장을 완료했습니다.',
-      );
-      await load();
-      onChanged?.();
+      void load().then((ok) => {
+        if (ok && mounted.current) onChanged?.();
+      });
     });
   }
   async function complete(entryId: string, itemId: string, done: boolean) {
@@ -916,61 +877,13 @@ export function MailBriefingManualEntries({
               </ModalClose>
             </div>
             <p className="daily-task-meta">
-              분석과 필요한 OneNote 저장을 확인하면 자동으로 닫힙니다. 확인
-              필요·오류·시간 초과 시 입력을 유지합니다.
+              접수되면 창이 닫힙니다. 분석과 저장은 뒤에서 처리하며 일시적인
+              오류는 자동으로 재시도합니다.
             </p>
             {progress && (
               <p role="status" aria-live="polite" aria-atomic="true">
                 {progress}
               </p>
-            )}
-            {callProgress && (
-              <section aria-label="실제 API 호출 현황">
-                {submission.current?.reusedReady && (
-                  <p>
-                    기존 접수의 호출 기록입니다. 이번 저장에서 새로 호출하지
-                    않았습니다.
-                  </p>
-                )}
-                <p className="daily-task-meta">
-                  최근 호출 최대 24건입니다. 응답 완료와 업무 근거 검증·저장
-                  완료는 구분됩니다.
-                </p>
-                <ol>
-                  {callProgress.calls.map((call) => (
-                    <li key={call.id}>
-                      {call.kind === 'jev' ? 'JEV 판단' : '분석 API'} #{call.id}{' '}
-                      ·{' '}
-                      {call.status === 'started'
-                        ? '요청 시작 · 응답 미확인'
-                        : call.status === 'completed'
-                          ? '응답 확인 완료'
-                          : call.status === 'failed'
-                            ? call.code === 'TIMEOUT'
-                              ? '시간 초과'
-                              : '호출 오류'
-                            : '호출하지 못함'}
-                      {call.code ? ` (${call.code})` : ''}
-                      <span className="daily-task-meta">
-                        {' '}
-                        · 시작{' '}
-                        {call.startedAt
-                          ? new Date(call.startedAt).toLocaleTimeString(
-                              'ko-KR',
-                              { timeZone: 'Asia/Seoul' },
-                            )
-                          : '미호출'}
-                        {call.finishedAt
-                          ? ` · 종료 ${new Date(call.finishedAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })}`
-                          : ''}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-                {!callProgress.calls.length && (
-                  <p>아직 기록된 JEV·분석 API 호출이 없습니다.</p>
-                )}
-              </section>
             )}
             {feedback ? <p role="alert">{feedback}</p> : null}
           </div>
@@ -983,6 +896,11 @@ export function MailBriefingManualEntries({
             ? '메시지 업무를 불러오는 중…'
             : feedback}
       </p>
+      <p className="daily-task-meta" role="status" aria-live="polite">
+        {queued.length
+          ? `백그라운드 처리 확인 중 ${queued.length}건 · 다른 메시지를 입력할 수 있습니다.`
+          : queueFeedback}
+      </p>
       <div aria-busy={loading} aria-label="접수 메시지 처리 상태">
         {entries
           .filter((entry) => entry.status !== 'ready')
@@ -992,7 +910,9 @@ export function MailBriefingManualEntries({
                 {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
                 {['pending', 'processing'].includes(entry.status)
                   ? '정리 중'
-                  : '분석 실패 · 원문이 보존되어 있습니다.'}
+                  : entry.retryScheduled
+                    ? '자동 재시도 대기 중'
+                    : '분석 실패 · 원문이 보존되어 있습니다.'}
               </p>
               {entry.images?.length ? (
                 <StoredManualPhotos
@@ -1000,7 +920,7 @@ export function MailBriefingManualEntries({
                   images={entry.images}
                 />
               ) : null}
-              {entry.status === 'failed' ? (
+              {entry.status === 'failed' && !entry.retryScheduled ? (
                 <button
                   className="btn btn-ghost"
                   type="button"
