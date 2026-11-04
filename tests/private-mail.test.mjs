@@ -8600,3 +8600,46 @@ const result=await(await handleManualMessage('private-mail-manual-enqueue',{text
 console.log('PASS duplicate ready explicitly reused/no paid calls; untimed packet review-only; independent matched scope completes; wrong origin/day/new/rejected never completes; exact scoped vehicle preserved/no foreign driver; legacy projection unchanged. MOCK MODEL ONLY');
 
 });}
+
+{const {test}=await import('node:test');test('dispatch context survives candidate cap and linked reference retains vehicle details',async()=>{
+const {buildManualWorkCandidates}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const owner='2a828c2d-9a6f-40d4-8e13-336b591811cc',box='39045005-313e-42e1-b50c-2394b3b6ff26',day='2026-11-04';
+const entry=(i,text,time)=>{const id='bb000000-0000-4000-8000-'+String(i).padStart(12,'0');return {entryId:id,text,status:'ready',submittedAt:time,items:[{itemId:'item-001',ref:id+':manual:item-001',kind:'dispatch',text:'합성 배차 '+i,evidence:text,visibleFrom:time.slice(0,10),submittedAt:time,receivedAt:time,serviceDate:day,workflowStatus:'pending',done:false,completionEvents:[],details:[]}]};};
+const target=entry(1,'상차지 : 합성창고A\n하차지 : 합성센터B\n상차일 : 11/4\n톤급 : 5톤','2026-11-03T01:00:00Z');
+const others=Array.from({length:45},(_,i)=>entry(i+2,'상차지 : 다른창고'+i+'\n하차지 : 다른센터\n톤급 : 5톤',day+'T01:00:00Z'));
+const current={id:box,owner_id:owner,enabled:true,manual_entries:Object.fromEntries([target,...others].map(e=>[e.entryId,e])),briefing_overrides:{}};
+const text='11월04일\n합성창고A~합성센터B 5톤\n서울12가0000 합성기사 010-0000-0000';
+const result=await buildManualWorkCandidates({current,ownerId:owner,day,entry:{text,referenceDate:day,submittedAt:day+'T02:00:00Z'},db:async()=>[]});
+assert.ok(result.some(c=>c.workId===target.items[0].ref),'older exact route/date dispatch must survive the 40 candidate cap');
+assert.ok(result.length<=40);console.log('PASS older exact dispatch is presented before unrelated newer tasks; bounded40');
+const ordinary=await buildManualWorkCandidates({current,ownerId:owner,day,db:async()=>[]});assert.ok(!ordinary.some(c=>c.workId===target.items[0].ref),'baseline ordering unchanged without structured reply');
+const many={...current,manual_entries:Object.fromEntries(Array.from({length:45},(_,i)=>entry(i+1,target.text,day+'T01:00:00Z')).map(e=>[e.entryId,e]))};
+const crowded=await buildManualWorkCandidates({current:many,ownerId:owner,day,entry:{text,referenceDate:day,submittedAt:day+'T02:00:00Z'},db:async()=>[]});assert.equal(crowded.length,40);assert.ok(crowded.every(c=>c.matchingPoolTruncated));
+const {handleManualMessage,linkExistingManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+const output=value=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
+let calls=0;const blocked=await linkExistingManualItems({value:{items:[{kind:'dispatch',text:'합성 회신',evidence:text,serviceOriginal:'11월04일'}]},entry:{text,referenceDate:day,submittedAt:day+'T02:00:00Z'},work:crowded,ai:{aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>{calls++;return output({matches:[{itemIndex:0,workId:crowded[0].workId,relation:'followup',actor:'not_needed',linkageEvidence:text,actorEvidence:null,promiseEvidence:null}]});}});assert.equal(calls,1);assert.equal(blocked.reply.items[0].needsConfirmation,true);assert.ok(!blocked.reply.items[0].workRef);console.log('PASS overflowing same-route competitors cannot be falsely unique after truncation');
+for(const mode of ['complete','reference','reject']){
+ const id='bb000000-0000-4000-8000-000000000099',order=[],progress=[];let saved;
+ const ctx={json:Response.json,fail:x=>Error(x),verifiedUpdatesEnabled:true,resolveAiConfiguration:async()=>({aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'}),resolveJevConfiguration:async()=>({enabled:true,approvedSourceIds:[id],key:'MOCK',fetcher:async(_,o)=>{order.push('jev');const p=JSON.parse(o.body);return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(p.questions).map(k=>[k,{type:'noul',noul:.8}]))});}}),fetcher:async(_,o)=>{
+  const p=JSON.parse(o.body),prompt=p.input[0].content[0].text, name=prompt.startsWith('카톡')?'private_manual_message':prompt.startsWith('새 입력')?'private_existing_work_match':'verify';
+  if(name==='private_manual_message'){order.push('extract');assert.ok(o.body.includes(target.items[0].ref));assert.ok(o.body.includes('jevIntent'));return output({inputKind:'business',authoredDate:null,items:[{kind:'dispatch',text:'합성 회신',evidence:text,serviceOriginal:'11월04일',assignee:null,dueOriginal:null,needsConfirmation:false,requestEvidence:null,resultEvidence:null}]});}
+  if(name==='private_existing_work_match'){order.push('match');assert.ok(o.body.includes(target.items[0].ref));return output({matches:[{itemIndex:0,workId:target.items[0].ref,relation:mode==='reference'?'reference':'followup',actor:'not_needed',linkageEvidence:text,actorEvidence:null,promiseEvidence:null}]});}
+  order.push('verify');return output({matchesTarget:mode!=='reject',action:mode==='reference'?'update':'complete',text:target.items[0].text,evidence:text,completionEvidence:mode==='reference'?null:text,details:[],serviceOriginal:'11월04일',dueOriginal:null,nextActionEvidence:null,completedSteps:[],remainingSteps:[]});
+ },db:async(path,o)=>{
+  if(path.startsWith('private_mailboxes?'))return[current];if(path.startsWith('private_mail_messages?'))return[];
+  if(path.endsWith('_claim'))return{claimed:true,entry:{entryId:id,text,textHash:o.body.p_hash,status:'processing',submittedAt:day+'T02:00:00Z',referenceDate:day}};
+  if(path.endsWith('_call_progress')){progress.push(o.body);return true;}
+  if(path.endsWith('_finish'))return saved={entryId:id,text,status:'ready',submittedAt:day+'T02:00:00Z',referenceDate:day,items:o.body.p_items};
+  if(path.endsWith('_jev_review'))return null;
+  if(path.endsWith('_fail'))throw Error('Failure '+o.body.p_code+' ORDER '+order.join(','));
+  throw Error('Unexpected '+path);
+ }};
+ const response=await(await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:owner},ctx)).json();assert.equal(response.status,'ready');assert.equal(order[0],'jev');assert.deepEqual(order.filter(x=>x!=='jev'),['extract','match','verify']);assert.ok(progress.at(-1).p_finished);assert.ok(progress.some(x=>x.p_calls.some(c=>c.kind==='jev'&&c.status==='completed')));assert.ok(progress.some(x=>x.p_calls.some(c=>c.kind==='api'&&c.status==='completed')));
+ if(mode==='reject'){assert.ok(!saved.items[0].workRef);assert.equal(saved.items[0].needsConfirmation,true);}else{
+ assert.equal(saved.items[0].workRef,target.items[0].ref);assert.ok(saved.items[0].details.includes('서울12가0000 합성기사 010-0000-0000'));
+ const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView({...current.manual_entries,[id]:saved},day));const linked=work.find(w=>w.workId===target.items[0].ref);assert.equal(linked.status,mode==='complete'?'complete':'pending');assert.equal(work.some(w=>w.workId===id+':manual:item-001'),false);
+ }console.log('PASS full handler JEV→extraction→match→independent verifier→storage/projection/call progress '+mode+' (MOCK NETWORK)');
+}
+
+});}
