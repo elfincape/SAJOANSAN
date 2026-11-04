@@ -6825,6 +6825,8 @@ console.log(
       assert.fail('unexpected query ' + path);
     },
   };
+  const mainFetch=ctx.fetcher;
+  ctx.fetcher=async (...args)=>{assert.equal(paidCalls,1,'pre-intent runs before main analysis');return mainFetch(...args);};
   const request = { clientRequestId: id, text: proof };
   const first = await (
     await handleManualMessage(
@@ -6844,10 +6846,10 @@ console.log(
     ctx,
   );
   assert.equal(registerCalls, 1);
-  assert.equal(paidCalls, 1);
+  assert.equal(paidCalls, 2);
   assert.equal(reviewWrites, 1);
   console.log(
-    'PASS JEV runtime: server-approved advisory only, one bounded call, reference skip, mail/manual dates and completion unchanged, no images, timeout/429/invalid/missing-key fail open and ready replay does not call again',
+    'PASS JEV runtime: server-approved pre-intent and post-advisory, bounded calls, reference skip, mail/manual dates and completion unchanged, no images, timeout/429/invalid/missing-key fail open and ready replay does not call again',
   );
 }
 
@@ -8293,5 +8295,79 @@ assert(rows.every(r=>r.passed),'adversarial completion guard failures');
   const response=await handleManualMessage('private-mail-manual-add',{text,clientRequestId:id},{id:current.owner_id},{verifiedUpdatesEnabled:true,json:Response.json,fail:code=>Error(code),resolveAiConfiguration:async()=>({aiKey:'MOCK_ONLY',aiProvider:'openai',aiModel:'gpt-6-luna'}),enqueueManualReport:async()=>false,db:async(path,options={})=>{if(path.startsWith('private_mailboxes?'))return[current];if(path==='rpc/private_mail_manual_claim')return{claimed:true,entry:pending};if(path==='rpc/private_mail_manual_finish'){current.manual_entries[id]={...pending,status:'ready',items:options.body.p_items};return current.manual_entries[id];}throw Error('UNEXPECTED_DB '+path);},fetcher:async(url,options)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert(options.body.includes(ref));return Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action:'decline',text:title,evidence:text,details:[text],completionEvidence:null,serviceOriginal:null,dueOriginal:null})}]}]});}});
   const stored=await response.json();assert.equal(stored.status,'ready');assert.equal(calls,1);assert.equal(stored.items[0].workRef,ref);assert.equal(stored.items[0].done,false);assert.deepEqual(base,before);assert.equal(dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(current.manual_entries,day)).length,1);
   const invalid=await run({evidence:'완료했습니다.',action:'decline'});assert.equal(invalid.reply.items[0].needsConfirmation,true,'a decline action needs explicit refusal evidence');
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ test('manual Jev multiselect remains bounded advisory and fails open',async()=>{
+const mod=await import('../supabase/functions/onedrive-auth/private-mail-jev-verifier.js');
+assert.equal(typeof mod.classifyManualIntents,'function');
+const entry={entryId:'synthetic',text:'견적 확인은 끝났고 정산 반영은 내일 해 주세요. 다른 업체 자료는 참고입니다.',referenceDate:'2026-11-04'};
+let calls=0;
+const config={enabled:true,approvedSourceIds:['synthetic'],key:'synthetic',fetcher:async(url,opts)=>{calls++;assert.equal(opts.redirect,'error');const p=JSON.parse(opts.body);assert.equal(Object.keys(p.questions).length,8);return Response.json({model:mod.JEV_VERIFIER_MODEL,answers:Object.fromEntries(Object.keys(p.questions).map((key,i)=>[key,{type:'noul',noul:[.8,.9,.8,.95,.01,.9,.3,.1][i]}]))});}};
+const result=await mod.classifyManualIntents({entry,config});
+assert.equal(result.status,'ready');assert.ok(result.signals.includes('new'));assert.ok(result.signals.includes('completion'));assert.ok(result.signals.includes('reference'));assert.ok(result.signals.includes('mixed'));assert.equal(result.authoritative,false);
+assert.equal((await mod.classifyManualIntents({entry,config:{...config,approvedSourceIds:[]}})).status,'skipped');assert.equal(calls,1);
+assert.equal((await mod.classifyManualIntents({entry,config:{...config,key:null}})).code,'NOT_CONFIGURED');
+assert.equal((await mod.classifyManualIntents({entry,config:{...config,timeoutMs:10,fetcher:()=>new Promise(()=>{})}})).code,'TIMEOUT');
+assert.equal((await mod.classifyManualIntents({entry,config:{...config,fetcher:async()=>Response.json({model:mod.JEV_VERIFIER_MODEL,answers:{}})}})).code,'INVALID_RESPONSE');
+assert.equal(entry.text.includes('정산'),true);console.log('PASS intent multiselect, scope, missing key, deadline, malformed response, source immutable');
+
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ test('unselected structured dispatch uses verified fallback with date and origin fences',async()=>{
+const {handleManualMessage,normalizeManualItems,resolveDispatchAssignment}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+const {APPROVED_MAIL_TARGET:target}=await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+const day='2026-11-04',at=day+'T01:00:00Z',id='71000000-0000-4000-8000-000000000001',newId='71000000-0000-4000-8000-000000000002';
+const output=value=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
+for(const [name,suffix,mode] of [['가상식자재','상온','complete'],['가상마트물류','상온 1톤','complete'],['가상식자재','상온','ambiguous'],['가상식자재','상온','otherday'],['가상식자재','상온','empty'],['가상식자재','상온','omitted_date'],['가상식자재','상온','wrong_origin']]){
+ const source='11/4 '+name+' '+suffix+' 배차 요청\n가상공장 상차 08:00';
+ const items=normalizeManualItems({items:[{kind:'dispatch',text:name+' '+suffix+' 배차',evidence:source,serviceOriginal:'11/4',assignee:null,dueOriginal:null,needsConfirmation:false}]},{text:source,entryId:id,submittedAt:at,referenceDate:day});
+ const current={id:target.mailbox_id,owner_id:target.owner_id,enabled:true,manual_entries:{[id]:{entryId:id,text:source,status:'ready',submittedAt:at,referenceDate:day,items}},briefing_overrides:{}};
+ const text=(['otherday','omitted_date'].includes(mode)?'11/05 (목)':'11/04 (수)')+'\n'+(mode==='wrong_origin'?'다른공장':'가상공장')+'(08:00상)~'+name+'\n12가3456 가상인 010-0000-0000';
+ assert.equal(resolveDispatchAssignment(text,current.manual_entries,day,at).items[0].workRef,null);
+ const order=[];let saved;
+ const ctx={json:Response.json,fail:m=>Error(m),verifiedUpdatesEnabled:true,resolveAiConfiguration:async()=>({aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'}),resolveJevConfiguration:async()=>({enabled:true,approvedSourceIds:[newId],key:'MOCK',fetcher:async(_,o)=>{order.push('jev');const p=JSON.parse(o.body);return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(p.questions).map(k=>[k,{type:'noul',noul:.8}]))});}}),fetcher:async(_,o)=>{
+ const p=JSON.parse(o.body),prompt=p.input[0].content[0].text;order.push(prompt.startsWith('카톡')?'extract':prompt.startsWith('새 입력')?'match':'verify');
+ if(prompt.startsWith('카톡')){assert.ok(prompt.includes('jevIntent'));if(mode==='empty')return output({items:[],authoredDate:null});return output({items:[{kind:'dispatch',text:name+' 배차 회신',evidence:text,serviceOriginal:mode==='omitted_date'?null:mode==='otherday'?'11/05':'11/04',dueOriginal:null,assignee:null,needsConfirmation:false,requestEvidence:null,resultEvidence:null}],authoredDate:null});}
+ if(prompt.startsWith('새 입력'))return output({matches:[{itemIndex:0,workId:mode==='ambiguous'?null:items[0].ref,relation:mode==='ambiguous'?'ambiguous':'followup',linkageEvidence:text,actor:'not_needed',actorEvidence:null,promiseEvidence:null}]});
+ if(prompt.startsWith('사용자가 선택'))return output({matchesTarget:mode!=='otherday',action:'complete',text:name+' 배차',evidence:text,completionEvidence:text,details:[],serviceOriginal:mode==='omitted_date'?null:'11/04',dueOriginal:null,nextActionEvidence:null,completedSteps:[],remainingSteps:[]});
+ throw Error('Unexpected model');},db:async(path,o)=>{
+ if(path.startsWith('private_mailboxes?'))return [current];if(path.startsWith('private_mail_messages?'))return [];
+ if(path.endsWith('_claim'))return {claimed:true,entry:{entryId:newId,text,textHash:o.body.p_hash,status:'processing',submittedAt:at,referenceDate:day}};
+ if(path.endsWith('_finish'))return saved={entryId:newId,text,status:'ready',submittedAt:at,referenceDate:day,items:o.body.p_items};
+ if(path.endsWith('_jev_review'))return null;
+ throw Error('Unexpected DB '+path);
+ }};
+ const result=await(await handleManualMessage('private-mail-manual-add',{text,clientRequestId:newId},{id:target.owner_id},ctx)).json();assert.equal(result.status,'ready');assert.equal(order[0],'jev');assert.ok(order.includes('match'));
+ if(mode==='complete'||mode==='empty'){assert.equal(saved.items[0].workRef,items[0].ref);assert.equal(saved.items[0].workflowStatus,'complete');}else {assert.equal(saved.items[0].workRef,undefined);assert.equal(saved.items[0].needsConfirmation,true);}
+ console.log('PASS synthetic',suffix,mode,order.join(' -> '));
+}
+
+ });
+}
+
+{
+ const {test}=await import('node:test');
+ test('photo Jev provenance and reference-only actor cannot authorize completion',async()=>{
+const {Image}=await import('imagescript');
+const {createHash}=await import('node:crypto');
+const {analyzeManualPhotos}=await import('../supabase/functions/onedrive-auth/private-mail-manual-images.js');
+const entry={entryId:'a1000000-0000-4000-8000-000000000001',text:'첨부한 두 사진의 검증코드를 이 테스트 기록에 포함해 주세요.',referenceDate:'2026-11-04',submittedAt:'2026-11-04T03:00:00Z'};
+const images=[];for(let i=0;i<2;i++){const bytes=await new Image(2,2).fill(i?0xff0000ff:0x00ff00ff).encode();images.push({id:entry.entryId+':'+i,name:i+'.png',bytes,mediaType:'image/png',width:2,height:2,contentHash:createHash('sha256').update(bytes).digest('hex')});}
+const facts=images.map((im,i)=>({imageId:im.id,text:'검증코드: '+['ALPHA-4729','BETA-5831'][i],confidence:'readable'})),ref=entry.entryId+':manual:item-001';
+const output=value=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
+for(const mode of ['reference','ambiguous','forged_completion']){
+ const order=[];
+ const result=await analyzeManualPhotos({entry,images,candidates:[{workId:ref,kind:'reference',title:entry.text}],startIndex:1,ai:{aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'},jevConfig:{enabled:true,approvedSourceIds:[entry.entryId],key:'MOCK',fetcher:async(_,o)=>{order.push('jev');const p=JSON.parse(o.body);assert.ok(p.state.source.includes(images[0].id));assert.ok(p.state.source.includes('ALPHA-4729'));assert.ok(!JSON.stringify(p).includes('data:image'));return Response.json({model:'jev-1.14.0',answers:Object.fromEntries(Object.keys(p.questions).map(k=>[k,{type:'noul',noul:.9}]))});}},fetcher:async(_,o)=>{const p=JSON.parse(o.body),prompt=p.input[0].content[0].text;if(prompt.startsWith('독립')){order.push('verify');assert.ok(prompt.includes('jevIntent'));return output({accepted:true,sameTarget:mode!=='ambiguous',actor:'not_needed',currentResult:true,allObligationsComplete:true,requestConfirmed:true,completedSteps:[],remainingSteps:[]});}order.push('extract');return output({facts,items:facts.map((f,i)=>({imageId:f.imageId,text:'사진 '+(i+1)+' 검증코드 참고',evidence:f.text,kind:'reference',workRef:ref,action:mode==='forged_completion'?'complete':'reference',requestEvidence:null,completionEvidence:mode==='forged_completion'?f.text:null}))});}});
+ assert.deepEqual(order,['extract','jev','verify','verify']);assert.equal(result.items.length,2);assert.notEqual(result.items[0].imageId,result.items[1].imageId);
+ if(mode==='reference'){assert.ok(result.items.every(i=>i.workRef===ref&&i.kind==='reference'&&!i.needsConfirmation));assert.ok(result.items.every(i=>i.remainingSteps.length===0));}else assert.ok(result.items.every(i=>!i.workRef&&i.needsConfirmation));
+ assert.ok(result.items.every(i=>i.workflowStatus!=='complete'));assert.notEqual(result.items[0].text,result.items[1].text);assert.equal(entry.text.includes('ALPHA'),false);console.log('PASS photo',mode,'two source hashes preserved, no title merge, no forged completion',order.join(' -> '));
+}
+
  });
 }
