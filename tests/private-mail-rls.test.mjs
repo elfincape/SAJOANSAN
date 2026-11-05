@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 // Optional isolated PostgreSQL runtime; not an application dependency.
 if (!process.env.PGLITE_MODULE)
   throw Error(
@@ -1701,7 +1702,7 @@ try {
 }
 
 {
-const ROOT=new URL('..',import.meta.url).pathname.replace(/\/$/,''), OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc', BOX='39045005-313e-42e1-b50c-2394b3b6ff26';
+const ROOT=fileURLToPath(new URL('..',import.meta.url)), OWNER='2a828c2d-9a6f-40d4-8e13-336b591811cc', BOX='39045005-313e-42e1-b50c-2394b3b6ff26';
 const db=new PGlite({extensions:{pgcrypto}});
 try {
 await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema extensions;create extension pgcrypto with schema extensions;create table auth.users(id uuid primary key);create table public.user_profiles(id uuid primary key,active boolean);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant select on public.user_profiles to authenticated,service_role;`);
@@ -2404,6 +2405,49 @@ try{
   const invalidMailId=crypto.randomUUID();await db.query("insert into private_mail_messages(id,mailbox_id,owner_id,uidl_hash,content_hash,subject,sender,sent_at,files) values($1,$2,$3,$4,$4,'합성 잘못된 시각','owner@example.test',$5,'[]')",[invalidMailId,BOX,OWNER,'c'.repeat(64),mailTime]);
   await assert.rejects(()=>db.query('update private_mail_messages set analysis=$2 where id=$1',[invalidMailId,{...mailAnalysis,source:{...mailAnalysis.source,id:invalidMailId},monthlyUpdates:[{...mailUpdate,sourceId:invalidMailId,sourceAt:'2026-01-01T00:00:00Z'}]}]),/MONTHLY_MAIL_SOURCE/);assert.equal((await db.query('select analysis from private_mail_messages where id=$1',[invalidMailId])).rows[0].analysis,null,'invalid source must roll back mail analysis and native updates together');
   await assert.rejects(()=>db.query("select private_mail_portal_upsert($1,$2,$3,$4)",[BOX,OWNER,crypto.randomUUID(),{owner_id:OWNER,work_scope:'delivery_team',inputs:{personal_work:{workId:'source:'+crypto.randomUUID()}}}]),/MONTHLY_EXISTING_TARGET_ONLY/);
+  {
+   for(const name of ['private_mail_manual_claim','private_mail_manual_finish']){
+    const start=manualSql.indexOf('create or replace function public.'+name+'(');
+    await db.exec(manualSql.slice(start,manualSql.indexOf('$$;',start)+3));
+   }
+   await db.exec("insert into centers values('yangsan','합성 양산',true) on conflict (code) do nothing; create or replace function public.is_admin() returns boolean language sql stable as $$ select exists(select 1 from user_profiles where id=auth.uid() and active and role='admin') $$");
+   await db.exec("create function public.operations_resource_allowed(text,text,text) returns boolean language sql stable as $$select public.operations_can_read()$$");
+   const migration=await readFile(new URL('../supabase/sql/private-mail-manual-scope.sql',import.meta.url),'utf8');
+   await db.exec(migration);await db.exec(migration);
+   const scope={kind:'center',centerCode:'yangsan',workCategory:'업무'}, team={kind:'delivery_team',centerCode:null,workCategory:null};
+   const {portalWorkInput}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+   const record=async({scope=team,prior=null,done=false,dispatchKey,guide={}}={})=>{
+    const request=crypto.randomUUID(),lease=crypto.randomUUID(),text=done?'합성 배차 완료':'합성 배차 요청';
+    const {entry}= (await db.query('select private_mail_manual_scoped_submit($1,$2,$3,$4,$5,null,$6,false,\'[]\',false,null,false,$7) r',[BOX,OWNER,request,text,request.replaceAll('-','').repeat(2),lease,scope])).rows[0].r;
+    assert.deepEqual(entry.workScope,scope);
+    const ref=entry.entryId+':manual:item-001',workId=prior?.ref??ref;
+    const day=new Date(Date.parse(entry.submittedAt)+9*3600000).toISOString().slice(0,10);
+    const item={ref,itemId:'item-001',kind:'dispatch',text,evidence:text,visibleFrom:day,receivedAt:entry.submittedAt,submittedAt:entry.submittedAt,done:false,completedAt:null,completionEvents:[],needsConfirmation:false,...(prior?{workRef:workId}:{})};
+    const sourceRefs=[...(prior?[{kind:'manual',id:prior.entry.entryId,ref:workId}]:[]),{kind:'manual',id:entry.entryId,ref}];
+    const document=portalWorkInput({workId,category:'task',title:'합성 배차',workScope:scope,status:done?'complete':'pending',summary:[],requestedAt:entry.submittedAt,verifiedCompletionAt:done?entry.submittedAt:null,sourceRefs},{ownerId:OWNER,visibleFrom:day});
+    const payload={requestId:request,document,...(scope.centerCode==='yangsan'?{yangsanDispatch:guide}:{}),...(dispatchKey?{dispatchKey}:{})};
+    const result=(await db.query('select private_mail_manual_scoped_finish($1,$2,$3,$4,$5::jsonb,null,\'{}\',$6::jsonb) r',[BOX,OWNER,entry.entryId,lease,JSON.stringify([item]),JSON.stringify([payload])])).rows[0].r;
+    return {ref,entry,result,task:result.portalLinks?.[0]?.taskId};
+   };
+   const initial=await record({scope,dispatchKey:'f'.repeat(64),guide:{loadingTime:'13:30',unloadingAddress:'가상시 시험로 123'}});
+   const followup=await record({scope,prior:initial,done:true,guide:{loadingTime:null,contact:'합성 담당'}});
+   assert.equal(followup.task,initial.task);
+   const task=(await db.query('select status,inputs from operations_tasks where id=$1',[initial.task])).rows[0];
+   assert.equal(task.status,'completed');assert.deepEqual(task.inputs.yangsan_dispatch,{loadingTime:'13:30',unloadingAddress:'가상시 시험로 123',contact:'합성 담당'});
+   const duplicate=await record({scope,dispatchKey:'f'.repeat(64)});
+   assert.equal(duplicate.result.items[0].needsConfirmation,true);assert.equal(duplicate.task,undefined);
+   const delivery=await record();assert(delivery.task);
+   await db.query("update user_profiles set role='editor' where id=$1",[OTHER]);
+   await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
+   const visible=async()=> (await db.query('select id from operations_tasks where id=any($1::uuid[])',[ [initial.task,delivery.task] ])).rows.map(row=>row.id);
+   assert.deepEqual(await visible(),[]);
+   await db.exec('reset role;reset "request.jwt.claim.sub"');
+   await db.query("insert into operations_center_members(user_id,center_code) values($1,'yangsan')",[OTHER]);
+   await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
+   assert.deepEqual(await visible(),[initial.task]);
+   await db.exec('reset role;reset "request.jwt.claim.sub"');
+   console.log('PASS scoped native dispatch creation, completion, guide retention, duplicate review and center/team RLS');
+  }
   await db.query('update private_mailboxes set enabled=false where id=$1',[BOX]);assert.equal((await generate('2026-11-28T03:00:00Z')).disabled,true);await db.query('select operations_run_scheduler()');
   await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OWNER}'`);
   const ordinary=(await db.query("select to_jsonb(operations_template_action($1,null,'create',$2)) r",[crypto.randomUUID(),{center_code:'001',title:'합성 기존 일일 업무',spec:{fields:[],steps:[],effective_from:'2026-11-01',repeat:{kind:'daily'},owner_ids:[OWNER]}}])).rows[0].r;

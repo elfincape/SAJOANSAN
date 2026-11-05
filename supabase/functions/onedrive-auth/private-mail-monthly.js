@@ -67,6 +67,16 @@ export async function loadMonthlyPortalTasks({db,ownerId,day:reportDay=null}) {
   return values.filter(row=>ids.has(row.id)&&row.deleted_at==null&&row.owner_id===ownerId&&row.inputs?.personal_monthly?.ownerId===ownerId);
 }
 
+export async function loadBriefingPortalTasks({db,ownerId,day:reportDay,entries={}}) {
+  const linked = new Set(Object.values(entries).flatMap(entry=>(entry.portalLinks??[]).map(link=>link.taskId)));
+  if (!linked.size) return loadMonthlyPortalTasks({db,ownerId,day:reportDay});
+  if (ownerId!==TARGET.owner_id || !day(reportDay)) throw Error('WORK_SOURCE');
+  const values=await db('rpc/private_mail_portal_snapshots',{method:'POST',body:{p_box:TARGET.mailbox_id,p_user:ownerId,p_day:reportDay}});
+  if (!Array.isArray(values)) throw Error('WORK_SOURCE');
+  return values.filter(row=>row.owner_id===ownerId && row.deleted_at==null && row.inputs?.personal_work &&
+    (linked.has(row.id) || row.inputs.personal_monthly?.ownerId===ownerId));
+}
+
 export function monthlyMailRelated(tasks,{ownerId,overrides={}}) {
  if(ownerId!==TARGET.owner_id)throw Error('MONTHLY_OWNER');
  return dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},{},{portalTasks:tasks,portalOwnerId:ownerId,workOverrides:overrides})

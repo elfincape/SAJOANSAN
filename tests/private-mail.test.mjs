@@ -813,6 +813,58 @@ const analysisInput = {
 };
 const normalized = briefing.normalizeMailAnalysis(analysisInput, mailSource);
 {
+  const {test} = await import('node:test');
+  test('scoped intake projects one Yangsan dispatch and holds a different center for review', async () => {
+    const {handleManualMessage} = await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+    const {APPROVED_MAIL_TARGET: target} = await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+    const box = {id:target.mailbox_id,owner_id:target.owner_id,enabled:true,manual_entries:{}};
+    const day = '2026-11-06';
+    const workScope = {kind:'center',centerCode:'yangsan',workCategory:'업무'};
+    const calls = [];
+    const ctx = {json:Response.json,fail:code=>Error(code),aiKey:'fixture',fetcher:()=>assert.fail('the deterministic cases need no analysis API'),
+      db:async(path,{body}={})=>{
+        if(path.startsWith('private_mailboxes?'))return [box];
+        if(path.startsWith('centers?'))return [{code:'yangsan',name:'양산센터'},{code:'002',name:'사조평택센터'}];
+        if(path==='rpc/private_mail_manual_call_progress')return true;
+        if(path==='rpc/private_mail_manual_scoped_submit'){
+          const entry={entryId:body.p_request,text:body.p_text,workScope:body.p_scope,status:'processing',submittedAt:day+'T03:00:00Z',referenceDate:day,items:[]};
+          box.manual_entries[entry.entryId]=entry;
+          return {entry,claimed:true};
+        }
+        if(path==='rpc/private_mail_manual_scoped_finish'){
+          calls.push(body.p_documents);
+          const entry={...box.manual_entries[body.p_entry],status:'ready',items:body.p_items};
+          box.manual_entries[entry.entryId]=entry;
+          return entry;
+        }
+        throw Error(path);
+      }};
+    const submit=async(text,scope=workScope)=>(await handleManualMessage('private-mail-manual-add',{clientRequestId:crypto.randomUUID(),workScope:scope,text},{id:target.owner_id},ctx)).json();
+    const created=await submit('별도 신규 요청입니다.\n11월 6일 합성센터 12P 5톤 배차 요청드립니다.\n상차: 11월 6일(금) 13:30\n하차지: 가상시 시험로 123');
+    assert.equal(created.status,'ready');
+    assert.equal(calls[0].length,1);
+    assert.equal(calls[0][0].document.status,'pending');
+    assert.equal(calls[0][0].document.center_code,'yangsan');
+    assert.equal(calls[0][0].yangsanDispatch.loadingTime,'13:30');
+    assert.match(calls[0][0].dispatchKey,/^[a-f0-9]{64}$/);
+    const finished=await submit('11월 6일 합성센터 12P 차량 배정을 완료했습니다.');
+    assert.equal(finished.items[0].workRef,created.items[0].ref);
+    assert.equal(calls[1][0].document.status,'completed');
+    const conflict=await submit('업무센터: 평택\n11월 6일 합성센터 12P 차량 배정을 완료했습니다.');
+    assert.equal(conflict.items[0].needsConfirmation,true);
+    assert.deepEqual(calls[2],[]);
+  });
+}
+{
+  const { readYangsanDispatchFields } = await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+  assert.deepEqual(readYangsanDispatchFields('상차: 11월 6일(금) 오후 1:30\n하차 일시: 11월 7일(토) 오전 8:05\n하차지: 가상시 시험로 123\n담당자: 가상담당', '2026-11-05'), {
+    loadingDate:'2026-11-06', loadingTime:'13:30', unloadingDate:'2026-11-07', unloadingTime:'08:05',
+    unloadingAddress:'가상시 시험로 123', contact:'가상담당',
+  });
+  const uncertain = readYangsanDispatchFields('상차: 11월 6일(화) 9시\n하차지: 가상센터\n하차 시간: 15:00\n하차 시간: 16:00', '2026-11-05');
+  assert.ok(Object.values(uncertain).every(value=>value===null));
+}
+{
   const document = {id:'doc-1',name:'검토.txt',text:'자료 검토를 완료했습니다.'};
   const item = {text:'검토 여부 확인',evidence:document.text,completionEvidence:document.text};
   const attached = briefing.normalizeMailAnalysis({

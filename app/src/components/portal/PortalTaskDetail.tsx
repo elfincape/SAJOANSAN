@@ -1,3 +1,5 @@
+import { yangsanDriverGuidance } from '../../domain/yangsan-driver-guidance';
+import { useClipboard } from '../useClipboard';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { PortalTask, PortalInputs } from '../../domain/portal-types';
@@ -34,6 +36,9 @@ export function PortalTaskDetail({
   popup?: boolean;
 }) {
   const portal = usePortal();
+  const { copy, clipboard } = useClipboard();
+  const [copyingGuidance, setCopyingGuidance] = useState(false);
+  const driverGuidance = yangsanDriverGuidance(task);
   const [workflowBusy, setWorkflowBusy] = useState(false),
     busy = portal.state.busy || workflowBusy;
   const {
@@ -514,6 +519,19 @@ export function PortalTaskDetail({
           완료 확정 ·<MentionText> </MentionText>
           <MentionText>{portalStamp(task.completed_at)}</MentionText>
         </p>
+      ) : null}
+      {driverGuidance ? (
+        <section className="task-detail-summary" aria-label="기사 안내문">
+          <h3>기사 안내문</h3>
+          <textarea aria-label="기사 안내문 내용" readOnly value={driverGuidance} rows={15} />
+          <button type="button" disabled={copyingGuidance} onClick={async () => {
+            setCopyingGuidance(true);
+            try { await copy(driverGuidance); message('기사 안내문을 복사했습니다.'); }
+            catch (error) { message(error instanceof Error ? error.message : '안내문을 복사하지 못했습니다.', true); }
+            finally { setCopyingGuidance(false); }
+          }}>안내문 복사</button>
+          {clipboard}
+        </section>
       ) : null}
       {coupang ? (
         <PortalCoupang

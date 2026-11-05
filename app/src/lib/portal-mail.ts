@@ -147,6 +147,7 @@ export interface DailyWork {
   schema: 'sajo-daily-work-v1';
   reportKind?: 'routine' | 'review' | null;
   workId: string;
+  workScope?: MailWorkScope | null;
   portalTaskId: string | null;
   controlRef: string | null;
   category: 'task' | 'issue' | 'reference';
@@ -226,7 +227,11 @@ export interface MailRulePreview {
   more: boolean;
   unresolved: { id: string; subject?: string; code: string; reason?: string }[];
 }
+export type MailWorkScope =
+  | { kind: 'center'; centerCode: string; workCategory: '업무' }
+  | { kind: 'delivery_team'; centerCode: null; workCategory: null };
 export interface MailManualItem {
+  workScope?: MailWorkScope | null;
   workRef?: string | null;
   details?: string[];
   entryId?: string;
@@ -262,6 +267,7 @@ export interface MailManualUpload {
   data: string;
 }
 export interface MailManualEntry {
+  workScope?: MailWorkScope | null;
   retryScheduled?: boolean;
   retryAt?: string | null;
   updatedAt?: string | null;
@@ -331,6 +337,7 @@ export const privateMail = {
       clientRequestId: string;
       requestedReference: string | null;
       targetWorkId?: string | null;
+      workScope?: MailWorkScope | null;
       submittedAt: string;
       referenceDate: string | null;
       authoredDate: string | null;
@@ -341,6 +348,7 @@ export const privateMail = {
       { entryId, imageId },
     ),
   manualEnqueue: (body: {
+    workScope?: MailWorkScope;
     images?: MailManualUpload[];
     privacyConfirmed?: boolean;
     targetWorkId?: string | null;
@@ -348,8 +356,9 @@ export const privateMail = {
     clientRequestId: string;
     referenceDate?: string | null;
     retry?: boolean;
-  }) => oneDriveCall<MailManualEntry>('private-mail-manual-enqueue', body),
+  }) => oneDriveCall<MailManualEntry>(body.workScope ? 'private-mail-manual-scoped-enqueue' : 'private-mail-manual-enqueue', body),
   manualAdd: (body: {
+    workScope?: MailWorkScope;
     images?: MailManualUpload[];
     privacyConfirmed?: boolean;
     text: string;

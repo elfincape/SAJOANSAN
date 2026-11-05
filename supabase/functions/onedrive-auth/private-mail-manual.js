@@ -7,10 +7,59 @@ import {
   WORK_FORMAT,
   validWorkRef,
   dailyWorkItems,
+  normalizeWorkScope,
+  portalWorkInput,
   ownerWorkCorrection,
 } from './private-mail-work.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function matchingManualScope(first, second) {
+  return (first?.kind ?? null) === (second?.kind ?? null) &&
+    (first?.centerCode ?? null) === (second?.centerCode ?? null);
+}
+function explicitManualScopeConflict(text, scope, centers) {
+  const claims = [...text.matchAll(/^\s*(?:담당\s*센터|업무\s*(?:센터|범위|구분)|센터)\s*[:：]\s*([^\r\n]+)$/gm)];
+  const key = value => value.replace(/\s/g, '').replace(/^(?:사조오양|사조)/, '').replace(/(?:물류)?(?:센터|공장)$/, '');
+  const contradictoryHeader = claims.some(([, value]) => {
+    if (key(value) === '배송팀') return scope.kind !== 'delivery_team';
+    const center = centers.find(center => key(center.name) === key(value) || center.code === value.trim());
+    return center && center.code !== scope.centerCode;
+  });
+  if (contradictoryHeader || scope.centerCode !== 'yangsan') return contradictoryHeader;
+  return [...explicitLoadingPlaces(text)].some(place => /(?:대로|로|길)\d/.test(place) && !/산막공단로133(?:\D|$)/.test(place));
+}
+export function readYangsanDispatchFields(text, referenceDate) {
+  const label = pattern => [...text.matchAll(new RegExp('^[ \\t]*(?:[★*-][ \\t]*)?(?:' + pattern + ')[ \\t]*[:：][ \\t]*([^\\r\\n]{1,250})$', 'gm'))].map(([, value]) => value.trim());
+  const unique = values => {
+    const found = [...new Set(values.filter(Boolean))];
+    return found.length === 1 ? found[0] : null;
+  };
+  const time = value => {
+    const match = /(?:(오전|오후)\s*)?(\d{1,2})(?::([0-5]\d)(?!\d)|\s*시(?:\s*([0-5]?\d)\s*분)?)/.exec(value);
+    if (!match) return null;
+    const hour = Number(match[2]);
+    if (hour > 23 || (match[1] && (hour < 1 || hour > 12))) return null;
+    if (!match[1] && match[3] == null && hour >= 1 && hour <= 12) return null;
+    const normalizedHour = match[1] ? hour % 12 + (match[1] === '오후' ? 12 : 0) : hour;
+    return String(normalizedHour).padStart(2,'0') + ':' + String(match[3] ?? match[4] ?? '0').padStart(2,'0');
+  };
+  const schedule = role => {
+    const values = label(role + '(?:\u0020*(?:일시|일자|일|시간|예정))?');
+    return [unique(values.map(value=>dateFrom(value,referenceDate))),unique(values.map(time))];
+  };
+  const [loadingDate,loadingTime] = schedule('상차');
+  const [unloadingDate,unloadingTime] = schedule('하차');
+  const unloadingAddress = unique(label('하차지(?:\u0020*주소)?|도착지(?:\u0020*주소)?').filter(value=>/(?:대로|로|길)\s*\d|(?:동|리|가)\s*\d/.test(value)));
+  const contact = unique(label('담당자(?:\u0020*정보)?|하차\u0020*담당자').filter(value=>value.length<=100));
+  return {loadingDate,loadingTime,unloadingDate,unloadingTime,unloadingAddress,contact};
+}
+async function workRequestId(entryId, workId) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(entryId+'\u0000'+workId)));
+  digest[6] = (digest[6] & 15) | 80;
+  digest[8] = (digest[8] & 63) | 128;
+  const hex = Array.from(digest.subarray(0,16),value=>value.toString(16).padStart(2,'0')).join('');
+  return hex.replace(/^(........)(....)(....)(....)/,'$1-$2-$3-$4-');
+}
 const schemaObject = (properties) => ({
   type: 'object',
   properties,
@@ -864,6 +913,7 @@ function publicItem(
     origin: item.origin ?? 'manual',
     evidence: item.evidence,
     workRef: item.workRef ?? null,
+    workScope: item.workScope ?? null,
     portalTaskId: item.portalTaskId ?? null,
     center: item.center ?? null,
     customer: item.customer ?? null,
@@ -932,6 +982,7 @@ function manualReportProgress(entry, pages = {}) {
 function publicEntry(entry, items) {
   return {
     entryId: entry.entryId,
+    workScope: entry.workScope ?? null,
     status: entry.status,
     retryScheduled: manualRetryScheduled(entry),
     retryAt: manualRetryScheduled(entry) ? entry.nextAt : null,
@@ -1025,6 +1076,8 @@ export function manualDailyView(entries, day, workOverrides = {}) {
           state.done && completionDay <= day ? state.at : null,
           events.length > 0,
         );
+        const portalLink = entry.portalLinks?.find(link=>link.sourceRef===publicValue.ref);
+        if (portalLink) publicValue.portalTaskId = portalLink.taskId;
         if (item.kind === 'dispatch' && !publicValue.details.length)
           publicValue.details = dispatchDetails(entry.text, entry.items, item);
         publicValue.inferredStateAt =
@@ -1053,6 +1106,7 @@ export function manualDailyView(entries, day, workOverrides = {}) {
           entryId: entry.entryId,
           submittedAt: entry.submittedAt,
           items: [publicValue],
+          workScope: entry.workScope ?? null,
         });
         if (
           (completionDay && completionDay < day) ||
@@ -1357,7 +1411,7 @@ export async function buildManualWorkCandidates({current,monthlyTasks=[],db,owne
  if(ownerId!==TARGET.owner_id||current?.owner_id!==ownerId||current?.id!==TARGET.mailbox_id||!validDay(day))throw Error('MANUAL_SOURCE');
  const {dailyBriefingView,applyMailIntentOverride,projectMailDates}=await import('./private-mail-briefing-model.js');
  const overrides=current.briefing_overrides??{},cutoff=new Date(Date.parse(day+'T00:00:00Z')-30*86400000).toISOString().slice(0,10);
- let rows=await db('private_mail_messages?select=id,owner_id,analysis,sent_at,received_at,created_at,report_day,analysis_status,analysis_excluded,analysis_filter_override&mailbox_id=eq.'+encodeURIComponent(current.id)+'&owner_id=eq.'+encodeURIComponent(ownerId)+'&analysis=not.is.null&report_day=lte.'+encodeURIComponent(day)+'&order=report_day.desc,created_at.desc,id.desc&limit=200');
+ let rows=entry?.workScope ? [] : await db('private_mail_messages?select=id,owner_id,analysis,sent_at,received_at,created_at,report_day,analysis_status,analysis_excluded,analysis_filter_override&mailbox_id=eq.'+encodeURIComponent(current.id)+'&owner_id=eq.'+encodeURIComponent(ownerId)+'&analysis=not.is.null&report_day=lte.'+encodeURIComponent(day)+'&order=report_day.desc,created_at.desc,id.desc&limit=200');
  if(!Array.isArray(rows))throw Error('MANUAL_SOURCE');
  // One bounded historical lookup, with fixed field names and quoted literal values.
  const subjectHint=/(?:^|\n)\s*(?:메일\s*)?제목\s*[:：]\s*([^\n]{4,100})/.exec(entry?.text??'')?.[1]?.trim();
@@ -1580,7 +1634,6 @@ export function combinedLunaInference(responses) {
 }
 export async function handleManualMessage(action, body, user, ctx) {
   const { db, json, fail } = ctx;
-  const verifiedUpdates=ctx.isolatedVerification===true||ctx.verifiedUpdatesEnabled===true;
   if (user?.id !== TARGET.owner_id) throw fail('OWNER_REQUIRED', 403);
   const current = (
     await db(
@@ -1645,6 +1698,7 @@ export async function handleManualMessage(action, body, user, ctx) {
       entryId: entry.entryId,
       text: entry.text,
       targetWorkId: entry.targetWorkId ?? null,
+      workScope: entry.workScope ?? null,
       clientRequestId: entry.clientRequestId,
       requestedReference: entry.requestedReference ?? null,
       submittedAt: entry.submittedAt,
@@ -1688,7 +1742,7 @@ export async function handleManualMessage(action, body, user, ctx) {
     return json({ ...result, reportQueued });
   }
   if (
-    !['private-mail-manual-add', 'private-mail-manual-enqueue'].includes(action)
+    !['private-mail-manual-add', 'private-mail-manual-enqueue', 'private-mail-manual-scoped-enqueue'].includes(action)
   )
     throw fail('MANUAL_ACTION_INVALID');
   if (
@@ -1700,7 +1754,19 @@ export async function handleManualMessage(action, body, user, ctx) {
     (body.referenceDate != null && !validDay(body.referenceDate))
   )
     throw fail('MANUAL_INPUT_INVALID');
+  if (action==='private-mail-manual-scoped-enqueue' && !body.workScope) throw fail('WORK_SCOPE',409);
   const existingRequest=Object.values(current.manual_entries).find(prior=>prior.clientRequestId===body.clientRequestId||(prior.requestIds??[]).includes(body.clientRequestId));
+  let workScope;
+  try {
+    const target = body.targetWorkId ?? existingRequest?.targetWorkId;
+    const priorScope = target?.includes(':manual:') ? current.manual_entries[target.slice(0,36)]?.workScope : null;
+    const selected = body.workScope ?? existingRequest?.workScope ?? priorScope;
+    workScope = selected == null ? null : normalizeWorkScope(selected);
+    if (workScope?.kind === 'center' && workScope.workCategory !== '업무') throw Error('WORK_SCOPE');
+    if (existingRequest && !matchingManualScope(workScope, existingRequest.workScope)) throw Error('WORK_SCOPE_CONFLICT');
+  } catch (error) {
+    throw fail(error.message === 'WORK_SCOPE_CONFLICT' ? 'WORK_SCOPE_CONFLICT' : 'WORK_SCOPE', 409);
+  }
   const text = body.text.trim();
   const uploaded = body.images === undefined ? null : await validateManualPhotos(body.images, text, body.privacyConfirmed, {derive:false});
   let photos = uploaded ?? existingRequest?.images ?? [];
@@ -1711,7 +1777,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   const requestedTarget=body.targetWorkId ?? existingRequest?.targetWorkId ?? null;
   const hash = Array.from(
     new Uint8Array(
-      await crypto.subtle.digest('SHA-256', new TextEncoder().encode((requestedTarget ? text+'\u0000target:'+requestedTarget : text)+(photos.length?'\u0000images:'+JSON.stringify(photos.map(image=>image.original?.contentHash??image.contentHash)):''))),
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode((requestedTarget ? text+'\u0000target:'+requestedTarget : text)+(photos.length?'\u0000images:'+JSON.stringify(photos.map(image=>image.original?.contentHash??image.contentHash)):'')+(workScope?'\u0000scope:'+JSON.stringify(workScope):''))),
     ),
     (v) => v.toString(16).padStart(2, '0'),
   ).join('');
@@ -1719,12 +1785,16 @@ export async function handleManualMessage(action, body, user, ctx) {
   if(existingRequest && (photos.length || existingRequest.images?.length) && existingRequest.textHash !== hash) throw fail('MANUAL_REQUEST_CONFLICT',409);
   if(uploaded?.length)photos = existingRequest?.images ?? await ctx.saveManualImages(uploaded);
   const lease = crypto.randomUUID();
+  const scopedSubmit = enqueue => rpc('private_mail_manual_scoped_submit', {
+    p_request:body.clientRequestId,p_text:text,p_hash:hash,p_reference:body.referenceDate??null,
+    p_lease:lease,p_retry:body.retry===true,p_images:photos,p_consent:photos.length>0,p_target:requestedTarget,p_enqueue:enqueue,p_scope:workScope,
+  });
   const photoSubmit = enqueue => rpc('private_mail_manual_photo_submit', {
     p_request:body.clientRequestId,p_text:text,p_hash:hash,p_reference:body.referenceDate??null,
     p_lease:lease,p_retry:body.retry===true,p_images:photos,p_consent:true,p_target:requestedTarget,p_enqueue:enqueue,
   });
-  if (action === 'private-mail-manual-enqueue' && (!structured || photos.length)) {
-    const result = photos.length ? await photoSubmit(true) : await rpc(body.targetWorkId ? 'private_mail_manual_target_enqueue' : 'private_mail_manual_enqueue', {
+  if (action !== 'private-mail-manual-add' && (!structured || photos.length)) {
+    const result = workScope ? await scopedSubmit(true) : photos.length ? await photoSubmit(true) : await rpc(body.targetWorkId ? 'private_mail_manual_target_enqueue' : 'private_mail_manual_enqueue', {
       ...(body.targetWorkId ? {p_target:body.targetWorkId} : {}),
       p_request: body.clientRequestId,
       p_text: text,
@@ -1740,7 +1810,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         ),
       )});
   }
-  const claim = photos.length ? await photoSubmit(false) : await rpc('private_mail_manual_claim', {
+  const claim = workScope ? await scopedSubmit(false) : photos.length ? await photoSubmit(false) : await rpc('private_mail_manual_claim', {
     p_request: body.clientRequestId,
     p_text: text,
     p_hash: hash,
@@ -1750,6 +1820,7 @@ export async function handleManualMessage(action, body, user, ctx) {
   });
   if (!claim?.entry) throw fail('MANUAL_CLAIM_FAILED', 409);
   let entry = claim.entry;
+  const verifiedUpdates=!!entry.workScope||ctx.isolatedVerification===true||ctx.verifiedUpdatesEnabled===true;
   if (!claim.claimed)
     return json({
       reusedReady:entry.status==='ready',
@@ -1771,7 +1842,14 @@ export async function handleManualMessage(action, body, user, ctx) {
     finished,photoResult=null,existingLinked=null,candidateWork=[];
   const socialOnly = !structured && !entry.images?.length && pureSocialMessage(entry.text);
   try {
-    if ((!structured && !socialOnly) || photos.length) {
+    const centers = entry.workScope ? await db('centers?select=code,name&active=eq.true') : [];
+    const scopedEntries = Object.fromEntries(Object.entries(current.manual_entries)
+      .filter(([, prior]) => matchingManualScope(entry.workScope, prior.workScope)));
+    const scopedCurrent = {...current,manual_entries:scopedEntries};
+    const targetScopeConflict = entry.workScope && entry.targetWorkId && !scopedEntries[entry.targetWorkId.slice(0,36)];
+    const scopeConflict = entry.workScope && (targetScopeConflict || explicitManualScopeConflict(entry.text,entry.workScope,centers));
+    const scopeReview = scopeConflict && entry.text ? {items:[{kind:'issue',text:'업무 범위와 메시지 내용 확인',evidence:entry.text.slice(0,2000),needsConfirmation:true}],authoredDate:null,resolution:'work_scope_review_v1'} : null;
+    if (((!structured && !socialOnly) || photos.length) && !scopeReview) {
       ai = ctx.resolveAiConfiguration ? await ctx.resolveAiConfiguration() : ctx;
       if (!ai.aiKey) throw Error('AI_NOT_CONFIGURED');
     }
@@ -1795,41 +1873,41 @@ export async function handleManualMessage(action, body, user, ctx) {
       if(!ready)throw Error('MANUAL_SOURCE');
       entry=ready;
     }
-    const monthlyTasks=!structured&&!socialOnly&&typeof ctx.loadMonthlyTasks==='function'?await ctx.loadMonthlyTasks():[];
+    const monthlyTasks=!entry.workScope&&!structured&&!socialOnly&&typeof ctx.loadMonthlyTasks==='function'?await ctx.loadMonthlyTasks():[];
     const monthlyWork=monthlyTasks.length?dailyWorkItems({groups:[],tasks:[],issues:[],waiting:[]},{},{portalTasks:monthlyTasks,portalOwnerId:user.id,workOverrides:current.briefing_overrides??{}}):[];
-    if((verifiedUpdates && !entry.targetWorkId && !structured && !socialOnly) || entry.images?.length)candidateWork=await buildManualWorkCandidates({current,monthlyTasks,db,ownerId:user.id,day:kstDay(entry.submittedAt),entry});
-    let reply = structured
+    if(!scopeReview&&((verifiedUpdates && !entry.targetWorkId && !structured && !socialOnly) || entry.images?.length))candidateWork=await buildManualWorkCandidates({current:scopedCurrent,monthlyTasks,db,ownerId:user.id,day:kstDay(entry.submittedAt),entry});
+    let reply = scopeReview ?? (structured
       ? null
       : resolveExistingManualWork(
           entry.text,
-          current.manual_entries,
+          scopedEntries,
           entry.referenceDate,
           entry.submittedAt,
           current.briefing_overrides ?? {},
         ) ?? resolveDispatchAssignment(
           entry.text,
-          current.manual_entries,
+          scopedEntries,
           entry.referenceDate,
           entry.submittedAt,
           current.briefing_overrides ?? {},
-        );
+        ));
     // A rule that could not identify a target must not suppress the general matcher.
     const dispatchFallback=verifiedUpdates && !entry.targetWorkId && reply?.resolution==='dispatch_assignment_review_v1' ? reply : null;
     if(dispatchFallback)reply=null;
     let jevConfig=null,jevIntent={status:'unavailable',code:'NOT_CONFIGURED',authoritative:false};
     try {
-      if(typeof ctx.resolveJevConfiguration==='function' && (!structured || photos.length))jevConfig=trackedJev(await ctx.resolveJevConfiguration(entry.entryId));
-      jevIntent=await classifyManualIntents({entry,candidates:candidateWork,config:jevConfig});
+      if(!scopeReview && typeof ctx.resolveJevConfiguration==='function' && (!structured || photos.length))jevConfig=trackedJev(await ctx.resolveJevConfiguration(entry.entryId));
+      if(!scopeReview)jevIntent=await classifyManualIntents({entry,candidates:candidateWork,config:jevConfig});
       if(jevIntent.status==='skipped' && !entry.images?.length)progress.observe({kind:'jev',status:'skipped'});
     } catch { /* Advisory failure cannot prevent source analysis. */ }
     entry={...entry,jevIntent};
     if(socialOnly)reply={items:[],authoredDate:null,inputKind:'non_work',resolution:'non_work_v1'};
     let targetResponse=null;
-    if(entry.targetWorkId){
+    if(entry.targetWorkId&&!scopeConflict){
       if(current.briefing_overrides?.['work:'+entry.targetWorkId]?.excluded===true)throw Error('MANUAL_SOURCE');
-      const work=dailyWorkItems({day:kstDay(entry.submittedAt),groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(current.manual_entries,kstDay(entry.submittedAt),current.briefing_overrides??{}),{workOverrides:current.briefing_overrides??{},portalTasks:monthlyTasks,portalOwnerId:user.id});
+      const work=dailyWorkItems({day:kstDay(entry.submittedAt),groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(scopedEntries,kstDay(entry.submittedAt),current.briefing_overrides??{}),{workOverrides:current.briefing_overrides??{},portalTasks:monthlyTasks,portalOwnerId:user.id});
       let target=work.find(item=>item.workId===entry.targetWorkId)??monthlyWork.find(item=>item.workId===entry.targetWorkId);
-      if(!target&&entry.targetWorkId.includes(':manual:')){const prior=current.manual_entries[entry.targetWorkId.slice(0,36)];const item=prior?.status==='ready'&&prior.items?.find(item=>item.ref===entry.targetWorkId);if(item)target={workId:entry.targetWorkId,title:item.text,serviceDate:item.serviceDate??null};}
+      if(!target&&entry.targetWorkId.includes(':manual:')){const prior=scopedEntries[entry.targetWorkId.slice(0,36)];const item=prior?.status==='ready'&&prior.items?.find(item=>item.ref===entry.targetWorkId);if(item)target={workId:entry.targetWorkId,title:item.text,serviceDate:item.serviceDate??null};}
       if(!entry.targetWorkId.includes(':manual:')&&!target?.monthly&&!target?.portalTaskId){
         const [first,kind,index]=entry.targetWorkId.split(':');const id=first==='source'?kind:first;const row=(await db('private_mail_messages?select=analysis,analysis_excluded,analysis_filter_override&mailbox_id=eq.'+TARGET.mailbox_id+'&id=eq.'+encodeURIComponent(id)))[0];const values=kind?.startsWith('image')?row?.analysis?.imageItems?.[kind.slice(5).toLowerCase()]:row?.analysis?.[kind];const item=(row?.analysis_excluded&&row.analysis_filter_override!=='include')?null:first==='source'?{text:row?.analysis?.summary?.[0]?.text??row?.analysis?.source?.subject}:values?.find((item,offset)=>(item.itemIndex??offset)===Number(index));
         if(typeof item?.text==='string'&&item.text){const originalRequest={
@@ -1848,13 +1926,13 @@ export async function handleManualMessage(action, body, user, ctx) {
       if(entry.text&&!socialOnly){
       const result=await analyzeTargetedManual({isolatedVerification:verifiedUpdates,entry,target:{workId:target.workId,title:target.title,serviceDate:target.serviceDate,status:target.status,summary:target.summary??[],progress:target.progress??null,nextAction:target.nextAction??null,sourceEvidence:target.sourceEvidence??null,requestedAt:target.requestedAt??null,originalRequest:target.originalRequest??null,monthly:target.monthly??null,verifiedCompletionAt:target.verifiedCompletionAt??null,ownerStateAt:target.ownerStateAt??null,kind:current.manual_entries[entry.targetWorkId.slice(0,36)]?.items?.find(item=>item.ref===entry.targetWorkId)?.kind??(target.category==='reference'?'reference':target.category==='issue'?'issue':'task')},ai,fetcher:analysisFetcher});reply=result.reply;targetResponse=result.response;
       if(reply.items[0]?.workRef===entry.targetWorkId){
-        const scoped=Object.fromEntries(Object.entries(current.manual_entries).map(([id,prior])=>[id,{...prior,items:(prior.items??[]).filter(item=>item.ref===entry.targetWorkId||item.workRef===entry.targetWorkId)}]).filter(([,prior])=>prior.items.length));
+        const scoped=Object.fromEntries(Object.entries(scopedEntries).map(([id,prior])=>[id,{...prior,items:(prior.items??[]).filter(item=>item.ref===entry.targetWorkId||item.workRef===entry.targetWorkId)}]).filter(([,prior])=>prior.items.length));
         const canonical=resolveExistingManualWork(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{})??resolveDispatchAssignment(entry.text,scoped,entry.referenceDate,entry.submittedAt,current.briefing_overrides??{});
         if(canonical?.items.length&&canonical.items.every(item=>item.workRef===entry.targetWorkId&&!item.needsConfirmation))reply=canonical;
       }
     }
     }
-    const resolved = structured ?? reply ?? (!entry.text ? {items:[],authoredDate:null} : null);
+    const resolved = scopeReview ?? structured ?? reply ?? (!entry.text ? {items:[],authoredDate:null} : null);
     const response = targetResponse ?? (resolved
       ? null
       : await analyzeManualExtraction({
@@ -1891,7 +1969,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         replyDetails: reply?.details ?? [],
         replyDetailsByItem: reply?.items.map(item => item.details ?? reply.details ?? []) ?? [],
       });
-    if (entry.images?.length) {
+    if (entry.images?.length&&!scopeReview) {
       const loaded = [];
       for(const image of entry.images)loaded.push(await ctx.loadManualImage(entry.entryId,image.id));
       const candidates=candidateWork.filter(item=>!item.excluded&&(!entry.targetWorkId||item.workId===entry.targetWorkId)).slice(0,40).map(item=>{
@@ -1909,6 +1987,32 @@ export async function handleManualMessage(action, body, user, ctx) {
     }
     if (reply?.resolution)
       for (const item of items) if(item.evidenceSource!=='image')item.resolution = reply.resolution;
+    const scopedDispatches = items.filter(item=>item.kind==='dispatch'||item.kind==='task');
+    if (entry.workScope) {
+      const center = centers.find(center=>center.code===entry.workScope.centerCode)?.name;
+      for (const item of items) {
+        item.workScope = entry.workScope;
+        item.center = center ?? (entry.workScope.kind==='delivery_team' ? '배송팀' : null);
+        const unlinkedResult = entry.workScope.centerCode==='yangsan' && item.kind==='dispatch' && !item.workRef &&
+          /(?:완료|확정|배정|정정|변경|차량\s*(?:번호|정보)|하차\s*완료)/.test(item.evidence) &&
+          !/(?:배차|차량\s*(?:섭외|요청)).{0,26}(?:요청|부탁|주세요|바랍니다)/.test(item.evidence);
+        if (scopeConflict || unlinkedResult) {
+          item.needsConfirmation = true;
+          item.kind = 'issue';
+          item.workRef = null;
+          item.portalTaskId = null;
+          item.workflowStatus = 'pending';
+          item.text = scopeConflict ? '업무 범위와 메시지 내용 확인' : '기존 양산 배차 업무 연결 확인';
+        } else if (entry.workScope.centerCode==='yangsan' && item.kind==='dispatch' && item.workflowStatus==='complete' &&
+          item.resolution!=='dispatch_assignment_v1' &&
+          !/(?:배차|차량\s*(?:배정|섭외)).{0,12}(?:완료|확정|마쳤)/.test(item.evidence)) {
+          item.workflowStatus = 'pending';
+          item.ownerStateDeclared = false;
+          item.done = false;
+          item.completedAt = null;
+        }
+      }
+    }
     phase = 'MANUAL_SOURCE';
     for (const item of items)
       if (item.portalTaskId) {
@@ -1929,7 +2033,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         let allowed = monthlyTasks.some(task=>'source:'+task.id===ref);
         if(allowed)continue;
         if (ref.includes(':manual:')) {
-          const prior = current.manual_entries[ref.slice(0, 36)];
+          const prior = scopedEntries[ref.slice(0, 36)];
           allowed =
             prior?.status === 'ready' &&
             (prior.items ?? []).some(
@@ -1970,7 +2074,7 @@ export async function handleManualMessage(action, body, user, ctx) {
         }
         if (!allowed) throw Error('MANUAL_SOURCE');
       }
-    dailyWorkItems(
+    const projected = dailyWorkItems(
       { groups: [], tasks: [], issues: [], waiting: [], resolvedWaiting: [] },
       manualDailyView(
         {
@@ -1980,6 +2084,23 @@ export async function handleManualMessage(action, body, user, ctx) {
         kstDay(entry.submittedAt),
       ),
     );
+    const documents = [];
+    if (entry.workScope) for (const work of projected) {
+      const relevant = items.filter(item=>!item.needsConfirmation &&
+        (['task','dispatch'].includes(item.kind) || item.workRef===work.workId) && (item.workRef??item.ref)===work.workId);
+      if (!relevant.length || work.excluded || !['task','issue'].includes(work.category) || !matchingManualScope(entry.workScope,work.workScope)) continue;
+      const document = portalWorkInput({...work,portalTaskId:null},{ownerId:user.id,visibleFrom:kstDay(work.requestedAt??entry.submittedAt)});
+      document.inputs.personal_work.contentSourceAt = entry.submittedAt;
+      const requestId = await workRequestId(entry.entryId,work.workId);
+      const dispatch = entry.workScope.centerCode==='yangsan' && relevant.find(item=>item.kind==='dispatch' ||
+        item.workRef && scopedEntries[item.workRef.slice(0,36)]?.items.some(prior=>prior.ref===item.workRef && prior.kind==='dispatch'));
+      const source = dispatch && (scopedDispatches.length===1 && entry.text ? entry.text : dispatch.evidence);
+      const yangsanDispatch = dispatch ? readYangsanDispatchFields(source,entry.referenceDate) : null;
+      const tonnes = dispatch ? [...new Set([...source.matchAll(/(\d+(?:\.\d+)?)\s*톤/g)].map(match=>Number(match[1])))] : [];
+      const dispatchKey = !dispatch?.workRef && yangsanDispatch?.loadingDate && yangsanDispatch.loadingTime && yangsanDispatch.unloadingAddress && tonnes.length===1 ?
+        Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([yangsanDispatch.loadingDate,yangsanDispatch.loadingTime,yangsanDispatch.unloadingAddress.replace(/\s+/g,''),tonnes[0]])))),value=>value.toString(16).padStart(2,'0')).join('') : null;
+      documents.push({requestId,document,...(yangsanDispatch?{yangsanDispatch}:{}),...(dispatchKey?{dispatchKey}:{})});
+    }
     let authoredDate = null;
     if (value.authoredDate != null)
       authoredDate = dateFrom(
@@ -1992,12 +2113,13 @@ export async function handleManualMessage(action, body, user, ctx) {
       );
     phase = 'MANUAL_SOURCE';
     await progress.flush();
-    finished = await rpc(entry.images?.length?'private_mail_manual_photo_finish':'private_mail_manual_finish', {
+    finished = await rpc(entry.workScope?'private_mail_manual_scoped_finish':entry.images?.length?'private_mail_manual_photo_finish':'private_mail_manual_finish', {
       p_entry: entry.entryId,
       p_lease: lease,
       p_items: items,
       p_authored: authoredDate,
       p_inference: combinedLunaInference([response,...(inlineResults?.responses??[]),...(monthlyLinked?.responses??[]),...(photoResult?.responses??[]),...(existingLinked?.responses??[])]),
+      ...(entry.workScope?{p_documents:documents}:{}),
     });
     if (!finished) throw Error('MANUAL_SOURCE');
   } catch (error) {
