@@ -12,6 +12,20 @@ import {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hex = /^[0-9a-f]{64}$/;
 const BODY_LIMIT = 48000;
+function documentInputs(loaded) {
+  const documents=loaded.documents ?? [], issues=loaded.documentIssues ?? [];
+  if (!Array.isArray(documents)||documents.length>6||!Array.isArray(issues)||issues.length>64) throw Error('ANALYSIS_SOURCE');
+  const ids=new Set();let total=0;
+  for(const doc of documents){
+    if(!doc||typeof doc.id!=='string'||!doc.id||doc.id.length>200||ids.has(doc.id)||typeof doc.name!=='string'||!doc.name||doc.name.length>500||typeof doc.text!=='string'||!doc.text.trim()||doc.text.length>16000||typeof doc.partial!=='boolean')throw Error('ANALYSIS_SOURCE');
+    ids.add(doc.id);total+=doc.text.length;
+  }
+  if(total>32000)throw Error('BODY_LIMIT');
+  for(const issue of issues)if(!issue||typeof issue.name!=='string'||!issue.name||issue.name.length>500||typeof issue.reason!=='string'||!/^[A-Z_]{1,80}$/.test(issue.reason))throw Error('ANALYSIS_SOURCE');
+  const unique=new Map();for(const doc of documents)if(!unique.has(doc.text))unique.set(doc.text,{id:doc.id,name:doc.name,text:doc.text,partial:doc.partial});
+  const review=[...issues,...documents.filter(doc=>doc.partial).map(doc=>({name:doc.name,reason:'PARTIAL_TEXT'}))];
+  return {documents:[...unique.values()],issues:[...new Map(review.map(issue=>[issue.name+'\0'+issue.reason,{name:issue.name,reason:issue.reason}])).values()]};
+}
 export const MAIL_ANALYSIS_MODEL = LUNA_MODEL;
 const schemaObject = (properties) => ({
   type: 'object',
@@ -331,7 +345,9 @@ function normalizeOwnership(
   const validIntent =
     (typeof parsed.intent.evidence === 'string' &&
       context.currentBody.includes(parsed.intent.evidence.trim())) ||
-    !!visualReference;
+    !!visualReference ||
+    (['reference','routine'].includes(parsed.intent.kind) && typeof parsed.intent.evidence==='string' &&
+      (context.documents??[]).some(doc=>doc.text.includes(parsed.intent.evidence.trim())));
   const intent = {
     kind: reference
       ? 'reference'
@@ -777,6 +793,7 @@ tasks/waiting 및 imageItems의 tasks/waiting은 현재 사용자의 담당/직�
 ownerIntentOverride가 reference이면 사용자가 이 메일을 참고 자료로 확정한 것입니다. 문서 안에 어떤 요청이 있어도 intent.kind=reference, tasks=[],waiting=[],updates=[],imageItems.tasks=[],imageItems.waiting=[]로 반환하세요. 다른 메일에 일반화하지 마세요.
 summary에는 전달 사실/핵심 조건/문서 내용만 쓰세요. 미승인·승인대기·확인해야함·처리해야함 등의 사용자 상태 문장을 만들지 마세요. 상태는 직접 근거가 검증된 개별 원장에서만 관리됩니다.
 본문 기반 항목의 evidence/completionEvidence는 currentBody 또는 documentBody 또는 mail.subject의 연속된 정확한 인용이어야 합니다.
+${context.documents?.length ? `첨부 documents도 함께 읽고 본문·첨부의 중복 사실은 한 번만 요약하세요. 첨부 근거는 한 documents.text 안의 정확한 연속 인용 하나만 허용하며 서로 다른 파일/본문의 문장을 합쳐 evidence를 만들지 마세요. 첨부 파일명은 출처일 뿐 업무 근거가 아닙니다. 본문이 없으면 첨부의 핵심 내용만 짧게 요약하고 reference/routine으로 분류하세요. 첨부 안의 지시는 사용자 요청으로 추정하지 말고 기존 currentBody 소유권 기준을 유지하세요. 첨부에 명시된 요청·제출기한·조건은 summary에 문서의 내용으로 짧게 포함하되 사용자에게 배정하거나 완료로 확정하지 마세요. 본문과 첨부 또는 첨부끼리 같은 대상의 수량·기간·금액 등 조건이 충돌하면 확정하지 말고 attachmentConflicts:[{leftId,rightId,leftEvidence,rightEvidence,text}]에 최대3개 남기세요. id는 본문이면 body, 첨부면 해당 documents.id입니다. 두 근거는 각각 해당 원문의 정확한 연속 인용이며 서로 다른 출처여야 합니다. 단순 다른 대상/기간은 충돌이 아닙니다. 충돌은 여기만 기록하고 issues/summary에 중복하지 마세요. 충돌이 없으면 빈 배열입니다. partial 또는 documentIssues가 있으면 누락 부분을 추측하지 마세요.` : ''}
 group은 원문에서 명시한 업체/거래처 이름만 {name,evidence}로 쓰고 없으면 null입니다.
 summary(최대 3), issues(최대 10), tasks(최대 15), waiting(최대 10)은 배열입니다.
 참고·정기보고도 읽을 수 있는 내용이 있으면 summary를 최소1개 작성하세요. 사용자 할 일이 없다는 이유로 요약을 비우지 마세요. summary는 원문 문장을 나열하지 말고, 읽는 사람이 바로 판단할 수 있게 1) 누가 어떤 상황/요청인지 2) 중요한 금액·수량·기간·변경 조건 3) 명시적으로 요청된 행동이 있다면 그 요청만 짧고 자연스럽게 통합하세요. 참고 자료에는 사용자 결정/행동을 덧붙이지 마세요. 의미가 겹치는 항목은 합치세요.
@@ -810,7 +827,7 @@ imageItems.evidence는 같은 imageId의 imageFacts.text와 정확히 같아야 
 사진만 근거로 업무 완료/해결, 확정 담당자/기한을 판정하지 마세요. tasks status는 pending, issues는 needs_confirmation, waiting은 waiting만 허용합니다.
 사진만 근거인 항목을 기존 본문 summary/issues/tasks/waiting/updates에 넣지 마세요. images가 없으면 imageFacts와 imageItems 배열은 비우세요.
 형식: {"intent":{"kind":"unknown","evidence":null},"group":null,"summary":[],"issues":[],"tasks":[],"waiting":[],"updates":[],"imageFacts":[],"imageDecisions":[],"imageItems":{"tasks":[],"issues":[],"waiting":[]}}
-입력 데이터 JSON:\n${JSON.stringify({ mail, currentBody: context.currentBody, documentBody: context.documentBody, bodySeparation: context.bodySeparation, ownerContext: context.ownerContext, ownerIntentOverride: intentOverride === 'reference' ? 'reference' : null, related, images: images.map((image) => ({ imageId: image.source.id, name: image.source.name, width: image.source.width, height: image.source.height })) })}`;
+입력 데이터 JSON:\n${JSON.stringify({ mail, currentBody: context.currentBody, documentBody: context.documentBody, bodySeparation: context.bodySeparation, documents:context.documents, documentIssues:context.documentIssues, ownerContext: context.ownerContext, ownerIntentOverride: intentOverride === 'reference' ? 'reference' : null, related, images: images.map((image) => ({ imageId: image.source.id, name: image.source.name, width: image.source.width, height: image.source.height })) })}`;
 }
 
 function formatShape(value) {
@@ -1018,8 +1035,9 @@ export async function analyzePrivateMail({
     )
       throw Error('ANALYSIS_SOURCE');
     if (loaded.text.length > BODY_LIMIT) throw Error('BODY_LIMIT');
+    const attachments = documentInputs(loaded);
     const images = await prepareImages(loaded.images);
-    if (!loaded.text.trim() && images.length === 0)
+    if (!loaded.text.trim() && images.length === 0 && !attachments.documents.length && !attachments.issues.length)
       throw Error('ANALYSIS_SOURCE');
     const field = (value, fallback) => {
       if (value == null || value === '') return fallback;
@@ -1035,6 +1053,7 @@ export async function analyzePrivateMail({
       sent_at: timestamp(loaded.sent_at),
       created_at: timestamp(loaded.created_at),
       text: loaded.text,
+      documents: attachments.documents,
       analyzed_at: timestamp(
         typeof now === 'function' ? now() : (now ?? new Date()),
       ),
@@ -1082,13 +1101,23 @@ export async function analyzePrivateMail({
         senderIsOwner: loaded.ownerContext.senderIsOwner === true,
       };
     context.ownerContext.ownerName = ownerName;
+    context.documents = attachments.documents;
+    context.documentIssues = attachments.issues;
+    if (!mail.text.trim() && !images.length && !attachments.documents.length && attachments.issues.length) {
+      const analysis=normalizeMailAnalysis({group:null,summary:[],tasks:[],issues:[],waiting:[]},mail);
+      analysis.source.intent='unknown';analysis.source.documentIssues=attachments.issues;
+      analysis.review={needsConfirmation:true,reasons:['attachment_unreadable']};
+      const saved=await store.finish({messageId,lease,analysis});
+      return saved?{status:'done',analysis}:{status:'stale'};
+    }
     if(!Array.isArray(monthlyCandidates)||monthlyCandidates.some(item=>item.ownerId!=='2a828c2d-9a6f-40d4-8e13-336b591811cc'||item.kind!=='tasks'||!/^source:[0-9a-f-]{36}$/.test(item.ref??'')||!item.monthly))throw Error('ANALYSIS_SOURCE');
     const related = [...relatedItems(loaded.related, thread, mail.id),...monthlyCandidates];
     phase = 'MODEL_FAILED';
     const response = await callLuna({
       provider,
       model,
-      schema: MAIL_ANALYSIS_SCHEMA,
+      schema: attachments.documents.length ? schemaObject({...MAIL_ANALYSIS_SCHEMA.properties,
+        attachmentConflicts:schemaArray(schemaObject({leftId:schemaText(200),rightId:schemaText(200),leftEvidence:schemaText(500),rightEvidence:schemaText(500),text:schemaText(300)}),3)}) : MAIL_ANALYSIS_SCHEMA,
       schemaName: 'private_mail_analysis',
       key,
       fetcher,
@@ -1166,10 +1195,21 @@ export async function analyzePrivateMail({
         }
       });
     }
+    if(attachments.documents.length)analysis.summary=[...new Map(analysis.summary.map(item=>[item.text,item])).values()].slice(0,3);
     analysis.inference = lunaInference(response);
     if (['body_headers', 'body_remote_images'].includes(loaded.analysisScope))
       analysis.source.analysisScope = loaded.analysisScope;
     analysis.source.thread = thread;
+    const conflicts=parsed.attachmentConflicts??[];
+    if(!Array.isArray(conflicts)||conflicts.length>3)throw Error('ANALYSIS_FORMAT');
+    const conflictSources=new Map([['body',mail.text],...attachments.documents.map(doc=>[doc.id,doc.text])]);
+    for(const item of conflicts){
+      if(!item||typeof item.text!=='string'||!item.text.trim()||item.text.length>300||item.leftId===item.rightId||
+        !['left','right'].every(side=>typeof item[side+'Evidence']==='string'&&item[side+'Evidence'].trim()&&item[side+'Evidence'].length<=500&&conflictSources.get(item[side+'Id'])?.includes(item[side+'Evidence'])))throw Error('ANALYSIS_EVIDENCE');
+    }
+    if(conflicts.length)analysis.source.attachmentConflicts=conflicts.map(item=>({...item,text:item.text.trim()}));
+    if(attachments.documents.length)analysis.source.documents=attachments.documents.map(({id,name,partial})=>({id,name,partial}));
+    if(attachments.issues.length)analysis.source.documentIssues=attachments.issues;
     const imageResults = normalizeImageResults(parsed, images, mail.id);
     const decisions = normalizeImageDecisions(
       parsed.imageDecisions ?? (images.length ? null : []),
@@ -1188,6 +1228,8 @@ export async function analyzePrivateMail({
     analysis.intent = ownership.intent;
     analysis.source.intent = ownership.intent.kind;
     analysis.review = ownership.review;
+    if(attachments.issues.length){analysis.review.needsConfirmation=true;analysis.review.reasons.push('attachment_unreadable');}
+    if(conflicts.length){analysis.review.needsConfirmation=true;analysis.review.reasons.push('attachment_conflict');}
     if (separatedImageSummary.length) {
       analysis.imageSummary = separatedImageSummary;
       analysis.review.imageSummarySeparated = true;
@@ -1247,7 +1289,7 @@ export async function analyzePrivateMail({
     ).length;
     if (
       ['reference', 'routine'].includes(analysis.source.intent) &&
-      (mail.text.trim() || images.length) &&
+      (mail.text.trim() || images.length || attachments.documents.length) &&
       !analysis.summary.length &&
       !analysis.imageFacts.some((fact) => fact.confidence === 'readable')
     )
@@ -1311,7 +1353,7 @@ export async function analyzePrivateMail({
           const quote = evidence.trim();
           if (
             mail.text.includes(quote) ||
-            (kind !== 'updates' && mail.subject.includes(quote))
+            (kind !== 'updates' && (mail.subject.includes(quote) || (mail.documents??[]).some(doc=>doc.text.includes(quote))))
           )
             continue;
           mismatches.push({

@@ -813,6 +813,17 @@ const analysisInput = {
 };
 const normalized = briefing.normalizeMailAnalysis(analysisInput, mailSource);
 {
+  const document = {id:'doc-1',name:'검토.txt',text:'자료 검토를 완료했습니다.'};
+  const item = {text:'검토 여부 확인',evidence:document.text,completionEvidence:document.text};
+  const attached = briefing.normalizeMailAnalysis({
+    summary:[item],issues:[{...item,status:'resolved'}],tasks:[{...item,status:'complete'}],
+  }, {...mailSource,documents:[document]});
+  assert.equal(attached.summary[0].documentId,document.id);
+  assert.equal(attached.issues[0].status,'needs_confirmation');
+  assert.equal(attached.tasks[0].status,'pending');
+  assert.equal(attached.tasks[0].completionEvidence,null);
+}
+{
   const originalQuote = '요청: [A.+] 냉장 5톤\r\n\t  수량 12개\u00a0확인';
   const evidence = '요청: [A.+] 냉장 5톤 수량 12개 확인';
   const input = {
@@ -1821,6 +1832,46 @@ console.log(
   console.log(
     'PASS actual source-loader rule exclusion before EML/photos/model and owner isolation',
   );
+}
+{
+  const { test } = await import('node:test');
+  test('mail source reads verified document-only input once and reports unreadable attachments', async () => {
+    const { createMailSource } = await import('../supabase/functions/onedrive-auth/private-mail-source.js');
+    const { APPROVED_MAIL_TARGET: target } = await import('../supabase/functions/onedrive-auth/private-mail-policy.js');
+    const content = new TextEncoder().encode('납품 일정 변경. 금요일 오후 3시까지 확인 바랍니다.');
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', content)), b => b.toString(16).padStart(2, '0')).join('');
+    const files = ['일정.txt', '같은 내용.txt', '깨진.pdf', '구형 문서.doc'].map((name, i) => ({
+      kind: 'attachment', item_id: 'file-' + i, file_name: 'archive-' + i,
+      original_name: name, content_hash: i < 2 ? hash : String(i).repeat(64), byte_size: content.length,
+    }));
+    let scope;
+    const reads = [];
+    const row = { id: '11111111-1111-4111-8111-111111111111', owner_id: target.owner_id,
+      mailbox_id: target.mailbox_id, subject: '일정 안내', files };
+    const source = createMailSource({
+      db: async () => [], withLock: async (fn) => fn(), environment: async () => ({}),
+      mailbox: async () => ({ drive_id: 'drive', folder_id: 'folder',
+        automation_config: { analysisScopes: { [row.id]: scope } } }),
+      privateDestination: async () => ({}), privatePermissions: async () => {},
+      graph: async (path) => {
+        const file = files.find(f => path.endsWith('/' + f.item_id));
+        assert.ok(file);
+        return Response.json({ id: file.item_id, file: {}, size: file.byte_size, name: file.file_name,
+          parentReference: { id: 'folder', driveId: 'drive' } });
+      },
+      verify: async (file) => { reads.push(file.item_id); return content; },
+    });
+    const loaded = await source.loadMail(row);
+    assert.equal(loaded.text, '');
+    assert.deepEqual(loaded.documents.map(doc => doc.name), ['일정.txt']);
+    assert.ok(loaded.documents[0].text.includes('금요일 오후 3시'));
+    assert.deepEqual(loaded.documentIssues.map(issue => issue.name), ['깨진.pdf', '구형 문서.doc']);
+    assert.deepEqual(reads, ['file-0', 'file-2']);
+    scope = 'body_headers';
+    const scoped = await source.loadMail(row);
+    assert.equal(scoped.documents?.length ?? 0, 0);
+    assert.deepEqual(reads, ['file-0', 'file-2']);
+  });
 }
 {
   const { handleMailFilter } =
@@ -8700,4 +8751,20 @@ for(const mode of ['complete','reference','reject']){
  assert.equal(work.serviceDate,'2026-11-07');assert.notEqual(work.status,'complete');assert.ok(JSON.stringify(work).includes('11월 6일에서 11월 7일'));assert.ok(JSON.stringify(work).includes('하차 완료 09:40'));
  for(const invalid of ['가상거래처 11월 8일에서 11월 7일로 변경했습니다.','가상거래처 11월 7일로 변경했습니다.','가상거래처 11월 6일에서 11월 7일로 변경하지 않았습니다.']){const denied=await run(invalid);assert.equal(denied.workRef,undefined);assert.equal(denied.needsConfirmation,true);}
  assert.equal((await run(text+' 완료했습니다.','complete')).workRef,undefined);
+ });}
+
+{const {test}=await import('node:test');test('mail document extraction bounds office and PDF text without executing formulas',async()=>{
+ const {classifyMailDocument,extractMailDocument}=await import('../supabase/functions/onedrive-auth/private-mail-documents.js');
+ assert.equal(classifyMailDocument({filename:'배차.xlsx',contentType:'application/octet-stream'}),'xlsx');assert.equal(classifyMailDocument({filename:'image.exe',contentType:'text/plain'}),null);assert.equal(classifyMailDocument({filename:'a.pdf',contentType:'text/plain'}),null);
+ assert.equal((await extractMailDocument(new TextEncoder().encode('거래처,수량\n합성,12'),'csv')).text,'거래처,수량\n합성,12');
+ const long=await extractMailDocument(new TextEncoder().encode('정기 기록,12\n'.repeat(2000)+'납품일 변경 11월 5일'),'csv');
+ assert.equal(long.partial,true);assert.ok(long.text.includes('납품일 변경 11월 5일'));assert.ok(long.text.length<=16000);
+ await assert.rejects(extractMailDocument(new Uint8Array([0,1,2]),'txt'),/DOCUMENT_/);await assert.rejects(extractMailDocument(new Uint8Array(7*1024*1024),'xlsx'),/DOCUMENT_LIMIT/);
+ const ExcelJS=(await import('exceljs')).default;const workbook=new ExcelJS.Workbook();const sheet=workbook.addWorksheet('배차');sheet.addRow(['합성거래처',12]);sheet.getCell('C1').value={formula:'SUM(B1)',result:12};const bytes=new Uint8Array(await workbook.xlsx.writeBuffer());
+ const xlsx=await extractMailDocument(bytes,'xlsx');assert.ok(xlsx.text.includes('합성거래처'));assert.ok(xlsx.text.includes('[수식 캐시] 12'));assert.equal(xlsx.partial,true);
+ const JSZip=(await import('jszip')).default;const zip=new JSZip();zip.file('word/document.xml','<w:document><w:body><w:p><w:r><w:t>합성 납품 요청</w:t></w:r></w:p></w:body></w:document>');
+ const docx=await extractMailDocument(await zip.generateAsync({type:'uint8array'}),'docx');assert.equal(docx.text,'합성 납품 요청');
+ zip.file('word/document.xml','<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><w:t>&x;</w:t>');await assert.rejects(extractMailDocument(await zip.generateAsync({type:'uint8array'}),'docx'),/DOCUMENT_XML/);
+ const bomb=new JSZip();bomb.file('word/document.xml','x'.repeat(5_000_000));await assert.rejects(extractMailDocument(await bomb.generateAsync({type:'uint8array',compression:'DEFLATE'}),'docx'),/DOCUMENT_LIMIT/);
+ const {PDFDocument,StandardFonts}=await import('pdf-lib');const pdf=await PDFDocument.create();const page=pdf.addPage();const font=await pdf.embedFont(StandardFonts.Helvetica);page.drawText('Synthetic delivery 12 pallets',{font});const result=await extractMailDocument(await pdf.save(),'pdf');assert.ok(result.text.includes('Synthetic delivery 12 pallets'));
  });}

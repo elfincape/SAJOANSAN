@@ -194,7 +194,7 @@ export function normalizeMailAnalysis(value, mail) {
     sentAt = date(mail.sent_at).toISOString();
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw Error('ANALYSIS_FORMAT');
-  const quote = (value) => {
+  const quote = (value, allowAttachment = true) => {
     const evidence = text(value, 3000);
     if (body.includes(evidence) || subject.includes(evidence)) return evidence;
     const pattern = evidence
@@ -204,11 +204,14 @@ export function normalizeMailAnalysis(value, mail) {
     const original =
       body.match(new RegExp(pattern))?.[0] ??
       subject.match(new RegExp(pattern))?.[0];
-    if (!original || original.length > 3000) throw Error('ANALYSIS_EVIDENCE');
-    return original;
+    if (original && original.length <= 3000) return original;
+    if ((mail.documents??[]).some(doc=>typeof doc.text==='string' && doc.text.includes(evidence)))
+      return allowAttachment ? evidence : null;
+    throw Error('ANALYSIS_EVIDENCE');
   };
   const completion = (raw) => {
-    const evidence = quote(raw.completionEvidence);
+    const evidence = quote(raw.completionEvidence, false);
+    if (evidence === null) return null;
     if (!affirmativeCompletion(evidence)) throw Error('ANALYSIS_COMPLETION');
     return evidence;
   };
@@ -218,7 +221,8 @@ export function normalizeMailAnalysis(value, mail) {
       throw Error('ANALYSIS_FORMAT');
     return value[key].map((item) => {
       const evidence = quote(item?.evidence);
-      return { text: text(item.text), evidence };
+      const document=!body.includes(evidence)&&!subject.includes(evidence)?(mail.documents??[]).find(doc=>doc.text.includes(evidence)):null;
+      return { text: text(item.text), evidence, ...(document?{evidenceSource:'attachment',documentId:document.id,documentName:document.name}:{}) };
     });
   }
   const summary = items('summary', 20).map((item) => ({
@@ -232,12 +236,13 @@ export function normalizeMailAnalysis(value, mail) {
         throw Error('ANALYSIS_FORMAT');
       if (status === 'resolved' && !raw.completionEvidence)
         throw Error('ANALYSIS_COMPLETION');
+      const completionEvidence = status === 'resolved' ? completion(raw) : null;
       return {
         ...item,
-        status,
+        status: status === 'resolved' && !completionEvidence ? 'needs_confirmation' : status,
         impact: raw.impact ? text(raw.impact) : null,
         latest: raw.latest ? text(raw.latest) : null,
-        completionEvidence: status === 'resolved' ? completion(raw) : null,
+        completionEvidence,
       };
     }),
     tasks = items('tasks', 50).map((item, index) => {
@@ -324,10 +329,11 @@ export function normalizeMailAnalysis(value, mail) {
           due = dueOriginal;
       }
       const escapedName = assignee?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const completionEvidence = raw.status === 'complete' ? completion(raw) : null;
       return {
         ...item,
-        status: raw.status === 'complete' ? 'complete' : 'pending',
-        completionEvidence: raw.status === 'complete' ? completion(raw) : null,
+        status: completionEvidence ? 'complete' : 'pending',
+        completionEvidence,
         assignee,
         due,
         dueOriginal,

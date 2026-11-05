@@ -41,14 +41,14 @@ function relatedWork(key, { text, status = 'pending', date = '2026-11-03', quant
     readyStatus: 'ready', originalStatus: status };
 }
 function mime({ id, subject, text, html, date = 'Mon, 02 Nov 2026 09:00:00 +0900',
-  received = 'Mon, 02 Nov 2026 09:01:00 +0900', reply, images = [], to = OWNER, cc }) {
+  received = 'Mon, 02 Nov 2026 09:01:00 +0900', reply, images = [], attachments = [], to = OWNER, cc }) {
   const headers = [
     'From: 가상발신 <sender@example.test>', `To: ${to}`, ...(cc ? [`Cc: ${cc}`] : []),
     `Subject: ${subject}`, `Date: ${date}`, `Message-ID: <${id}@stress.example.test>`,
     ...(received ? [`Received: from relay.example.test by inbox.example.test; ${received}`] : []),
     ...(reply ? [`In-Reply-To: <${reply}>`, `References: <${reply}>`] : []), 'MIME-Version: 1.0',
   ];
-  if (!images.length && html == null) return [...headers, 'Content-Type: text/plain; charset=utf-8',
+  if (!images.length && !attachments.length && html == null) return [...headers, 'Content-Type: text/plain; charset=utf-8',
     'Content-Transfer-Encoding: 8bit', '', text ?? ''].join('\r\n');
   const boundary = 'synthetic-related-' + id;
   headers.push(`Content-Type: multipart/related; boundary="${boundary}"`);
@@ -62,6 +62,10 @@ function mime({ id, subject, text, html, date = 'Mon, 02 Nov 2026 09:00:00 +0900
   for (const image of images) parts.push(`Content-Type: image/png; name="${image.name}"\r\n` +
     `Content-Disposition: inline; filename="${image.name}"\r\nContent-ID: <${image.cid}>\r\n` +
     'Content-Transfer-Encoding: base64\r\n\r\n' + image.base64.match(/.{1,76}/g).join('\r\n'));
+  for (const file of attachments) parts.push(`Content-Type: ${file.mediaType}; name="${file.name}"\r\n` +
+    `Content-Disposition: attachment; filename="${file.name}"\r\n` +
+    'Content-Transfer-Encoding: base64\r\n\r\n' +
+    btoa(String.fromCharCode(...new TextEncoder().encode(file.text))).match(/.{1,76}/g).join('\r\n'));
   return [...headers, '', ...parts.flatMap((part) => [`--${boundary}`, part]), `--${boundary}--`, ''].join('\r\n');
 }
 const alpha = relatedWork('alpha');
@@ -316,6 +320,11 @@ const inlineCases=[
  ['manual-inline-long-tail',Array.from({length:75},(_,i)=>'참고 문서번호 ABC-'+String(i).padStart(3,'0')+' 기록 보관.').join('\n')+'\n요청: A 자료를 발송해 주세요.\n처리: A 자료 발송 완료했습니다.',1,1],
 ];
 for(const [id,text,taskCount,completedCount] of inlineCases)cases.push({id,kind:'manual',...common,text,expected:{taskCount,completedCount,dueDate:null,dueAt:null,mustNot:['invent_completion','lose_processing_evidence','mix_requests','duplicate_retry']}});
+cases.push({ id: 'mail-document-only-schedule-change', kind: 'mail', ...common,
+  mime: mime({ id: 'document-only-schedule', subject: '합성 납품 변경 안내',
+    attachments: [{name:'schedule.csv',mediaType:'text/csv',
+      text:'거래처,기존 납품일,변경 납품일,확인 기한\n가상별창고,11월 3일,11월 5일,11월 4일 15시까지\n가상별창고 납품일이 11월 3일에서 11월 5일로 변경됐습니다.'}] }),
+  expected: { taskCount: 0, summaryContains: ['가상별창고'], documentNames: ['schedule.csv'] } });
 export const STRESS_FIXTURES = freeze(cases);
 export function fixtureById(id) {
   return STRESS_FIXTURES.find((fixture) => fixture.id === id) ?? null;

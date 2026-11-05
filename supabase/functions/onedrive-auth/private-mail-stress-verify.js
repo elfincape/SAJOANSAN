@@ -8,6 +8,7 @@ import { analyzePrivateMail, extractMailThreadHeaders, relatedItems } from './pr
 import { handleManualMessage, manualDailyView } from './private-mail-manual.js';
 import { dailyBriefingView, renderDailyBriefing } from './private-mail-briefing-model.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
+import { readMailDocuments } from './private-mail-source.js';
 
 const digest = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
 const day = value => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
@@ -25,10 +26,11 @@ export async function parseStressMail(fixture, remoteFetcher, receiptId) {
     const data = new Uint8Array(attachment.content);
     const shape = /^image\//.test(attachment.mimeType) ? inspectMailImage(data) : {};
     bytes.set(index,data);
-    files.push({index,name:attachment.filename||'image.png',mediaType:attachment.mimeType,byte_size:data.length,content_hash:await digest(data),contentId:attachment.contentId,disposition:attachment.disposition,...shape});
+    files.push({kind:'attachment',index,name:attachment.filename||'image.png',mediaType:attachment.mimeType,byte_size:data.length,content_hash:await digest(data),contentId:attachment.contentId,disposition:attachment.disposition,...shape});
   }
   const photos = selectMailPhotos({subject:parsed.subject,text,html:parsed.html??'',files});
   const id = receiptId ?? syntheticId(fixture);
+  const {documents, issues: documentIssues} = await readMailDocuments(files, id, file => bytes.get(file.index));
   const images = photos.selected.map(file=>({id:id+':'+file.index,name:file.name,mediaType:file.mediaType,contentHash:file.content_hash,width:file.width,height:file.height,bytes:bytes.get(file.index)}));
   if (fixture.remoteUrls?.length) images.push(...await loadApprovedRemoteMailImages({html:parsed.html??'',approvedUrls:fixture.remoteUrls,sourceId:id,fetcher:remoteFetcher}));
   const times = mailMessageTimes({headers,sentAt:parsed.date,collectedAt:fixture.now});
@@ -36,7 +38,7 @@ export async function parseStressMail(fixture, remoteFetcher, receiptId) {
   const inTo = hasOwner(parsed.to), inCc = hasOwner(parsed.cc);
   const recipientRole = inTo && inCc ? 'both' : inTo ? 'to' : inCc ? 'cc' : 'other';
   return {
-    source:{id,uidl_hash:await digest(raw),subject:parsed.subject,sender:parsed.from?.name+' <'+parsed.from?.address+'>',headers,text,images,sent_at:times.sentAt,received_at:times.receivedAt,created_at:fixture.now,related:fixture.related??[],analysisScope:fixture.remoteUrls?.length?'body_remote_images':'body_attachments',ownerContext:{recipientRole,senderIsOwner:parsed.from?.address?.toLowerCase()==='owner@example.test'}},
+    source:{id,uidl_hash:await digest(raw),subject:parsed.subject,sender:parsed.from?.name+' <'+parsed.from?.address+'>',headers,text,images,documents,documentIssues,sent_at:times.sentAt,received_at:times.receivedAt,created_at:fixture.now,related:fixture.related??[],analysisScope:fixture.remoteUrls?.length?'body_remote_images':'body_attachments',ownerContext:{recipientRole,senderIsOwner:parsed.from?.address?.toLowerCase()==='owner@example.test'}},
     parser:{attachments:files.length,selectedImages:photos.selected.map(file=>file.name),excludedImages:photos.excluded.map(file=>({name:file.name,reason:file.reason})),reviewImages:photos.review.map(file=>file.name),textChars:text.length,reportDay:day(times.reportAt),sentAt:times.sentAt,receivedAt:times.receivedAt},
   };
 }
@@ -61,6 +63,7 @@ export function evaluateStressResult(fixture, saved, normalized, parser) {
   if(expected.parser?.reportDay) checks.reportDay = parser?.reportDay===expected.parser.reportDay;
   if(expected.includedImageNames) checks.imageSelection = expected.includedImageNames.every(name=>parser?.selectedImages.includes(name));
   if(expected.excludedImageNames) checks.signatureExclusion = expected.excludedImageNames.every(name=>parser?.excludedImages.some(file=>file.name===name));
+  if(expected.documentNames) checks.attachmentProvenance = expected.documentNames.every(name=>saved.summary.some(item=>item.documentName===name));
   if(expected.summaryContains){ const visible=JSON.stringify(mail?[saved.summary,saved.imageFacts]:normalized);checks.summaryFacts=expected.summaryContains.every(text=>visible.includes(text)); }
   if(expected.items) checks.independentItems = expected.items.every(wanted=>records.some(item=>Object.entries(wanted).every(([key,value])=>key==='textIncludes'?item.text.includes(value):value===null?item[key]==null:item[key]===value)));
   if(expected.reprocess) checks.referenceAnchor = !mail && saved.referenceDate===expected.reprocess.referenceDate && saved.items.some(item=>item.serviceDate===expected.reprocess.serviceDate);
