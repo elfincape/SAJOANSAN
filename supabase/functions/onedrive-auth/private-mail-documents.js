@@ -255,9 +255,7 @@ export async function extractMailDocument(input, type) {
   } else if (type === 'pdf') {
     if (!new TextDecoder().decode(bytes.subarray(0, 8)).startsWith('%PDF-'))
       fail('DOCUMENT_FORMAT');
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    globalThis.pdfjsWorker ??=
-      await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+    const pdfjs = await import('unpdf/pdfjs');
     let task, document;
     try {
       task = pdfjs.getDocument({
@@ -299,8 +297,7 @@ export async function extractMailDocument(input, type) {
           : 'DOCUMENT_UNREADABLE',
       );
     } finally {
-      if (document) await document.destroy();
-      else if (task) await task.destroy();
+      if (task) await task.destroy();
     }
     if (!text.replace(/\[페이지 \d+\]/g, '').trim())
       fail('DOCUMENT_UNREADABLE');
