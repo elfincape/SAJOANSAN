@@ -419,6 +419,14 @@ export async function handleMailAutomation(action, body, user, ctx) {
   }
   if (action === 'private-mail-report-now') {
     if (!day(body.day)) throw fail('REPORT_DATE');
+    if (body.retry !== undefined && typeof body.retry !== 'boolean') throw fail('REPORT_RETRY_INVALID');
+    if (body.retry === true) {
+      if (!(await rpc('private_mail_briefing_retry', {p_box:current.id,p_user:user.id,p_day:body.day})))
+        throw fail('REPORT_RETRY_UNAVAILABLE',409);
+      // The durable dirty flag survives an unavailable dispatch transport.
+      try { await rpc('private_mail_dispatch_report', {p_box:current.id,p_report_day:body.day}); } catch {}
+      return json({status:'queued',day:body.day});
+    }
     return handleMailAutomation(
       'private-mail-background-work',
       { operation: 'report', mailbox: current.id, day: body.day },
@@ -650,7 +658,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
           targetWorkId: manual.targetWorkId ?? null,
           clientRequestId: manual.clientRequestId,
           referenceDate: manual.requestedReference ?? null,
-          retry: manual.status === 'failed',
+          retry: false,
         },
         { id: current.owner_id },
         {
@@ -867,13 +875,15 @@ export async function handleMailAutomation(action, body, user, ctx) {
           value: {
             error: unsupportedPhotos ? 'NOTES_IMAGE_TYPE_UNSUPPORTED' : null,
             notBefore: null,
+            retryAttempts: 0,
           },
         });
-        await rpc('private_mail_briefing_complete', {
+        const completed = await rpc('private_mail_briefing_complete', {
           p_box: current.id,
           p_day: body.day,
           p_lease: lease,
         });
+        if (completed !== true) return json({status:'pending',code:'REPORT_REVISION_CHANGED'});
       }
       return json({
         status: result.status,
@@ -924,19 +934,22 @@ export async function handleMailAutomation(action, body, user, ctx) {
           ? error.providerStatus
           : null,
       });
+      const attempts = Math.min(3, (Number.isInteger(claim?.state?.retryAttempts) ? claim.state.retryAttempts : 0) + 1);
+      const needsOwner = ['NOTES_PERMISSION_REQUIRED', 'NOTES_IMAGE_TYPE_UNSUPPORTED', 'PAGE_CREATE_REJECTED', 'PAGE_MANAGED_CONFLICT'].includes(code);
+      const retryHold = needsOwner || attempts >= 3;
       if (claim)
         await store.save({
           day: body.day,
           lease,
           value: {
             error: code,
-            notBefore: new Date(
-              Date.now() +
-                (code === 'ONEDRIVE_CONNECTION_BUSY' ? 15000 : 300000),
-            ).toISOString(),
+            retryAttempts: attempts,
+            ...(retryHold ? {hold:true,retryHold:true} : {}),
+            notBefore: retryHold ? null : new Date(Date.now() +
+              (code === 'ONEDRIVE_CONNECTION_BUSY' ? 15000 : 300000) * attempts).toISOString(),
           },
         });
-      return json({ status: 'waiting', code });
+      return json({ status: retryHold ? 'failed' : 'waiting', code });
     } finally {
       if (claim)
         await rpc('private_mail_briefing_release', {
