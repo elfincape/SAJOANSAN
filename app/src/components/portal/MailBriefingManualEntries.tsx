@@ -201,6 +201,192 @@ export function formatBriefingTimestamp(value?: string | null) {
         hourCycle: 'h23',
       });
 }
+function receiptInProgress(entry: MailManualEntry) {
+  return (
+    entry.status === 'pending' ||
+    entry.status === 'processing' ||
+    entry.retryScheduled === true ||
+    (entry.status === 'ready' &&
+      !entry.report?.held &&
+      (entry.report?.status === 'pending' ||
+        entry.report?.status === 'retrying'))
+  );
+}
+
+function ManualReceipt({
+  entry,
+  disabled,
+  onRetry,
+  onRetryReport,
+}: {
+  entry: MailManualEntry;
+  disabled: boolean;
+  onRetry: () => void;
+  onRetryReport: () => Promise<void>;
+}) {
+  const [source, setSource] = useState<{ text: string } | null>(null);
+  const [sourceState, setSourceState] = useState<'idle' | 'loading' | 'failed'>(
+    'idle',
+  );
+  const [reportRetry, setReportRetry] = useState<'idle' | 'loading' | 'failed'>(
+    'idle',
+  );
+  async function readSource() {
+    setSourceState('loading');
+    try {
+      setSource(await privateMail.manualSource(entry.entryId));
+      setSourceState('idle');
+    } catch {
+      setSourceState('failed');
+    }
+  }
+  const calls = entry.callProgress?.calls.slice().reverse() ?? [];
+  function callStage(kind: 'jev' | 'api') {
+    const latest = calls.find((call) => call.kind === kind);
+    if (latest?.status === 'started') return '진행 중';
+    if (latest?.status === 'completed') return '완료';
+    if (latest?.status === 'failed') return '실패';
+    if (latest?.status === 'skipped') return '생략';
+    return entry.status === 'ready' ? '호출 기록 없음' : '대기';
+  }
+  const reportStatus = entry.report?.held ? 'held' : entry.report?.status;
+  const workLabel = entry.needsConfirmation
+    ? '확인 필요'
+    : !(entry.workApplied ?? entry.status === 'ready')
+      ? '대기'
+      : reportStatus === 'not_needed'
+        ? '제외'
+        : '반영 완료';
+  const reportLabels = {
+    waiting: '대기',
+    pending: '저장 대기',
+    retrying: '자동 재시도 대기',
+    complete: '저장 완료',
+    not_needed: '저장 대상 없음',
+    held: '사용자 확인 필요',
+    failed: '저장 실패 · 연결 확인 필요',
+  };
+  const summary = entry.retryScheduled
+    ? '자동 재시도 대기'
+    : entry.status === 'failed'
+      ? '처리 실패'
+      : entry.status === 'pending'
+        ? '처리 대기'
+        : entry.status === 'processing'
+          ? '처리 중'
+          : entry.needsConfirmation
+            ? '내용 확인 필요'
+            : reportStatus === 'not_needed'
+              ? '업무 제외'
+              : '업무 반영 완료';
+  return (
+    <details className="daily-task-meta">
+      <summary>
+        {formatBriefingTimestamp(entry.submittedAt)} 접수 · {summary}
+        {reportStatus &&
+        reportStatus !== 'waiting' &&
+        reportStatus !== 'not_needed'
+          ? ` · OneNote ${reportLabels[reportStatus]}`
+          : ''}
+      </summary>
+      <p>
+        JEV 판단 {callStage('jev')} · 분석 API {callStage('api')} · 업무{' '}
+        {workLabel}
+        {' · '}OneNote{' '}
+        {reportStatus ? reportLabels[reportStatus] : '저장 상태 미확인'}
+      </p>
+      {(entry.retryAt || entry.report?.retryAt) && (
+        <p>
+          다음 재시도{' '}
+          {formatBriefingTimestamp(entry.retryAt || entry.report?.retryAt)}
+        </p>
+      )}
+      {entry.status === 'failed' && !entry.retryScheduled && (
+        <p role="status">{failure({ code: entry.error })}</p>
+      )}
+      {(reportStatus === 'held' || reportStatus === 'failed') &&
+        entry.report?.error && (
+          <p>
+            {entry.report.error === 'NOTES_PERMISSION_REQUIRED'
+              ? 'OneNote 연결 권한을 확인해 주세요.'
+              : [
+                    'PAGE_MANAGED_CONFLICT',
+                    'PAGE_CREATE_UNCERTAIN',
+                    'PAGE_WRITE_UNCERTAIN',
+                  ].includes(entry.report.error)
+                ? 'OneNote 페이지의 저장 내역을 확인해 주세요.'
+                : entry.report.canRetry
+                  ? '자동 재시도를 마쳤습니다. 연결 상태를 확인한 뒤 다시 시도할 수 있습니다.'
+                  : 'OneNote 연결 및 저장 상태를 확인해 주세요.'}
+          </p>
+        )}
+      {entry.needsConfirmation && (
+        <ul>
+          {entry.items
+            .filter((item) => item.needsConfirmation)
+            .map((item) => (
+              <li key={item.itemId}>{item.text}</li>
+            ))}
+        </ul>
+      )}
+      {source ? (
+        <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          {source.text || '사진으로 접수한 메시지입니다.'}
+        </p>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={sourceState === 'loading'}
+          onClick={() => void readSource()}
+        >
+          {sourceState === 'loading' ? '원문을 불러오는 중…' : '원문 보기'}
+        </button>
+      )}
+      {sourceState === 'failed' && (
+        <p role="alert">원문을 불러오지 못했습니다. 다시 시도해 주세요.</p>
+      )}
+      {entry.images?.length ? (
+        <StoredManualPhotos entryId={entry.entryId} images={entry.images} />
+      ) : null}
+      {entry.status === 'failed' && !entry.retryScheduled && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={disabled}
+          onClick={onRetry}
+        >
+          기존 메시지 다시 정리
+        </button>
+      )}
+      {entry.report?.canRetry && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={disabled || reportRetry === 'loading'}
+          onClick={async () => {
+            setReportRetry('loading');
+            try {
+              await onRetryReport();
+              setReportRetry('idle');
+            } catch {
+              setReportRetry('failed');
+            }
+          }}
+        >
+          {reportRetry === 'loading'
+            ? '재시도 접수 중…'
+            : 'OneNote 저장 다시 시도'}
+        </button>
+      )}
+      {reportRetry === 'failed' && (
+        <p role="alert">
+          OneNote 재시도를 접수하지 못했습니다. 목록 상태를 확인해 주세요.
+        </p>
+      )}
+    </details>
+  );
+}
 function validDay(value: string) {
   return (
     /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -221,6 +407,8 @@ function failure(error: unknown) {
           '같은 메시지가 다른 대상 범위로 이미 접수돼 있습니다. 기존 접수건을 확인해 주세요.',
         MANUAL_SCHEMA_REQUIRED:
           '메시지 저장 준비 중입니다. 잠시 후 다시 시도해 주세요.',
+        ONEDRIVE_CONNECTION_BUSY:
+          '사진 저장 연결이 사용 중입니다. 원문과 사진을 유지했으니 잠시 후 다시 저장해 주세요.',
         AI_NOT_CONFIGURED: '메시지 분석 연결이 준비되지 않았습니다.',
         IMAGE_LIMIT: '사진 개수나 원본 크기 제한을 확인해 주세요.',
         IMAGE_DIMENSIONS:
@@ -345,10 +533,14 @@ export function MailBriefingManualEntries({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [progress, setProgress] = useState('');
-  const [queued, setQueued] = useState<
-    { entryId: string; startedAt: number; reused: boolean }[]
-  >([]);
+  const trackedIds = useRef<string[]>([]);
+  const [awaitingList, setAwaitingList] = useState(false);
+  const lastList = useRef<MailManualList | null>(null);
   const [queueFeedback, setQueueFeedback] = useState('');
+  const notifyChanged = useRef(onChanged);
+  useEffect(() => {
+    notifyChanged.current = onChanged;
+  }, [onChanged]);
   const mounted = useRef(false);
   const locked = useRef(false);
   const request = useRef(0);
@@ -356,9 +548,6 @@ export function MailBriefingManualEntries({
   const submission = useRef<{
     key: string;
     id: string;
-    retry?: boolean;
-    entryId?: string;
-    reusedReady?: boolean;
   } | null>(null);
   useEffect(() => {
     setTargetWorkId(initialDraft?.targetWorkId ?? null);
@@ -387,22 +576,51 @@ export function MailBriefingManualEntries({
     autoSubmitted.current = initialDraft.id;
     void add();
   }, [inputOpen, initialDraft?.id, text, targetWorkId, disabled, busy]);
-  const load = useCallback(async () => {
-    const id = ++request.current;
-    setLoading(true);
-    try {
-      const result = await privateMail.manualList(day);
-      if (!mounted.current || id !== request.current) return false;
-      setData(result);
-      return true;
-    } catch (error) {
-      if (mounted.current && id === request.current)
-        setFeedback(failure(error));
-      return false;
-    } finally {
-      if (mounted.current && id === request.current) setLoading(false);
-    }
-  }, [day]);
+  const load = useCallback(
+    async (showLoading = true) => {
+      const id = ++request.current;
+      if (showLoading) setLoading(true);
+      try {
+        const ids = trackedIds.current;
+        const result = await privateMail.manualList(day, ids);
+        if (!mounted.current || id !== request.current) return false;
+        const prior = lastList.current;
+        const previous = new Map(
+          [...(prior?.entries ?? []), ...(prior?.trackedEntries ?? [])].map(
+            (entry) => [entry.entryId, entry],
+          ),
+        );
+        if (
+          prior?.day === day &&
+          result.entries.some((entry) => {
+            if (
+              entry.status !== 'ready' ||
+              entry.report?.status === 'not_needed'
+            )
+              return false;
+            const before = previous.get(entry.entryId);
+            return (
+              before?.status !== 'ready' ||
+              (entry.report?.status === 'complete' &&
+                before.report?.status !== 'complete')
+            );
+          })
+        )
+          notifyChanged.current?.();
+        lastList.current = result;
+        setData(result);
+        setAwaitingList(false);
+        return true;
+      } catch (error) {
+        if (showLoading && mounted.current && id === request.current)
+          setFeedback(failure(error));
+        return false;
+      } finally {
+        if (mounted.current && id === request.current) setLoading(false);
+      }
+    },
+    [day],
+  );
   useEffect(() => {
     mounted.current = true;
     void load();
@@ -411,82 +629,54 @@ export function MailBriefingManualEntries({
       request.current++;
     };
   }, [load, refreshKey]);
-  const hasPending = data?.entries.some(
-    (entry) =>
-      ['pending', 'processing'].includes(entry.status) || entry.retryScheduled,
-  );
+  const receipts =
+    data?.day === day
+      ? [...data.entries, ...(data.trackedEntries ?? [])].filter(
+          (entry) =>
+            entry.reportDay === day ||
+            trackedIds.current.includes(entry.entryId) ||
+            receiptInProgress(entry) ||
+            entry.status === 'failed' ||
+            entry.needsConfirmation,
+        )
+      : [];
+  const hasPending = awaitingList || receipts.some(receiptInProgress);
+  const activeReceipt =
+    awaitingList ||
+    receipts.some(
+      (entry) =>
+        entry.status === 'pending' ||
+        entry.status === 'processing' ||
+        (entry.report?.status === 'pending' && !entry.report.held),
+    );
+  const retryAt = receipts
+    .filter(receiptInProgress)
+    .map((entry) => entry.retryAt || entry.report?.retryAt)
+    .filter((time): time is string => Boolean(time))
+    .sort()[0];
   useEffect(() => {
     if (!hasPending) return;
-    let stopped = false;
-    const timer = setInterval(() => {
-      if (!stopped)
-        void load().then((ok) => {
-          if (ok && !stopped) onChanged?.();
-        });
-    }, 5000);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [hasPending, load, onChanged]);
-  useEffect(() => {
-    if (!queued.length) return;
     let stopped = false,
       running = false;
+    const delay = activeReceipt
+      ? 6000
+      : retryAt
+        ? Math.min(60000, Math.max(6000, Date.parse(retryAt) - Date.now()))
+        : 12000;
     const timer = setInterval(async () => {
-      if (running || stopped) return;
+      if (stopped || running || document.hidden) return;
       running = true;
       try {
-        for (const job of queued) {
-          if (stopped) return;
-          let message: string | null = null;
-          try {
-            const status = await privateMail.manualStatus(job.entryId);
-            if (stopped) return;
-            if (status.entry.status === 'failed' && !status.retryScheduled)
-              message =
-                '자동 재시도 후에도 분석하지 못했습니다. 접수 목록에서 원문을 확인해 주세요.';
-            else if (
-              status.entry.status === 'ready' &&
-              status.report.status === 'failed'
-            )
-              message =
-                'OneNote 저장 확인이 필요합니다. 접수한 메시지는 보존되어 있습니다.';
-            else if (
-              status.entry.status === 'ready' &&
-              ['complete', 'not_needed'].includes(status.report.status) &&
-              (!status.callProgress || status.callProgress.finished)
-            )
-              message = status.entry.needsConfirmation
-                ? '처리 결과에 확인할 내용이 있습니다. 접수 목록을 확인해 주세요.'
-                : job.reused
-                  ? '기존 접수의 저장 상태를 확인했습니다.'
-                  : '접수한 메시지 처리를 마쳤습니다.';
-          } catch {
-            /* Read failures never enqueue or repeat analysis. */
-          }
-          if (stopped) return;
-          if (!message && Date.now() - job.startedAt >= 180000)
-            message =
-              '처리가 지연되고 있습니다. 서버는 계속 처리하며 접수 목록에서 확인할 수 있습니다.';
-          if (message) {
-            setQueueFeedback(message);
-            setQueued((current) =>
-              current.filter((item) => item.entryId !== job.entryId),
-            );
-            await load();
-            if (!stopped) onChanged?.();
-          }
-        }
+        await load(false);
       } finally {
         running = false;
       }
-    }, 3000);
+    }, delay);
     return () => {
       stopped = true;
       clearInterval(timer);
     };
-  }, [queued, load, onChanged]);
+  }, [hasPending, activeReceipt, retryAt, load]);
   useEffect(() => {
     if (inputOpen) {
       setFeedback('');
@@ -527,16 +717,24 @@ export function MailBriefingManualEntries({
         privacyConfirmed: source.privacyConfirmed,
       });
       if (!mounted.current) return;
-      await load();
-      setFeedback(
-        result.status === 'ready'
-          ? '기존 메시지를 정리했습니다. 접수일과 원문은 유지됩니다.'
-          : ['pending', 'processing'].includes(result.status)
-            ? '기존 메시지를 분석 중입니다. 목록 새로고침으로 확인해 주세요.'
-            : '기존 메시지를 정리하지 못했습니다. 접수된 원문을 유지합니다.',
-      );
-      onChanged?.();
+      watchReceipt(result);
     });
+  }
+  function trackReceipt(entryId: string) {
+    trackedIds.current = [
+      entryId,
+      ...trackedIds.current.filter((id) => id !== entryId),
+    ].slice(0, 20);
+    setAwaitingList(true);
+    void load(false);
+  }
+  function watchReceipt(entry: MailManualEntry) {
+    trackReceipt(entry.entryId);
+    setQueueFeedback(
+      entry.reusedReady
+        ? '기존 접수 건을 목록에서 확인할 수 있습니다.'
+        : '메시지를 접수했습니다. 처리 단계는 접수 목록에 표시됩니다.',
+    );
   }
   async function add() {
     const input = text.trim(),
@@ -561,51 +759,42 @@ export function MailBriefingManualEntries({
     if (submission.current?.key !== key)
       submission.current = { key, id: crypto.randomUUID() };
     const clientRequestId = submission.current.id,
-      retry = submission.current.retry === true,
       version = draftVersion.current;
     await act(async () => {
-      setProgress('메시지를 접수하는 중입니다. 아직 분석 완료가 아닙니다.');
-      const result =
-        submission.current?.entryId && !retry
-          ? (await privateMail.manualStatus(submission.current.entryId)).entry
-          : await privateMail.manualEnqueue({
-              text: input,
-              clientRequestId,
-              referenceDate: basis,
-              targetWorkId,
-              retry,
-              images: images.map(({ name, data }) => ({ name, data })),
-              privacyConfirmed,
-            });
+      setProgress('메시지를 접수하는 중…');
+      const payload = {
+        text: input,
+        clientRequestId,
+        referenceDate: basis,
+        targetWorkId,
+        ...(images.length
+          ? { images: images.map(({ name, data }) => ({ name, data })) }
+          : {}),
+        privacyConfirmed,
+      };
+      let result: MailManualEntry | undefined;
+      for (let attempt = 0; !result; attempt++) {
+        try {
+          result = await privateMail.manualEnqueue(payload);
+        } catch (error) {
+          if (
+            !images.length ||
+            attempt >= 2 ||
+            !(error instanceof Error) ||
+            error.message !== 'ONEDRIVE_CONNECTION_BUSY'
+          )
+            throw error;
+          setProgress(
+            '사진 저장 연결이 사용 중입니다. 잠시 뒤 다시 접수합니다.',
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1500 * (attempt + 1)),
+          );
+          if (!mounted.current) return;
+        }
+      }
       if (!mounted.current) return;
-      if (submission.current?.id === clientRequestId) {
-        submission.current.entryId = result.entryId;
-        if (result.reusedReady) submission.current.reusedReady = true;
-        submission.current.retry = result.status === 'failed';
-      }
-      if (result.status === 'failed' && !result.retryScheduled) {
-        setProgress('분석 실패 · 원문과 사진은 유지됩니다.');
-        setFeedback(failure({ code: result.error }));
-        await load();
-        return;
-      }
-      setQueued((current) =>
-        current.some((job) => job.entryId === result.entryId)
-          ? current
-          : [
-              ...current,
-              {
-                entryId: result.entryId,
-                startedAt: Date.now(),
-                reused: result.reusedReady === true,
-              },
-            ],
-      );
-      setQueueFeedback(
-        result.reusedReady
-          ? '이미 접수된 메시지입니다. 기존 건의 저장 상태를 뒤에서 확인합니다.'
-          : '접수했습니다. 분석과 저장은 뒤에서 처리합니다.',
-      );
+      watchReceipt(result);
       if (submission.current?.id === clientRequestId) submission.current = null;
       if (draftVersion.current === version) {
         setText('');
@@ -618,9 +807,6 @@ export function MailBriefingManualEntries({
         setProgress('');
         setFeedback('');
       }
-      void load().then((ok) => {
-        if (ok && mounted.current) onChanged?.();
-      });
     });
   }
   async function complete(entryId: string, itemId: string, done: boolean) {
@@ -636,6 +822,7 @@ export function MailBriefingManualEntries({
               : '미완료로 되돌렸습니다. 미완료 목록에 계속 표시됩니다.'
             : '완료 상태는 저장했지만 목록을 갱신하지 못했습니다. 목록을 새로고침해 주세요.',
         );
+      if (mounted.current && refreshed) notifyChanged.current?.();
     });
   }
   const entries = data?.day === day ? data.entries : [];
@@ -866,11 +1053,7 @@ export function MailBriefingManualEntries({
                 }
                 onClick={() => void add()}
               >
-                {busy
-                  ? '처리 확인 중…'
-                  : submission.current?.entryId && !submission.current.retry
-                    ? '상태 다시 확인'
-                    : '저장'}
+                {busy ? '접수 중…' : '저장'}
               </button>
               <ModalClose className="btn btn-ghost" disabled={busy}>
                 취소
@@ -897,42 +1080,28 @@ export function MailBriefingManualEntries({
             : feedback}
       </p>
       <p className="daily-task-meta" role="status" aria-live="polite">
-        {queued.length
-          ? `백그라운드 처리 확인 중 ${queued.length}건 · 다른 메시지를 입력할 수 있습니다.`
-          : queueFeedback}
+        {queueFeedback}
       </p>
-      <div aria-busy={loading} aria-label="접수 메시지 처리 상태">
-        {entries
-          .filter((entry) => entry.status !== 'ready')
-          .map((entry) => (
-            <div className="daily-task-meta" key={entry.entryId}>
-              <p>
-                {formatBriefingTimestamp(entry.submittedAt)} 접수 ·{' '}
-                {['pending', 'processing'].includes(entry.status)
-                  ? '정리 중'
-                  : entry.retryScheduled
-                    ? '자동 재시도 대기 중'
-                    : '분석 실패 · 원문이 보존되어 있습니다.'}
-              </p>
-              {entry.images?.length ? (
-                <StoredManualPhotos
-                  entryId={entry.entryId}
-                  images={entry.images}
-                />
-              ) : null}
-              {entry.status === 'failed' && !entry.retryScheduled ? (
-                <button
-                  className="btn btn-ghost"
-                  type="button"
-                  disabled={busy || disabled}
-                  onClick={() => void retryEntry(entry)}
-                >
-                  기존 메시지 다시 정리
-                </button>
-              ) : null}
-            </div>
-          ))}
-      </div>
+      {receipts.length > 0 && (
+        <section aria-busy={loading} aria-label="접수 메시지 처리 상태">
+          <h3>메시지 접수 목록</h3>
+          {[...receipts]
+            .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+            .map((entry) => (
+              <ManualReceipt
+                key={entry.entryId}
+                entry={entry}
+                disabled={busy || disabled}
+                onRetry={() => void retryEntry(entry)}
+                onRetryReport={async () => {
+                  await privateMail.writeReport(entry.reportDay, true);
+                  setQueueFeedback('OneNote 저장을 다시 대기열에 넣었습니다.');
+                  trackReceipt(entry.entryId);
+                }}
+              />
+            ))}
+        </section>
+      )}
       {showItems ? (
         <div aria-busy={loading}>
           <h3>

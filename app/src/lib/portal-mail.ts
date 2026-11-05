@@ -263,6 +263,11 @@ export interface MailManualUpload {
 }
 export interface MailManualEntry {
   retryScheduled?: boolean;
+  retryAt?: string | null;
+  updatedAt?: string | null;
+  workApplied?: boolean;
+  report?: MailManualStatus['report'];
+  callProgress?: MailManualStatus['callProgress'];
   reusedReady?: boolean;
   images?: MailManualImage[];
   privacyConfirmed?: boolean;
@@ -281,6 +286,7 @@ export interface MailManualEntry {
 export interface MailManualList {
   day: string;
   entries: MailManualEntry[];
+  trackedEntries?: MailManualEntry[];
   tasks: MailManualItem[];
   issues: MailManualItem[];
 }
@@ -291,6 +297,9 @@ export interface MailManualStatus {
     status:
       'waiting' | 'not_needed' | 'failed' | 'complete' | 'pending' | 'retrying';
     error: string | null;
+    held?: boolean;
+    canRetry?: boolean;
+    retryAt?: string | null;
   };
   stagesAvailable: boolean;
   callProgress: null | {
@@ -354,8 +363,8 @@ export const privateMail = {
       false,
       255000,
     ),
-  manualList: (day: string) =>
-    oneDriveCall<MailManualList>('private-mail-manual-list', { day }),
+  manualList: (day: string, entryIds: string[] = []) =>
+    oneDriveCall<MailManualList>('private-mail-manual-list', { day, entryIds }),
   manualUpdate: (body: { entryId: string; itemId: string; done: boolean }) =>
     oneDriveCall<{
       entryId: string;
@@ -417,10 +426,10 @@ export const privateMail = {
       false,
       255000,
     ),
-  writeReport: (day: string) =>
+  writeReport: (day: string, retry = false) =>
     oneDriveCall<{ status: string; code?: string }>(
       'private-mail-report-now',
-      { day },
+      { day, ...(retry ? { retry } : {}) },
       false,
       255000,
     ),

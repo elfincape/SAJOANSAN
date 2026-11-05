@@ -737,7 +737,7 @@ export async function writeDailyBriefing({
   const { lease } = claimed;
   let state = claimed.state ?? {};
   const save = async (value) => {
-    await store.save({ day: base.day, lease, value });
+    if ((await store.save({ day: base.day, lease, value })) === false) throw Error('BRIEFING_LEASE');
     state = { ...state, ...value };
   };
   const rejectPatch = async (error) => {
@@ -836,6 +836,14 @@ export async function writeDailyBriefing({
           )
         ).json();
       } catch (error) {
+        const rejected = [400, 401, 403, 404, 405, 413, 415, 422, 429].includes(error?.providerStatus);
+        // A definitive rejection created no page. Lost acknowledgments retain the marker.
+        if (diagnosticRunId === null && rejected) {
+          await save({createAttempted:false,pendingWrite:null});
+          const code = error.providerStatus === 429 ? 'NOTES_RATE_LIMITED'
+            : [401,403].includes(error.providerStatus) ? 'NOTES_PERMISSION_REQUIRED' : 'PAGE_CREATE_REJECTED';
+          throw Object.assign(Error(code), {providerStatus:error.providerStatus});
+        }
         throw Object.assign(Error('PAGE_CREATE_UNCERTAIN'), { providerStatus: error?.providerStatus ?? null,
           stressNoteStage: error?.stressNoteStage ?? null,
           createRejected: diagnosticRunId !== null && (error?.diagnosticNotSent === true || [400, 401, 403, 404, 405, 413, 415, 422, 429].includes(error?.providerStatus)) });

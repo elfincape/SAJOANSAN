@@ -6846,10 +6846,10 @@ console.log(
     ctx,
   );
   assert.equal(registerCalls, 1);
-  assert.equal(paidCalls, 2);
-  assert.equal(reviewWrites, 1);
+  assert.equal(paidCalls, 1);
+  assert.equal(reviewWrites, 0);
   console.log(
-    'PASS JEV runtime: server-approved pre-intent and post-advisory, bounded calls, reference skip, mail/manual dates and completion unchanged, no images, timeout/429/invalid/missing-key fail open and ready replay does not call again',
+    'PASS JEV runtime: one manual pre-intent call, bounded mail review, reference skip, dates and completion unchanged, timeout/429/invalid/missing-key fail open and ready replay does not call again',
   );
 }
 
@@ -8616,7 +8616,32 @@ const text='11월04일\n합성창고A~합성센터B 5톤\n서울12가0000 합성
 const result=await buildManualWorkCandidates({current,ownerId:owner,day,entry:{text,referenceDate:day,submittedAt:day+'T02:00:00Z'},db:async()=>[]});
 assert.ok(result.some(c=>c.workId===target.items[0].ref),'older exact route/date dispatch must survive the 40 candidate cap');
 assert.ok(result.length<=40);console.log('PASS older exact dispatch is presented before unrelated newer tasks; bounded40');
+for(const destination of ['김해_좋은이웃','김해_좋은이웃마트']){
+ const aliased=entry(1,target.text.replace('합성센터B',destination),target.submittedAt);
+ const input={text:text.replace('합성센터B','좋은이웃마트'),referenceDate:day,submittedAt:day+'T02:00:00Z'};
+ const pool={...current,manual_entries:{...current.manual_entries,[aliased.entryId]:aliased}};
+ const found=await buildManualWorkCandidates({current:pool,ownerId:owner,day,entry:input,db:async()=>[]});
+ assert.ok(found.some(c=>c.workId===target.items[0].ref),'presentation alias survives 40-candidate cap');
+ for(const conflicting of [input.text.replace('11월04일','11월05일'),input.text.replace('합성창고A','다른창고'),input.text.replace('5톤','12톤'),input.text.replace('좋은이웃마트','안산_좋은이웃마트')]){
+  const refused=await buildManualWorkCandidates({current:pool,ownerId:owner,day,entry:{...input,text:conflicting},db:async()=>[]});
+  assert.ok(!refused.some(c=>c.workId===target.items[0].ref),'alias must not boost a conflicting date/route/tonnage/center');
+ }
+}
+
 const ordinary=await buildManualWorkCandidates({current,ownerId:owner,day,db:async()=>[]});assert.ok(!ordinary.some(c=>c.workId===target.items[0].ref),'baseline ordering unchanged without structured reply');
+const general=entry(1,'특수거래처 품질보상 정산서 검토 요청',target.submittedAt);general.items[0].kind='task';general.items[0].text='특수거래처 품질보상 검토';
+const generalPool={...current,manual_entries:{...current.manual_entries,[general.entryId]:general}};
+const generalInput={text:'특수거래처 품질보상 검토 완료했습니다.',referenceDate:day,submittedAt:day+'T02:00:00Z'};
+const ranked=await buildManualWorkCandidates({current:generalPool,ownerId:owner,day,entry:generalInput,db:async()=>[]});assert.equal(ranked[0].workId,general.items[0].ref,'older general follow-up survives newer unrelated entries');
+const queried=[];
+await buildManualWorkCandidates({current:generalPool,ownerId:owner,day,entry:{...generalInput,text:'메일 제목: 특수거래처 품질보상 검토\n처리 완료'},db:async path=>{queried.push(path);return queried.length===1?Array.from({length:200},(_,i)=>({id:'ignored-'+i,owner_id:owner})):[];}});
+assert.equal(queried.length,2);assert.ok(queried[1].includes('owner_id=eq.'+owner)&&queried[1].includes('mailbox_id=eq.'+box)&&queried[1].includes('subject=ilike.')&&queried[1].endsWith('limit=60'));
+const plainQueries=[];
+await buildManualWorkCandidates({current:generalPool,ownerId:owner,day,entry:generalInput,db:async path=>{plainQueries.push(path);return plainQueries.length===1?Array.from({length:200},(_,i)=>({id:'ignored-'+i,owner_id:owner})):[];}});
+assert.equal(plainQueries.length,2);const query=new URLSearchParams(plainQueries[1].split('?')[1]);assert.equal(query.get('owner_id'),'eq.'+owner);assert.equal(query.get('mailbox_id'),'eq.'+box);assert.equal(query.get('limit'),'60');
+assert.match(query.get('or'),/subject\.ilike\."\*특수거래처\*"/);assert.ok(query.get('or').includes('analysis->>tasks.ilike.')&&query.get('or').includes('analysis->>issues.ilike.'));assert.ok(query.get('or').split(',').length<=9);
+
+
 const many={...current,manual_entries:Object.fromEntries(Array.from({length:45},(_,i)=>entry(i+1,target.text,day+'T01:00:00Z')).map(e=>[e.entryId,e]))};
 const crowded=await buildManualWorkCandidates({current:many,ownerId:owner,day,entry:{text,referenceDate:day,submittedAt:day+'T02:00:00Z'},db:async()=>[]});assert.equal(crowded.length,40);assert.ok(crowded.every(c=>c.matchingPoolTruncated));
 const {handleManualMessage,linkExistingManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
@@ -8647,3 +8672,32 @@ for(const mode of ['complete','reference','reject']){
 }
 
 });}
+
+{const {test}=await import('node:test');test('manual dispatch presentation aliases retain center and branch identity',async()=>{
+ const {sameManualDispatchPlace}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ for(const [a,b]of [['김해_좋은이웃','좋은이웃마트'],['김해_좋은이웃마트','좋은이웃'],['좋은 이웃마트','좋은이웃마트']]){
+  assert.equal(sameManualDispatchPlace(a,b),true);assert.equal(sameManualDispatchPlace(b,a),true);
+ }
+ for(const [a,b]of [['김해_좋은이웃','안산_좋은이웃'],['좋은이웃1호점','좋은이웃2호점'],['좋은이웃','다른마트'],['가나마트','가나'],['','']])assert.equal(sameManualDispatchPlace(a,b),false);
+ });}
+
+{const {test}=await import('node:test');test('verified schedule changes preserve old date and dispatch actual times',async()=>{
+ const {analyzeTargetedManual,normalizeManualItems,manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+ const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+ const day='2026-11-05',oldId='bc000000-0000-4000-8000-000000000001',newId='bc000000-0000-4000-8000-000000000002';
+ const initial='가상거래처 운행일 11월 6일 배차 요청';
+ const original=normalizeManualItems({items:[{kind:'dispatch',text:'가상거래처 배차',evidence:initial,serviceOriginal:'11월 6일',needsConfirmation:false}]},{text:initial,entryId:oldId,submittedAt:day+'T01:00:00Z',referenceDate:day});
+ const target={workId:original[0].ref,title:'가상거래처 배차',kind:'dispatch',serviceDate:'2026-11-06'};
+ async function run(text,action='update'){
+  const result=await analyzeTargetedManual({entry:{entryId:newId,text,referenceDate:day},target,ai:{aiKey:'MOCK',aiProvider:'openai',aiModel:'gpt-6-luna'},fetcher:async()=>Response.json({model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:JSON.stringify({matchesTarget:true,action,text:'가상거래처 변경 배차',evidence:text,details:[],completionEvidence:action==='complete'?text:null,serviceOriginal:'11월 7일',dueOriginal:null})}]}]})});return result.reply.items[0];
+ }
+ const text='가상거래처 11월 6일에서 11월 7일로 변경했습니다. 입차 07:30 출차 08:10 도착 09:20 하차 완료 09:40';
+ const item=await run(text);assert.equal(item.workRef,target.workId);assert.equal(item.workflowStatus,'pending');assert.ok(item.details.some(x=>x.includes('11월 6일에서 11월 7일')));
+ const items=normalizeManualItems({items:[item]},{text,entryId:newId,submittedAt:day+'T02:00:00Z',referenceDate:day,allowLinks:true,verifiedReplyRef:target.workId,replyDetailsByItem:[item.details]});
+ assert.equal(items[0].serviceDate,'2026-11-07');for(const detail of ['입차 07:30','출차 08:10','도착 09:20','하차 완료 09:40'])assert.ok(items[0].details.includes(detail));
+ const entries={[oldId]:{entryId:oldId,text:initial,status:'ready',submittedAt:day+'T01:00:00Z',referenceDate:day,items:original},[newId]:{entryId:newId,text,status:'ready',submittedAt:day+'T02:00:00Z',referenceDate:day,items}};
+ const work=dailyWorkItems({day,groups:[],tasks:[],issues:[],waiting:[]},manualDailyView(entries,day)).find(w=>w.workId===target.workId);
+ assert.equal(work.serviceDate,'2026-11-07');assert.notEqual(work.status,'complete');assert.ok(JSON.stringify(work).includes('11월 6일에서 11월 7일'));assert.ok(JSON.stringify(work).includes('하차 완료 09:40'));
+ for(const invalid of ['가상거래처 11월 8일에서 11월 7일로 변경했습니다.','가상거래처 11월 7일로 변경했습니다.','가상거래처 11월 6일에서 11월 7일로 변경하지 않았습니다.']){const denied=await run(invalid);assert.equal(denied.workRef,undefined);assert.equal(denied.needsConfirmation,true);}
+ assert.equal((await run(text+' 완료했습니다.','complete')).workRef,undefined);
+ });}
