@@ -22,6 +22,8 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -48,8 +50,13 @@ jobs:
           if (!response.ok) throw Error(`OneNote retry migration failed (HTTP ${response.status})`);
           JS
       - name: Apply scoped manual message and portal integration
-        if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'supabase/sql/private-mail-manual-scope.sql')
+        env:
+          PREVIOUS_SHA: ${{ github.event.before }}
         run: |
+          if [[ -n "$PREVIOUS_SHA" ]] && git cat-file -e "$PREVIOUS_SHA^{commit}" 2>/dev/null &&
+             git diff --quiet "$PREVIOUS_SHA" "$GITHUB_SHA" -- supabase/sql/private-mail-manual-scope.sql; then
+            exit 0
+          fi
           node --input-type=module - <<'JS'
           import { readFileSync } from 'node:fs';
           const { SUPABASE_PROJECT_REF: ref, SUPABASE_ACCESS_TOKEN: token } = process.env;
