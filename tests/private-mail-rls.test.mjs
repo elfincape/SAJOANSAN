@@ -2437,6 +2437,44 @@ try{
    const duplicate=await record({scope,dispatchKey:'f'.repeat(64)});
    assert.equal(duplicate.result.items[0].needsConfirmation,true);assert.equal(duplicate.task,undefined);
    const delivery=await record();assert(delivery.task);
+   const {dailyWorkItems}=await import('../supabase/functions/onedrive-auth/private-mail-work.js');
+   const correctionDay=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text d")).rows[0].d;
+   const correct=async(work,patch,expected=null)=>(await db.query('select private_mail_work_correct($1,$2,$3,$4,$5,$6) r',[BOX,OWNER,work,correctionDay,patch,expected])).rows[0].r;
+   const readProjected=async(work)=>{
+    const b=(await db.query('select manual_entries,briefing_overrides from private_mailboxes where id=$1',[BOX])).rows[0];
+    const snapshots=(await db.query('select private_mail_portal_snapshots($1,$2,$3) r',[BOX,OWNER,correctionDay])).rows[0].r;
+    const {manualDailyView}=await import('../supabase/functions/onedrive-auth/private-mail-manual.js');
+    const overrides=b.briefing_overrides;
+    return dailyWorkItems({day:correctionDay,groups:[]},manualDailyView(Object.values(b.manual_entries).filter(e=>[initial.entry.entryId,followup.entry.entryId,delivery.entry.entryId].includes(e.entryId)),correctionDay,overrides),{workOverrides:overrides,portalTasks:snapshots,portalOwnerId:OWNER}).find(w=>w.workId===work);
+   };
+   for(const target of [delivery,initial]){
+    let saved=await correct(target.ref,{done:true});
+    assert.equal((await readProjected(target.ref)).status,'complete','saved scoped completion must survive canonical snapshot');
+    const version=(await db.query('select version from operations_tasks where id=$1',[target.task])).rows[0].version;
+    await correct(target.ref,{done:true});
+    assert.equal((await db.query('select version from operations_tasks where id=$1',[target.task])).rows[0].version,version,'duplicate acknowledgment must not write another native event');
+    saved=await correct(target.ref,{done:false},saved.correction.updatedAt);
+    assert.equal((await readProjected(target.ref)).status,'pending','saved scoped reopen must survive canonical snapshot');
+    for(const category of ['issue','task']){
+     saved=await correct(target.ref,{category},saved.correction.updatedAt);
+     assert.equal((await readProjected(target.ref)).category,category,'scoped category must survive canonical snapshot');
+    }
+    await assert.rejects(()=>correct(target.ref,{done:true},'2000-01-01T00:00:00Z'),/WORK_CORRECTION_CONFLICT/);
+    assert.equal((await readProjected(target.ref)).status,'pending');
+   }
+   const state=async()=>JSON.stringify((await db.query("select (select briefing_overrides from private_mailboxes where id=$1) corrections,(select jsonb_agg(t order by id) from operations_tasks t) tasks,(select count(*) from operations_task_events) events,(select count(*) from private_mail_analysis_history) history",[BOX])).rows);
+   const savedLinks=delivery.result.portalLinks;
+   await db.query("update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2,'portalLinks'],'[]') where id=$1",[BOX,delivery.entry.entryId]);
+   const beforeRejected=await state();
+   const expected=(await db.query("select briefing_overrides->$2->>'updatedAt' stamp from private_mailboxes where id=$1",[BOX,'work:'+delivery.ref])).rows[0].stamp;
+   await assert.rejects(()=>correct(delivery.ref,{done:true},expected),/WORK_LINK_CONFLICT/);
+   assert.equal(await state(),beforeRejected,'native linkage failure rolls back correction, history and task events together');
+   await db.query("update private_mailboxes set manual_entries=jsonb_set(manual_entries,array[$2,'portalLinks'],$3::jsonb) where id=$1",[BOX,delivery.entry.entryId,JSON.stringify(savedLinks)]);
+   await assert.rejects(()=>db.query('select private_mail_work_correct($1,$2,$3,$4,$5,null)',[BOX,OTHER,delivery.ref,correctionDay,{done:true}]),/WORK_CORRECTION_OWNER/);
+   const eventsBefore=(await db.query('select count(*)::int n from operations_task_events')).rows[0].n;
+   await correct(duplicate.ref,{category:'issue'});
+   assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,eventsBefore,'unlinked review-only receipt must not create or modify native work');
+   console.log('PASS scoped owner complete/reopen/reclassify through real correction SQL and full dailyWorkItems projection; duplicate and stale writes protected');
    await db.query("update user_profiles set role='editor' where id=$1",[OTHER]);
    await db.exec(`set role authenticated;set "request.jwt.claim.sub"='${OTHER}'`);
    const visible=async()=> (await db.query('select id from operations_tasks where id=any($1::uuid[])',[ [initial.task,delivery.task] ])).rows.map(row=>row.id);

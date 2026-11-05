@@ -287,4 +287,43 @@ end; $$;
 revoke all on function public.private_mail_scoped_guide_guard(),public.private_mail_manual_scoped_finish(uuid,uuid,uuid,uuid,jsonb,date,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.private_mail_scoped_guide_guard(),public.private_mail_manual_scoped_finish(uuid,uuid,uuid,uuid,jsonb,date,jsonb,jsonb) to service_role;
 
+-- Reuse the existing owner correction transaction/event writer for scoped work.
+-- Legacy unlinked manual entries retain their private-only correction behavior.
+do $scoped_owner_correction$
+declare source text; old_target text; new_target text; old_call text; new_call text;
+begin
+ source=pg_get_functiondef('public.private_mail_monthly_owner_correct(uuid,text,jsonb,jsonb)'::regprocedure);
+ old_target=$target$select * into t from public.operations_tasks where id=substring(p_work from 8)::uuid and owner_id=p_user and inputs ? 'personal_monthly' and deleted_at is null for update;
+ if not found then raise exception 'MONTHLY_SOURCE';end if;$target$;
+ new_target=$target$-- scoped_owner_correction_v1
+ if p_work like 'source:%' then
+  select * into t from public.operations_tasks where id=substring(p_work from 8)::uuid and owner_id=p_user and inputs ? 'personal_monthly' and deleted_at is null for update;
+  if not found then raise exception 'MONTHLY_SOURCE';end if;
+ else
+  select * into t from public.operations_tasks where owner_id=p_user
+   and inputs#>>'{personal_work,workId}'=p_work and not(inputs ? 'personal_monthly') for update;
+  if not found then return;end if;
+  if t.deleted_at is not null or not exists(
+   select 1 from public.private_mailboxes b
+   cross join lateral jsonb_each(b.manual_entries) e
+   cross join lateral jsonb_array_elements(coalesce(e.value->'portalLinks','[]'::jsonb)) link
+   where b.id='39045005-313e-42e1-b50c-2394b3b6ff26' and b.owner_id=p_user
+    and e.key=split_part(p_work,':',1) and e.value->>'status'='ready'
+    and e.value->'workScope'=t.inputs#>'{personal_work,scope}'
+    and link->>'workId'=p_work and link->>'taskId'=t.id::text
+  ) then raise exception 'WORK_LINK_CONFLICT';end if;
+ end if;$target$;
+ if position('scoped_owner_correction_v1' in source)=0 then
+  if position(old_target in source)=0 then raise exception 'SCOPED_OWNER_CORRECTION_CONTRACT';end if;
+  execute replace(source,old_target,new_target);
+ end if;
+ source=pg_get_functiondef('public.private_mail_work_correct(uuid,uuid,text,date,jsonb,text)'::regprocedure);
+ old_call=$call$if source_kind='portal' then perform public.private_mail_monthly_owner_correct(p_user,p_work,revised,p_patch);end if;$call$;
+ new_call=$call$if source_kind in ('portal','manual') then perform public.private_mail_monthly_owner_correct(p_user,p_work,revised,p_patch);end if;$call$;
+ if position(new_call in source)=0 then
+  if position(old_call in source)=0 then raise exception 'SCOPED_OWNER_CORRECTION_CONTRACT';end if;
+  execute replace(source,old_call,new_call);
+ end if;
+end $scoped_owner_correction$;
+
 commit;
