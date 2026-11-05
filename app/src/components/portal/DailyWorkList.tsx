@@ -2,10 +2,13 @@ import { workSummaryForDisplay } from '../../../../supabase/functions/onedrive-a
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Modal, ModalClose } from '../Modal';
+import { operationsContext } from '../../lib/operations';
+import { portalCenterName } from '../../domain/portal-types';
 import { privateMail } from '../../lib/portal-mail';
 import type { MailMessage } from '../../domain/portal-mail';
 import type {
   DailyWork,
+  MailWorkScope,
   DailyMailOverview,
   WorkPatch,
   WorkCorrection,
@@ -36,7 +39,7 @@ export function DailyWorkList({
   labels: Record<string, string>;
   day: string;
   busy: boolean;
-  onFollowup?: (text: string, targetWorkId: string) => void;
+  onFollowup?: (text: string, targetWorkId: string, workScope?: MailWorkScope | null) => void;
   onChangeWork: (
     item: DailyWork,
     patch: WorkPatch,
@@ -46,6 +49,15 @@ export function DailyWorkList({
     refreshed?: boolean;
   }>;
 }) {
+  const [scopeFilter, setScopeFilter] = useState('all');
+  const [centers, setCenters] = useState<{code:string;name:string}[]>([]);
+  useEffect(()=>{let active=true;operationsContext().then(context=>{if(active)setCenters(context.centers);}).catch(()=>{});return()=>{active=false;};},[]);
+  const scopeKey = (value: DailyWork) => value.workScope?.kind === 'delivery_team' ? 'delivery_team' : value.workScope?.centerCode ? 'center:'+value.workScope.centerCode : 'legacy';
+  const scopeName = (value: DailyWork) => value.workScope ? portalCenterName(value.workScope.kind==='delivery_team'?null:value.workScope.centerCode,centers) : '기존 · 범위 미지정';
+  const scopeOptions = [...new Map([...items,...excludedItems].map(value=>[scopeKey(value),scopeName(value)])).entries()];
+  const currentScope = scopeOptions.some(([key])=>key===scopeFilter) ? scopeFilter : 'all';
+  const visibleItems = items.filter(value=>currentScope==='all'||scopeKey(value)===currentScope);
+  const visibleExcluded = excludedItems.filter(value=>currentScope==='all'||scopeKey(value)===currentScope);
   const [activeId, setActiveId] = useState<string | null>(() =>
     new URLSearchParams(location.search).get('work'),
   );
@@ -252,6 +264,7 @@ export function DailyWorkList({
         >
           <span className="daily-work-title">{value.title}</span>
           <span className="daily-work-trailing">
+            <span className="daily-task-meta">{scopeName(value)}</span>
             {(value.dueAt || value.dueDate) && (
               <span className="daily-work-deadline">
                 기한{' '}
@@ -284,8 +297,14 @@ export function DailyWorkList({
   const disabled = saving || busy;
   return (
     <>
+      {scopeOptions.length > 0 && <label className="daily-task-meta">업무 범위{' '}
+        <select className="app-select" value={currentScope} onChange={event=>setScopeFilter(event.target.value)}>
+          <option value="all">전체</option>
+          {scopeOptions.map(([key,name])=><option key={key} value={key}>{name}</option>)}
+        </select>
+      </label>}
       {sections.map((section) => {
-        const rows = items.filter((value) => value.section === section.id);
+        const rows = visibleItems.filter((value) => value.section === section.id);
         return rows.length ? (
           <section
             key={section.id}
@@ -299,14 +318,14 @@ export function DailyWorkList({
           </section>
         ) : null;
       })}
-      {!items.length && (
+      {!visibleItems.length && (
         <p className="daily-empty">표시할 업무나 참고 자료가 없습니다.</p>
       )}
-      {excludedItems.length > 0 && (
+      {visibleExcluded.length > 0 && (
         <details className="daily-excluded">
-          <summary>제외한 항목 {excludedItems.length}</summary>
+          <summary>제외한 항목 {visibleExcluded.length}</summary>
           <ul className="daily-items daily-work-list">
-            {excludedItems.map(row)}
+            {visibleExcluded.map(row)}
           </ul>
         </details>
       )}
@@ -462,7 +481,7 @@ export function DailyWorkList({
                 value={drafts[item.workId]?.text ?? ''}
                 onChange={event=>{const text=event.target.value;setDrafts(current=>({...current,[item.workId]:{id:crypto.randomUUID(),text}}));}} />
             </label>
-            {onFollowup && <button type="button" className="btn btn-primary" disabled={disabled || !drafts[item.workId]?.text.trim()} onClick={()=>{const text=drafts[item.workId]?.text ?? '';close();onFollowup(text,item.workId);setDrafts(current=>{const next={...current};delete next[item.workId];return next;});}}>분석 후 저장</button>}
+            {onFollowup && <button type="button" className="btn btn-primary" disabled={disabled || !drafts[item.workId]?.text.trim()} onClick={()=>{const text=drafts[item.workId]?.text ?? '';close();onFollowup(text,item.workId,item.monthly ? null : item.workScope);setDrafts(current=>{const next={...current};delete next[item.workId];return next;});}}>분석 후 저장</button>}
             {item.correction?.processingNotes?.map(note=><div key={note.id}><small>{formatBriefingTimestamp(note.at)}</small><p style={{whiteSpace:'pre-wrap'}}>{note.text}</p></div>)}
             <div className="daily-detail-actions">
               {item.category !== 'reference' && (

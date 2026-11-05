@@ -10,7 +10,7 @@ import { MailBriefingConnection } from '../components/portal/MailBriefingConnect
 import { DailyWorkList } from '../components/portal/DailyWorkList';
 import { MAIL_DIAGNOSTIC_OWNER_ID } from '../domain/portal-mail';
 import { privateMail } from '../lib/portal-mail';
-import type { DailyWork, WorkPatch } from '../lib/portal-mail';
+import type { DailyWork, WorkPatch, MailWorkScope } from '../lib/portal-mail';
 import { applyOwnerWorkCorrection } from '../../../supabase/functions/onedrive-auth/private-mail-work.js';
 import '../styles/mail-daily-briefing.css';
 
@@ -87,7 +87,7 @@ function ItemEvidence({ item }: { item: Item }) {
 function DailyOverview() {
   const [day, setDay] = useState(initialDay);
   const [messageOpen, setMessageOpen] = useState(false);
-  const [messageDraft,setMessageDraft]=useState<{id:string;text:string;targetWorkId?:string;autoSubmit?:boolean} | undefined>();
+  const [messageDraft,setMessageDraft]=useState<{id:string;text:string;targetWorkId?:string;workScope?:MailWorkScope|null;autoSubmit?:boolean} | undefined>();
   const [dateInput, setDateInput] = useState(day);
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -412,7 +412,7 @@ function DailyOverview() {
                 day={day}
                 busy={loading || pending !== null || filtersBusy || manualBusy}
                 onChangeWork={changeWork}
-                onFollowup={(text,targetWorkId)=>{setMessageDraft({id:crypto.randomUUID(),text,targetWorkId,autoSubmit:true});setMessageOpen(true);}}
+                onFollowup={(text,targetWorkId,workScope)=>{setMessageDraft({id:crypto.randomUUID(),text,targetWorkId,workScope,autoSubmit:true});setMessageOpen(true);}}
               />
             ) : (
               <>

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
+import { operationsContext } from '../../lib/operations';
+import { portalCenterName } from '../../domain/portal-types';
 import type {
+  MailWorkScope,
   MailManualImage,
   MailManualEntry,
   MailManualItem,
@@ -218,7 +221,9 @@ function ManualReceipt({
   disabled,
   onRetry,
   onRetryReport,
+  scopeLabel,
 }: {
+  scopeLabel?: string;
   entry: MailManualEntry;
   disabled: boolean;
   onRetry: () => void;
@@ -282,7 +287,7 @@ function ManualReceipt({
   return (
     <details className="daily-task-meta">
       <summary>
-        {formatBriefingTimestamp(entry.submittedAt)} 접수 · {summary}
+        {formatBriefingTimestamp(entry.submittedAt)} 접수{scopeLabel ? ` · ${scopeLabel}` : ''} · {summary}
         {reportStatus &&
         reportStatus !== 'waiting' &&
         reportStatus !== 'not_needed'
@@ -457,6 +462,7 @@ export function MailBriefingManualEntries({
     id: string;
     text: string;
     targetWorkId?: string;
+    workScope?: MailWorkScope | null;
     autoSubmit?: boolean;
   };
   refreshKey?: number;
@@ -527,6 +533,36 @@ export function MailBriefingManualEntries({
     }
   }
   const [targetWorkId, setTargetWorkId] = useState<string | null>(null);
+  const [centers, setCenters] = useState<{code:string;name:string}[]>([]);
+  const [scopeChoice, setScopeChoice] = useState('');
+  const [scopeError, setScopeError] = useState('');
+  const [targetScope, setTargetScope] = useState<MailWorkScope | null>(null);
+  const [targetScopeLoading, setTargetScopeLoading] = useState(false);
+  const [targetScopeFor, setTargetScopeFor] = useState<string | null>(null);
+  const scopePending = targetScopeLoading || Boolean(targetWorkId && targetScopeFor !== targetWorkId);
+  const selectedScope: MailWorkScope | undefined = targetWorkId ? (targetScopeFor === targetWorkId ? targetScope ?? undefined : undefined)
+    : scopeChoice === 'delivery_team' ? {kind:'delivery_team',centerCode:null,workCategory:null}
+    : centers.some(center=>center.code===scopeChoice) ? {kind:'center',centerCode:scopeChoice,workCategory:'업무'} : undefined;
+  const scopeLabel = (scope?: MailWorkScope | null) => scope
+    ? portalCenterName(scope.kind === 'delivery_team' ? null : scope.centerCode,centers) : '';
+  useEffect(()=>{
+    let active=true;
+    operationsContext().then(context=>{if(active){setCenters(context.centers);setScopeError('');}})
+      .catch(()=>{if(active)setScopeError('센터 목록을 불러오지 못했습니다. 입력 창을 다시 열어 주세요.');});
+    return()=>{active=false;};
+  },[inputOpen]);
+  useEffect(()=>{
+    let active=true;
+    setTargetScope(initialDraft?.workScope ?? null);
+    if(!targetWorkId || initialDraft?.workScope){setTargetScopeLoading(false);setTargetScopeFor(targetWorkId);return;}
+    setTargetScopeLoading(true);
+    privateMail.dailyOverview(day).then(view=>{
+      const item = view.workItems?.find(item=>item.workId===targetWorkId);
+      if(active)setTargetScope(item?.monthly ? null : item?.workScope ?? null);
+    }).catch(()=>{/* The server derives legacy target scope from the original work. */})
+      .finally(()=>{if(active){setTargetScopeLoading(false);setTargetScopeFor(targetWorkId);}});
+    return()=>{active=false;};
+  },[targetWorkId,initialDraft?.id,day]);
   const [referenceDate, setReferenceDate] = useState('');
   const [data, setData] = useState<MailManualList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -551,6 +587,7 @@ export function MailBriefingManualEntries({
   } | null>(null);
   useEffect(() => {
     setTargetWorkId(initialDraft?.targetWorkId ?? null);
+    if(initialDraft)setScopeChoice(initialDraft.workScope?.kind==='delivery_team'?'delivery_team':initialDraft.workScope?.centerCode??'');
     if (!initialDraft) return;
     imageGeneration.current++;
     imagesRef.current = [];
@@ -570,12 +607,14 @@ export function MailBriefingManualEntries({
       text !== initialDraft.text ||
       targetWorkId !== (initialDraft.targetWorkId ?? null) ||
       disabled ||
+      scopePending ||
+      (!targetWorkId && !selectedScope) ||
       busy
     )
       return;
     autoSubmitted.current = initialDraft.id;
     void add();
-  }, [inputOpen, initialDraft?.id, text, targetWorkId, disabled, busy]);
+  }, [inputOpen, initialDraft?.id, text, targetWorkId, disabled, busy, scopePending, scopeChoice, centers]);
   const load = useCallback(
     async (showLoading = true) => {
       const id = ++request.current;
@@ -713,6 +752,7 @@ export function MailBriefingManualEntries({
         clientRequestId: source.clientRequestId,
         referenceDate: source.requestedReference,
         targetWorkId: source.targetWorkId,
+        ...((source.workScope ?? entry.workScope) ? {workScope:(source.workScope ?? entry.workScope)!} : {}),
         retry: true,
         privacyConfirmed: source.privacyConfirmed,
       });
@@ -743,6 +783,8 @@ export function MailBriefingManualEntries({
       locked.current ||
       reading.current ||
       disabled ||
+      scopePending ||
+      (!targetWorkId && !selectedScope) ||
       (!input && !images.length) ||
       input.length > 12000 ||
       (images.length > 0 && !privacyConfirmed) ||
@@ -753,6 +795,7 @@ export function MailBriefingManualEntries({
       text: input,
       referenceDate: basis,
       targetWorkId,
+      workScope:selectedScope,
       images: images.map((image) => image.hash),
       privacyConfirmed,
     });
@@ -767,6 +810,7 @@ export function MailBriefingManualEntries({
         clientRequestId,
         referenceDate: basis,
         targetWorkId,
+        ...(selectedScope ? {workScope:selectedScope} : {}),
         ...(images.length
           ? { images: images.map(({ name, data }) => ({ name, data })) }
           : {}),
@@ -923,6 +967,19 @@ export function MailBriefingManualEntries({
                 닫기
               </ModalClose>
             </div>
+            <label className="manual-message-label" htmlFor="manual-work-scope">
+              업무 범위
+              <select id="manual-work-scope" className="app-select"
+                disabled={busy || Boolean(targetWorkId)}
+                value={targetWorkId ? (targetScope ? targetScope.kind==='delivery_team'?'delivery_team':targetScope.centerCode : 'inherit') : scopeChoice}
+                onChange={event=>{draftVersion.current++;setScopeChoice(event.target.value);}}>
+                {targetWorkId ? <option value="inherit">{targetScopeLoading?'기존 업무 범위 확인 중…':'기존 업무 범위 유지'}</option> : <option value="">선택</option>}
+                <option value="delivery_team">배송팀</option>
+                {centers.map(center=><option key={center.code} value={center.code}>{portalCenterName(center.code,centers)}</option>)}
+                {targetScope?.kind==='center'&&!centers.some(center=>center.code===targetScope.centerCode)&&<option value={targetScope.centerCode}>{scopeLabel(targetScope)}</option>}
+              </select>
+            </label>
+            {scopeError&&!targetWorkId&&<p role="alert">{scopeError}</p>}
             {targetWorkId && (
               <p className="daily-task-meta">
                 선택한 업무에 반영합니다. 대상이 다른 내용은 확인이 필요합니다.
@@ -1046,6 +1103,8 @@ export function MailBriefingManualEntries({
                   busy ||
                   disabled ||
                   readingImages ||
+                  scopePending ||
+                  (!targetWorkId && !selectedScope) ||
                   (!text.trim() && images.length === 0) ||
                   (images.length > 0 && !privacyConfirmed) ||
                   text.trim().length > 12000 ||
@@ -1091,6 +1150,7 @@ export function MailBriefingManualEntries({
               <ManualReceipt
                 key={entry.entryId}
                 entry={entry}
+                scopeLabel={scopeLabel(entry.workScope)}
                 disabled={busy || disabled}
                 onRetry={() => void retryEntry(entry)}
                 onRetryReport={async () => {

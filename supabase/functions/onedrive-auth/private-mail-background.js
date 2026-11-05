@@ -1,4 +1,4 @@
-import { loadMonthlyPortalTasks, monthlyMailRelated } from './private-mail-monthly.js';
+import { loadBriefingPortalTasks, monthlyMailRelated } from './private-mail-monthly.js';
 import { loadApprovedRemoteMailImages } from './private-mail-remote-images.js';
 import { APPROVED_MAIL_TARGET as TARGET } from './private-mail-policy.js';
 import { analyzePrivateMail } from './private-mail-analysis.js';
@@ -384,7 +384,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
     const date = body.day ?? dailyReportIdentity().day;
     if (!day(date)) throw fail('REPORT_DATE');
     const analyses = await reportAnalyses(date);
-    const portalTasks = await loadMonthlyPortalTasks({db,ownerId:user.id,day:date});
+    const portalTasks = await loadBriefingPortalTasks({db,ownerId:user.id,day:date,entries:current.manual_entries});
     return json(
       dailyBriefingView({
         now: date + 'T12:00:00+09:00',
@@ -760,7 +760,7 @@ export async function handleMailAutomation(action, body, user, ctx) {
       const fresh = await box();
       reportStage = 'analyses';
       const analyses = await reportAnalyses(body.day, fresh);
-      const portalTasks = await loadMonthlyPortalTasks({db,ownerId:user.id,day:body.day});
+      const portalTasks = await loadBriefingPortalTasks({db,ownerId:user.id,day:body.day,entries:fresh.manual_entries});
       const manual = manualDailyView(
         fresh.manual_entries ?? {}, body.day, fresh.briefing_overrides ?? {},
       );
