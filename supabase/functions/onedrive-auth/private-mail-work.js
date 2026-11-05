@@ -236,7 +236,13 @@ export function normalizeDailyWork(input) {
     originRef: input.ref,
   };
 }
+function attachmentReviewTexts(source) {
+  const lines=[...new Set([...(source?.attachmentConflicts??[]).filter(item=>typeof item.text==='string').map(item=>'첨부 내용 불일치 · '+item.text),...(source?.documentIssues??[]).filter(issue=>typeof issue.name==='string'&&typeof issue.reason==='string').map(issue=>
+    issue.name+' · '+(issue.reason==='PARTIAL_TEXT'?'첨부 일부만 읽음 — 원문 확인 필요':'첨부 내용을 읽지 못함 — 원문 확인 필요'))])];
+  return lines.length>3?[...lines.slice(0,2),'그 외 첨부 '+(lines.length-2)+'건 · 원문 확인 필요']:lines;
+}
 export function needsOwnerReview(mail) {
+  if (attachmentReviewTexts(mail.source).length) return true;
   if (
     mail.source?.intentCorrected === true ||
     mail.intent?.ownerFeedback === true ||
@@ -250,6 +256,7 @@ export function needsOwnerReview(mail) {
   );
 }
 export function isRoutineMail(mail) {
+  if (attachmentReviewTexts(mail.source).length) return false;
   const explicitReference =
     mail.source?.intentCorrected === true ||
     mail.intent?.ownerFeedback === true;
@@ -434,7 +441,8 @@ export function dailyWorkItems(
         summaries.set(mail.source.id, mailSummaryTexts(remaining));
         references.set(mail.source.id, {
           source: mail.source,
-          summary: mailSummaryTexts(remaining),
+          summary: [...mailSummaryTexts(remaining),...attachmentReviewTexts(mail.source)],
+          attachmentReview:attachmentReviewTexts(mail.source),
           context: group.name,
           reportKind: routine
             ? 'routine'
@@ -540,8 +548,8 @@ export function dailyWorkItems(
   }
   for (const record of references.values())
     if (
-      !usedSummary.has(record.source.id) &&
-      !updateSources.has(record.source.id)
+      record.attachmentReview.length || (!usedSummary.has(record.source.id) &&
+      !updateSources.has(record.source.id))
     )
       result.push(
         normalizeDailyWork({
@@ -550,7 +558,7 @@ export function dailyWorkItems(
           reportKind: record.reportKind,
           needsConfirmation: record.reportKind === 'review',
           title: record.source.subject || '참고 자료',
-          summary: record.summary,
+          summary: (usedSummary.has(record.source.id)||updateSources.has(record.source.id))&&record.attachmentReview.length?record.attachmentReview:record.summary,
           status: 'pending',
           requestedAt: record.source.receivedAt ?? record.source.sentAt,
           sourceRefs: [
@@ -1078,9 +1086,13 @@ export function renderBriefingWorkNote(items) {
       const detailLines = [];
       const displaySummary = workSummaryForDisplay(item);
       chunks.push('<li style="list-style-type:decimal;' + itemStyle + '">');
-      if (item.category === 'reference')
-        chunks.push(escape(briefingReferenceLine(item)));
-      else {
+      if (item.category === 'reference') {
+        const lead=briefingReferenceLine(item);
+        chunks.push(escape(lead));
+        if(item.reportKind==='review')for(const line of displaySummary)
+          if(line!==lead && (/^첨부 내용 불일치/.test(line)||line.includes('원문 확인 필요')))
+            detailLines.push('<li style="list-style-type:disc;' + paragraph + '">' + escape(line) + '</li>');
+      } else {
         chunks.push(
           escape(title) +
             (item.status === 'cancelled' ? ' · 취소' : ''),

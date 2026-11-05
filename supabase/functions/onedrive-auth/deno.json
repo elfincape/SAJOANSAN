@@ -1,6 +1,9 @@
 {
   "imports": {
     "postal-mime": "npm:postal-mime@4.0.7",
-    "imagescript": "npm:imagescript@3.13.1"
+    "imagescript": "npm:imagescript@3.13.1",
+    "exceljs": "npm:exceljs@4.4.0",
+    "pdfjs-dist/legacy/build/pdf.mjs": "npm:pdfjs-dist@4.10.38/legacy/build/pdf.mjs",
+    "pdfjs-dist/legacy/build/pdf.worker.mjs": "npm:pdfjs-dist@4.10.38/legacy/build/pdf.worker.mjs"
   }
 }

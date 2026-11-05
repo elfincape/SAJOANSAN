@@ -20,7 +20,92 @@ import {
   requiresMailPrivacyReview,
 } from './private-mail-images.js';
 import { verifyMailStream } from './private-mail-stream-verify.js';
+import {
+  classifyMailDocument,
+  extractMailDocument,
+} from './private-mail-documents.js';
 const enc = encodeURIComponent;
+const DOCUMENT_FILE_LIMIT = 6 * 1024 * 1024;
+const DOCUMENT_TOTAL_LIMIT = 12 * 1024 * 1024;
+const DOCUMENT_TEXT_LIMIT = 32000;
+const imageAttachment = (file) =>
+  /\.(?:jpe?g|png|webp)$/i.test(file.name ?? '') ||
+  /^image\/(?:jpeg|png|webp)$/i.test(file.mediaType ?? '');
+
+function attachmentIssue(file, reason) {
+  const name = String(file.name ?? file.original_name ?? '')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .trim();
+  return {
+    name:
+      (requiresMailPrivacyReview(name) ? '' : name).slice(0, 160) || '첨부파일',
+    reason,
+  };
+}
+
+export async function readMailDocuments(files, sourceId, bytes) {
+  const documents = [],
+    issues = [],
+    seen = new Set();
+  let totalBytes = 0,
+    totalText = 0,
+    attempts = 0;
+  for (const file of files) {
+    if (file.kind !== 'attachment') continue;
+    const type = classifyMailDocument(file);
+    if (!type) {
+      if (!imageAttachment(file))
+        issues.push(attachmentIssue(file, 'DOCUMENT_UNSUPPORTED'));
+      continue;
+    }
+    if (requiresMailPrivacyReview(file.name ?? file.original_name)) {
+      issues.push(attachmentIssue(file, 'DOCUMENT_PRIVACY_REVIEW'));
+      continue;
+    }
+    try {
+      const key = type + ':' + hexHash(file.content_hash);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!Number.isSafeInteger(file.byte_size) || file.byte_size < 1)
+        throw Error('DOCUMENT_UNREADABLE');
+      if (
+        attempts >= 6 ||
+        totalBytes + file.byte_size > DOCUMENT_TOTAL_LIMIT ||
+        file.byte_size > DOCUMENT_FILE_LIMIT ||
+        totalText >= DOCUMENT_TEXT_LIMIT
+      )
+        throw Error('DOCUMENT_LIMIT');
+      attempts++;
+      totalBytes += file.byte_size;
+      const result = await extractMailDocument(
+        await bytes(file, DOCUMENT_FILE_LIMIT),
+        type,
+      );
+      if (requiresMailPrivacyReview(result.text))
+        throw Error('DOCUMENT_PRIVACY_REVIEW');
+      const text = result.text
+        .slice(0, Math.min(16000, DOCUMENT_TEXT_LIMIT - totalText))
+        .trim();
+      if (!text) throw Error('DOCUMENT_UNREADABLE');
+      totalText += text.length;
+      documents.push({
+        id: sourceId + ':doc:' + file.index,
+        name: attachmentIssue(file, '').name,
+        text,
+        partial: result.partial || text.length < result.text.trim().length,
+      });
+    } catch (error) {
+      const code = error?.code ?? error?.message;
+      issues.push(
+        attachmentIssue(
+          file,
+          /^DOCUMENT_[A-Z_]+$/.test(code ?? '') ? code : 'DOCUMENT_UNREADABLE',
+        ),
+      );
+    }
+  }
+  return { documents, issues };
+}
 const sourceRow = (row) => {
   if (
     row?.owner_id !== TARGET.owner_id ||
@@ -53,7 +138,7 @@ export function createMailSource({
 }) {
   async function access(row, action) {
     sourceRow(row);
-    return withLock(async () => {
+    return withLock(async (holder) => {
       const box = await mailbox(row.mailbox_id),
         env = await environment(),
         driveOwner = await privateDestination(box, env);
@@ -129,7 +214,7 @@ export function createMailSource({
         }
         return emlHeaderText(joined);
       };
-      return action({ box, bytes, headers });
+      return action({ box, bytes, headers, renewAccess: () => renew(holder) });
     });
   }
   async function loadText(row, { signal } = {}) {
@@ -197,7 +282,7 @@ export function createMailSource({
     return result;
   }
   async function loadMail(row) {
-    const source = await access(row, async ({ box, bytes, headers }) => {
+    const source = await access(row, async ({ box, bytes, headers, renewAccess }) => {
       const bodyFile =
         row.files.find((file) => file.kind === 'text') ??
         row.files.find((file) => file.kind === 'html');
@@ -228,8 +313,13 @@ export function createMailSource({
       let remoteHtml = '';
       if (!text.trim() && bodyHtml)
         remoteHtml = new TextDecoder().decode(await bytes(bodyHtml));
-      if (box.automation_config?.analysisScopes?.[row.id] === 'body_headers') {
-        if (!text.trim() && remoteMailImageManifest(remoteHtml).content.length)
+      if (
+        box.automation_config?.analysisScopes?.[row.id] === 'body_headers'
+      ) {
+        if (
+          !text.trim() &&
+          remoteMailImageManifest(remoteHtml).content.length
+        )
           throw Error('BODY_IMAGES_EXCLUDED');
         const eml = row.files.find((file) => file.kind === 'eml');
         const verifiedHeaders = eml ? await headers(eml) : '';
@@ -263,11 +353,16 @@ export function createMailSource({
           : '';
       let verifiedHeaders = null;
       const eml = row.files.find((file) => file.kind === 'eml');
+      let photoContextUnavailable = false;
       if (needsMailPhotoMetadata(files, html)) {
-        if (!eml) throw Error('IMAGE_CONTEXT_REVIEW');
-        const original = await bytes(eml, MAIL_RAW_LIMIT);
-        files = await recoverMailPhotoMetadata(files, original);
-        verifiedHeaders = emlHeaderText(original);
+        try {
+          if (!eml) throw Error('IMAGE_CONTEXT_REVIEW');
+          const original = await bytes(eml, MAIL_RAW_LIMIT);
+          files = await recoverMailPhotoMetadata(files, original);
+          verifiedHeaders = emlHeaderText(original);
+        } catch {
+          photoContextUnavailable = true;
+        }
       }
       const candidates = selectMailPhotos({
         subject: row.subject,
@@ -275,51 +370,99 @@ export function createMailSource({
         files,
         html,
       });
-      if (candidates.review.length) throw Error(candidates.review[0].reason);
+      const explicitRemoteScope =
+        box.automation_config?.analysisScopes?.[row.id] ===
+        'body_remote_images';
+      const documentIssues = candidates.review.map((file) =>
+        attachmentIssue(file, file.reason),
+      );
+      if (photoContextUnavailable) {
+        documentIssues.push(
+          ...candidates.selected.map((file) =>
+            attachmentIssue(file, 'IMAGE_CONTEXT_REVIEW'),
+          ),
+        );
+      }
       const images = [];
-      for (const file of candidates.selected) {
-        const data = await bytes(file),
-          info = inspectMailImage(data);
-        if (
-          mailPhotoExclusionReason(file, info, {
-            html,
-            text,
-            subject: row.subject,
-          })
+      for (const file of photoContextUnavailable ? [] : candidates.selected) {
+        try {
+          const data = await bytes(file),
+            info = inspectMailImage(data);
+          if (
+            mailPhotoExclusionReason(file, info, {
+              html,
+              text,
+              subject: row.subject,
+            })
+          )
+            continue;
+          images.push({
+            id: row.id + ':' + file.index,
+            name: file.original_name,
+            mediaType: info.mediaType,
+            width: info.width,
+            height: info.height,
+            contentHash: hexHash(file.content_hash),
+            bytes: data,
+          });
+        } catch {
+          documentIssues.push(attachmentIssue(file, 'IMAGE_UNREADABLE'));
+        }
+      }
+      let documents = [];
+      if (
+        !explicitRemoteScope &&
+        files.some(
+          (file) => file.kind === 'attachment' && !imageAttachment(file),
         )
-          continue;
-        images.push({
-          id: row.id + ':' + file.index,
-          name: file.original_name,
-          mediaType: info.mediaType,
-          width: info.width,
-          height: info.height,
-          contentHash: hexHash(file.content_hash),
-          bytes: data,
-        });
+      ) {
+        await renewAccess();
+        const extracted = await readMailDocuments(files, row.id, bytes);
+        documents = extracted.documents;
+        documentIssues.push(...extracted.issues);
       }
       if (!text.trim() && !images.length && remoteHtml) {
-        images.push(
-          ...(await loadApprovedRemoteMailImages({
-            html: remoteHtml,
-            sourceId: row.id,
-            approvedUrls:
-              box.automation_config?.remoteImages?.[row.id]?.approvedUrls,
-            excludedUrls:
-              box.automation_config?.remoteImages?.[row.id]?.excludedUrls ?? [],
-            fetcher: remoteFetcher,
-          })),
-        );
+        try {
+          images.push(
+            ...(await loadApprovedRemoteMailImages({
+              html: remoteHtml,
+              sourceId: row.id,
+              approvedUrls:
+                box.automation_config?.remoteImages?.[row.id]?.approvedUrls,
+              excludedUrls:
+                box.automation_config?.remoteImages?.[row.id]?.excludedUrls ??
+                [],
+              fetcher: remoteFetcher,
+            })),
+          );
+        } catch (error) {
+          if (!documents.length && !documentIssues.length) throw error;
+          documentIssues.push({
+            name: '메일 본문 이미지',
+            reason: 'IMAGE_UNREADABLE',
+          });
+        }
       }
       if (verifiedHeaders === null)
         verifiedHeaders = eml ? await headers(eml) : '';
       return {
         ...base,
-        ...(box.automation_config?.analysisScopes?.[row.id] ===
-        'body_remote_images'
+        ...(explicitRemoteScope
           ? { analysisScope: 'body_remote_images' }
           : {}),
         images,
+        ...(documents.length ? { documents } : {}),
+        ...(documentIssues.length
+          ? {
+              documentIssues:
+                documentIssues.length > 12
+                  ? [
+                      ...documentIssues.slice(0, 11),
+                      { name: '나머지 첨부파일', reason: 'DOCUMENT_LIMIT' },
+                    ]
+                  : documentIssues,
+            }
+          : {}),
         headers: verifiedHeaders,
         ...mailOwnershipContext({
           text,
