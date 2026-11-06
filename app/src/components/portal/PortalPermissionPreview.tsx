@@ -1,6 +1,7 @@
 import { MentionText } from './PortalMentions';
 import { effectivePermission } from '../../domain/portal-permissions';
 import type { PermissionConfig, PortalMember } from '../../domain/portal-types';
+import { resourceFeatureRestriction } from '../../domain/feature-catalog';
 import { usePortal } from './PortalStore';
 export function PortalPermissionPreview({
   rules,
@@ -39,10 +40,11 @@ export function PortalPermissionPreview({
                 </th>
                 {centers.map((c) => {
                   const access = effectivePermission(config, person, c.code);
+                  const restriction = resourceFeatureRestriction(config.resource, person);
                   return (
                     <td key={c.code}>
                       <MentionText>
-                        {access.edit
+                        {restriction ?? (access.edit
                           ? config.resource === 'notifications'
                             ? '알림 확인'
                             : config.resource === 'incidents'
@@ -50,7 +52,7 @@ export function PortalPermissionPreview({
                               : '열람·수정'
                           : access.read
                             ? '열람 전용'
-                            : '접근 불가'}
+                            : '접근 불가')}
                       </MentionText>
                     </td>
                   );

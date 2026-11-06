@@ -67,3 +67,14 @@ localStorage.setItem=()=>{throw new Error('storage disabled');};
 assert.equal(savePrivateFeatures(owner,{routes:false}),false);
 localStorage.setItem=normalSave;
 console.log('storage failures report failure instead of a false saved state');
+
+{
+ const {stripTypeScriptTypes}=await import('node:module'),{default:vm}=await import('node:vm');
+ const scope={URL,MAIL_DIAGNOSTIC_OWNER_ID:'synthetic-owner'};
+ const source=stripTypeScriptTypes(readFileSync(new URL('../app/src/domain/feature-catalog.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replace(/\bexport /g,'');
+ vm.runInNewContext(source+'\nglobalThis.restriction=resourceFeatureRestriction;',scope);
+ const employee={id:'synthetic-employee',role:'editor'},admin={...employee,role:'admin'},ownerProfile={id:'synthetic-owner',role:'admin'};
+ for(const [resource,profile,want] of [['drivers',employee,null],['export',employee,'관리자 전용'],['import',employee,'관리자 전용'],['export',admin,null],['straightener',admin,'본인 전용'],['straightener',ownerProfile,null],['haul',employee,null],['unknown',employee,null]])
+  assert.equal(scope.restriction(resource,profile),want,'permission editor must explain the existing feature restriction: '+resource);
+ console.log('PASS feature-level permission explanations: private/admin boundaries and public siblings stay distinct');
+}
