@@ -4,6 +4,7 @@ import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import {
   FEATURE_CATALOG,
   FEATURE_CATEGORIES,
+  resourceFeatureRestriction,
 } from '../../domain/feature-catalog';
 import type {
   MemberPermission,
@@ -263,7 +264,7 @@ function EmployeePermissions({
                     <tr>
                       <th scope="col">업무</th>
                       <th scope="col">권한</th>
-                      <th scope="col">조회 범위</th>
+                      <th scope="col">자료 범위</th>
                       <th scope="col">{centerName(previewCenter)} 적용</th>
                     </tr>
                   </thead>
@@ -272,6 +273,7 @@ function EmployeePermissions({
                       .filter((config) => categoryFor(config) === key)
                       .map((config) => {
                         const permission = permissionFor(config);
+                        const featureRestriction = resourceFeatureRestriction(config.resource, person);
                         const sharedTool = ['distance_tools', 'gimhae_dispatch'].includes(config.resource);
                         const effective = effectivePermission(
                           previewConfig(config),
@@ -280,7 +282,7 @@ function EmployeePermissions({
                         );
                         const level = permission?.level ?? 'inherit';
                         const fixed =
-                          person.role === 'admin' || config.admin_only;
+                          person.role === 'admin' || config.admin_only || !!featureRestriction;
                         const editAllowed =
                           person.role === 'editor' ||
                           ['incidents', 'notifications'].includes(
@@ -295,7 +297,7 @@ function EmployeePermissions({
                             : statusOnly
                               ? '처리 상태 변경'
                               : '수정';
-                        const actualLabel = effective.edit
+                        const actualLabel = featureRestriction ?? (effective.edit
                           ? config.resource === 'notifications'
                             ? '알림 확인'
                             : statusOnly
@@ -303,7 +305,7 @@ function EmployeePermissions({
                               : '조회·수정'
                           : effective.read
                             ? '조회'
-                            : '불가';
+                            : '불가');
                         const related = [
                           ...new Set(
                             FEATURE_CATALOG.filter(
@@ -330,6 +332,7 @@ function EmployeePermissions({
                               {config.admin_only ? (
                                 <small>관리자 전용</small>
                               ) : null}
+                              {featureRestriction && !config.admin_only ? <small>{featureRestriction} · 직원 권한으로 해제되지 않음</small> : null}
                             </th>
                             <td data-label="권한">
                               <label>
@@ -369,16 +372,16 @@ function EmployeePermissions({
                               </label>
                               {fixed ? (
                                 <small>
-                                  {config.admin_only
+                                  {featureRestriction ?? (config.admin_only
                                     ? '관리자 전용'
-                                    : '관리자 권한'}
+                                    : '관리자 권한')}
                                 </small>
                               ) : null}
                             </td>
-                            <td data-label="조회 범위">
+                            <td data-label="자료 범위">
                               <label>
                                 <span className="sr-only">
-                                  {config.title} 조회 범위
+                                  {config.title} 자료 범위
                                 </span>
                                 <select
                                   data-permission-scope={config.resource}
@@ -410,7 +413,7 @@ function EmployeePermissions({
                               </label>
                               {level === 'edit' &&
                               centerEditResources.includes(config.resource) ? (
-                                <small>수정은 담당센터만</small>
+                                <small>{permission?.scope === 'all' ? '전체센터 조회·수정' : '담당센터 조회·수정'}</small>
                               ) : null}
                             </td>
                             <td
@@ -418,7 +421,7 @@ function EmployeePermissions({
                             >
                               <span
                                 className="employee-permission-effective"
-                                data-level={levelOf(effective)}
+                                data-level={featureRestriction ? 'none' : levelOf(effective)}
                               >
                                 {sharedTool ? `공용 · ${actualLabel}` : actualLabel}
                               </span>

@@ -359,3 +359,13 @@ export function featureAvailable(feature: Feature, profile: { id?: string; role?
     (!feature.centers.length || feature.centers.includes(centerCode))
   );
 }
+
+export function resourceFeatureRestriction(resource: string, profile: { id?: string; role?: string }) {
+  const pages = FEATURE_CATALOG.filter((feature) => feature.resource === resource && feature.href && !feature.parent);
+  if (!pages.length) return null;
+  if (pages.every((feature) => (feature.ownerOnly || feature.ownerId) && profile.id !== (feature.ownerId ?? MAIL_DIAGNOSTIC_OWNER_ID)))
+    return '본인 전용';
+  if (profile.role !== 'admin' && pages.every((feature) => feature.adminOnly))
+    return '관리자 전용';
+  return null;
+}

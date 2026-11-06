@@ -28,6 +28,14 @@ export function effectivePermission(config, person, center) {
   if (person.role === 'admin') return { read: true, edit: true };
   if (config.admin_only) return { read: false, edit: false };
   const memberships = person.centers ?? [];
+  if (person.id && config.member_overrides && Object.hasOwn(config.member_overrides, person.id)) {
+    const override = config.member_overrides[person.id];
+    if (!override || !['none', 'read', 'edit'].includes(override.level) || !['own', 'all'].includes(override.scope))
+      return { read: false, edit: false };
+    const inScope = override.scope === 'all' || (center ? memberships.includes(center) : memberships.length > 0);
+    const read = override.level !== 'none' && inScope;
+    return { read, edit: read && override.level === 'edit' && (person.role === 'editor' || ['incidents', 'notifications'].includes(config.resource)) };
+  }
   const matches = (rule) =>
     !!rule &&
     (rule.everyone === true ||
@@ -306,7 +314,7 @@ export function renderPermissions({
           node(
             'p',
             centerEditResources.includes(config.resource)
-              ? '실제 수정은 센터 업무 담당자의 담당 센터 안에서만 가능합니다. 전체 센터 자료를 선택해도 담당 밖 수정은 허용되지 않습니다.'
+              ? '기본 페이지 규칙의 수정은 담당 센터에 적용됩니다. 직원별로 전체센터 수정을 명시한 업무는 해당 범위가 우선합니다.'
               : config.resource === 'incidents'
                 ? '조회 전용도 허용 조건에 따라 처리완료·재개할 수 있습니다. 내용 작성·수정은 센터 담당 권한이 필요합니다.'
                 : config.resource === 'notifications'

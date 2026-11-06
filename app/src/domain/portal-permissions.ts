@@ -47,9 +47,7 @@ export function effectivePermission(
       read &&
       override.level === 'edit' &&
       (person.role === 'editor' ||
-        ['incidents', 'notifications'].includes(config.resource)) &&
-      (!centerEditResources.includes(config.resource) ||
-        (center ? person.centers.includes(center) : person.centers.length > 0));
+        ['incidents', 'notifications'].includes(config.resource));
     return { read, edit };
   }
   const memberships = person.centers ?? [],

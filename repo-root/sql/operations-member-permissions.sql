@@ -61,7 +61,7 @@ begin
       and public.operations_permission_match(config.write_rule, p_actor, p_center);
   end if;
 
-  if can_edit and p_resource in (
+  if can_edit and not (config.member_overrides ? p_actor::text) and p_resource in (
     'tasks', 'forms', 'trash', 'drivers', 'vehicles', 'companies',
     'delivery_points', 'routes', 'transfers', 'charter', 'dispatch_parser', 'one_top'
   ) then
