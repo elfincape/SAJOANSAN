@@ -34,6 +34,6 @@
 ## Task 3: UI, review and rollout
 
 - [x] Update misleading scope/help text in existing member/permission views and `docs/permissions.md`; avoid a new screen.
-- [ ] Run permission/auth/API-related existing tests and app build, then obtain a fresh whole-branch review.
+- [x] Run permission/auth/API-related existing tests and app build, then obtain a fresh whole-branch review. Review caught an inherited incident exception; fixed and independently rechecked native edit/file and status-only boundaries.
 - [ ] Update PR155 with final behavior; push/merge only tested changes. Apply SQL before the corresponding UI rollout and verify production function results using existing accounts read-only.
 - [ ] Verify stored grants/memberships did not change. Distinguish local/synthetic checks, live permission reads, and any actual authenticated UI verification.
