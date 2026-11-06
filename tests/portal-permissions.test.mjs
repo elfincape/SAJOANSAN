@@ -34,3 +34,30 @@ const centerCondition={...config,read_rule:{everyone:false,roles:[],centers:['00
 assert.equal(effectivePermission(centerCondition,editor,'001').read,true);
 assert.equal(effectivePermission(centerCondition,{...editor,centers:['001']},'002').read,false);
 console.log('PASS: active state, role, center membership, audience vs data scope, admin-only and status-only exceptions');
+
+// Exercise the real browser auth cache across permission refresh and logout races.
+{
+ const {stripTypeScriptTypes}=await import('node:module'),{default:vm}=await import('node:vm'),{readFileSync}=await import('node:fs');
+ const code=stripTypeScriptTypes(readFileSync(new URL('../app/src/lib/auth.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replace(/\bexport /g,'')+'\nglobalThis.exports={loadAuthContext,getLoadedAuthContext,signOut};';
+ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
+ function mountAuth(){
+  const snapshots=[];let profileId='synthetic-user';
+  const supabase={auth:{getSession:async()=>({data:{session:{user:{id:profileId}}}}),getUser:async()=>({data:{user:{id:profileId}}}),signOut:async()=>{}},from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:{id:profileId,role:'editor',active:true}})})})}),rpc:()=>{const response=deferred();snapshots.push(response);return response.promise;}};
+  const context={supabase,clearSelectedCenter(){},location:{replace(){}},console};vm.runInNewContext(code,context);
+  return {auth:context.exports,snapshots};
+ }
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ const first=mountAuth(),old=first.auth.loadAuthContext();await tick();
+ const refreshed=first.auth.loadAuthContext(true);await tick();
+ assert.equal(first.snapshots.length,2,'forced refresh must request the current permission snapshot while an older request is pending');
+ first.snapshots[1].resolve({data:{access:{drivers:{read:true,edit:true}}}});
+ assert.equal((await refreshed).permissions.access.drivers.edit,true);
+ first.snapshots[0].resolve({data:{access:{drivers:{read:true,edit:false}}}});
+ assert.equal(await old,null,'superseded permission result must not be returned to an older caller');
+ assert.equal(first.auth.getLoadedAuthContext().permissions.access.drivers.edit,true,'late stale response must not overwrite current permissions');
+ const logout=mountAuth(),loading=logout.auth.loadAuthContext();await tick();await logout.auth.signOut();
+ logout.snapshots[0].resolve({data:{access:{drivers:{read:true,edit:true}}}});
+ assert.equal(await loading,null,'request started before logout must not restore an authenticated context');
+ assert.equal(logout.auth.getLoadedAuthContext(),undefined,'logout must keep the auth cache empty after an old request finishes');
+ console.log('PASS browser permission cache: forced refresh supersedes old requests and logout rejects late responses');
+}
