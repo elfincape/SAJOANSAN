@@ -54,7 +54,7 @@ if(process.env.PGLITE_MODULE){
   await db.exec(`create table operations_permissions(resource text primary key,admin_only boolean default false,read_rule jsonb,write_rule jsonb,member_overrides jsonb default '{}');`);
   const base=sql('operations-permissions.sql');
   await db.exec('alter table operations_tasks add column work_end_date date;');
-  for(const name of ['operations_permission_match','operations_permission_for_actor','operations_resource_allowed','operations_save_task_period','operations_save_task','operations_reopen_task']){
+  for(const name of ['operations_permission_match','operations_permission_for_actor','operations_resource_allowed','operations_save_task_period','operations_save_task','operations_reopen_task','operations_incident_action']){
    const definition=base.match(new RegExp('create(?: or replace)? function public\\.'+name+'\\([\\s\\S]*?as (\\$[a-z_]*\\$)[\\s\\S]*?\\1\\s*;','i'))?.[0];
    assert.ok(definition,'real permission function source: '+name);await db.exec(definition);
   }
@@ -73,6 +73,31 @@ if(process.env.PGLITE_MODULE){
   assert.deepEqual(context.writable_centers,['001','002','gimhae','yangsan'],'portal must expose writable centers from effective permissions');
   const rpc=async(name,args)=>(await db.query('select to_jsonb('+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+')) value',args)).rows[0].value;
   const request=()=>crypto.randomUUID();
+  const incident=(await db.query(`insert into operations_incidents(center_code,title,kind,created_by) values('001','가상 사고 원문','가상',$1) returning *`,[member])).rows[0];
+  await db.exec("update operations_permissions set member_overrides='{}' where resource='incidents'");
+  assert.equal((await db.query("select operations_can_edit_resource('incidents','001') allowed")).rows[0].allowed,false,'inherited incident status permission must not permit content writes without membership');
+  await assert.rejects(()=>rpc('operations_incident_action',[request(),incident.id,incident.version,'edit',{title:'unauthorized'}]),/권한/);
+  const incidentArgs=[request(),member,'incident',incident.id,'d'.repeat(43),100,'application/pdf','사고.pdf','pdf'];
+  await assert.rejects(()=>rpc('operations_reserve_file',incidentArgs),/권한/,'inherited incident permission must not allow a cross-center upload');
+  const incidentFile=(await db.query(`insert into operations_files(incident_id,center_code,uploaded_by,request_id,content_hash,original_name,file_name,mime_type,byte_size,ordinal,drive_id,item_id) values($1,'001',$2,$3,$4,'사고.pdf','사고.pdf','application/pdf',100,1,'synthetic-drive','incident-item') returning id`,[incident.id,member,request(),'e'.repeat(43)])).rows[0].id;
+  await assert.rejects(()=>rpc('operations_commit_file',[incidentFile,member,'synthetic-drive','incident-item']),/권한/);
+  await db.query("insert into operations_center_members values($1,'002')",[member]);
+  assert.equal((await db.query("select operations_can_edit_resource('incidents','001') allowed")).rows[0].allowed,false,'inherited incident content remains restricted for foreign-center editors');
+  await db.query('delete from operations_center_members where user_id=$1',[member]);
+  await db.query("update user_profiles set role='viewer' where id=$1",[member]);
+  const resolved=await rpc('operations_incident_action',[request(),incident.id,incident.version,'resolve',{note:'상태 처리'}]);
+  assert.equal(resolved.status,'resolved','existing viewer status-only exception remains available');
+  const openIncident=await rpc('operations_incident_action',[request(),incident.id,resolved.version,'reopen',{}]);
+  await db.query("update user_profiles set role='editor' where id=$1",[member]);
+  await db.query("update operations_permissions set member_overrides=jsonb_build_object($1::text,jsonb_build_object('level','edit','scope','all')) where resource='incidents'",[member]);
+  assert.equal((await rpc('operations_incident_action',[request(),incident.id,openIncident.version,'edit',{title:'명시 권한 수정'}])).title,'명시 권한 수정');
+  assert.ok((await rpc('operations_reserve_file',incidentArgs)).id,'explicit global incident edit enables cross-center upload');
+  assert.equal(await rpc('operations_commit_file',[incidentFile,member,'synthetic-drive','incident-item']),incidentFile);
+  for(const level of ['read','none']){
+   await db.query("update operations_permissions set member_overrides=jsonb_build_object($1::text,jsonb_build_object('level',$2::text,'scope','all')) where resource='incidents'",[member,level]);
+   assert.equal((await db.query("select operations_can_edit_resource('incidents','001') allowed")).rows[0].allowed,false,level+' must not permit incident content edits');
+  }
+  await db.query("update operations_permissions set member_overrides=jsonb_build_object($1::text,jsonb_build_object('level','edit','scope','all')) where resource='incidents'",[member]);
   const template=(await db.query(`insert into operations_templates(family_id,version,center_code,title,spec,status,created_by,approved_by,approved_at) values(gen_random_uuid(),1,'001','가상 권한 검증 양식','{"effective_from":"2026-11-01","fields":[],"steps":[]}', 'approved',$1,$1,now()) returning id`,[member])).rows[0].id;
   const issueId=request(),created=await rpc('operations_task_from_template',[issueId,template,'2026-11-06',{},member,false]);
   assert.equal(created.owner_id,member,'no-center editor can own a task with an explicit task grant');

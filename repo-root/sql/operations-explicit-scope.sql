@@ -20,22 +20,22 @@ begin
   {
     "signature": "public.operations_can_edit_resource(text,text)",
     "before": "8ad6136753a2bdc3e937340d28e05d3c",
-    "after": "83643aad750a8a7eac3ad08aacd6b4f7",
+    "after": "3b93bd459338d1a6ab4f39ff9b34a240",
     "replacements": [
       {
         "old": "(p.role='admin' or (p.role='editor' and exists(select 1 from public.operations_center_members m where m.user_id=p.id and m.center_code=p_center)))",
-        "new": "p.role in ('admin','editor')"
+        "new": "(p.role='admin' or (p.role='editor' and (exists(select 1 from public.operations_center_members m where m.user_id=p.id and m.center_code=p_center) or exists(select 1 from public.operations_permissions c where c.resource=p_resource and c.member_overrides->p.id::text->>'level'='edit' and c.member_overrides->p.id::text->>'scope'='all'))))"
       }
     ]
   },
   {
     "signature": "public.operations_reserve_file(uuid,uuid,text,uuid,text,integer,text,text,text)",
     "before": "d4cef9d1b02504292b7b655e4958546d",
-    "after": "2ff9aa42954ccdf1629819c279ad19c8",
+    "after": "99f2b72ca0b8c9275ad0c0f1a87e190e",
     "replacements": [
       {
         "old": "(role='admin' or (role='editor' and exists(select 1 from public.operations_center_members m where m.user_id=p_actor and m.center_code=subject_row->>'center_code')))",
-        "new": "role in ('admin','editor')"
+        "new": "(role='admin' or (role='editor' and (exists(select 1 from public.operations_center_members m where m.user_id=p_actor and m.center_code=subject_row->>'center_code') or exists(select 1 from public.operations_permissions c where c.resource=case p_kind when 'task' then 'tasks' when 'incident' then 'incidents' else 'forms' end and c.member_overrides->p_actor::text->>'level'='edit' and c.member_overrides->p_actor::text->>'scope'='all'))))"
       },
       {
         "old": " select name into center_name from public.centers",
@@ -46,11 +46,11 @@ begin
   {
     "signature": "public.operations_commit_file(uuid,uuid,text,text)",
     "before": "e4e4496c188572e208d42b5ad3c92ddc",
-    "after": "a77427d9cb88cc33863050670be830aa",
+    "after": "45b482d68dc79e7840a8f0606a28c996",
     "replacements": [
       {
         "old": "(role='admin' or (role='editor' and exists(select 1 from public.operations_center_members m where m.user_id=p_actor and m.center_code=file_row.center_code)))",
-        "new": "role in ('admin','editor')"
+        "new": "(role='admin' or (role='editor' and (exists(select 1 from public.operations_center_members m where m.user_id=p_actor and m.center_code=file_row.center_code) or exists(select 1 from public.operations_permissions c where c.resource=case when file_row.task_id is not null then 'tasks' when file_row.incident_id is not null then 'incidents' else 'forms' end and c.member_overrides->p_actor::text->>'level'='edit' and c.member_overrides->p_actor::text->>'scope'='all'))))"
       },
       {
         "old": " if file_row.task_id is not null then select to_jsonb(t) into subject_row from public.operations_tasks t where id=file_row.task_id;\n elsif file_row.incident_id is not null then select to_jsonb(i) into subject_row from public.operations_incidents i where id=file_row.incident_id;\n else select to_jsonb(s) into subject_row from public.operations_surveys s where id=file_row.survey_id;end if;\n",
