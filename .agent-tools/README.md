@@ -69,3 +69,7 @@ Lenis 1.3.27은 웹의 고정 의존성으로 추가했다. 패키지 모듈을 
 ## JEV Ultrafast · MCP · Hermes 스킬
 
 설치·복구·실행·키 설정과 현재 세션 연결의 구분은 [JEV.md](JEV.md)를 따른다. Mac 전용 컴퓨터 조작 도구는 제외했다. 기존 REA·Serena 설정을 유지한다.
+
+## BMAD 기획·UX·구조 설계
+
+공식 안정판 6.12.4의 Codex용 core·bmm 모듈을 설치했다. 사용·고정 버전·복원 방법은 [BMAD.md](BMAD.md)를 따른다. 운영 앱 의존성과 기존 PRODUCT.md·DESIGN.md는 변경하지 않는다.
