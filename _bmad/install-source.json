@@ -1,0 +1,46 @@
+{
+  "package": "bmad-method",
+  "version": "6.12.4",
+  "repository": "https://github.com/bmad-code-org/BMAD-METHOD",
+  "revision": "bab9082c3e884e0d72c759bcd1a6d90bcc01be84",
+  "integrity": "sha512-DBVws7H1NxpSOhv2DHvLEHTceQGCv9c+gBx/1cnVF38WhlN70854SnHUUCHkTuLIalu6hq/7LRVtAWCNHmnFEw==",
+  "modules": [
+    "core",
+    "bmm"
+  ],
+  "tools": [
+    "codex"
+  ],
+  "compatibility_shims": false,
+  "skills": [
+    "bmad-advanced-elicitation",
+    "bmad-agent-analyst",
+    "bmad-agent-architect",
+    "bmad-agent-dev",
+    "bmad-agent-pm",
+    "bmad-agent-ux-designer",
+    "bmad-architecture",
+    "bmad-brainstorming",
+    "bmad-build",
+    "bmad-build-auto",
+    "bmad-code-review",
+    "bmad-correct-course",
+    "bmad-create-epics-and-stories",
+    "bmad-customize",
+    "bmad-deep-recon",
+    "bmad-forge-idea",
+    "bmad-help",
+    "bmad-party-mode",
+    "bmad-prd",
+    "bmad-prfaq",
+    "bmad-product-brief",
+    "bmad-project-context",
+    "bmad-qa-generate-e2e-tests",
+    "bmad-retrospective",
+    "bmad-review",
+    "bmad-spec",
+    "bmad-sprint-planning",
+    "bmad-ux",
+    "bmad-walkthrough"
+  ]
+}
