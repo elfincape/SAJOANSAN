@@ -190,16 +190,18 @@ export function DispatchProfiles({
         );
       throw error;
     }
-    onSaved(records);
+    if (records.length) onSaved(records);
     setEdits((old) =>
       Object.fromEntries(
         Object.entries(old).filter(
-          ([id]) => !records.some((r) => String(r.id) === id),
+          ([id]) => !targets.has(id),
         ),
       ),
     );
     message(
-      needsRegeneration
+      !records.length
+        ? '저장할 변경 사항이 없습니다.'
+        : needsRegeneration
         ? '납품정보 DB 저장 완료 · 현재 조정 유지 · 초안 재생성 후 저장 가능'
         : '납품정보 DB 저장 완료',
     );
@@ -215,6 +217,8 @@ export function DispatchProfiles({
         entry = old[id] || {
           targetId: id,
           revision: destination.dispatch_profile?.revision ?? 0,
+          erpRevision: destination.erp_revision,
+          originalProfile: normalizeProfile(destination.dispatch_profile || {}).profile,
           profile: normalizeProfile(destination.dispatch_profile || {}).profile,
           issues: [],
         };

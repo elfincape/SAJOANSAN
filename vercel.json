@@ -4,6 +4,9 @@
   "buildCommand": "cd app && npm run build",
   "outputDirectory": "app/dist",
   "functions": {
+    "api/erp-course-catalog.mjs": {
+      "maxDuration": 60
+    },
     "api/private-mail-worker.mjs": {
       "regions": ["icn1"],
       "maxDuration": 240

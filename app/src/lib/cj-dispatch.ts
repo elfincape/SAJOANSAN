@@ -35,6 +35,7 @@ interface RangeQuery {
   }>;
 }
 import { supabase } from './supabase';
+import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 import { routeKey } from '../domain/cj-import';
 async function all<T>(makeQuery: () => RangeQuery): Promise<T[]> {
   const rows: T[] = [];
@@ -53,7 +54,10 @@ export async function loadDispatchResources(
 ): Promise<CJResources> {
   const [points, routes, vehicles, drivers, addresses, legs, historyRows] =
     await Promise.all([
-      all<DispatchDestination>(() =>
+      useErpCatalog
+        ? catalogList<CatalogEntity<Omit<DispatchDestination, 'id'>>>('delivery_point', { center: '002' })
+          .then((items) => items.map((item) => ({ ...item.fields, id: item.id })))
+        : all<DispatchDestination>(() =>
         supabase
           .from('delivery_points')
           .select(
@@ -62,7 +66,11 @@ export async function loadDispatchResources(
           .eq('center_code', '002')
           .order('id'),
       ),
-      all<CJRoute>(() =>
+      useErpCatalog
+        ? catalogList<{ route: CatalogEntity<Omit<CJRoute, 'id'>> }>('route', {
+          center: '002', workspaces: true,
+        }).then((items) => items.map(({ route }) => ({ ...route.fields, id: route.id })))
+        : all<CJRoute>(() =>
         supabase
           .from('routes')
           .select(
@@ -116,7 +124,7 @@ export async function loadDispatchResources(
           .order('id'),
       ),
     ]);
-  const stops = routes.length
+  const stops = !useErpCatalog && routes.length
     ? await all<NonNullable<CJRoute['stops']>[number]>(() =>
         supabase
           .from('route_stops')
@@ -132,7 +140,7 @@ export async function loadDispatchResources(
     r.vehicle = vehicles.find((v) => v.id === r.primary_vehicle_id) || null;
     r.driver_name =
       drivers.find((d) => d.id === r.primary_driver_id)?.name || '';
-    r.stops = stops.filter((s) => s.route_id === r.id);
+    if (!useErpCatalog) r.stops = stops.filter((s) => s.route_id === r.id);
     r.dispatchKey = routeKey(r.name || r.car_number);
   }
   return {

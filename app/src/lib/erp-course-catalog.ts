@@ -7,6 +7,7 @@ export interface CatalogEntity<T = Record<string, unknown>> {
   label: string;
   fields: T;
   deletedAt: string | null;
+  revision: number;
 }
 
 function centerValue(center?: string) {

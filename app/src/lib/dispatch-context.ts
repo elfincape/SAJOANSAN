@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 import type { ProfileDestination } from '../domain/dispatch-profiles';
 import type { ImportIssue } from '../domain/dispatch-import';
 export interface DispatchDriver {
@@ -114,6 +115,7 @@ export async function loadDispatchContext(): Promise<DispatchContext> {
     columns: string,
     order?: string[],
     filter?: (query: Query) => Query,
+    fromErp?: () => Promise<T[]>,
   ): Promise<T[]> {
     try {
       const { data, error } = await supabase.rpc(
@@ -126,7 +128,7 @@ export async function loadDispatchContext(): Promise<DispatchContext> {
           Error('평택센터의 해당 기준정보 열람 권한이 없습니다.'),
           { code: 'PERMISSION_DENIED' },
         );
-      return await readDispatchRows<T>(table, columns, order, filter);
+      return fromErp ? await fromErp() : await readDispatchRows<T>(table, columns, order, filter);
     } catch (error) {
       const e = error as { code?: string; message?: string };
       issues.push({
@@ -153,6 +155,13 @@ export async function loadDispatchContext(): Promise<DispatchContext> {
     'id,name,primary_driver_id,primary_vehicle_id,active',
     ['id'],
     (query) => query.eq('active', true),
+    useErpCatalog ? async () => (await catalogList<CatalogEntity<{
+      name: string;
+      primary_driver_id: string;
+      primary_vehicle_id: string;
+      active: boolean;
+    }>>('route', { center: '002' })).filter((item) => item.fields.active)
+      .map((item) => ({ ...item.fields, id: item.id })) : undefined,
   );
   const people = await read<{ id: string; name: string }>(
     'drivers',
@@ -168,6 +177,11 @@ export async function loadDispatchContext(): Promise<DispatchContext> {
     'delivery_points',
     'delivery_points',
     'id,code,name,address,region,allow_under_1ton,allow_under_3_5ton,allow_over_5ton,allow_unmanned_yard,delivery_method,access_method,delivery_location,deadline_text,deadline_business_min,memo,center_code,dispatch_profile',
+    undefined,
+    undefined,
+    useErpCatalog ? async () => (await catalogList<CatalogEntity<Omit<DispatchDestination, 'id'>>>(
+      'delivery_point', { center: '002' },
+    )).map((item) => ({ ...item.fields, id: item.id, erp_revision: item.revision })) : undefined,
   );
   const addresses = await read<DispatchAddress>(
       'delivery_points',

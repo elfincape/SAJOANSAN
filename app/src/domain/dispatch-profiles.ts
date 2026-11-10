@@ -15,6 +15,7 @@ export interface ProfileDestination {
   name?: string | null;
   address?: string | null;
   center_code?: string | null;
+  erp_revision?: number;
   dispatch_profile?: DispatchProfile | null;
 }
 export interface ProfileEntry {
@@ -24,6 +25,8 @@ export interface ProfileEntry {
   address?: string;
   targetId: string | null;
   revision: number;
+  erpRevision?: number;
+  originalProfile?: DispatchProfile;
   profile: DispatchProfile;
   issues: ImportIssue[];
   candidates?: ProfileDestination[];
@@ -271,6 +274,8 @@ export function selectProfileTarget(
     ...entry,
     targetId: destination?.id ?? null,
     revision: destination?.dispatch_profile?.revision ?? 0,
+    erpRevision: destination?.erp_revision,
+    originalProfile: destination ? normalizeProfile(destination.dispatch_profile ?? {}).profile : undefined,
     profile: result.profile,
     issues: [
       ...entry.issues.filter(
