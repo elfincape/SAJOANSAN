@@ -122,20 +122,22 @@ export function rowToFlat(stop: ExportStop) {
   const ck = (b: unknown) => b ? 'O' : '';
   const eq = (val: string, target: string) => val === target ? 'O' : '';
 
-  const deadlineDisplay =
+  const deadlineDisplay = stop.resolved
+    ? stop.resolved.deadline_text || fmtTime(stop.resolved.deadline_business_min)
+    :
        stop.deadline_text
     || (stop.deadline_business_min != null ? fmtTime(stop.deadline_business_min) : '')
     || dp.deadline_text
     || (dp.deadline_business_min != null ? fmtTime(dp.deadline_business_min) : '');
 
   const dm = normalizeDeliveryMethod(
-    stop.override_delivery_method || dp.delivery_method || ''
+    stop.resolved ? stop.resolved.delivery_method ?? '' : stop.override_delivery_method || dp.delivery_method || ''
   );
   const am = normalizeAccessMethod(
-    stop.override_access_method || dp.access_method || ''
+    stop.resolved ? stop.resolved.access_method ?? '' : stop.override_access_method || dp.access_method || ''
   );
   const dl = normalizeDeliveryLocation(
-    stop.override_delivery_location || dp.delivery_location || ''
+    stop.resolved ? stop.resolved.delivery_location ?? '' : stop.override_delivery_location || dp.delivery_location || ''
   );
 
   const flat = {
