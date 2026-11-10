@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { normalizeAssistantResponse } from '../domain/operations-assistant';
+import { useErpCatalog } from './erp-course-catalog';
 export interface AssistantMessage {
   role: string;
   content: string;
@@ -9,6 +10,7 @@ export async function askOperationsAssistant(
   center: string,
   conversation: AssistantMessage[],
   signal: AbortSignal,
+  catalogCheck = false,
 ) {
   const {
     data: { session },
@@ -24,7 +26,8 @@ export async function askOperationsAssistant(
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         authorization: 'Bearer ' + session.access_token,
       },
-      body: JSON.stringify({ question, center, conversation }),
+      body: JSON.stringify({ question, center, conversation,
+        ...(useErpCatalog ? { catalogSource: 'erp', catalogCheck } : {}) }),
     },
   );
   const value = await response.json().catch(() => null);

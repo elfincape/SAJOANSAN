@@ -16,17 +16,21 @@ Deno.serve(async req=>{
     const token=bearer(req);if(!token)return fail('UNAUTHENTICATED','로그인이 필요합니다.',401,requestId);
     const body=await req.json().catch(()=>null),question=String(body?.question||'').trim();if(!question||question.length>1000)return fail('INVALID_INPUT','질문은 1~1000자로 입력해주세요.',400,requestId);
     const centerCode=normalizeCenter(body?.center);if(!centerCode)return fail('INVALID_INPUT','알 수 없는 센터입니다.',400,requestId);
-    const env=envs(),user=await authUser(env,token);if(!user)return fail('UNAUTHENTICATED','로그인 세션이 유효하지 않습니다.',401,requestId);rateCheck(user.id);
+    const catalogRequested=body?.catalogSource==='erp';
+    const catalogCheck=catalogRequested&&body?.catalogCheck===true;
+    const env=envs(catalogRequested,catalogCheck),user=await authUser(env,token);if(!user)return fail('UNAUTHENTICATED','로그인 세션이 유효하지 않습니다.',401,requestId);rateCheck(user.id);
     const profile=await rest(env,token,'user_profiles',`select=id,role,active&id=eq.${enc(user.id)}&limit=1`),p=profile[0];if(!p?.active||!['viewer','editor','admin'].includes(p.role))return fail('FORBIDDEN','사용 권한이 없습니다.',403,requestId);
     let access:null|unknown[]=null;if(!env.catalogEnabled)try{access=await rest(env,token,'user_center_access',`select=center_code&user_id=eq.${enc(user.id)}&center_code=eq.${centerCode}&limit=1`)}catch{/* 이전 스키마는 운영 테이블 RLS가 최종 경계를 강제한다. */}if(access&&!access.length)return fail('FORBIDDEN','선택 센터 조회 권한이 없습니다.',403,requestId);
     if(/이전 지시|sql\s*(실행|쿼리)/i.test(question)||(!env.catalogEnabled&&/다른 센터/i.test(question)))return fail('UNSUPPORTED_QUESTION','SQL 실행이나 다른 센터 데이터 요청은 지원하지 않습니다.',400,requestId);
-    const snapshot=await buildOperationsSnapshot(env,token,centerCode),answer=await answerFromSnapshot(question,snapshot,env.aiKey,centerCode,requestId);
+    const snapshot=await buildOperationsSnapshot(env,token,centerCode);
+    if(catalogCheck)return json({answer:`ERP 공통 원장 조회 확인 · 코스 ${snapshot.summary.routes}개 · 납품처 ${snapshot.summary.deliveryPoints}곳`,columns:[],rows:[],notices:[],meta:{centerCode,rowCount:0,truncated:false,requestId,generatedAt:new Date().toISOString(),modelCalled:false}});
+    const answer=await answerFromSnapshot(question,snapshot,env.aiKey,centerCode,requestId);
     console.log(JSON.stringify({requestId,userId:user.id,centerCode,mode:'snapshot_chat',routeCount:snapshot.summary.routes,deliveryPointCount:snapshot.summary.deliveryPoints,rowCount:answer.rows.length,truncated:answer.meta.truncated}));
     return json(answer);
   }catch(error){const x=error as Error&{code?:string;status?:number;publicMessage?:string};console.error(JSON.stringify({requestId,code:x.code||'INTERNAL_ERROR'}));return fail(x.code||'INTERNAL_ERROR',x.publicMessage||publicMessage(x.code),x.status||500,requestId)}
 });
 
-function envs(){const url=Deno.env.get('SUPABASE_URL')||'',anon=Deno.env.get('SUPABASE_ANON_KEY')||'',aiKey=Deno.env.get('AIAPIFLOW_API_KEY')||'';if(!url||!anon||!aiKey)throw coded('INTERNAL_ERROR',500);return{url,anon,aiKey,catalogEnabled:Deno.env.get('ERP_COURSE_CATALOG_ENABLED')==='true',catalogUrl:Deno.env.get('ERP_COURSE_CATALOG_URL')||'',catalogCenterMap:Deno.env.get('ERP_COURSE_CENTER_MAP')||'{}'}}
+function envs(catalogEnabled:boolean,catalogCheck:boolean){const url=Deno.env.get('SUPABASE_URL')||'',anon=Deno.env.get('SUPABASE_ANON_KEY')||'',aiKey=Deno.env.get('AIAPIFLOW_API_KEY')||'';if(!url||!anon||(!catalogCheck&&!aiKey))throw coded('INTERNAL_ERROR',500);return{url,anon,aiKey,catalogEnabled,catalogUrl:Deno.env.get('ERP_COURSE_CATALOG_URL')||'https://211.233.219.199:8443/',catalogCenterMap:Deno.env.get('ERP_COURSE_CENTER_MAP')||'{"001":"all","002":"all","gimhae":"all","yangsan":"all"}'}}
 function bearer(req:Request){return req.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]||''}
 async function authUser(e:ReturnType<typeof envs>,token:string){const response=await fetch(`${e.url}/auth/v1/user`,{headers:{apikey:e.anon,authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});return response.ok?await response.json():null}
 async function rest(e:ReturnType<typeof envs>,token:string,table:string,query:string){const response=await fetch(`${e.url}/rest/v1/${table}?${query}`,{headers:{apikey:e.anon,authorization:`Bearer ${token}`,accept:'application/json'},signal:AbortSignal.timeout(20000)});if(!response.ok)throw coded('QUERY_FAILED',502);return await response.json()}

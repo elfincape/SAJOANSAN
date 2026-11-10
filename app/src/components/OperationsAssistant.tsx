@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAdminPage } from './AdminPage';
 import { askOperationsAssistant } from '../lib/operations-assistant';
+import { useErpCatalog } from '../lib/erp-course-catalog';
 import { buildTsv } from '../domain/operations-assistant';
 import type { AssistantAnswer } from '../domain/operations-assistant';
 interface Message {
@@ -50,8 +51,8 @@ export function OperationsAssistant() {
   useEffect(() => {
     if (fallback !== null) fallbackInput.current?.select();
   }, [fallback]);
-  async function send() {
-    const value = input.trim();
+  async function send(catalogCheck = false) {
+    const value = catalogCheck ? 'ERP 읽기 연결 확인' : input.trim();
     if (!value || controller.current) return;
     const next = [...messages, { role: 'user', content: value }];
     setMessages(next);
@@ -69,6 +70,7 @@ export function OperationsAssistant() {
           .slice(-8)
           .map((m) => ({ role: m.role!, content: m.content.slice(0, 500) })),
         abort.signal,
+        catalogCheck,
       );
       setMessages((old) => [
         ...old,
@@ -152,6 +154,11 @@ export function OperationsAssistant() {
         </div>
         <div className="ops-assistant-warning">
           읽기 전용 · AI 답변은 원본 데이터 확인 필요
+          {useErpCatalog && (
+            <button type="button" disabled={busy} onClick={() => void send(true)}>
+              ERP 읽기 연결 확인
+            </button>
+          )}
         </div>
         <div
           ref={scroller}
