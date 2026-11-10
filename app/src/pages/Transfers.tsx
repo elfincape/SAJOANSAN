@@ -1,3 +1,4 @@
+import { catalogScopeLabel, useErpCatalog } from '../lib/erp-course-catalog';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FileArea } from '../components/FileArea';
@@ -52,6 +53,7 @@ function TransfersContent(){
  async function download(){if(downloadLock.current)return;if(!rows.length){toast('다운로드할 항목이 없습니다.','warn');return;}downloadLock.current=true;setDownloading(true);try{const blob=await transferWorkbook(rows),date=new Date(),ymd=`${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}`,custom=filename.trim(),name=custom?(custom.endsWith('.xlsx')?custom:custom+'.xlsx'):`이배송_${ymd}.xlsx`;setDownloadUrl({url:URL.createObjectURL(blob),name});toast('엑셀 파일을 다운로드했습니다.','success');}catch(error){toast(`엑셀 다운로드 실패: ${error instanceof Error?error.message:String(error)}`,'error');}finally{downloadLock.current=false;setDownloading(false);}}
  const tableRows=rows.map((row,index)=><tr key={row._uid}><td><input type="checkbox" className="row-check" data-idx={index} aria-label={`이배송 ${index+1}행 선택`} checked={selected.includes(row._uid)} onChange={event=>setSelected(previous=>event.target.checked?[...previous,row._uid]:previous.filter(id=>id!==row._uid))}/></td><td>{index+1}</td><td>{row.center}</td><td>{formatDateKr(row.delivery_date)}</td><td>{row.company_name}</td><td>{row.route_name}</td><td>{row.driver_name}</td><td>{row.driver_phone||''}</td><td>{row.vehicle_plate}</td><td>{row.photos.filter(Boolean).length}/4</td><td>{row.memo||''}</td><td className={`${row.id?'text-emerald-300':'text-amber-300'} text-xs`}>{row.id?'저장됨':'미저장'}</td><td className="text-right"><button type="button" className="btn btn-ghost text-xs" data-permission-action="edit" data-edit={index} aria-label={`이배송 ${index+1}행 수정`} disabled={!editable} onClick={()=>edit(index)}>수정</button><button type="button" className="btn btn-ghost text-xs text-rose-400" data-permission-action="edit" data-del={index} aria-label={`이배송 ${index+1}행 삭제`} disabled={!editable} onClick={()=>void removeOne(index)}>삭제</button></td></tr>);
  return <>
+ {useErpCatalog && <p className="text-xs text-zinc-400">코스 후보: {catalogScopeLabel(center.code)}</p>}
 <main className="app-main flex-1 max-w-[1500px] w-full mx-auto px-4 py-4 space-y-4" id="work-main" tabIndex={-1}>
 
   <section className="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30 p-4" aria-label="이배송 입력">

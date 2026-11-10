@@ -1,3 +1,4 @@
+import { catalogScopeLabel, useErpCatalog } from '../../lib/erp-course-catalog';
 import { MentionText } from './PortalMentions';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
@@ -208,6 +209,7 @@ export function PortalSearch() {
   }
   return (
     <>
+      {useErpCatalog && <p className="text-xs text-zinc-400">코스·납품처: {catalogScopeLabel(query?.center ?? center)}</p>}
       <section id="quick-actions" className="quick-actions">
         <form
           className="portal-form"

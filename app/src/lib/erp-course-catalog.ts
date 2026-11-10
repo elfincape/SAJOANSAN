@@ -13,10 +13,21 @@ function centerValue(center?: string) {
   if (!center) return undefined;
   const mapping = JSON.parse(import.meta.env.VITE_ERP_COURSE_CENTER_MAP || '{}');
   const value = Object.hasOwn(mapping, center) ? mapping[center] : undefined;
+  if (value === 'all') return undefined;
+  if (value === 'unclassified') return value;
   if (typeof value !== 'string' ||
       !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))
     throw Error('이 화면의 ERP 센터 속성 대응을 확인해 주세요.');
   return value;
+}
+
+// Display the catalog scope separately from the legacy tool's working center/origin.
+export function catalogScopeLabel(center?: string) {
+  if (!useErpCatalog) return '';
+  try {
+    const value = centerValue(center);
+    return 'ERP 공통 원장 · ' + (value === undefined ? '접근 가능한 전체' : value === 'unclassified' ? '미분류' : '지정 센터 속성');
+  } catch { return 'ERP 공통 원장 · 조회 범위 설정 필요'; }
 }
 
 async function request<T>(kind: CatalogKind, params: URLSearchParams) {

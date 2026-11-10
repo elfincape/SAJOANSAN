@@ -1,3 +1,4 @@
+import { catalogScopeLabel, useErpCatalog } from '../lib/erp-course-catalog';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import '../styles/driver-documents.css';
@@ -785,6 +786,7 @@ function Work({
   return (
     <>
       <div id="app" className="app-main" tabIndex={-1}>
+        {useErpCatalog && <p className="text-xs text-zinc-400">{catalogScopeLabel(center.code)}</p>}
         <div id="filter-bar">
           <div className="dashboard-query">
             <input

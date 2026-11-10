@@ -31,3 +31,44 @@ assert.match(edge, /truncated:false/);
 assert.match(tools, /확인할 수 없는 컬럼/);
 
 console.log('operations assistant security invariants: ok');
+
+assert.match(edge, /loadErpOperationsInputs/, 'ERP-enabled assistant must read the authenticated catalog rather than old masters');
+const {loadErpOperationsInputs}=await import('../supabase/functions/operations-assistant/erp-catalog.js');
+const cfg={catalogUrl:'https://erp.example.invalid/',catalogCenterMap:JSON.stringify({'001':'all'})};
+const calls=[];
+const workspace={route:{id:'r',fields:{name:'route',stops:[{id:'s',delivery_point_id:'p',stop_order:1}]}},masters:{p:{fields:{name:'point',address:'shared',delivery_method:'parent'}}},effective:{s:{delivery_method:{mode:'clear',value:null},deadline:{mode:'clear',value:null},access_method:{mode:'set',value:''}}}};
+const transport=async(url,options)=>{
+ assert.equal(options.headers.Authorization,'Bearer caller-token');calls.push(url.toString());
+ const kind=url.searchParams.get('kind');
+ return Response.json({items:kind==='route'?[workspace]:kind==='delivery_point'?[{id:'p',fields:{name:'point'}}]:[],nextAfter:null});
+};
+const input=await loadErpOperationsInputs(cfg,'caller-token','001',transport);
+assert.equal(calls.length,5);assert.equal(input.courseRowsRaw[0].delivery_method,null);assert.equal(input.courseRowsRaw[0].access_method,'');assert.equal(input.courseRowsRaw[0].effective_deadline_business_min,null);
+assert.ok(calls.every(url=>!new URL(url).searchParams.has('center')));
+await assert.rejects(loadErpOperationsInputs(cfg,'caller-token','001',async()=>new Response('',{status:403})),e=>e.status===403);
+await assert.rejects(loadErpOperationsInputs({...cfg,catalogCenterMap:'{}'},'caller-token','001',async()=>{throw Error('must not query');}),/CATALOG_SELECTOR_NOT_CONFIGURED/);
+let pages=0;
+await assert.rejects(loadErpOperationsInputs(cfg,'caller-token','001',async()=>{pages++;return Response.json({items:[],nextAfter:'repeated'});}),/CATALOG_CURSOR_REPEATED/);
+assert.ok(pages<=10);
+console.log('ERP assistant: caller-token, clear/empty, missing selector, errors and cursor checks passed');
+
+assert.equal(input.catalogScope,'요청자에게 허용된 전체 공통 원장');
+// Exercise the frontend client without credentials, including explicit all/unclassified mappings.
+
+const {stripTypeScriptTypes}=await import('node:module');
+const clientSource=readFileSync(new URL('../app/src/lib/erp-course-catalog.ts',import.meta.url),'utf8');
+async function clientFor(mapping){
+ const source=clientSource.replace("import { supabase } from './supabase';", "const supabase={auth:{getSession:async()=>({data:{session:{access_token:'own-session'}}})}};")
+ .replaceAll('import.meta.env',JSON.stringify({VITE_ERP_COURSE_CATALOG:'true',VITE_ERP_COURSE_CENTER_MAP:JSON.stringify(mapping)}));
+ return import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(source)).toString('base64'));
+}
+const originalFetch=globalThis.fetch;
+try{
+ let urls=[];globalThis.fetch=async(url,options)=>{urls.push(String(url));assert.equal(options.headers.Authorization,'Bearer own-session');return Response.json({items:[],nextAfter:null});};
+ const all=await clientFor({'001':'all'});await all.catalogList('route',{center:'001'});
+ assert.ok(!urls[0].includes('center='));assert.match(all.catalogScopeLabel('001'),/접근 가능한 전체/);
+ const unc=await clientFor({'001':'unclassified'});await unc.catalogList('delivery_point',{center:'001'});assert.ok(urls[1].includes('center=unclassified'));
+ const missing=await clientFor({});await assert.rejects(missing.catalogList('route',{center:'001'}),/속성 대응/);
+ globalThis.fetch=async()=>new Response('',{status:503});await assert.rejects(all.catalogList('route',{center:'001'}),/ERP 원본 조회 실패/);
+}finally{globalThis.fetch=originalFetch;}
+console.log('frontend catalog: own session, explicit all/unclassified, fail-closed passed');
