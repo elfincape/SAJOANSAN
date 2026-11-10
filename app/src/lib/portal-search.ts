@@ -1,14 +1,32 @@
 import { supabase } from './supabase';
 import { operationsRpc } from './operations';
 import type { SearchResult, SearchRow } from '../domain/portal-search';
-export function portalSearch(term: string, center: string, page: number) {
-  return operationsRpc<SearchResult>('operations_search', {
+import { catalogDetail, catalogList, erpCourseHref, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+const catalogKinds = { routes: 'route', delivery_points: 'delivery_point' } as const;
+export async function portalSearch(term: string, center: string, page: number) {
+  const original = operationsRpc<SearchResult>('operations_search', {
     p_query: term,
     p_center: center || null,
     p_page: page,
   });
+  if (!useErpCatalog) return original;
+  const [legacy, ...erp] = await Promise.all([
+    original,
+    ...Object.entries(catalogKinds).map(async ([kind, type]) => {
+      const items = await catalogList<CatalogEntity>(type, { center, q: term.trim() });
+      items.sort((a, b) => a.label.localeCompare(b.label, 'ko') || a.id.localeCompare(b.id));
+      return { kind, total: items.length, items: items.slice(page * 20, (page + 1) * 20)
+        .map(({ id, label }) => ({ id, title: label, erpHref: erpCourseHref(type, id) })) };
+    }),
+  ] as const);
+  return { groups: [...legacy.groups.filter(({ kind }) => !Object.hasOwn(catalogKinds, kind)),
+    ...erp.filter(({ total }) => total > 0)] };
 }
 export async function portalSearchMaster(kind: string, id: string) {
+  if (useErpCatalog && (kind === 'routes' || kind === 'delivery_points')) {
+    const item = await catalogDetail(catalogKinds[kind], id);
+    return { ...item.fields, id: item.id };
+  }
   const { data, error } = await supabase
     .from(kind)
     .select('*')

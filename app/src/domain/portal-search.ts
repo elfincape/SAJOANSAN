@@ -18,6 +18,7 @@ export interface SearchRow {
   incident_id?: string;
   survey_id?: string;
   excerpt?: string;
+  erpHref?: string;
   [key: string]: unknown;
 }
 export interface SearchResult {
@@ -36,6 +37,8 @@ export function searchTarget(
       if (row[type + '_id']) return { type, id: String(row[type + '_id']) };
   if (['task', 'incident', 'survey'].includes(kind))
     return { type: kind as 'task' | 'incident' | 'survey', id: row.id };
+  if (row.erpHref && (kind === 'routes' || kind === 'delivery_points'))
+    return { href: row.erpHref };
   const page = (
     {
       vehicles: 'vehicles',

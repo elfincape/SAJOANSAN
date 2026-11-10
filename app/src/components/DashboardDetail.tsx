@@ -3,6 +3,7 @@ import { Modal, ModalClose } from './Modal';
 import { FileArea } from './FileArea';
 import { useAdminPage } from './AdminPage';
 import { dashboardDetail, saveDashboardDetail } from '../lib/dashboard';
+import { erpCourseHref, useErpCatalog } from '../lib/erp-course-catalog';
 import { withCenterParam } from '../lib/center';
 import { formatPhone } from '../domain/phone';
 import type { DashboardRow } from '../domain/dashboard';
@@ -185,6 +186,7 @@ export function DashboardDetail({
           className="app-input mt-1"
           inputMode={key === 'contact' ? 'tel' : undefined}
           value={fields[key]}
+          readOnly={useErpCatalog}
           onChange={(e) => setFields((s) => ({ ...s, [key]: e.target.value }))}
         />
       </label>
@@ -195,6 +197,7 @@ export function DashboardDetail({
       <div
         className="p-5 max-h-[85vh] overflow-auto"
         onPaste={(event) => {
+          if (useErpCatalog) return;
           const files = [...(event.clipboardData.items || [])]
             .filter((item) => item.type.startsWith('image/'))
             .map((item) => item.getAsFile())
@@ -217,23 +220,27 @@ export function DashboardDetail({
           <div className="flex items-center gap-2">
             {r.route_id ? (
               <a
-                href={withCenterParam(
+                href={useErpCatalog ? erpCourseHref('route', r.route_id) : withCenterParam(
                   '/admin/route-edit.html?id=' + encodeURIComponent(r.route_id),
                   center,
                 )}
                 className="btn btn-ghost text-xs"
               >
-                코스 수정
+                {useErpCatalog ? 'ERP 코스 열기' : '코스 수정'}
               </a>
             ) : null}
-            <button
+            {useErpCatalog && r.delivery_point_id ? (
+              <a className="btn btn-ghost text-xs" href={erpCourseHref('delivery_point', r.delivery_point_id)}>
+                ERP 납품처 열기
+              </a>
+            ) : !useErpCatalog ? <button
               id="detail-save"
               className="btn btn-primary text-xs"
               disabled={!loaded || busy}
               onClick={() => void save()}
             >
               {busy ? '저장 중...' : '납품처 저장'}
-            </button>
+            </button> : null}
             <ModalClose id="detail-close" className="btn btn-ghost text-xs">
               닫기
             </ModalClose>
@@ -292,7 +299,7 @@ export function DashboardDetail({
             className="ean-detail-section space-y-3 p-3"
             accept="image/*"
             multiple
-            disabled={!loaded}
+            disabled={!loaded || useErpCatalog}
             onFiles={(files) => void addPhotos(files)}
           >
             <div className="flex items-center justify-between gap-2">
@@ -304,7 +311,7 @@ export function DashboardDetail({
                 >
                   {photos.length}/6
                 </span>
-                <label className="btn btn-ghost text-xs cursor-pointer">
+                {!useErpCatalog && <label className="btn btn-ghost text-xs cursor-pointer">
                   사진 추가
                   <input
                     ref={file}
@@ -318,7 +325,7 @@ export function DashboardDetail({
                       void addPhotos([...(e.target.files || [])])
                     }
                   />
-                </label>
+                </label>}
               </div>
             </div>
             <div id="detail-photo-grid" className="grid grid-cols-3 gap-2">
@@ -340,7 +347,7 @@ export function DashboardDetail({
                         className="h-full w-full object-cover"
                       />
                     </button>
-                    <button
+                    {!useErpCatalog && <button
                       type="button"
                       data-detail-photo-remove={index}
                       className="absolute right-1 top-1 h-6 w-6 rounded bg-red-700/90 text-xs"
@@ -354,7 +361,7 @@ export function DashboardDetail({
                       }}
                     >
                       ×
-                    </button>
+                    </button>}
                   </div>
                 ))
               ) : (
@@ -381,6 +388,7 @@ export function DashboardDetail({
                 rows={5}
                 className="app-textarea"
                 value={fields.memo}
+                readOnly={useErpCatalog}
                 onChange={(e) =>
                   setFields((s) => ({ ...s, memo: e.target.value }))
                 }
