@@ -122,22 +122,20 @@ export function rowToFlat(stop: ExportStop) {
   const ck = (b: unknown) => b ? 'O' : '';
   const eq = (val: string, target: string) => val === target ? 'O' : '';
 
-  const deadlineDisplay = stop.resolved
-    ? stop.resolved.deadline_text || fmtTime(stop.resolved.deadline_business_min)
-    :
-       stop.deadline_text
-    || (stop.deadline_business_min != null ? fmtTime(stop.deadline_business_min) : '')
-    || dp.deadline_text
-    || (dp.deadline_business_min != null ? fmtTime(dp.deadline_business_min) : '');
+  const deadlineSource = stop.condition_modes?.deadline === 'clear' ? null
+    : stop.condition_modes?.deadline === 'inherit' ? dp
+    : stop.condition_modes?.deadline === 'set' || stop.deadline_text != null || stop.deadline_business_min != null ? stop : dp;
+  const deadlineDisplay = stop.resolved ? stop.resolved.deadline_text ?? fmtTime(stop.resolved.deadline_business_min)
+    : deadlineSource ? deadlineSource.deadline_text ?? fmtTime(deadlineSource.deadline_business_min) : '';
 
   const dm = normalizeDeliveryMethod(
-    stop.resolved ? stop.resolved.delivery_method ?? '' : stop.override_delivery_method || dp.delivery_method || ''
+    stop.resolved ? stop.resolved.delivery_method ?? '' : (stop.condition_modes?.delivery_method === 'clear' ? '' : stop.condition_modes?.delivery_method === 'inherit' ? dp.delivery_method : stop.override_delivery_method ?? dp.delivery_method) ?? ''
   );
   const am = normalizeAccessMethod(
-    stop.resolved ? stop.resolved.access_method ?? '' : stop.override_access_method || dp.access_method || ''
+    stop.resolved ? stop.resolved.access_method ?? '' : (stop.condition_modes?.access_method === 'clear' ? '' : stop.condition_modes?.access_method === 'inherit' ? dp.access_method : stop.override_access_method ?? dp.access_method) ?? ''
   );
   const dl = normalizeDeliveryLocation(
-    stop.resolved ? stop.resolved.delivery_location ?? '' : stop.override_delivery_location || dp.delivery_location || ''
+    stop.resolved ? stop.resolved.delivery_location ?? '' : (stop.condition_modes?.delivery_location === 'clear' ? '' : stop.condition_modes?.delivery_location === 'inherit' ? dp.delivery_location : stop.override_delivery_location ?? dp.delivery_location) ?? ''
   );
 
   const flat = {

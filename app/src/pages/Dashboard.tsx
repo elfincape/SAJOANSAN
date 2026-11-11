@@ -738,33 +738,8 @@ function Work({
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(row);
   }
-  function saveDetail(id: string, payload: Record<string, unknown>) {
-    setRows((old) =>
-      old.map((row) => {
-        if (String(row.delivery_point_id) !== String(id)) return row;
-        const next = { ...row };
-        for (const [key, value] of Object.entries({
-          dp_code: payload.code,
-          dp_name: payload.name,
-          dp_region: payload.region,
-          dp_address: payload.address,
-          dp_contact: payload.contact,
-          base_delivery_method: payload.delivery_method,
-          base_access_method: payload.access_method,
-          base_delivery_location: payload.delivery_location,
-          delivery_method:
-            row.override_delivery_method ?? payload.delivery_method,
-          access_method: row.override_access_method ?? payload.access_method,
-          delivery_location:
-            row.override_delivery_location ?? payload.delivery_location,
-          security_key_location: payload.security_key_location,
-          security_password: payload.security_password,
-          dp_memo: payload.memo,
-        }))
-          next[key] = value;
-        return next;
-      }),
-    );
+  function saveDetail(_id: string, _payload: Record<string, unknown>) {
+    void loadDashboard(center).then(value => setRows(value)).catch(error => toast('저장은 완료됐지만 현재 목록을 다시 불러오지 못했습니다: '+String(error),'error'));
   }
   const groupKeys = [
     'stop_order',

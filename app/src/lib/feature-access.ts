@@ -1,3 +1,4 @@
+import { useLegacyCommonCatalog } from './erp-course-catalog';
 import type { Feature } from '../domain/feature-catalog';
 import { featureAvailable } from '../domain/feature-catalog';
 import type { Profile } from './auth';
@@ -16,5 +17,5 @@ export function featureAccessible(
   return featureAvailable(feature, profile, center)
     && (!feature.ownerOnly || isPrivateFeatureOwner(profile))
     && (feature.fixed || enabled[feature.id] === true)
-    && (!feature.resource || permissionAllowed(permissions, feature.resource, 'read', feature.navigationScope === 'shared' ? undefined : center));
+    && (!feature.resource || permissionAllowed(permissions, feature.resource, 'read', feature.navigationScope === 'shared' || useLegacyCommonCatalog && ['routes','delivery_points','drivers','vehicles','companies'].includes(feature.resource) ? undefined : center));
 }

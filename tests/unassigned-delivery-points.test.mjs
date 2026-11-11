@@ -51,3 +51,27 @@ assert.equal(flat['비고'],'메모');
 assert.equal(flat['납품마감'],'600');
 assert.equal(flat['1톤이하'],'O');
 console.log('Unassigned points: pagination, center isolation, assignments, errors, dashboard identity and export fields passed');
+
+// Exercise the current React domain rather than treating legacy HTML regexes as runtime proof.
+const {createRequire}=await import('node:module');
+const require=createRequire(import.meta.url),ts=require('../app/node_modules/typescript');
+const domainUrls=new Map();
+function domainUrl(url) {
+ if(domainUrls.has(url.href)) return domainUrls.get(url.href);
+ let code=ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+ code=code.replace(/from ['"](\.[^'"]+)['"]/g,(_,relative)=>'from '+JSON.stringify(domainUrl(new URL(relative+'.ts',url))));
+ const result='data:text/javascript;base64,'+Buffer.from(code).toString('base64');domainUrls.set(url.href,result);return result;
+}
+async function domain(file) {return import(domainUrl(new URL('../app/src/domain/'+file,import.meta.url)));}
+const {pointToDraft,pointPayload}=await domain('delivery-points.ts');
+const original={id:'p',name:'원본',center_code:'002',contact_mobile:'',contact:'다른 연락처',allow_under_1ton:null,allow_over_5ton:false,deadline_text:'',deadline_business_min:0,delivery_method:'',memo:null};
+const changedDraft={...pointToDraft(original),name:'이름만 변경'};
+const patch=pointPayload(changedDraft,'002',original);
+assert.deepEqual(patch,{id:'p',name:'이름만 변경'},'untouched empty/null/false/0 fields are not rewritten');
+const currentExport=await domain('course-export.ts');
+const shared={...original,delivery_method:'대면',access_method:'보안키',delivery_location:'창고',deadline_text:'12:00',deadline_business_min:720};
+const cleared=currentExport.rowToFlat({route:null,delivery_point:shared,condition_modes:{delivery_method:'clear',access_method:'set',deadline:'clear'},override_access_method:''});
+assert.equal(cleared['대면'],'');assert.equal(cleared['보안키'],'');assert.equal(cleared['납품마감'],'');
+const inherited=currentExport.rowToFlat({route:null,delivery_point:shared,condition_modes:{delivery_method:'inherit',deadline:'inherit'},override_delivery_method:'무인',deadline_text:'14:00',deadline_business_min:840});
+assert.equal(inherited['대면'],'O');assert.equal(inherited['무인'],'');assert.equal(inherited['납품마감'],'12:00');
+console.log('React point patch and export: unchanged null/empty/0/false, inherit/set/clear passed');

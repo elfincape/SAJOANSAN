@@ -18,11 +18,11 @@ export function pointToDraft(row?: DeliveryPoint): PointDraft {
   return {
     ...Object.fromEntries([...Object.values(textFields), ...Object.values(radios)].map(key => [key, row?.[key] || ''])) as Record<TextKey, string>,
     ...Object.fromEntries(Object.values(flags).map(key => [key, !!row?.[key]])) as Record<typeof flags[keyof typeof flags], boolean>,
-    id: row?.id || '', deadline: row?.deadline_text || (row?.deadline_business_min != null ? bizMinToDisplay(row.deadline_business_min) : ''),
-    contact_mobile: row?.contact_mobile || row?.contact || '', memo: legacy.memo, photos: photos.length ? photos : legacy.photos,
+    id: row?.id || '', deadline: row?.deadline_text ?? (row?.deadline_business_min != null ? bizMinToDisplay(row.deadline_business_min) : ''),
+    contact_mobile: row?.contact_mobile ?? row?.contact ?? '', memo: legacy.memo, photos: photos.length ? photos : legacy.photos,
   };
 }
-export function pointPayload(draft: PointDraft, center: string) {
+export function pointPayload(draft: PointDraft, center: string | null, original?: DeliveryPoint) {
   const deadline = draft.deadline.trim();
   const payload: Record<string, unknown> = {
     ...Object.fromEntries([...Object.values(textFields), ...Object.values(radios)].map(key => [key, draft[key].trim() || null])),
@@ -32,5 +32,9 @@ export function pointPayload(draft: PointDraft, center: string) {
     contact: draft.contact_mobile.trim() || null, memo: stripLegacyPhotoPayload(draft.memo) || null, photos: draft.photos,
   };
   if (draft.id) payload.id = draft.id;
+  if (original) {
+    const baseline = pointPayload(pointToDraft(original), center);
+    for (const key of Object.keys(payload)) if (key !== 'id' && JSON.stringify(payload[key]) === JSON.stringify(baseline[key])) delete payload[key];
+  }
   return payload;
 }

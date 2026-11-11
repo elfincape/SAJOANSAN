@@ -15,12 +15,99 @@ assert.equal(permissionAllowed(writable,'tasks','read','002'),false);
 assert.equal(permissionAllowed(writable,'tasks','delete'),false);
 console.log('PASS: separate read/edit, no global fallback across centers, unknown/missing permissions deny access');
 
+const catalog = {access:{routes:{read:true,edit:true,read_centers:['001'],edit_centers:['001'],read_unclassified:true,edit_unclassified:false}}};
+assert.equal(permissionAllowed(catalog,'routes','read','unclassified'),true);
+assert.equal(permissionAllowed(catalog,'routes','edit','unclassified'),false);
+
+if (process.env.PGLITE_MODULE) {
+ const {PGlite}=await import(process.env.PGLITE_MODULE), {readFileSync}=await import('node:fs');
+ const db=new PGlite(), sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8');
+ const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+ try {
+  await db.exec(`create role authenticated; create role anon; create schema auth;
+   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+   create table user_profiles(id uuid primary key,role text,active boolean);
+   create table centers(code text primary key,name text,active boolean default true);
+   create table operations_center_members(user_id uuid,center_code text);
+   create table operations_permissions(resource text primary key,admin_only boolean default false,read_rule jsonb,write_rule jsonb,member_overrides jsonb default '{}',section text,title text);
+   create function is_admin() returns boolean language sql stable security definer as $$select exists(select 1 from user_profiles where id=auth.uid() and active and role='admin')$$;
+   create function operations_can_read() returns boolean language sql stable security definer as $$select exists(select 1 from user_profiles where id=auth.uid() and active)$$;
+   create table companies(id uuid primary key,name text,center_code text);
+   create table drivers(id uuid primary key,name text,phone text,center_code text);
+   create table vehicles(id uuid primary key,plate_number text,tonnage numeric,pallet_capacity numeric,center_code text);
+   create table routes(id uuid primary key,name text,car_number text,active boolean,center_code text,company_id uuid,primary_driver_id uuid references drivers,secondary_driver_id uuid,primary_vehicle_id uuid,secondary_vehicle_id uuid);
+   create table delivery_points(id uuid primary key,code text,name text,address text,region text,contact text,contact_name text,memo text,center_code text,
+     allow_under_1ton boolean,allow_under_3_5ton boolean,allow_over_5ton boolean,allow_unmanned_yard boolean,deadline_text text,deadline_business_min integer,
+     delivery_method text,access_method text,delivery_location text,security_key_location text,security_password text);
+   create table route_stops(id uuid primary key,route_id uuid references routes,delivery_point_id uuid references delivery_points,stop_order integer,
+     arrival_text text,arrival_business_min integer,unloading_start_text text,unloading_start_business_min integer,unloading_end_text text,unloading_end_business_min integer,
+     deadline_text text,deadline_business_min integer,override_delivery_method text,override_access_method text,override_delivery_location text,memo text,
+     created_at timestamptz default now(),updated_at timestamptz default now(),unique(route_id,stop_order));
+   insert into user_profiles values('${id(1)}','admin',true),('${id(2)}','editor',true),('${id(3)}','viewer',true),('${id(4)}','admin',false);
+   insert into centers values('001','안산',true),('002','평택',true);
+   insert into operations_center_members values('${id(2)}','001');
+   insert into operations_permissions(resource,read_rule,write_rule) select x,'{"everyone":true,"scope":"own"}','{"everyone":true,"scope":"own"}' from unnest(array['routes','delivery_points','drivers','vehicles','companies']) x;
+   insert into drivers(id,name,center_code) values('${id(30)}','격리 기사','002');
+   insert into routes(id,name,center_code,primary_driver_id) values('${id(10)}','격리 안산','001','${id(30)}'),('${id(11)}','격리 평택','002',null),('${id(12)}','격리 미분류',null,null);
+   insert into delivery_points(id,name,address,center_code,delivery_method,access_method,deadline_business_min,allow_over_5ton) values('${id(20)}','격리 공유','원주소','002','대면','보안키',0,false);
+   insert into route_stops(id,route_id,delivery_point_id,stop_order) values('${id(40)}','${id(10)}','${id(20)}',1),('${id(41)}','${id(11)}','${id(20)}',1);`);
+  const base=sql('operations-permissions.sql');
+  for(const name of ['operations_permission_match','operations_permission_for_actor','operations_resource_allowed']) {
+   const definition=base.match(new RegExp('create(?: or replace)? function public\\.'+name+'\\([\\s\\S]*?as (\\$[a-z_]*\\$)[\\s\\S]*?\\1\\s*;','i'))[0];
+   await db.exec(definition);
+  }
+  await db.exec(sql('legacy-common-catalog.sql'));
+  for(const table of ['routes','delivery_points','drivers','vehicles','companies','route_stops']) {
+   const resource=table==='route_stops'?'routes':table;
+   const center=table==='route_stops'?"(select coalesce(center_code,'') from routes where id=route_stops.route_id)":"coalesce(center_code,'')";
+   await db.exec(`alter table ${table} enable row level security;
+    create policy read_access on ${table} for select to authenticated using(operations_resource_allowed('${resource}','read',${center}));
+    create policy update_access on ${table} for update to authenticated using(operations_resource_allowed('${resource}','edit',${center})) with check(operations_resource_allowed('${resource}','edit',${center}));
+    create policy insert_access on ${table} for insert to authenticated with check(operations_resource_allowed('${resource}','edit',${center}));
+    create policy delete_access on ${table} for delete to authenticated using(operations_resource_allowed('${resource}','edit',${center}));`);
+  }
+  await db.exec('grant usage on schema public,auth to authenticated;grant select on all tables in schema public to authenticated;grant insert,update,delete on routes,route_stops,delivery_points,drivers,vehicles,companies to authenticated;');
+  const actor=async n=>db.exec(`reset role;select set_config('request.jwt.claim.sub','${id(n)}',false);set role authenticated;`);
+  await actor(1);
+  assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,3,'OP includes unclassified');
+  const view=(await db.query('select * from course_view order by stop_id')).rows;
+  assert.equal(view.length,2,'shared cross-attribute destination remains linked');
+  assert.equal(view[0].primary_driver_name,'격리 기사','driver attribute is independent');
+  assert.equal(view[0].effective_deadline_business_min,0);
+  assert.equal(view[0].allow_over_5ton,false);
+  await db.exec(`update delivery_points set address='공통 수정' where id='${id(20)}'`);
+  assert.equal((await db.query("select count(*)::int n from course_view where dp_address='공통 수정'")).rows[0].n,2);
+  const snapshot=async r=>(await db.query('select * from route_stops where route_id=$1 order by stop_order',[id(r)])).rows;
+  const old=await snapshot(10), changed=old.map(s=>({...s,condition_modes:{delivery_method:'clear',access_method:'set'},override_access_method:''}));
+  const save=(r,expected,next)=>db.query('select legacy_save_route_stops($1,$2,$3) result',[id(r),JSON.stringify(expected),JSON.stringify(next)]);
+  await save(10,old,changed); await save(10,old,changed);
+  let current=(await db.query('select * from course_view order by stop_id')).rows;
+  assert.equal(current[0].delivery_method,null);assert.equal(current[0].access_method,'');assert.equal(current[1].delivery_method,'대면');
+  await assert.rejects(save(10,old,changed.map(s=>({...s,memo:'stale'}))),/다른 작업/);
+  const before=await snapshot(10);
+  await assert.rejects(save(10,before,[...before.map(s=>({...s,stop_order:2})),{...before[0],id:id(42),delivery_point_id:id(999),stop_order:1}]),/foreign key/);
+  assert.deepEqual(await snapshot(10),before,'failure rolls back temporary ordering and partial rows');
+  await db.exec(`update drivers set deleted_at=now() where id='${id(30)}'`);
+  assert.equal((await db.query(`select primary_driver_id from routes where id='${id(10)}'`)).rows[0].primary_driver_id,id(30));
+  await assert.rejects(db.exec(`delete from drivers where id='${id(30)}'`),/연결은 보존/);
+  await actor(2);
+  assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from delivery_points')).rows[0].n,0);
+  await assert.rejects(save(11,await snapshot(11),[]),/권한/);
+  const denied=await db.query(`update routes set name='denied' where id='${id(11)}' returning id`);assert.equal(denied.rows.length,0);
+  await db.exec(`reset role;update operations_permissions set member_overrides=jsonb_build_object('${id(2)}',jsonb_build_object('level','none','scope','all')) where resource='routes';set role authenticated;`);
+  assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,0);
+  await actor(4);assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,0);
+  console.log('PASS isolated SQL: RLS list/detail/write denial, OP unclassified, shared source, cross-attribute links, clear/empty/0/false, atomic retry/conflict/rollback, deletion reference preservation');
+ } finally {await db.close();}
+}
+
 const rule={everyone:true,roles:[],centers:[],scope:'all'};
 const config={resource:'drivers',read_rule:rule,write_rule:rule};
 const editor={role:'editor',active:true,centers:['002']};
 assert.deepEqual(effectivePermission(config,editor,'002'),{read:true,edit:true});
-assert.deepEqual(effectivePermission(config,editor,'001'),{read:true,edit:false});
-assert.deepEqual(effectivePermission(config,{...editor,centers:[]},'002'),{read:true,edit:false});
+assert.deepEqual(effectivePermission(config,editor,'001'),{read:true,edit:true});
+assert.deepEqual(effectivePermission(config,{...editor,centers:[]},'002'),{read:true,edit:true});
 assert.deepEqual(effectivePermission(config,{...editor,role:'viewer'},'002'),{read:true,edit:false});
 assert.deepEqual(effectivePermission(config,{...editor,active:false},'002'),{read:false,edit:false});
 assert.deepEqual(effectivePermission({...config,admin_only:true},editor,'002'),{read:false,edit:false});
@@ -35,7 +122,7 @@ assert.equal(effectivePermission(centerCondition,editor,'001').read,true);
 assert.equal(effectivePermission(centerCondition,{...editor,centers:['001']},'002').read,false);
 console.log('PASS: active state, role, center membership, audience vs data scope, admin-only and status-only exceptions');
 
-if(process.env.PGLITE_MODULE){
+if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
  const {PGlite}=await import(process.env.PGLITE_MODULE),{readFileSync}=await import('node:fs');
  const db=new PGlite();
  const sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8');
@@ -180,7 +267,7 @@ if(process.env.PGLITE_MODULE){
   ['inactive explicit editor',grant('edit','all'),{...person,active:false},'001',{read:false,edit:false}],
   ['viewer role ceiling',grant('edit','all'),{...person,role:'viewer'},'001',{read:true,edit:false}],
   ['administrator-only boundary',{...grant('edit','all'),admin_only:true},person,'001',{read:false,edit:false}],
-  ['inherited center ceiling',config,person,'001',{read:true,edit:false}],
+  ['global common catalog rule',config,person,'001',{read:true,edit:true}],
   ['malformed override',{...config,member_overrides:{[person.id]:{level:'edit'}}},person,'001',{read:false,edit:false}],
  ];
  for(const [name,cfg,p,center,want] of cases){

@@ -1,3 +1,4 @@
+import { permissionAllowed } from '../lib/permissions';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from './Modal';
 import { FileArea } from './FileArea';
@@ -39,13 +40,13 @@ export function DashboardDetail({
   onSaved: (id: string, payload: Record<string, unknown>) => void;
   toast: (text: string, type?: 'info' | 'warn' | 'error' | 'success') => void;
 }) {
-  const { center } = useAdminPage(),
+  const { center, permissions } = useAdminPage(),
     [loaded, setLoaded] = useState(false),
     [busy, setBusy] = useState(false),
     [photos, setPhotos] = useState<DeliveryPhoto[]>([]),
     [large, setLarge] = useState(''),
     file = useRef<HTMLInputElement>(null),
-    saving = useRef(false);
+    saving = useRef(false), version = useRef<string | null>(null), originalFields = useRef<Fields | null>(null), pointCenter = useRef<string | null>(null);
   const [fields, setFields] = useState<Fields>(() => ({
     name: r.dp_name || '',
     code: r.dp_code || '',
@@ -59,6 +60,7 @@ export function DashboardDetail({
     security_password: r.security_password || '',
     memo: r.dp_memo || '',
   }));
+  const editable = !useErpCatalog && loaded && permissionAllowed(permissions,'delivery_points','edit',pointCenter.current ?? 'unclassified');
   const photosRef = useRef(photos);
   photosRef.current = photos;
   useEffect(() => {
@@ -78,19 +80,22 @@ export function DashboardDetail({
             String(data?.[key as keyof typeof data] ?? ''),
           ]),
         ) as Fields;
+        version.current = data?.updated_at ?? null;
+        originalFields.current = values; pointCenter.current = data?.center_code ?? null;
         setFields(values);
         const photos = parseDeliveryPointPhotos(data?.photos);
         setPhotos(photos);
         setLarge(photos[0]?.dataUrl || '');
         setLoaded(true);
       },
+      () => { if(active) toast('납품처 정보를 불러오지 못했습니다.','error'); },
     );
     return () => {
       active = false;
     };
   }, [r.delivery_point_id, center.code]);
   async function addPhotos(files: File[]) {
-    if (!loaded) {
+    if (!editable || busy) {
       toast('납품처 정보를 불러온 뒤 사진을 추가할 수 있습니다.', 'warn');
       return;
     }
@@ -122,17 +127,17 @@ export function DashboardDetail({
     }
   }
   async function save() {
-    if (!r.delivery_point_id || !loaded || saving.current) return;
+    if (!r.delivery_point_id || !loaded || saving.current || !permissionAllowed(permissions,'delivery_points','edit',pointCenter.current ?? 'unclassified')) return;
     const payload: Record<string, unknown> = {
       ...Object.fromEntries(
-        Object.entries(fields).map(([key, value]) => [
+        Object.entries(fields).filter(([key,value])=>value!==originalFields.current?.[key as keyof Fields]).map(([key, value]) => [
           key,
           value.trim() || null,
         ]),
       ),
       photos: photosRef.current,
     };
-    if (!payload.name) {
+    if (!fields.name.trim()) {
       toast('납품처명을 입력해 주세요.', 'warn');
       return;
     }
@@ -143,11 +148,16 @@ export function DashboardDetail({
         center,
         r.delivery_point_id,
         payload,
+        version.current,
       );
       if (error) {
         toast('납품처 저장 실패: ' + error.message, 'error');
         return;
       }
+      const refreshed = await dashboardDetail(center,r.delivery_point_id);
+      if (refreshed.error) throw refreshed.error;
+      version.current = refreshed.data?.updated_at ?? null;
+      originalFields.current = {...fields};
       onSaved(r.delivery_point_id, payload);
       toast('납품처 정보가 저장되었습니다.', 'success');
     } finally {
@@ -186,18 +196,18 @@ export function DashboardDetail({
           className="app-input mt-1"
           inputMode={key === 'contact' ? 'tel' : undefined}
           value={fields[key]}
-          readOnly={useErpCatalog}
+          readOnly={!editable || busy}
           onChange={(e) => setFields((s) => ({ ...s, [key]: e.target.value }))}
         />
       </label>
     );
   }
   return (
-    <Modal width="5xl" onClose={onClose}>
+    <Modal dismissable={!busy} width="5xl" onClose={onClose}>
       <div
         className="p-5 max-h-[85vh] overflow-auto"
         onPaste={(event) => {
-          if (useErpCatalog) return;
+          if (!editable || busy) return;
           const files = [...(event.clipboardData.items || [])]
             .filter((item) => item.type.startsWith('image/'))
             .map((item) => item.getAsFile())
@@ -236,7 +246,7 @@ export function DashboardDetail({
             ) : !useErpCatalog ? <button
               id="detail-save"
               className="btn btn-primary text-xs"
-              disabled={!loaded || busy}
+              disabled={!editable || busy}
               onClick={() => void save()}
             >
               {busy ? '저장 중...' : '납품처 저장'}
@@ -299,7 +309,7 @@ export function DashboardDetail({
             className="ean-detail-section space-y-3 p-3"
             accept="image/*"
             multiple
-            disabled={!loaded || useErpCatalog}
+            disabled={!editable || busy}
             onFiles={(files) => void addPhotos(files)}
           >
             <div className="flex items-center justify-between gap-2">
@@ -320,7 +330,7 @@ export function DashboardDetail({
                     accept="image/*"
                     multiple
                     className="hidden"
-                    disabled={!loaded}
+                    disabled={!editable || busy}
                     onChange={(e) =>
                       void addPhotos([...(e.target.files || [])])
                     }

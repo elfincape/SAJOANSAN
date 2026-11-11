@@ -3,7 +3,7 @@ export function permissionAllowed(context, resource, action = 'read', center) {
   if (!access) return false;
   if (!['read', 'edit'].includes(action)) return false;
   const allows = (key) =>
-    center
+    center === 'unclassified' ? access[key + '_unclassified'] === true : center
       ? (access[key + '_centers'] ?? []).includes(center)
       : access[key] === true;
   return allows(action) || (action === 'read' && allows('edit'));
@@ -13,11 +13,6 @@ export const centerEditResources = [
   'tasks',
   'forms',
   'trash',
-  'drivers',
-  'vehicles',
-  'companies',
-  'delivery_points',
-  'routes',
   'transfers',
   'charter',
   'dispatch_parser',

@@ -15,7 +15,7 @@ assert.match(edge, /buildOperationsSnapshot/);
 assert.match(edge, /answerFromSnapshot/);
 assert.match(edge, /safeRestVariants/);
 assert.match(edge, /safeStops/);
-assert.match(edge, /fallback:'empty'/);
+assert.doesNotMatch(edge, /fallback:'empty'/, 'query failures must not masquerade as an empty catalog');
 assert.match(edge, /현재 센터 운영 DB 스냅샷만 근거/);
 assert.doesNotMatch(edge, /search_course_rows|search_delivery_points|search_drivers|search_vehicles|list_routes/);
 assert.match(tools, /OPERATIONS_QUERY_SCHEMA/);
@@ -72,3 +72,17 @@ try{
  globalThis.fetch=async()=>new Response('',{status:503});await assert.rejects(all.catalogList('route',{center:'001'}),/ERP 원본 조회 실패/);
 }finally{globalThis.fetch=originalFetch;}
 console.log('frontend catalog: own session, explicit all/unclassified, fail-closed passed');
+
+// Actual REST pagination function with a small server page cap. No model or production calls.
+const readStart=edge.indexOf('async function restAll('),readEnd=edge.indexOf('\nasync function safeRestVariants',readStart);
+const code=stripTypeScriptTypes(edge.slice(readStart,readEnd)).replace('async function restAll','export async function restAll');
+const reader=await import('data:text/javascript;base64,'+Buffer.from('const REST_PAGE_SIZE=1000;const coded=(code,status)=>Object.assign(Error(code),{code,status});'+code).toString('base64'));
+try {
+ const ranges=[];let batch=0;
+ globalThis.fetch=async(_url,options)=>{assert.equal(options.headers.authorization,'Bearer caller');ranges.push(options.headers.Range);return Response.json([[{id:1},{id:2}],[{id:3}],[]][batch++]);};
+ assert.deepEqual(await reader.restAll({url:'https://isolated.invalid',anon:'public'},'caller','routes','select=id'),[{id:1},{id:2},{id:3}]);
+ assert.deepEqual(ranges,['0-999','2-1001','3-1002']);
+ globalThis.fetch=async()=>new Response('',{status:403});
+ await assert.rejects(reader.restAll({url:'https://isolated.invalid',anon:'public'},'caller','routes','select=id'),/QUERY_FAILED/);
+} finally {globalThis.fetch=originalFetch;}
+console.log('Legacy assistant REST: caller token, capped pages and explicit query errors passed');

@@ -7,11 +7,11 @@ export const centerEditResources = [
   'tasks',
   'forms',
   'trash',
-  'drivers',
-  'vehicles',
-  'companies',
-  'delivery_points',
-  'routes',
+
+
+
+
+
   'transfers',
   'charter',
   'dispatch_parser',

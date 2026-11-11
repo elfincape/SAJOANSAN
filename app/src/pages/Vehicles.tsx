@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
+import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -14,8 +16,9 @@ const parseTonnage = (text: string) => { if (!text) return null; const match = S
 const formatTonnage = (n?: number | null) => n == null ? '' : `${Number(n)}톤`;
 const toDraft = (row?: Vehicle | null): Draft => ({ id: row?.id || '', plate: row?.plate_number || '', tonnage: formatTonnage(row?.tonnage), pallet: row?.pallet_capacity == null ? '' : String(row.pallet_capacity), company: row?.company_id || '', memo: row?.memo || '' });
 function VehiclesContent() {
-  const { center, editable, permissions } = useAdminPage();
+  const { center, editable: pageEditable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const [catalogScope,setCatalogScope] = useState(useLegacyCommonCatalog ? '' : center.code);
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadVehicles>>>({ rows: [], companies: [], routes: [] });
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
@@ -29,16 +32,16 @@ function VehiclesContent() {
   const initial = useRef<ReturnType<typeof loadVehicles> | undefined>(undefined);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
-    let active = true; const request = initial.current ??= loadVehicles(center.code);
+    let active = true; const request = initial.current = loadVehicles(catalogScope);
     void request.then(value => { if (active) setData(value); }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
   const reload = useCallback(async () => {
     setLoading(true);
-    try { const next = await loadVehicles(center.code); setData(next); return next; }
-    catch { toast('데이터를 불러오지 못했습니다.', 'error'); setData(previous => ({ ...previous, rows: [], routes: [] })); return null; }
+    try { const next = await loadVehicles(catalogScope); setData(next); return next; }
+    catch { toast('데이터를 불러오지 못했습니다.', 'error'); return null; }
     finally { setLoading(false); }
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
   const companyById = new Map(data.companies.map(company => [company.id, company]));
   const counts = new Map<string, { primary: number; secondary: number }>();
   for (const route of data.routes) for (const key of ['primary', 'secondary'] as const) { const id = route[`${key}_vehicle_id`]; if (id) { const count = counts.get(id) || { primary: 0, secondary: 0 }; count[key]++; counts.set(id, count); } }
@@ -46,6 +49,7 @@ function VehiclesContent() {
   const byPlate = (a: Vehicle, b: Vehicle) => (a.plate_number || '').localeCompare(b.plate_number || '', 'ko', { numeric: true });
   rows.sort((a, b) => sort === 'tonnage' ? (a.tonnage ?? -1) - (b.tonnage ?? -1) || byPlate(a, b) : sort === 'company' ? (companyById.get(a.company_id || '')?.name || '').localeCompare(companyById.get(b.company_id || '')?.name || '', 'ko') || byPlate(a, b) : sort === 'updated' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : byPlate(a, b));
   const selectedRow = data.rows.find(row => row.id === selected);
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'vehicles','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
   useEditorGuard(dirty, saving, confirm);
   const bulk = useRowSelection(rows.map(row => row.id));
@@ -69,7 +73,7 @@ function VehiclesContent() {
     if (tonnage != null && !(tonnage > 0)) { toast('톤수는 0보다 커야 합니다.', 'warn'); return; }
     savingRef.current = true; setSaving(true);
     try {
-      const payload = { ...(draft.id ? { id: draft.id } : {}), center_code: center.code, plate_number: plate, tonnage, pallet_capacity: Number.isFinite(pallet) ? pallet : null, company_id: draft.company || null, memo: draft.memo.trim() || null };
+      const payload = { ...(draft.id ? { id: draft.id } : {}), center_code: selectedRow ? selectedRow.center_code ?? null : center.code, plate_number: plate, tonnage, pallet_capacity: Number.isFinite(pallet) ? pallet : null, company_id: draft.company || null, memo: draft.memo.trim() || null };
       const { data: row, error } = await saveVehicle(payload);
       if (error) { toast(error.code === '23505' ? '같은 운수사에 이미 같은 차량번호가 있습니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
@@ -89,6 +93,7 @@ function VehiclesContent() {
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
+      {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(event.target.value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
       <SavedViews scope="vehicles" value={{ search, company, sort }} defaultValue={{ search: '', company: '', sort: 'plate' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setCompany(next.company); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="vehicles" revealToken={editorIntent} revealFocus="#f-plate">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="차량 목록">

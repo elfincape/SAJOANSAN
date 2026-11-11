@@ -8,15 +8,24 @@
       "maxDuration": 60
     },
     "api/private-mail-worker.mjs": {
-      "regions": ["icn1"],
+      "regions": [
+        "icn1"
+      ],
       "maxDuration": 240
     },
     "api/private-mail-diagnostic.mjs": {
       "maxDuration": 30
     },
     "api/private-mail-collect.mjs": {
-      "regions": ["icn1"],
+      "regions": [
+        "icn1"
+      ],
       "maxDuration": 240
+    }
+  },
+  "git": {
+    "deploymentEnabled": {
+      "codex/legacy-web-structure-fix": false
     }
   }
 }

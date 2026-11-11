@@ -23,6 +23,7 @@ export async function portalSearch(term: string, center: string, page: number) {
     ...erp.filter(({ total }) => total > 0)] };
 }
 export async function portalSearchMaster(kind: string, id: string) {
+  if (!['routes','delivery_points','drivers','vehicles','companies'].includes(kind)) throw Error('원본 종류를 확인해 주세요.');
   const catalogKinds = activeCatalogKinds();
   if (Object.hasOwn(catalogKinds, kind)) {
     const item = await catalogDetail(catalogKinds[kind], id);

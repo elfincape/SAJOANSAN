@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
+import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -17,8 +19,9 @@ const defaultFolder = 'https://1drv.ms/f/c/6dace80ad4c07b59/IgCRF6DHb-8GQLZozZ3q
 const toDraft = (row?: Company) => ({ id: row?.id || '', name: row?.name || '', memo: row?.memo || '' });
 function CompaniesContent() {
   const { center, profile, editable: documentEditable, permissions } = useAdminPage();
-  const editable = documentEditable && !useErpReferenceCatalog;
+  const pageEditable = documentEditable && !useErpReferenceCatalog;
   const { toast, confirm, feedback } = useFeedback();
+  const [catalogScope,setCatalogScope] = useState(useLegacyCommonCatalog ? '' : center.code);
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadCompanies>>>({ rows: [], drivers: [], vehicles: [], routes: [] });
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
@@ -31,23 +34,24 @@ function CompaniesContent() {
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   function select(row?: Company, focus = false, force = false) { if (!force && (saving)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 운수사 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row?.id || null); setDraft(toDraft(row)); setResetKey(key => key + 1); if (focus) { setEditorIntent(value => value + 1); nameInput.current?.focus(); } }
   useEffect(() => {
-    let active = true; const request = initial.current ??= loadCompanies(center.code);
+    let active = true; const request = initial.current = loadCompanies(catalogScope);
     void request.then(value => {
       if (!active) return; setData(value);
       const linked = value.rows.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked) select(linked);
     }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
   async function reload() {
     setLoading(true);
-    try { const next = await loadCompanies(center.code); setData(next); return next; }
-    catch { toast('데이터를 불러오지 못했습니다.', 'error'); setData({ rows: [], drivers: [], vehicles: [], routes: [] }); return null; }
+    try { const next = await loadCompanies(catalogScope); setData(next); return next; }
+    catch { toast('데이터를 불러오지 못했습니다.', 'error'); return null; }
     finally { setLoading(false); }
   }
   const counts = new Map<string, { drivers: number; vehicles: number; routes: number }>();
   for (const kind of ['drivers', 'vehicles', 'routes'] as const) for (const row of data[kind]) { if (row.company_id) { const count = counts.get(row.company_id) || { drivers: 0, vehicles: 0, routes: 0 }; count[kind]++; counts.set(row.company_id, count); } }
   const rows = data.rows.filter(row => !debouncedSearch || (row.name || '').toLowerCase().includes(debouncedSearch.toLowerCase())).sort((a, b) => sort === 'updated' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
   const selectedRow = data.rows.find(row => row.id === selected);
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'companies','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
   useEditorGuard(dirty, saving, confirm);
   const bulk = useRowSelection(rows.map(row => row.id));
@@ -64,7 +68,7 @@ function CompaniesContent() {
     if (!editable || savingRef.current) return;
     const name = draft.name.trim();
     if (!name) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
-    const payload = { ...(draft.id ? { id: draft.id } : {}), center_code: center.code, name, memo: draft.memo.trim() || null };
+    const payload = { ...(draft.id ? { id: draft.id } : {}), center_code: selectedRow ? selectedRow.center_code ?? null : center.code, name, memo: draft.memo.trim() || null };
     savingRef.current = true; setSaving(true);
     try {
       const { data: saved, error } = await saveCompany(payload);
@@ -88,6 +92,7 @@ function CompaniesContent() {
       {useErpReferenceCatalog
         ? <a className="btn btn-ghost" href={erpCourseHref('company', selected || '')}>ERP에서 운수사 관리</a>
         : !editable && <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p>}
+      {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(event.target.value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
       <SavedViews scope="companies" value={{ search, sort }} defaultValue={{ search: '', sort: 'name' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="companies" revealToken={editorIntent} revealFocus="#f-name">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="운수사 목록"><div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center"><input id="search-input" type="search" placeholder="이름 검색" aria-label="운수사 이름 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="sort-key" className="app-select w-28" aria-label="운수사 정렬 기준" value={sort} onChange={event => setSort(event.target.value)}><option value="name">이름순</option><option value="updated">수정 최신순</option></select><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => select(undefined, true)}>+ 신규</button></div>

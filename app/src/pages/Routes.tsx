@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
+import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SelectionActions, useSelectionExport } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -16,30 +18,37 @@ import { deleteRoute, loadRouteMasters, loadRoutes } from '../lib/routes';
 import type { Route, RouteMasters } from '../lib/routes';
 import { withCenterParam } from '../lib/center';
 
+const routeViews = new Map<string, {view: typeof defaultView; scope?:string; grid?: ReturnType<GridApi['getState']>}>();
 ModuleRegistry.registerModules([AllCommunityModule]);
 const defaultView = { search: '', company: '', columnFilters: false, gridFilters: '{}' };
 interface GridRow { id: string; route: Route; company: string; carNumber: string; routeName: string; primaryDriver: string; secondaryDriver: string; primaryVehicle: string; stopCount: number; closedDays: number[]; closedDaysText: string; activeLabel: string }
 function RoutesContent() {
-  const { center, editable, permissions } = useAdminPage();
+  const { center, editable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const [catalogScope,setCatalogScope] = useState(routeViews.get(profile.id+':'+center.code)?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
+
+  const viewKey=profile.id+':'+center.code;
+  const restored=useRef(routeViews.get(viewKey));
   const [masters, setMasters] = useState<RouteMasters>({ companies: [], drivers: [], vehicles: [] });
   const [data, setData] = useState<Awaited<ReturnType<typeof loadRoutes>>>({ routes: [], stopCounts: new Map() });
-  const [loading, setLoading] = useState(true), [search, setSearch] = useState(''), [debouncedSearch, setDebouncedSearch] = useState(''), [company, setCompany] = useState(''), [columnFilters, setColumnFilters] = useState(false);
+  const [loading, setLoading] = useState(true), [search, setSearch] = useState(restored.current?.view.search ?? ''), [debouncedSearch, setDebouncedSearch] = useState(restored.current?.view.search ?? ''), [company, setCompany] = useState(restored.current?.view.company ?? ''), [columnFilters, setColumnFilters] = useState(restored.current?.view.columnFilters ?? false);
   const [selectedRows, setSelectedRows] = useState<GridRow[]>([]);
-  const [gridFilters, setGridFilters] = useState('{}');
+  const [gridFilters, setGridFilters] = useState(restored.current?.view.gridFilters ?? '{}');
   const [stats, setStats] = useState({ filters: 0, shown: 0 });
   const [editing, setEditing] = useState<Route | null | undefined>(undefined), [stops, setStops] = useState<Route | null>(null);
   const grid = useRef<HTMLDivElement>(null), api = useRef<GridApi<GridRow> | null>(null);
-  const live = useRef({ editable, remove: (_id: string) => {}, setEditing, setStops });
-  live.current = { editable, remove: id => { void remove(id); }, setEditing, setStops };
+  routeViews.set(viewKey,{...routeViews.get(viewKey),scope:catalogScope,view:{search,company,columnFilters,gridFilters}});
+  const canEdit=(route:Route)=>editable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',route.center_code ?? 'unclassified'));
+  const live = useRef({ editable, canEdit, remove: (_id: string) => {}, setEditing, setStops });
+  live.current = { editable, canEdit, remove: id => { void remove(id); }, setEditing, setStops };
   const initial = useRef<{ masters: ReturnType<typeof loadRouteMasters>; routes: ReturnType<typeof loadRoutes> } | undefined>(undefined);
   useEffect(() => {
     let active = true;
-    const requests = initial.current ??= { masters: loadRouteMasters(center.code), routes: loadRoutes(center.code) };
+    const requests = initial.current = { masters: loadRouteMasters(center.code), routes: loadRoutes(catalogScope) };
     void requests.masters.then(value => { if (active) setMasters(value); }).catch(() => { if (active) toast('마스터 데이터를 불러오지 못했습니다.', 'error'); });
     void requests.routes.then(value => { if (active) setData(value); }).catch(() => { if (active) toast('코스 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
     if (!grid.current) return;
@@ -55,8 +64,8 @@ function RoutesContent() {
           if (!row) return true;
           this.root?.render(kind === 'days' ? <div className="route-grid-days" style={row.closedDays.length ? undefined : { color: 'var(--theme-muted, #52525b)' }}>{row.closedDays.length ? row.closedDays.map(day => <span key={day} className="route-grid-day">{['일', '월', '화', '수', '목', '금', '토'][day] ?? day}</span>) : '-'}</div> : kind === 'status' ? <span className="text-xs" style={{ color: params.value === '비활성' ? 'var(--theme-danger, #a51e36)' : 'var(--theme-success, #08634f)' }}>{params.value}</span> : <div className="route-grid-actions">{[
             { label: '납품처 ' + row.stopCount, action: () => live.current.setStops(row.route), extra: ' route-action-stops', disabled: false },
-            { label: '편집', action: () => live.current.setEditing(row.route), extra: '', disabled: !live.current.editable },
-            { label: '삭제', action: () => live.current.remove(row.id), extra: ' route-action-delete', disabled: !live.current.editable },
+            { label: '편집', action: () => live.current.setEditing(row.route), extra: '', disabled: !live.current.canEdit(row.route) },
+            { label: '삭제', action: () => live.current.remove(row.id), extra: ' route-action-delete', disabled: !live.current.canEdit(row.route) },
           ].map(action => <button key={action.label} type="button" className={'btn btn-ghost text-xs' + action.extra} disabled={action.disabled} aria-label={`${row.routeName || row.carNumber || '코스'} ${action.label}`} onClick={event => { event.stopPropagation(); action.action(); }}>{action.label}</button>)}</div>);
           return true;
         }
@@ -87,6 +96,8 @@ function RoutesContent() {
         { headerName: '작업', colId: 'actions', width: 216, minWidth: 216, pinned: compact.matches ? null : 'right', cellClass: 'route-grid-action-cell', sortable: false, filter: false, resizable: false, cellRenderer: cells('actions') },
       ],
       defaultColDef: { cellDataType: false, sortable: true, filter: 'agTextColumnFilter', floatingFilter: false, suppressHeaderFilterButton: true, resizable: true, comparator: (left, right) => collator.compare(String(left ?? ''), String(right ?? '')) },
+      initialState: restored.current?.grid,
+      onStateUpdated: event => routeViews.set(viewKey,{...routeViews.get(viewKey),view:routeViews.get(viewKey)?.view ?? defaultView,grid:event.state}),
       rowData: [], getRowId: params => params.data.id, rowHeight: compact.matches ? 52 : 46, headerHeight: 44,
       rowSelection: { mode: 'multiRow', selectAll: 'filtered', enableClickSelection: false },
       selectionColumnDef: { width: 48, minWidth: 48, maxWidth: 48, pinned: 'left', resizable: false },
@@ -109,7 +120,7 @@ function RoutesContent() {
     api.current?.setGridOption('rowData', rows); if (rows.length) api.current?.hideOverlay(); else api.current?.showNoRowsOverlay();
   }, [data, masters, company, debouncedSearch]);
   useEffect(() => { const gridApi = api.current; if (gridApi) gridApi.setGridOption('defaultColDef', { ...gridApi.getGridOption('defaultColDef'), floatingFilter: columnFilters, suppressHeaderFilterButton: !columnFilters }); }, [columnFilters]);
-  async function reload() { setLoading(true); try { setData(await loadRoutes(center.code)); } catch { toast('코스 목록을 불러오지 못했습니다.', 'error'); setData({ routes: [], stopCounts: new Map() }); } finally { setLoading(false); } }
+  async function reload() { setLoading(true); try { const [value, references] = await Promise.all([loadRoutes(catalogScope),loadRouteMasters(center.code)]); setData(value); setMasters(references); } catch { toast('코스 목록을 불러오지 못했습니다.', 'error'); } finally { setLoading(false); } }
   async function remove(id: string) {
     if (!editable) return; const route = data.routes.find(row => row.id === id); if (!route) return;
     const count = data.stopCounts.get(id) || 0;
@@ -137,6 +148,7 @@ function RoutesContent() {
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1400px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
+      {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => setCatalogScope(event.target.value)}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
       <SavedViews scope="routes" value={{ search, company, columnFilters, gridFilters }} defaultValue={defaultView} onApply={applyView} disabled={loading} />
       <div className="route-toolbar" role="search" aria-label="코스 검색 및 필터"><input id="search-input" type="search" aria-label="코스명, 호차, 기사, 차량번호 검색" placeholder="코스명/호차/기사/차량번호 검색" className="app-input flex-1 min-w-[220px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="filter-company" aria-label="운수사 선택" className="app-select w-44" value={company} onChange={event => setCompany(event.target.value)}><option value="">운수사(전체)</option>{masters.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select><button id="column-filters-btn" type="button" className="btn btn-ghost" aria-pressed={columnFilters} aria-controls="route-grid" onClick={() => setColumnFilters(value => !value)}>상세 필터</button><button id="reset-filters-btn" type="button" className={`btn btn-ghost${filterCount ? '' : ' hidden'}`} onClick={resetFilters}>필터 초기화</button><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => setEditing(null)}>+ 새 코스</button></div>
       <div className="route-filter-summary"><span id="filter-summary" role="status" aria-live="polite">{filterCount ? `필터 ${filterCount}개 적용 중` : '전체 코스'}</span></div>

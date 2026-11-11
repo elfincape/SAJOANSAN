@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from './erp-course-catalog';
+import { activeCatalog, catalogFilter } from './catalog-scope';
 import { supabase } from './supabase';
 import type { TransferRow } from '../domain/transfers';
 import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
@@ -21,10 +23,10 @@ export async function loadTransferMasters(center:string):Promise<TransferMasters
    vehicles:rows(ve).map(({plate,...vehicle})=>({...vehicle,plate_number:plate})).sort((a,b)=>a.plate_number.localeCompare(b.plate_number,'ko'))};
  }
  const [co,ro,dr,ve]=await Promise.all([
- supabase.from('companies').select('id, name').order('name').eq('center_code',center),
- supabase.from('routes').select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id').order('car_number').eq('center_code',center),
- supabase.from('drivers').select('id, name, phone, contact, company_id').order('name').eq('center_code',center),
- supabase.from('vehicles').select('id, plate_number, company_id').order('plate_number').eq('center_code',center)]);
+ activeCatalog(catalogFilter(supabase.from('companies').select('id, name').order('name'),useLegacyCommonCatalog ? '' : center)),
+ activeCatalog(supabase.from('routes').select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id').order('car_number').eq('center_code',center)),
+ activeCatalog(catalogFilter(supabase.from('drivers').select('id, name, phone, contact, company_id').order('name'),useLegacyCommonCatalog ? '' : center)),
+ activeCatalog(catalogFilter(supabase.from('vehicles').select('id, plate_number, company_id').order('plate_number'),useLegacyCommonCatalog ? '' : center))]);
  if(co.error||ro.error||dr.error||ve.error)throw co.error||ro.error||dr.error||ve.error;
  return {companies:co.data||[],routes:ro.data||[],drivers:dr.data||[],vehicles:ve.data||[]};
 }
@@ -50,11 +52,11 @@ const fields = `
       created_by,
       created_at,
       updated_at
-    ` + (useErpCatalog ? ',erp_route_id,erp_company_id,erp_driver_id,erp_vehicle_id' : '');
+    ` + ((useErpCatalog || useLegacyCommonCatalog) ? ',erp_route_id,erp_company_id,erp_driver_id,erp_vehicle_id' : '');
 export function loadSavedTransfers(center:string){return supabase.from('transfer_deliveries').select(fields).eq('center_code',center).order('delivery_date',{ascending:true}).order('created_at',{ascending:true}).limit(1000).returns<StoredTransfer[]>();}
 export function saveTransfer(center:string,id:string|null,payload:Record<string,unknown>){
  const {route_id,company_id,driver_id,vehicle_id,...snapshot}=payload;
- const values=useErpCatalog ? {...snapshot,erp_route_id:route_id,erp_company_id:company_id,erp_driver_id:driver_id,erp_vehicle_id:vehicle_id} : payload;
+ const values=useErpCatalog ? {...snapshot,erp_route_id:route_id,erp_company_id:company_id,erp_driver_id:driver_id,erp_vehicle_id:vehicle_id} : useLegacyCommonCatalog ? {...payload,erp_route_id:null,erp_company_id:null,erp_driver_id:null,erp_vehicle_id:null} : payload;
  const query=id ? supabase.from('transfer_deliveries').update(values).eq('center_code',center).eq('id',id) : supabase.from('transfer_deliveries').insert(values);
  return query.select(fields).single<StoredTransfer>();
 }

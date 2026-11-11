@@ -27,9 +27,9 @@ function TransfersContent(){
  useEffect(()=>{setSelected([]);setAllChecked(false);},[rows]);
  const options={routes:masters.routes.filter(row=>!draft.company||row.company_id===draft.company),drivers:masters.drivers.filter(row=>!draft.company||row.company_id===draft.company),vehicles:masters.vehicles.filter(row=>!draft.company||row.company_id===draft.company)};
  function changeField(key:keyof ReturnType<typeof emptyDraft>,value:string){
-  if(key==='company'){setDraft(previous=>({...previous,company:value,route:'',driver:'',vehicle:'',phone:''}));return;}
+  if(key==='company'){setDraft(previous=>({...previous,company:value}));return;}
   if(key==='driver'){const driver=masters.drivers.find(row=>row.id===value);setDraft(previous=>({...previous,driver:value,phone:driver?formatPhone(driver.phone||driver.contact||''):''}));return;}
-  if(key==='route'){const route=masters.routes.find(row=>row.id===value);setDraft(previous=>{if(!route)return {...previous,route:value};const driverId=route.primary_driver_id?(options.drivers.some(row=>row.id===route.primary_driver_id)?route.primary_driver_id:''):previous.driver,vehicleId=route.primary_vehicle_id?(options.vehicles.some(row=>row.id===route.primary_vehicle_id)?route.primary_vehicle_id:''):previous.vehicle;const driver=masters.drivers.find(row=>row.id===driverId);return {...previous,route:value,driver:driverId,vehicle:vehicleId,phone:driver?formatPhone(driver.phone||driver.contact||''):''};});return;}
+  if(key==='route'){const route=masters.routes.find(row=>row.id===value);setDraft(previous=>{if(!route)return {...previous,route:value};const driverId=route.primary_driver_id?route.primary_driver_id:previous.driver,vehicleId=route.primary_vehicle_id?route.primary_vehicle_id:previous.vehicle;const driver=masters.drivers.find(row=>row.id===driverId);return {...previous,route:value,driver:driverId,vehicle:vehicleId,phone:driver?formatPhone(driver.phone||driver.contact||''):''};});return;}
   setDraft(previous=>({...previous,[key]:value}));
  }
  function clearPhotos(){photoVersions.current=photoVersions.current.map(version=>version+1);setPhotos([null,null,null,null]);setTouched([false,false,false,false]);fileInputs.current.forEach(input=>{if(input)input.value='';});}
@@ -76,17 +76,17 @@ function TransfersContent(){
 
       <div>
         <label className="app-label" htmlFor="f-route">코스번호</label>
-        <select id="f-route" value={draft.route} onChange={event=>changeField("route",event.target.value)} className="app-select"><option value="">선택</option>{options.routes.map(item=><option key={item.id} value={item.id}>{item.car_number || item.name || ""}</option>)}</select>
+        <select id="f-route" value={draft.route} onChange={event=>changeField("route",event.target.value)} className="app-select"><option value="">선택</option>{draft.route&&!options.routes.some(item=>item.id===draft.route)&&<option value={draft.route}>기존 코스 연결 (현재 후보에 없음)</option>}{options.routes.map(item=><option key={item.id} value={item.id}>{item.car_number || item.name || ""}</option>)}</select>
       </div>
 
       <div>
         <label className="app-label" htmlFor="f-driver">기사명</label>
-        <select id="f-driver" value={draft.driver} onChange={event=>changeField("driver",event.target.value)} className="app-select"><option value="">선택</option>{options.drivers.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select id="f-driver" value={draft.driver} onChange={event=>changeField("driver",event.target.value)} className="app-select"><option value="">선택</option>{draft.driver&&!options.drivers.some(item=>item.id===draft.driver)&&<option value={draft.driver}>기존 기사 연결 (현재 후보에 없음)</option>}{options.drivers.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
       </div>
 
       <div>
         <label className="app-label" htmlFor="f-vehicle">차량번호</label>
-        <select id="f-vehicle" value={draft.vehicle} onChange={event=>changeField("vehicle",event.target.value)} className="app-select"><option value="">선택</option>{options.vehicles.map(item=><option key={item.id} value={item.id}>{item.plate_number}</option>)}</select>
+        <select id="f-vehicle" value={draft.vehicle} onChange={event=>changeField("vehicle",event.target.value)} className="app-select"><option value="">선택</option>{draft.vehicle&&!options.vehicles.some(item=>item.id===draft.vehicle)&&<option value={draft.vehicle}>기존 차량 연결 (현재 후보에 없음)</option>}{options.vehicles.map(item=><option key={item.id} value={item.id}>{item.plate_number}</option>)}</select>
       </div>
     </div>
 

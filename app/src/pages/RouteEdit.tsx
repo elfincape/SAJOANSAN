@@ -1,5 +1,7 @@
+import { permissionAllowed } from '../lib/permissions';
 import '../styles/route-edit.css';
 import { useEffect, useRef, useState } from 'react';
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import Sortable from 'sortablejs';
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
@@ -10,13 +12,14 @@ import {
   deleteRouteStop,
   loadRouteDetails,
   updateStopOrder,
+  saveRouteStops,
 } from '../lib/route-stops';
 import type { RouteDetails, RouteStop } from '../lib/route-stops';
 import { withCenterParam } from '../lib/center';
 import { bizMinToDisplay, formatSlack } from '../domain/time';
 
 function RouteEditContent() {
-  const { center, editable } = useAdminPage();
+  const { center, editable: pageEditable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const routeId = new URLSearchParams(location.search).get('id') || '';
   const [data, setData] = useState<RouteDetails>({
@@ -27,6 +30,7 @@ function RouteEditContent() {
     drivers: [],
     vehicles: [],
   });
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',data.route?.center_code ?? 'unclassified'));
   const [editing, setEditing] = useState<RouteStop | null | undefined>(
     undefined,
   );
@@ -51,7 +55,7 @@ function RouteEditContent() {
     };
     if (!routeId) redirect('잘못된 접근입니다.');
     else {
-      const request = (initial.current ??= loadRouteDetails(
+      const request = (initial.current = loadRouteDetails(
         center.code,
         routeId,
       ));
@@ -103,14 +107,14 @@ function RouteEditContent() {
     setSavingOrder(true);
     setData((previous) => ({ ...previous, stops: ordered }));
     try {
-      const { error } = await updateStopOrder(
+      const { error } = await (useLegacyCommonCatalog ? saveRouteStops(routeId,backup,ordered) : updateStopOrder(
         ordered.map((stop) => ({
           id: stop.id,
           route_id: routeId,
           delivery_point_id: stop.delivery_point_id,
           stop_order: stop.stop_order,
         })),
-      );
+      ));
       if (error) throw error;
       toast('순서를 저장했습니다.', 'success');
     } catch {
@@ -169,7 +173,7 @@ function RouteEditContent() {
     )
       return;
     try {
-      const { error } = await deleteRouteStop(stop.id);
+      const { error } = await (useLegacyCommonCatalog ? saveRouteStops(routeId,data.stops,data.stops.filter(row=>row.id!==stop.id).map((row,index)=>({...row,stop_order:index+1}))) : deleteRouteStop(stop.id));
       if (error) {
         toast(`삭제 실패: ${error.message}`, 'error');
         return;
@@ -312,9 +316,7 @@ function RouteEditContent() {
                 .map((stop, index) => {
                   const point = points.get(stop.delivery_point_id),
                     deadline =
-                      stop.deadline_business_min != null
-                        ? stop.deadline_business_min
-                        : point?.deadline_business_min;
+                      stop.condition_modes?.deadline === 'clear' ? null : stop.condition_modes?.deadline === 'inherit' ? point?.deadline_business_min : stop.condition_modes?.deadline === 'set' ? stop.deadline_business_min : stop.deadline_business_min ?? point?.deadline_business_min;
                   const slack =
                     deadline != null && stop.unloading_end_business_min != null
                       ? deadline - stop.unloading_end_business_min
@@ -349,7 +351,7 @@ function RouteEditContent() {
                       </td>
                       <td>{point?.code || '-'}</td>
                       <td>
-                        {point?.name || '(삭제됨)'}
+                        {point?.name ? point.name+(point.deleted_at ? ' (삭제됨)' : '') : `연결 원본 확인 필요 · ${stop.delivery_point_id}`}
                         <span className="ml-1 text-xs text-zinc-500">
                           {point?.region || ''}
                         </span>

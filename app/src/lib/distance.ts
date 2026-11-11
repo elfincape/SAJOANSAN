@@ -1,3 +1,4 @@
+import { activeCatalog } from './catalog-scope';
 import { supabase } from './supabase';
 import type { DistanceRow } from '../domain/distance';
 import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
@@ -6,17 +7,20 @@ export async function centerDestinations(center: string): Promise<DistanceRow[]>
   if (!CENTER_ORIGINS[center]) throw Error('센터를 확인해 주세요.');
   type Point = { name: string | null; address: string | null };
   const points: Point[] = [];
+  let dataCount = 0;
   if (useErpCatalog) {
     const items = await catalogList<CatalogEntity<Point>>('delivery_point', { center });
     points.push(...items.map(({ fields }) => fields)
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ko')));
   } else {
-    for (let offset = 0; ; offset += 500) {
-      const { data, error } = await supabase.from('delivery_points').select('id,code,name,address')
-        .eq('center_code', center).order('name').order('id').range(offset, offset + 499);
+    for (let offset = 0; ; offset += dataCount) {
+      const { data, error } = await activeCatalog(supabase.from('delivery_points').select('id,code,name,address')
+        .eq('center_code', center).order('name').order('id').range(offset, offset + 499));
       if (error) throw Error('납품처 조회 실패: ' + error.message);
+      dataCount = data?.length ?? 0;
+      if (!dataCount) break;
       points.push(...data);
-      if (data.length < 500 || points.length > 20000) break;
+      if (points.length > 20000) break;
     }
   }
   if (points.length > 20000) throw Error('20,000개 이하로 조회해 주세요.');

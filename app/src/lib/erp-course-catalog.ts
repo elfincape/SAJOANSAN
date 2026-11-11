@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 
-export const useErpCatalog = import.meta.env.VITE_ERP_COURSE_CATALOG === 'true';
+export const useLegacyCommonCatalog = import.meta.env.VITE_LEGACY_COMMON_CATALOG === 'true';
+export const useErpCatalog = !useLegacyCommonCatalog && import.meta.env.VITE_ERP_COURSE_CATALOG === 'true';
 export const useErpReferenceCatalog = useErpCatalog && import.meta.env.VITE_ERP_REFERENCE_CATALOG === 'true';
 type CatalogKind = 'route' | 'delivery_point' | 'company' | 'driver' | 'vehicle';
 export function activeCatalogKinds(): Record<string, CatalogKind> {

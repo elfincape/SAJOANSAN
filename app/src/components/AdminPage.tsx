@@ -37,7 +37,7 @@ import {
 import { featureAccessible } from '../lib/feature-access';
 import { WorkspaceFrame } from './WorkspaceFrame';
 import type { WorkspaceCommand } from './WorkspaceCommands';
-import { erpCourseHref, useErpCatalog, useErpReferenceCatalog } from '../lib/erp-course-catalog';
+import { erpCourseHref, useLegacyCommonCatalog, useErpCatalog, useErpReferenceCatalog } from '../lib/erp-course-catalog';
 
 type CenterChangeGuard = () => boolean | Promise<boolean>;
 interface PageContext extends AuthContext {
@@ -420,7 +420,8 @@ export function AdminPage({
     Object.entries(auth.permissions.access).some(
       ([key, value]) => value.read && !portalResources.has(key),
     );
-  const denied = resource
+  const commonResource = useLegacyCommonCatalog && ['routes','delivery_points','drivers','vehicles','companies'].includes(resource ?? '');
+  const denied = commonResource ? !permissionAllowed(auth.permissions, resource!, 'read') : resource
     ? pageFeature
       ? !featureAccessible(
           pageFeature,
@@ -463,7 +464,7 @@ export function AdminPage({
   }
   const editable =
     !resource ||
-    permissionAllowed(auth.permissions, resource, 'edit', center.code);
+    permissionAllowed(auth.permissions, resource, 'edit', commonResource ? undefined : center.code);
   const movedCatalog = useErpCatalog && [
     '/admin/routes.html', '/admin/route-edit.html', '/admin/delivery-points.html', '/admin/import.html',
   ].includes(location.pathname);

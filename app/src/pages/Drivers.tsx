@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
+import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -30,8 +32,9 @@ function formatPhone(value: string | null) {
 const pdfSummary = (results: PdfResult[], total: number) => `처리 ${results.length}/${total} · 저장 ${results.filter(row => row.status === 'saved').length} · 서류 없음 ${results.filter(row => row.status === 'skipped').length} · 실패 ${results.filter(row => row.status === 'failed').length}`;
 function DriversContent() {
   const { center, profile, editable: documentEditable, permissions } = useAdminPage();
-  const editable = documentEditable && !useErpReferenceCatalog;
+  const pageEditable = documentEditable && !useErpReferenceCatalog;
   const { toast, confirm, feedback } = useFeedback();
+  const [catalogScope,setCatalogScope] = useState(useLegacyCommonCatalog ? '' : center.code);
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadDrivers>>>({ rows: [], companies: [], routes: [], documents: new Map(), healthSchemaReady: false });
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
@@ -48,12 +51,12 @@ function DriversContent() {
   function select(row?: Driver, focus = false, force = false) { if (!force && (saving)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 기사 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row?.id || null); setDraft(toDraft(row)); setResetKey(key => key + 1); if (focus) { setEditorIntent(value => value + 1); nameInput.current?.focus(); } }
   useEffect(() => {
     let active = true;
-    const request = initial.current ??= loadDrivers(center.code);
+    const request = initial.current = loadDrivers(catalogScope);
     void request.then(value => { if (!active) return; setData(value); const linked = value.rows.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked) select(linked); }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     const connect = initialConnection.current ??= (async () => { if (await finishOneDrive()) toast('OneDrive 연결 완료', 'success'); const status = await oneDriveDocuments.status(); return status.connected ? 'OneDrive 연결됨' : 'OneDrive 연결이 필요합니다.'; })();
     void connect.then(value => { if (active) setConnection(value); }).catch(error => { if (active) setConnection(error instanceof Error ? error.message : String(error)); });
     return () => { active = false; };
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
   useEffect(() => watchHealthDate(() => refreshDate(value => value + 1)), []);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => { const unload = (event: BeforeUnloadEvent) => { if (pdfPendingRef.current) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', unload); return () => window.removeEventListener('beforeunload', unload); }, []);
@@ -72,8 +75,8 @@ function DriversContent() {
   }, [toast]);
   async function reload() {
     setLoading(true);
-    try { const next = await loadDrivers(center.code); setData(next); return next; }
-    catch { toast('데이터를 불러오지 못했습니다.', 'error'); setData(previous => ({ ...previous, rows: [], routes: [] })); return null; }
+    try { const next = await loadDrivers(catalogScope); setData(next); return next; }
+    catch { toast('데이터를 불러오지 못했습니다.', 'error'); return null; }
     finally { setLoading(false); }
   }
   const companyById = new Map(data.companies.map(company => [company.id, company]));
@@ -83,6 +86,7 @@ function DriversContent() {
   rows.sort((a, b) => sort === 'company' ? (companyById.get(a.company_id || '')?.name || '').localeCompare(companyById.get(b.company_id || '')?.name || '', 'ko') || (a.name || '').localeCompare(b.name || '', 'ko') : sort === 'updated' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : (a.name || '').localeCompare(b.name || '', 'ko'));
   rows.sort((a, b) => compareHealthDates(a.health_certificate_expires_on, b.health_certificate_expires_on));
   const selectedRow = data.rows.find(row => row.id === selected);
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'drivers','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
   useEditorGuard(dirty, saving, confirm);
   const bulk = useRowSelection(rows.map(row => row.id));
@@ -100,7 +104,7 @@ function DriversContent() {
     if (!editable || savingRef.current) return;
     const name = draft.name.trim(); if (!name) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
     if (data.healthSchemaReady && draft.expiry && !validDate(draft.expiry)) { toast('올바른 만료일을 입력해 주세요.', 'warn'); return; }
-    const payload = { ...(data.healthSchemaReady ? { health_certificate_expires_on: draft.expiry || null } : {}), ...(draft.id ? { id: draft.id } : {}), center_code: center.code, name, phone: draft.phone.trim() || null, company_id: draft.company || null, memo: draft.memo.trim() || null };
+    const payload = { ...(data.healthSchemaReady ? { health_certificate_expires_on: draft.expiry || null } : {}), ...(draft.id ? { id: draft.id } : {}), center_code: selectedRow ? selectedRow.center_code ?? null : center.code, name, phone: draft.phone.trim() || null, company_id: draft.company || null, memo: draft.memo.trim() || null };
     savingRef.current = true; setSaving(true);
     try { const { data: row, error } = await saveDriver(payload); if (error) { toast(`저장 실패: ${error.message}`, 'error'); return; } toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const saved = next?.rows.find(item => item.id === row.id); if (saved) select(saved, false, true); }
     catch { toast('저장 중 오류가 발생했습니다.', 'error'); }
@@ -138,6 +142,7 @@ function DriversContent() {
       {useErpReferenceCatalog
         ? <a className="btn btn-ghost" href={erpCourseHref('driver', selected || '')}>ERP에서 기사 관리</a>
         : !editable && <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p>}
+      {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(event.target.value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
       <SavedViews scope="drivers" value={{ search, company, sort }} defaultValue={{ search: '', company: '', sort: 'name' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setCompany(next.company); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="drivers" revealToken={editorIntent} revealFocus="#f-name">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="기사 목록"><div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">

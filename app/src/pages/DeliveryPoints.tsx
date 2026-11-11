@@ -1,3 +1,5 @@
+import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
+import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -25,22 +27,40 @@ function previewPhoto(photo: DeliveryPhoto) {
     popup.addEventListener('pagehide', () => root.unmount(), { once: true });
   }
 }
+type PointView = { scope:string; selected:string|null; draft:PointDraft; original?:DeliveryPoint; search:string; region:string; method:string; sort:string; scroll:number; createId:string };
+const pointViews = new Map<string,PointView>();
+const pointDrafts = new Map<string,{draft:PointDraft; original?:DeliveryPoint; createId:string}>();
 function DeliveryPointsContent() {
-  const { center, editable, permissions } = useAdminPage();
+  const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const viewKey = profile.id+':'+center.code;
+  const restored = useRef(pointViews.get(viewKey));
+  const original = useRef(restored.current?.original), createId = useRef(restored.current?.createId ?? crypto.randomUUID());
+  const list = useRef<HTMLDivElement>(null), restoredScroll = useRef(false);
+  const [catalogScope,setCatalogScope] = useState(restored.current?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
+
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<DeliveryPoint[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null), [draft, setDraft] = useState(pointToDraft);
-  const [search, setSearch] = useState(''), [debouncedSearch, setDebouncedSearch] = useState(''), [region, setRegion] = useState(''), [method, setMethod] = useState(''), [sort, setSort] = useState('code');
+  const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>restored.current?.draft ?? pointToDraft());
+  const [search, setSearch] = useState(restored.current?.search ?? ''), [debouncedSearch, setDebouncedSearch] = useState(restored.current?.search ?? ''), [region, setRegion] = useState(restored.current?.region ?? ''), [method, setMethod] = useState(restored.current?.method ?? ''), [sort, setSort] = useState(restored.current?.sort ?? 'code');
   const [photoMessage, setPhotoMessage] = useState<{ text: string; error?: boolean } | null>(null), [photoBusy, setPhotoBusy] = useState(false);
   const photoBusyRef = useRef(false), savingRef = useRef(false), generation = useRef(0), nameInput = useRef<HTMLInputElement>(null);
   const initial = useRef<ReturnType<typeof loadDeliveryPoints> | undefined>(undefined);
-  function select(row?: DeliveryPoint, focus = false, force = false) { if (!force && (saving || photoBusy)) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 납품처 항목을 바꿀까요?').then(ok => { if (ok) select(row, focus, true); }); return; } generation.current++; setSelected(row?.id || null); setDraft(pointToDraft(row)); setPhotoMessage(null); if (focus) { setEditorIntent(value => value + 1); nameInput.current?.focus(); } }
+  pointViews.set(viewKey,{scope:catalogScope,selected,draft,original:original.current,search,region,method,sort,scroll:list.current?.scrollTop ?? restored.current?.scroll ?? 0,createId:createId.current});
+  pointDrafts.set(viewKey+':'+(selected ?? 'new'),{draft,original:original.current,createId:createId.current});
+  function select(row?:DeliveryPoint,focus=false,force=false) {
+    if (!force && (saving || photoBusy)) return;
+    const cached = force ? undefined : pointDrafts.get(viewKey+':'+(row?.id ?? 'new'));
+    generation.current++; original.current=cached?.original ?? row; createId.current=cached?.createId ?? crypto.randomUUID();
+    setSelected(row?.id ?? null); setDraft(cached?.draft ?? pointToDraft(row)); setPhotoMessage(null);
+    if(focus) {setEditorIntent(value=>value+1);nameInput.current?.focus();}
+  }
   useEffect(() => {
-    let active = true; const request = initial.current ??= loadDeliveryPoints(center.code);
-    void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked) select(linked); }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
+    let active = true; const requestedGeneration=generation.current; const request = initial.current = loadDeliveryPoints(catalogScope);
+    void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked && requestedGeneration===generation.current && linked.id!==selected) select(linked); }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [center.code, toast]);
+  }, [center.code, catalogScope, toast]);
+  useEffect(()=>{ if (!loading && !restoredScroll.current && list.current) {list.current.scrollTop=restored.current?.scroll ?? 0;restoredScroll.current=true;} },[loading]);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
@@ -50,18 +70,19 @@ function DeliveryPointsContent() {
     };
     document.addEventListener('paste', paste);
     return () => document.removeEventListener('paste', paste);
-  }, [draft.photos.length, photoBusy, editable]);
+  }, [draft.photos.length, photoBusy, pageEditable]);
   useEffect(() => () => { generation.current++; }, []);
-  const update = <K extends keyof PointDraft>(key: K, value: PointDraft[K]) => setDraft(previous => ({ ...previous, [key]: value }));
+  const update = <K extends keyof PointDraft>(key: K, value: PointDraft[K]) => { generation.current++; setDraft(previous => ({ ...previous, [key]: value })); };
   async function reload() {
     setLoading(true);
-    try { const { data, error } = await loadDeliveryPoints(center.code); if (error) throw error; setData(data || []); return data || []; }
-    catch { toast('납품처 목록을 불러오지 못했습니다.', 'error'); setData([]); return []; }
+    try { const { data, error } = await loadDeliveryPoints(catalogScope); if (error) throw error; setData(data || []); return data || []; }
+    catch { toast('납품처 목록을 불러오지 못했습니다.', 'error'); throw new Error('목록 갱신 실패'); }
     finally { setLoading(false); }
   }
   const rows = data.filter(row => (!region || row.region === region) && (!method || row.delivery_method === method) && (!debouncedSearch || [row.code, row.name, row.address, row.security_key_location, row.security_password].filter(Boolean).join(' ').toLowerCase().includes(debouncedSearch.toLowerCase()))).sort((a, b) => String(a[sort === 'name' ? 'name' : 'code'] ?? '').localeCompare(String(b[sort === 'name' ? 'name' : 'code'] ?? ''), 'ko', { numeric: true }));
   const regions = [...new Set(data.map(row => row.region).filter((region): region is string => !!region))].sort((a, b) => a.localeCompare(b, 'ko'));
-  const selectedRow = data.find(row => row.id === selected);
+  const selectedRow = original.current;
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
   useEditorGuard(dirty, saving || photoBusy, confirm);
   const bulk = useRowSelection(rows.map(row => row.id));
@@ -99,13 +120,14 @@ function DeliveryPointsContent() {
   async function save() {
     if (!editable || savingRef.current) return;
     if (!draft.name.trim()) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
-    if (draft.deadline.trim() && (!normalizeTime(draft.deadline.trim()) || displayToBizMin(normalizeTime(draft.deadline.trim())) == null)) { toast('마감 시간 형식이 올바르지 않습니다.', 'warn'); return; }
+    if (draft.deadline !== pointToDraft(selectedRow).deadline && draft.deadline.trim() && (!normalizeTime(draft.deadline.trim()) || displayToBizMin(normalizeTime(draft.deadline.trim())) == null)) { toast('마감 시간 형식이 올바르지 않습니다.', 'warn'); return; }
+    const saveGeneration = generation.current;
     savingRef.current = true; setSaving(true);
     try {
-      const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, center.code));
+      const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow), selectedRow?.updated_at, createId.current);
       if (error) { toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       if (removedColumns.length) console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
-      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const row = next.find(row => row.id === saved?.id); if (row) select(row, false, true);
+      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const row = next.find(row => row.id === saved?.id) ?? saved; if (row && generation.current === saveGeneration) { pointDrafts.delete(viewKey+':'+(selected ?? 'new')); select(row, false, true); }
     } catch (error) { toast(`납품처 저장 중 오류가 발생했습니다. ${error instanceof Error ? error.message : ''}`, 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   }
@@ -113,14 +135,15 @@ function DeliveryPointsContent() {
     if (!editable || !draft.id) return;
     let inUse = 0; try { inUse = (await deliveryPointUsage(draft.id)).count || 0; } catch {}
     let message = `"${selectedRow?.name || '이 납품처'}"를 삭제할까요?`;
-    if (inUse > 0) message += `\n\n⚠ 이 납품처가 ${inUse}개 코스에 등록되어 있습니다.\n코스에 등록된 상태이면 DB 제약상 삭제가 거부됩니다.\n먼저 해당 코스에서 제거한 뒤 다시 시도하세요.`;
+    if (inUse > 0 && !useLegacyCommonCatalog) message += `\n\n⚠ 이 납품처가 ${inUse}개 코스에 등록되어 있습니다.\n코스에 등록된 상태이면 DB 제약상 삭제가 거부됩니다.\n먼저 해당 코스에서 제거한 뒤 다시 시도하세요.`;
     if (!await confirm(message, { okText: '삭제', cancelText: '취소', danger: true })) return;
     try { const { error } = await deleteDeliveryPoint(center.code, draft.id); if (error) { toast(error.code === '23503' ? '코스에 등록된 납품처라 삭제할 수 없습니다.' : `삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); select(undefined, false, true); } catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
     {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-          <SavedViews scope="delivery-points" value={{ search, region, method, sort }} defaultValue={{ search: '', region: '', method: '', sort: 'code' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setRegion(next.region); setMethod(next.method); setSort(next.sort); }} disabled={saving} />
+          {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { const value=event.target.value; if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
+      <SavedViews scope="delivery-points" value={{ search, region, method, sort }} defaultValue={{ search: '', region: '', method: '', sort: 'code' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setRegion(next.region); setMethod(next.method); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="delivery-points" revealToken={editorIntent} revealFocus="#f-name">
 
       
@@ -145,7 +168,7 @@ function DeliveryPointsContent() {
         </div>
         <p id="notion-points-status" className="px-3 text-xs text-zinc-400" role="status" aria-live="polite"></p>
 
-        <div className="table-wrap" style={{"maxHeight": "calc(100vh - 220px)", "border": "none", "borderRadius": "0"}} tabIndex={0} role="region" aria-label="목록">
+        <div ref={list} onScroll={()=>{const cached=pointViews.get(viewKey);if(cached && list.current) cached.scroll=list.current.scrollTop;}} className="table-wrap" style={{"maxHeight": "calc(100vh - 220px)", "border": "none", "borderRadius": "0"}} tabIndex={0} role="region" aria-label="목록">
           <table className="app-table">
             <thead>
               <tr>

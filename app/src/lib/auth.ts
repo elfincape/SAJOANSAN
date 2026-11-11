@@ -7,6 +7,10 @@ export interface AuthContext { profile: Profile; permissions: PermissionContext 
 let pending: Promise<AuthContext | null> | undefined;
 let cached: AuthContext | undefined;
 let revision = 0;
+let checkedAt = 0;
+supabase.auth.onAuthStateChange?.((event) => {
+  if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'USER_UPDATED') invalidateContext();
+});
 
 function invalidateContext() {
   revision += 1;
@@ -18,7 +22,8 @@ export function getLoadedAuthContext() { return cached; }
 
 export function loadAuthContext(refresh = false) {
   if (refresh) invalidateContext();
-  if (cached) return Promise.resolve(cached);
+  if (cached && Date.now() - checkedAt < 30000) return Promise.resolve(cached);
+  if (cached) invalidateContext();
   if (!pending) {
     const requestedRevision = revision;
     const request = (async () => {
@@ -38,6 +43,7 @@ export function loadAuthContext(refresh = false) {
       const result = await supabase.rpc('operations_permissions_context');
       if (requestedRevision !== revision) return null;
       if (result.error) throw result.error;
+      checkedAt = Date.now();
       cached = { profile, permissions: result.data };
       return cached;
     })().finally(() => { if (pending === request) pending = undefined; });
