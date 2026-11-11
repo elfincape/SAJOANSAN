@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 export interface CompanyOption { id: string; name: string }
 export interface Vehicle { id: string; plate_number: string | null; tonnage: number | null; pallet_capacity: number | null; company_id: string | null; memo: string | null; updated_at: string | null }
 export interface VehicleRoute { id: string; primary_vehicle_id: string | null; secondary_vehicle_id: string | null }
@@ -7,7 +8,7 @@ export async function loadVehicles(center: string) {
   const [vehicles, companies, routes] = await Promise.all([
     supabase.from('vehicles').select('*').eq('center_code', center).returns<Vehicle[]>(),
     supabase.from('companies').select('id, name').order('name').eq('center_code', center).returns<CompanyOption[]>(),
-    supabase.from('routes').select('id, primary_vehicle_id, secondary_vehicle_id').eq('center_code', center).returns<VehicleRoute[]>(),
+    useErpCatalog ? catalogList<CatalogEntity<VehicleRoute>>('route', { center }).then(items => ({ data: items.filter(item=>!item.deletedAt).map(item=>({...item.fields,id:item.id})) })) : supabase.from('routes').select('id, primary_vehicle_id, secondary_vehicle_id').eq('center_code', center).returns<VehicleRoute[]>(),
   ]);
   if (vehicles.error) throw vehicles.error;
   return { rows: vehicles.data || [], companies: companies.data || [], routes: routes.data || [] };

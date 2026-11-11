@@ -37,6 +37,7 @@ import {
 import { featureAccessible } from '../lib/feature-access';
 import { WorkspaceFrame } from './WorkspaceFrame';
 import type { WorkspaceCommand } from './WorkspaceCommands';
+import { erpCourseHref, useErpCatalog } from '../lib/erp-course-catalog';
 
 type CenterChangeGuard = () => boolean | Promise<boolean>;
 interface PageContext extends AuthContext {
@@ -463,6 +464,18 @@ export function AdminPage({
   const editable =
     !resource ||
     permissionAllowed(auth.permissions, resource, 'edit', center.code);
+  const movedCatalog = useErpCatalog && [
+    '/admin/routes.html', '/admin/route-edit.html', '/admin/delivery-points.html', '/admin/import.html',
+  ].includes(location.pathname);
+  const content = movedCatalog ? (
+    <section className="panel p-5" aria-label="ERP 원장 관리">
+      <h2 className="text-lg font-semibold">코스·납품처 관리</h2>
+      <a className="btn btn-primary mt-4" href={erpCourseHref(
+        location.pathname.includes('delivery-points') ? 'delivery_point' : 'route',
+        location.pathname.includes('route-edit') ? new URLSearchParams(location.search).get('id') || '' : '',
+      )}>새 ERP에서 열기</a>
+    </section>
+  ) : children;
   return (
     <Context.Provider
       value={{
@@ -496,7 +509,7 @@ export function AdminPage({
               </div>
             </header>
           )}
-          {children}
+          {content}
         </>
       ) : (
         <Shell
@@ -507,7 +520,7 @@ export function AdminPage({
           area={area}
           accountActions={accountActions}
         >
-          {children}
+          {content}
         </Shell>
       )}
     </Context.Provider>

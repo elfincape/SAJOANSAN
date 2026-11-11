@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 import { fetchAllRows } from './pagination';
 import type { CompanyOption } from './vehicles';
 export interface Driver { id: string; name: string; phone: string | null; company_id: string | null; memo: string | null; health_certificate_expires_on?: string | null; updated_at: string | null }
@@ -8,7 +9,7 @@ export async function loadDrivers(center: string) {
   const [rows, companies, routes, health] = await Promise.all([
     fetchAllRows<Driver>(() => supabase.from('drivers').select('*').order('id').eq('center_code', center)),
     supabase.from('companies').select('id, name').order('name').eq('center_code', center).returns<CompanyOption[]>(),
-    supabase.from('routes').select('id, primary_driver_id, secondary_driver_id').eq('center_code', center).returns<RouteReference[]>(),
+    useErpCatalog ? catalogList<CatalogEntity<RouteReference>>('route', { center }).then(items => ({ data: items.filter(item=>!item.deletedAt).map(item=>({...item.fields,id:item.id})) })) : supabase.from('routes').select('id, primary_driver_id, secondary_driver_id').eq('center_code', center).returns<RouteReference[]>(),
     supabase.from('drivers').select('health_certificate_expires_on').limit(1).eq('center_code', center),
   ]);
   const documents = new Map<string, DocumentCheckRow[] | null>();

@@ -8,6 +8,7 @@ export interface CatalogEntity<T = Record<string, unknown>> {
   fields: T;
   deletedAt: string | null;
   revision: number;
+  kind: string;
 }
 
 function centerValue(center?: string) {
@@ -71,6 +72,14 @@ export async function catalogDetail<T = Record<string, unknown>>(kind: CatalogKi
   const value = centerValue(center);
   if (value) params.set('center', value);
   return request<CatalogEntity<T>>(kind, params);
+}
+
+export function catalogWorkspace(id: string) {
+  return request<{
+    route: CatalogEntity;
+    masters: Record<string, CatalogEntity | { unavailable: true }>;
+    effective: Record<string, Record<string, { mode: string; value: unknown }>>;
+  }>('route', new URLSearchParams({ id, workspaces: 'true' }));
 }
 
 export function erpCourseHref(kind: CatalogKind, id: string) {
