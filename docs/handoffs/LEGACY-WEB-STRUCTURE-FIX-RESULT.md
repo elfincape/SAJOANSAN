@@ -1,5 +1,7 @@
 # 기존 업무 웹 구조 개선 결과
 
+> 후속 운영 적용: [LEGACY-WEB-STRUCTURE-DEPLOY-RESULT.md](./LEGACY-WEB-STRUCTURE-DEPLOY-RESULT.md). 아래는 최초 코드·격리 검증 당시 기록이며, 운영 미적용 표기는 당시 상태다. 2026-11-11 후속 승인으로 기존 웹의 운영 반영을 완료했다.
+
 기록일: 2026-11-11 KST. 상태: **코드 수정·격리 검증 완료, 운영 미적용**.
 
 이번 작업은 SAJOANSAN 기존 웹 개선이다. Rust 개발, ERP DB 이관, 쓰기 주체 전환, main 병합, 운영 SQL 적용, Edge/Vercel 배포를 수행하지 않았다. 기존 ERP 코드·자료·배포와 운영 쓰기 차단을 보존했다.
