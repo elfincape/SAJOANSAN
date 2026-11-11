@@ -4,7 +4,7 @@ import { loadUnassignedDeliveryPoints } from './course-export';
 import type { Center } from './center';
 import type { DashboardRow } from '../domain/dashboard';
 import type { DeliveryPoint } from './delivery-points';
-import { catalogDetail, catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+import { catalogDetail, catalogList, useErpCatalog, useErpReferenceCatalog, type CatalogEntity } from './erp-course-catalog';
 function filterRowsByCenter(rows: DashboardRow[], center: Center) {
   return rows.filter((row) => {
     const codes = [
@@ -295,6 +295,10 @@ export async function loadDashboard(center: Center) {
   ];
 }
 export function dashboardHealth(center: Center) {
+  if (useErpReferenceCatalog)
+    return catalogList<CatalogEntity<{ health_certificate_expires_on: string | null }>>('driver', { center: center.code })
+      .then(items => items.filter(item => !item.deletedAt)
+        .map(({ id, fields }) => ({ id, health_certificate_expires_on: fields.health_certificate_expires_on })));
   return fetchAllRows(() =>
     supabase
       .from('drivers')

@@ -9,6 +9,7 @@ import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { DriverDocuments } from '../components/DriverDocuments';
 import { useFeedback } from '../components/useFeedback';
 import { deleteDriver, loadDrivers, saveDriver } from '../lib/drivers';
+import { erpCourseHref, useErpReferenceCatalog } from '../lib/erp-course-catalog';
 import type { Driver } from '../lib/drivers';
 import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '../lib/onedrive';
 import { compileCenterPdfs } from '../lib/driver-pdf';
@@ -28,7 +29,8 @@ function formatPhone(value: string | null) {
 }
 const pdfSummary = (results: PdfResult[], total: number) => `처리 ${results.length}/${total} · 저장 ${results.filter(row => row.status === 'saved').length} · 서류 없음 ${results.filter(row => row.status === 'skipped').length} · 실패 ${results.filter(row => row.status === 'failed').length}`;
 function DriversContent() {
-  const { center, profile, editable, permissions } = useAdminPage();
+  const { center, profile, editable: documentEditable, permissions } = useAdminPage();
+  const editable = documentEditable && !useErpReferenceCatalog;
   const { toast, confirm, feedback } = useFeedback();
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadDrivers>>>({ rows: [], companies: [], routes: [], documents: new Map(), healthSchemaReady: false });
@@ -122,7 +124,9 @@ function DriversContent() {
   }
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1800px] w-full mx-auto px-4 py-3">
-      {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
+      {useErpReferenceCatalog
+        ? <a className="btn btn-ghost" href={erpCourseHref('driver', selected || '')}>ERP에서 기사 관리</a>
+        : !editable && <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p>}
       <SavedViews scope="drivers" value={{ search, company, sort }} defaultValue={{ search: '', company: '', sort: 'name' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setCompany(next.company); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="drivers" revealToken={editorIntent} revealFocus="#f-name">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="기사 목록"><div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
@@ -141,7 +145,7 @@ function DriversContent() {
           <div className="driver-storage-settings px-4 py-3 border-t border-zinc-700"><p id="onedrive-status" className="driver-storage-status" role="status">{connection}</p><details><summary>OneDrive 연결 및 저장 폴더 설정</summary><div className="driver-storage-controls"><button type="button" id="onedrive-connect" className={`btn btn-ghost${profile.role === 'admin' ? '' : ' hidden'}`} disabled={connecting} onClick={async () => { setConnecting(true); try { await connectOneDrive(); } catch (error) { setConnection(error instanceof Error ? error.message : String(error)); setConnecting(false); } }}>OneDrive 연결 / 재연결</button>
             {(['archive', 'pdf'] as const).map(kind => <span key={kind} style={{ display: 'contents' }}><button type="button" id={`onedrive-${kind}-config`} className={`btn btn-ghost${profile.role === 'admin' ? '' : ' hidden'}`} onClick={() => { setFolderForms(previous => ({ ...previous, [kind]: !previous[kind] })); requestAnimationFrame(() => (kind === 'archive' ? archiveInput : pdfInput).current?.focus()); }}>{kind === 'archive' ? '삭제 보관 폴더 설정' : 'PDF 저장 폴더 설정'}</button><div id={`onedrive-${kind}-form`} className={`${folderForms[kind] ? '' : 'hidden '}mt-2 space-y-2`}><label htmlFor={`onedrive-${kind}-url`} className="app-label">{kind === 'archive' ? '삭제 보관 폴더 공유 링크' : '인허가 PDF 저장 폴더 공유 링크'}</label><input ref={kind === 'archive' ? archiveInput : pdfInput} id={`onedrive-${kind}-url`} type="url" className="app-input" autoComplete="off" value={folderUrls[kind]} onChange={event => setFolderUrls(previous => ({ ...previous, [kind]: event.target.value }))} /><button type="button" id={`onedrive-${kind}-save`} className="btn btn-primary" disabled={folderBusy[kind]} onClick={() => void saveFolder(kind)}>{kind === 'archive' ? '보관 폴더 저장' : 'PDF 폴더 저장'}</button><p id={`onedrive-${kind}-result`} className="text-xs text-zinc-300" role="status">{folderStatus[kind]}</p></div></span>)}
           </div></details></div>
-          <DriverDocuments id="driver-documents" className="p-4 border-t border-zinc-700 space-y-3" ownerId={draft.id} adapter={oneDriveDocuments} editable={editable} resetKey={resetKey} getExpiry={() => draft.expiry} getPdfOptions={() => ({ includeCompany })} onSaved={onSaved} onRecords={onRecords} />
+          <DriverDocuments id="driver-documents" className="p-4 border-t border-zinc-700 space-y-3" ownerId={draft.id} adapter={oneDriveDocuments} editable={documentEditable} resetKey={resetKey} getExpiry={() => draft.expiry} getPdfOptions={() => ({ includeCompany })} onSaved={onSaved} onRecords={onRecords} />
         </section>
       </SplitPane>
     </main>{downloadLink}{feedback}

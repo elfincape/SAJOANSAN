@@ -37,7 +37,7 @@ import {
 import { featureAccessible } from '../lib/feature-access';
 import { WorkspaceFrame } from './WorkspaceFrame';
 import type { WorkspaceCommand } from './WorkspaceCommands';
-import { erpCourseHref, useErpCatalog } from '../lib/erp-course-catalog';
+import { erpCourseHref, useErpCatalog, useErpReferenceCatalog } from '../lib/erp-course-catalog';
 
 type CenterChangeGuard = () => boolean | Promise<boolean>;
 interface PageContext extends AuthContext {
@@ -467,12 +467,13 @@ export function AdminPage({
   const movedCatalog = useErpCatalog && [
     '/admin/routes.html', '/admin/route-edit.html', '/admin/delivery-points.html', '/admin/import.html',
   ].includes(location.pathname);
-  const content = movedCatalog ? (
+  const movedVehicles = useErpReferenceCatalog && location.pathname === '/admin/vehicles.html';
+  const content = movedCatalog || movedVehicles ? (
     <section className="panel p-5" aria-label="ERP 원장 관리">
-      <h2 className="text-lg font-semibold">코스·납품처 관리</h2>
+      <h2 className="text-lg font-semibold">{movedVehicles ? '차량 관리' : '코스·납품처 관리'}</h2>
       <a className="btn btn-primary mt-4" href={erpCourseHref(
-        location.pathname.includes('delivery-points') ? 'delivery_point' : 'route',
-        location.pathname.includes('route-edit') ? new URLSearchParams(location.search).get('id') || '' : '',
+        movedVehicles ? 'vehicle' : location.pathname.includes('delivery-points') ? 'delivery_point' : 'route',
+        movedVehicles || location.pathname.includes('route-edit') ? new URLSearchParams(location.search).get('id') || '' : '',
       )}>새 ERP에서 열기</a>
     </section>
   ) : children;

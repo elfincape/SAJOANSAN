@@ -10,12 +10,14 @@ import { DriverDocuments } from '../components/DriverDocuments';
 import { useFeedback } from '../components/useFeedback';
 import { companyDocuments, oneDriveConnection } from '../lib/onedrive';
 import { deleteCompany, loadCompanies, saveCompany } from '../lib/companies';
+import { erpCourseHref, useErpReferenceCatalog } from '../lib/erp-course-catalog';
 import type { Company } from '../lib/companies';
 
 const defaultFolder = 'https://1drv.ms/f/c/6dace80ad4c07b59/IgCRF6DHb-8GQLZozZ3qz83pAVln53UZ6lkCVgU3kr9L0Fw?e=9tBipw';
 const toDraft = (row?: Company) => ({ id: row?.id || '', name: row?.name || '', memo: row?.memo || '' });
 function CompaniesContent() {
-  const { center, profile, editable, permissions } = useAdminPage();
+  const { center, profile, editable: documentEditable, permissions } = useAdminPage();
+  const editable = documentEditable && !useErpReferenceCatalog;
   const { toast, confirm, feedback } = useFeedback();
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadCompanies>>>({ rows: [], drivers: [], vehicles: [], routes: [] });
@@ -83,7 +85,9 @@ function CompaniesContent() {
   }
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
-      {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
+      {useErpReferenceCatalog
+        ? <a className="btn btn-ghost" href={erpCourseHref('company', selected || '')}>ERP에서 운수사 관리</a>
+        : !editable && <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p>}
       <SavedViews scope="companies" value={{ search, sort }} defaultValue={{ search: '', sort: 'name' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="companies" revealToken={editorIntent} revealFocus="#f-name">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="운수사 목록"><div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center"><input id="search-input" type="search" placeholder="이름 검색" aria-label="운수사 이름 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="sort-key" className="app-select w-28" aria-label="운수사 정렬 기준" value={sort} onChange={event => setSort(event.target.value)}><option value="name">이름순</option><option value="updated">수정 최신순</option></select><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => select(undefined, true)}>+ 신규</button></div>
@@ -95,7 +99,7 @@ function CompaniesContent() {
           <ChangeReview fields={[{ label: '이름', before: selectedRow?.name, after: draft.name }, { label: '비고', before: selectedRow?.memo, after: draft.memo }]} />
           <form data-permission-action="edit" id="form" className="p-4 space-y-3" noValidate onSubmit={event => { event.preventDefault(); void save(); }}><fieldset className="editor-fields space-y-3" disabled={!editable || saving}><input type="hidden" id="f-id" value={draft.id} /><div><label className="app-label" htmlFor="f-name">이름 *</label><input ref={nameInput} id="f-name" className="app-input" required aria-describedby="name-help" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} /><p id="name-help" className="text-[10px] text-zinc-500 mt-1">운수사 이름은 중복될 수 없습니다.</p></div><div><label className="app-label" htmlFor="f-memo">비고</label><textarea id="f-memo" rows={3} className="app-textarea" value={draft.memo} onChange={event => setDraft(previous => ({ ...previous, memo: event.target.value }))} /></div><div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => select(selectedRow, false, true)}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable} onClick={() => void remove()}>삭제</button></div></fieldset></form>
           <div id="company-storage" className={`${profile.role === 'admin' ? '' : 'hidden '}p-4 border-t border-zinc-700 space-y-2`}><label className="app-label" htmlFor="company-folder">운수사 인허가 파일 저장소</label><input id="company-folder" className="app-input" type="url" value={folder} onChange={event => setFolder(event.target.value)} /><button id="company-folder-register" data-permission-action="edit" type="button" className="btn btn-ghost" disabled={!editable || registering} onClick={async () => { setRegistering(true); setFolderStatus('저장소 확인 중…'); try { await oneDriveConnection.configureCompany(folder.trim()); setFolderStatus('운수사 인허가 저장소 등록 완료'); } catch (error) { setFolderStatus(error instanceof Error ? error.message : String(error)); } finally { setRegistering(false); } }}>저장소 등록</button><p id="company-folder-status" role="status" className="text-xs text-zinc-400">{folderStatus}</p></div>
-          <DriverDocuments id="company-documents" className="p-4 border-t border-zinc-700 space-y-3" ownerId={draft.id} adapter={companyDocuments} companyMode editable={editable} resetKey={resetKey} />
+          <DriverDocuments id="company-documents" className="p-4 border-t border-zinc-700 space-y-3" ownerId={draft.id} adapter={companyDocuments} companyMode editable={documentEditable} resetKey={resetKey} />
         </section>
       </SplitPane>
     </main>{downloadLink}{feedback}
