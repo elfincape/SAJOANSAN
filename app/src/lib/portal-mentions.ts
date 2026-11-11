@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { catalogList, catalogDetail, catalogWorkspace, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+import { activeCatalogKinds, catalogList, catalogDetail, catalogWorkspace, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 export const mentionLabels: Record<string, string> = {
   task: '업무',
   incident: '특이사항',
@@ -39,11 +39,12 @@ export async function searchMentions(query: string) {
       p_page: 0,
     });
   if (result.error) throw result.error;
-  const erpRows: MentionRow[] = useErpCatalog ? (await Promise.all(
-    (['route', 'delivery_point'] as const).map(async kind =>
-      (await catalogList<CatalogEntity>(kind, { q: query })).filter(row => !row.deletedAt)
-        .map(row => ({ id: row.id, title: row.label, kind: kind === 'route' ? 'routes' : 'delivery_points' }))),
-  )).flat() : [];
+  const catalogKinds = activeCatalogKinds();
+  const erpRows: MentionRow[] = (await Promise.all(
+    Object.entries(catalogKinds).map(async ([kind, entityKind]) =>
+      (await catalogList<CatalogEntity>(entityKind, { q: query })).filter(row => !row.deletedAt)
+        .map(row => ({ id: row.id, title: row.label, kind }))),
+  )).flat();
   const key = query.toLowerCase(),
     rank = (row: MentionRow) => {
       const title = row.title.toLowerCase();
@@ -62,7 +63,7 @@ export async function searchMentions(query: string) {
     }[]
   )
     .flatMap((g) =>
-      tables[g.kind] && !(useErpCatalog && ['routes', 'delivery_points'].includes(g.kind))
+      Object.hasOwn(tables, g.kind) && !Object.hasOwn(catalogKinds, g.kind)
         ? g.items.map((row) => ({ ...row, kind: g.kind })) : [],
     );
   return [...oldRows, ...erpRows]
@@ -87,9 +88,13 @@ export async function mentionRecord(
 ): Promise<MentionRecord> {
   const table = tables[kind];
   if (!table) throw Error('지원하지 않는 정보입니다.');
-  if (useErpCatalog && kind === 'delivery_points') {
-    const record = await catalogDetail('delivery_point', id);
-    return { row: { ...record.fields, id: record.id, deleted_at: record.deletedAt }, relations: [] };
+  const catalogKinds = activeCatalogKinds();
+  if (kind !== 'routes' && Object.hasOwn(catalogKinds, kind)) {
+    const record = await catalogDetail(catalogKinds[kind], id);
+    return { row: {
+      ...record.fields, id: record.id, deleted_at: record.deletedAt,
+      ...(kind === 'vehicles' ? { plate_number: record.fields.plate } : {}),
+    }, relations: [] };
   }
   if (useErpCatalog && kind === 'routes') {
     const workspace = await catalogWorkspace(id);

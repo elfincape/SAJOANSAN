@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
 import { operationsRpc } from './operations';
 import type { SearchResult, SearchRow } from '../domain/portal-search';
-import { catalogDetail, catalogList, erpCourseHref, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
-const catalogKinds = { routes: 'route', delivery_points: 'delivery_point' } as const;
+import { activeCatalogKinds, catalogDetail, catalogList, erpCourseHref, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
 export async function portalSearch(term: string, center: string, page: number) {
   const original = operationsRpc<SearchResult>('operations_search', {
     p_query: term,
@@ -10,6 +9,7 @@ export async function portalSearch(term: string, center: string, page: number) {
     p_page: page,
   });
   if (!useErpCatalog) return original;
+  const catalogKinds = activeCatalogKinds();
   const [legacy, ...erp] = await Promise.all([
     original,
     ...Object.entries(catalogKinds).map(async ([kind, type]) => {
@@ -23,9 +23,10 @@ export async function portalSearch(term: string, center: string, page: number) {
     ...erp.filter(({ total }) => total > 0)] };
 }
 export async function portalSearchMaster(kind: string, id: string) {
-  if (useErpCatalog && (kind === 'routes' || kind === 'delivery_points')) {
+  const catalogKinds = activeCatalogKinds();
+  if (Object.hasOwn(catalogKinds, kind)) {
     const item = await catalogDetail(catalogKinds[kind], id);
-    return { ...item.fields, id: item.id };
+    return { ...item.fields, id: item.id, ...(kind === 'vehicles' ? { plate_number: item.fields.plate } : {}) };
   }
   const { data, error } = await supabase
     .from(kind)

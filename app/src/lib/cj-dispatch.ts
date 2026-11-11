@@ -35,7 +35,7 @@ interface RangeQuery {
   }>;
 }
 import { supabase } from './supabase';
-import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+import { catalogList, useErpCatalog, useErpReferenceCatalog, type CatalogEntity } from './erp-course-catalog';
 import { routeKey } from '../domain/cj-import';
 async function all<T>(makeQuery: () => RangeQuery): Promise<T[]> {
   const rows: T[] = [];
@@ -79,7 +79,11 @@ export async function loadDispatchResources(
           .eq('center_code', '002')
           .order('id'),
       ),
-      all<{
+      useErpReferenceCatalog
+        ? catalogList<CatalogEntity<{ plate: string; tonnage: number | string | null }>>('vehicle')
+          .then((items) => items.filter(item => !item.deletedAt).map(({ id, fields }) =>
+            ({ id, plate_number: fields.plate, tonnage: fields.tonnage })))
+        : all<{
         id: string;
         plate_number: string;
         tonnage: number | string | null;
@@ -90,7 +94,10 @@ export async function loadDispatchResources(
           .eq('center_code', '002')
           .order('id'),
       ),
-      all<{ id: string; name: string }>(() =>
+      useErpReferenceCatalog
+        ? catalogList<CatalogEntity<{ name: string }>>('driver')
+          .then((items) => items.filter(item => !item.deletedAt).map(({ id, fields }) => ({ id, name: fields.name })))
+        : all<{ id: string; name: string }>(() =>
         supabase
           .from('drivers')
           .select('id,name')
