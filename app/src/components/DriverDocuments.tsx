@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
 import { FileArea } from './FileArea';
-import { DOCUMENT_TYPES, validateDocumentFile } from '../domain/driver-documents';
+import { DOCUMENT_TYPES, expiryMessage, validateDocumentFile } from '../domain/driver-documents';
 import type { DocumentAdapter, DocumentRecord } from '../domain/driver-documents';
+import { useErpReferenceCatalog } from '../lib/erp-course-catalog';
 
 const noop = () => {};
 const emptyExpiry = () => '';
@@ -16,6 +17,7 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
   editable?: boolean; resetKey?: number; id?: string; className?: string;
 }) {
   const [notice, setNotice] = useState('');
+  const [documentExpiry, setDocumentExpiry] = useState<string | null>(null);
   const [records, setRecords] = useState<DocumentRecord[]>([]);
   const [loaded, setLoaded] = useState(false), [pending, setPending] = useState(false);
   const pendingRef = useRef(false), generation = useRef(0);
@@ -30,7 +32,7 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
   }, []);
   useLayoutEffect(() => {
     const id = ++generation.current;
-    clearUrls(); setPreviews({}); setRecords([]); setLoaded(false);
+    clearUrls(); setPreviews({}); setRecords([]); setLoaded(false); setDocumentExpiry(null);
     if (!ownerId) { setNotice((companyMode ? '운수사' : '기사') + ' 기본 정보를 먼저 저장하세요.'); return; }
     setNotice('사진 선택 또는 Ctrl+V로 자동 저장됩니다. 뒷면은 여러 장 추가할 수 있습니다.');
     void (async () => {
@@ -58,7 +60,7 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
   }
   async function save(kind: string, files: File[]) {
     if (!files.length || !editable || !ownerId) return;
-    const expiry = getExpiry(), multiple = kind.endsWith('_back');
+    const expiry = documentExpiry ?? getExpiry(), multiple = kind.endsWith('_back');
     try {
       files.forEach(validateDocumentFile);
       if (!multiple && files.length > 1) throw new Error('앞면 및 단일 서류는 한 장만 선택해 주세요.');
@@ -69,7 +71,8 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
       try {
         for (const file of files) {
           if (current()) setNotice(`저장중 · ${saved + 1}/${files.length}`);
-          await adapter.upload({ driverId: ownerId, kind, file, expiresOn: expiry, requestId: crypto.randomUUID() });
+          const result = await adapter.upload({ driverId: ownerId, kind, file, expiresOn: expiry, requestId: crypto.randomUUID() });
+          if (result.expiry && result.expiry.state !== 'saved') return expiryMessage(result);
           saved++; onSaved(ownerId, kind, expiry);
         }
         return `${saved}장 저장 완료`;
@@ -89,6 +92,9 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
         if (files.length) { event.preventDefault(); void save(kind, files); }
       }}>
         <details className="document-kind-details" open={kind === types[0][0]}><summary className="document-kind-heading"><span>{label}</span><span className="document-count">{pages.length}장</span></summary><div className="document-kind-content">
+          {useErpReferenceCatalog && kind === 'health_certificate' && editable &&
+            <label>사진의 보건증 만료일 <input type="date" className="app-input" value={documentExpiry ?? getExpiry()} disabled={pending}
+              onChange={event => setDocumentExpiry(event.target.value)} /></label>}
           <div className="document-upload-actions"><label className="document-upload-label">사진 선택<input ref={element => { if (element) inputs.current.set(kind, element); else inputs.current.delete(kind); }} type="file" accept="image/jpeg,image/png,image/webp" multiple={kind.endsWith('_back')} className="document-file-input" aria-label={`${label} 사진 선택`} disabled={pending || !loaded || !editable} onChange={event => void save(kind, [...(event.currentTarget.files || [])])} /></label><button type="button" className="btn btn-ghost text-xs" disabled={pending || !loaded || !editable} aria-label={`${label} 사진 붙여넣기`}>붙여넣기 · Ctrl+V</button>
             {!companyMode && ['food_transport', 'livestock_transport'].includes(kind) && adapter.replaceCompany ? <button type="button" className="btn btn-ghost text-xs document-company-replace" disabled={pending || !loaded || !editable} onClick={() => {
               if (!window.confirm(label.replace(' 앞', '') + ' 앞면과 모든 뒷면을 기사에 저장된 운수사의 사진으로 대체하시겠습니까?')) return;
@@ -98,7 +104,18 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
           {kind.endsWith('_back') ? <p className="document-hint">여러 장 선택 가능 · 기존 뒷면에 추가됩니다.</p> : null}
           <div className="document-file-list">{pages.length ? pages.map((row, index) => {
             const key = row.id || `${kind}:${row.page_number || 0}`, version = row.request_id || row.uploaded_at;
-            return <div key={key} className="document-file"><div className="document-file-info"><p className="document-file-name">{row.file_name || (kind.endsWith('_back') ? `${index + 1}번째 사진` : '등록 사진')}</p><p className="document-file-date">{new Date(row.uploaded_at).toLocaleString('ko-KR')} 저장</p></div><div className="document-file-actions"><button type="button" className="btn btn-ghost text-xs" disabled={pending || !loaded} onClick={() => void run(async current => {
+            return <div key={key} className="document-file"><div className="document-file-info"><p className="document-file-name">{row.file_name || (kind.endsWith('_back') ? `${index + 1}번째 사진` : '등록 사진')}</p><p className="document-file-date">{new Date(row.uploaded_at).toLocaleString('ko-KR')} 저장{row.document_expiry ? ` · 사진의 만료일 ${row.document_expiry}` : ''}</p></div><div className="document-file-actions">
+              {editable && row.expiry_pending && row.request_id && adapter.retryExpiry &&
+                <button type="button" className="btn btn-ghost text-xs" disabled={pending || !loaded} onClick={() => void run(async () => {
+                  const request = row.request_id!;
+                  let result = await adapter.retryExpiry!(ownerId, request);
+                  if (result.expiry?.state === 'conflict' && result.expiry.currentRevision !== undefined &&
+                      window.confirm(`ERP 현재 만료일 ${result.expiry.currentExpiry || '없음'}을 사진의 만료일 ${row.document_expiry}로 바꿀까요?`))
+                    result = await adapter.retryExpiry!(ownerId, request, result.expiry.currentRevision);
+                  if (result.expiry?.state === 'saved' && row.document_expiry) onSaved(ownerId, kind, row.document_expiry);
+                  return expiryMessage(result);
+                })}>만료일 다시 저장</button>}
+              <button type="button" className="btn btn-ghost text-xs" disabled={pending || !loaded} onClick={() => void run(async current => {
               setNotice('사진 불러오는 중…'); const blob = await adapter.download(ownerId, kind, version, row.id);
               if (current()) { const url = URL.createObjectURL(blob); urls.current.add(url); setPreviews(previous => ({ ...previous, [key]: url })); }
               return '저장된 사진 · 마우스를 올리면 확대됩니다.';

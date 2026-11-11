@@ -9,7 +9,7 @@ import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { DriverDocuments } from '../components/DriverDocuments';
 import { useFeedback } from '../components/useFeedback';
 import { deleteDriver, loadDrivers, saveDriver } from '../lib/drivers';
-import { erpCourseHref, useErpReferenceCatalog } from '../lib/erp-course-catalog';
+import { catalogDetail, erpCourseHref, useErpReferenceCatalog } from '../lib/erp-course-catalog';
 import type { Driver } from '../lib/drivers';
 import { oneDriveDocuments, connectOneDrive, finishOneDrive } from '../lib/onedrive';
 import { compileCenterPdfs } from '../lib/driver-pdf';
@@ -58,7 +58,18 @@ function DriversContent() {
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => { const unload = (event: BeforeUnloadEvent) => { if (pdfPendingRef.current) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', unload); return () => window.removeEventListener('beforeunload', unload); }, []);
   const onRecords = useCallback((id: string, records: DocumentRecord[] | null) => setData(previous => ({ ...previous, documents: new Map(previous.documents).set(id, records) })), []);
-  const onSaved = useCallback((id: string, kind: string, expiry: string) => { if (kind === 'health_certificate') setData(previous => ({ ...previous, rows: previous.rows.map(row => row.id === id ? { ...row, health_certificate_expires_on: expiry } : row) })); }, []);
+  const onSaved = useCallback((id: string, kind: string, expiry: string) => {
+    if (kind !== 'health_certificate') return;
+    const updateExpiry = (value: string | null | undefined) => {
+      setData(previous => ({ ...previous, rows: previous.rows.map(row => row.id === id ? { ...row, health_certificate_expires_on: value } : row) }));
+      if (useErpReferenceCatalog) setDraft(previous => previous.id === id ? { ...previous, expiry: value || '' } : previous);
+    };
+    if (useErpReferenceCatalog) {
+      void catalogDetail<Pick<Driver, 'health_certificate_expires_on'>>('driver', id)
+        .then(item => updateExpiry(item.fields.health_certificate_expires_on))
+        .catch(() => toast('ERP 현재 만료일을 다시 불러오지 못했습니다.', 'error'));
+    } else updateExpiry(expiry);
+  }, [toast]);
   async function reload() {
     setLoading(true);
     try { const next = await loadDrivers(center.code); setData(next); return next; }

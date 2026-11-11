@@ -6,6 +6,7 @@ import { mailAiConfiguration } from '../_shared/luna.js';
 import { handleApiManagement } from '../_shared/ai-providers.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
 import { authorizeMailWork } from './private-mail-worker-auth.js';
+import { makeDocumentCatalog } from './erp-document-catalog.js';
 import {
   startNotesAuth,
   completeNotesAuth,
@@ -291,6 +292,7 @@ export function makeHandler(
   }
   async function driver(user, id) {
     if (!/^[0-9a-f-]{36}$/i.test(id || '')) throw fail('기사를 선택해 주세요.');
+    if (user.erpDocuments) return user.erpDocuments.subject(user, 'driver', id);
     const row = (
       await db(
         'drivers?select=id,name,company_id,center_code,health_certificate_expires_on&id=eq.' +
@@ -304,6 +306,7 @@ export function makeHandler(
   async function company(user, id) {
     if (!/^[0-9a-f-]{36}$/i.test(id || ''))
       throw fail('운수사를 선택해 주세요.');
+    if (user.erpDocuments) return user.erpDocuments.subject(user, 'company', id);
     const row = (
       await db('companies?select=id,name,center_code&id=eq.' + enc(id), {
         token: user.token,
@@ -312,7 +315,51 @@ export function makeHandler(
     if (!row) throw fail('해당 운수사에 접근할 수 없습니다.', 403);
     return row;
   }
+  const documentCatalog = makeDocumentCatalog(
+    env.ERP_DOCUMENT_CATALOG_URL || 'https://211.233.219.199:8443/', fetcher, fail,
+  );
+  async function erpDocumentMode() {
+    return (await db('onedrive_settings?select=erp_document_catalog_enabled&id=eq.true'))[0]
+      ?.erp_document_catalog_enabled === true;
+  }
+  const documentToken = user => user.erpDocuments ? service : user.token;
+  async function finishExpiry(user, id, request, confirmedRevision) {
+    const journal = (await db('onedrive_uploads?select=*&request_id=eq.' + enc(request)))[0];
+    if (!journal || journal.user_id !== user.id || journal.subject_driver_id !== id ||
+        journal.kind !== 'health_certificate' || journal.status !== 'committed' || !journal.document_expiry)
+      throw fail('재시도할 보건증 저장을 확인할 수 없습니다.', 404);
+    if (journal.expiry_erp_saved) return { saved: true, expiry: { state: 'saved' } };
+    const active = await db('driver_documents?select=id&subject_driver_id=eq.' + enc(id)
+      + '&document_type=eq.health_certificate&request_id=eq.' + enc(request));
+    if (!active.length) return { saved: true, expiry: { state: 'superseded' } };
+    try {
+      let result = await user.erpDocuments.saveHealth(user, journal);
+      if (result.state === 'conflict' && confirmedRevision === result.currentRevision) {
+        // Only an explicitly confirmed, current revision may replace the original.
+        journal.expiry_expected_revision = confirmedRevision;
+        await db('onedrive_uploads?request_id=eq.' + enc(request), {
+          method: 'PATCH', body: { expiry_expected_revision: confirmedRevision },
+        });
+        result = await user.erpDocuments.saveHealth(user, journal);
+      }
+      if (result.state === 'saved')
+        await db('onedrive_uploads?request_id=eq.' + enc(request), {
+          method: 'PATCH', body: { expiry_erp_saved: true },
+        });
+      return { saved: true, expiry: { ...result, requestId: request } };
+    } catch {
+      return { saved: true, expiry: { state: 'pending', requestId: request } };
+    }
+  }
+  async function expiryAfterDocumentCommit(user, id, request) {
+    try {
+      return await finishExpiry(user, id, request);
+    } catch {
+      return { saved: true, expiry: { state: 'pending', requestId: request } };
+    }
+  }
   async function naming(user, d, companyOverride) {
+    const { erpDocuments } = user;
     const centerFilter = '&center_code=eq.' + enc(d.center_code);
     const companyId =
       companyOverride === undefined ? d.company_id : companyOverride;
@@ -321,11 +368,14 @@ export function makeHandler(
         token: user.token,
       }),
       companyId
-        ? db('companies?select=name&id=eq.' + enc(companyId) + centerFilter, {
+        ? erpDocuments ? company(user, companyId).then(row => row.center_code === d.center_code ? [row] : [])
+        : db('companies?select=name&id=eq.' + enc(companyId) + centerFilter, {
             token: user.token,
           })
         : [],
-      db(
+      erpDocuments ? erpDocuments.list(user, 'route', d.center_code).then(rows => rows.filter(r =>
+        r.active && (r.primary_driver_id === d.id || r.secondary_driver_id === d.id)))
+      : db(
         'routes?select=primary_driver_id,secondary_driver_id,primary_vehicle_id,secondary_vehicle_id&active=eq.true' +
           centerFilter +
           '&or=(primary_driver_id.eq.' +
@@ -349,7 +399,9 @@ export function makeHandler(
       ),
     ];
     const vehicles = ids.length
-      ? await db(
+      ? erpDocuments ? (await erpDocuments.list(user, 'vehicle', d.center_code))
+        .filter(row => ids.includes(row.id)).map(row => ({ plate_number: row.plate }))
+      : await db(
           'vehicles?select=plate_number&id=in.(' +
             ids.map(enc).join(',') +
             ')' +
@@ -676,8 +728,14 @@ export function makeHandler(
       'company-remove',
     ].includes(requestedAction);
     const action = companyMode ? requestedAction.slice(8) : requestedAction;
-    const table = companyMode ? 'company_documents' : 'driver_documents',
-      owner = companyMode ? 'company_id' : 'driver_id';
+    const table = companyMode ? 'company_documents' : 'driver_documents';
+    let erpDocuments;
+    let driverOwner = 'driver_id', companyOwner = 'company_id', owner = companyMode ? companyOwner : driverOwner;
+    const withDocumentLock = work => withLock(async holder => {
+      if (await erpDocumentMode() !== Boolean(erpDocuments))
+        throw fail('서류 원장 연결이 바뀌었습니다. 화면을 다시 불러와 주세요.', 409);
+      return work(holder);
+    });
     const subject = async (user, id) => {
       const row = await (companyMode ? company : driver)(user, id);
       const mode = ['list', 'download', 'status'].includes(action)
@@ -928,8 +986,18 @@ export function makeHandler(
           'pdf-config',
           'company-config',
         ].includes(action),
-        ['operations-list', 'operations-download', 'download'].includes(action),
+        ['operations-list', 'operations-download', 'download', 'list', 'document-summary'].includes(action),
       );
+      if (['list','upload','download','remove','replace-company','compile-pdf','document-summary','retry-health-expiry'].includes(action)
+          && await erpDocumentMode()) {
+        erpDocuments = documentCatalog;
+        driverOwner = 'subject_driver_id';
+        companyOwner = 'subject_company_id';
+        owner = companyMode ? companyOwner : driverOwner;
+      }
+      if (!erpDocuments && action === 'list' && user.role === 'viewer')
+        throw fail('권한이 없습니다.', 403);
+      user.erpDocuments = erpDocuments;
       const permissionResource = action.startsWith('operations-')
         ? null
         : action.startsWith('backups-')
@@ -948,7 +1016,7 @@ export function makeHandler(
                       'company-config',
                     ].includes(action)
                   ? 'connections'
-                  : ['status', 'list'].includes(action)
+                  : ['status', 'list', 'document-summary'].includes(action)
                     ? null
                     : 'drivers';
       if (
@@ -1138,18 +1206,44 @@ export function makeHandler(
           return json({ connected: true });
         });
       }
+      if (action === 'document-summary' && erpDocuments) {
+        const { center } = await req.json();
+        if (!(await db('rpc/operations_resource_allowed', {
+          method: 'POST', token: user.token,
+          body: { p_resource: 'drivers', p_action: 'read', p_center: center },
+        }))) throw fail('기사 서류 목록에 접근할 수 없습니다.', 403);
+        const drivers = await erpDocuments.list(user, 'driver', center);
+        const documents = [];
+        for (let offset = 0; offset < drivers.length; offset += 20) {
+          const ids = drivers.slice(offset, offset + 20).map(driver => enc(driver.id));
+          documents.push(...await db('driver_documents?select=id,driver_id:subject_driver_id,document_type'
+            + '&subject_driver_id=in.(' + ids.join(',') + ')'));
+        }
+        return json({ documents });
+      }
       if (action === 'list') {
         const b = await req.json();
         await subject(user, b.driverId);
         const data = await db(
           table +
-            '?select=id,document_type,page_number,file_name,uploaded_at,mime_type,size_bytes,request_id&' +
+            '?select=id,document_type,page_number,file_name,uploaded_at,mime_type,size_bytes,request_id' +
+            (erpDocuments && !companyMode ? ',document_expiry' : '') + '&' +
             owner +
             '=eq.' +
             enc(b.driverId) +
             '&order=document_type.asc,page_number.asc',
-          { token: user.token },
+          { token: documentToken(user) },
         );
+        if (erpDocuments && !companyMode) {
+          const health = data.find(row => row.document_type === 'health_certificate' && row.request_id);
+          if (health) {
+            const pending = await db('onedrive_uploads?select=request_id&status=eq.committed'
+              + '&expiry_erp_saved=eq.false&document_expiry=not.is.null'
+              + '&request_id=eq.' + enc(health.request_id) + '&user_id=eq.' + enc(user.id)
+              + '&subject_driver_id=eq.' + enc(b.driverId));
+            health.expiry_pending = pending.length > 0;
+          }
+        }
         return json({ documents: data });
       }
       if (
@@ -1218,17 +1312,22 @@ export function makeHandler(
           throw fail('대체할 서류 종류가 올바르지 않습니다.');
         if (!d.company_id)
           throw fail('기사 기본 정보에 운수사를 먼저 저장해 주세요.');
-        await company(user, d.company_id);
-        return await withLock(async (holder) => {
+        const linkedCompany = await company(user, d.company_id);
+        if (erpDocuments && (linkedCompany.center_code !== d.center_code ||
+            !(await db('rpc/operations_resource_allowed', {
+              method: 'POST', token: user.token,
+              body: { p_resource: 'companies', p_action: 'read', p_center: linkedCompany.center_code },
+            })))) throw fail('운수사 서류에 접근할 수 없습니다.', 403);
+        return await withDocumentLock(async (holder) => {
           const source = await db(
-            'company_documents?select=*&company_id=eq.' +
+            'company_documents?select=*&' + companyOwner + '=eq.' +
               enc(d.company_id) +
               '&document_type=in.(' +
               b.kind +
               ',' +
               b.kind +
               '_back)&order=document_type.asc,page_number.asc',
-            { token: user.token },
+            { token: documentToken(user) },
           );
           if (!source.length)
             throw fail('해당 운수사에 등록된 사진이 없습니다.', 404);
@@ -1284,13 +1383,13 @@ export function makeHandler(
             if (found) {
               const existing = await found.json();
               const owners = await db(
-                'driver_documents?select=driver_id,document_type&drive_id=eq.' +
+                'driver_documents?select=' + driverOwner + ',document_type&drive_id=eq.' +
                   enc(folder.driveId) +
                   '&item_id=eq.' +
                   enc(existing.id),
               );
               const staged = await db(
-                'onedrive_uploads?select=driver_id,kind&drive_id=eq.' +
+                'onedrive_uploads?select=' + driverOwner + ',kind&drive_id=eq.' +
                   enc(folder.driveId) +
                   '&item_id=eq.' +
                   enc(existing.id),
@@ -1299,11 +1398,11 @@ export function makeHandler(
                 (!owners.length &&
                   !staged.some(
                     (row) =>
-                      row.driver_id === d.id && row.kind === doc.document_type,
+                      row[driverOwner] === d.id && row.kind === doc.document_type,
                   )) ||
                 owners.some(
                   (row) =>
-                    row.driver_id !== d.id ||
+                    row[driverOwner] !== d.id ||
                     row.document_type !== doc.document_type,
                 )
               )
@@ -1339,11 +1438,12 @@ export function makeHandler(
               body: {
                 request_id: request,
                 user_id: user.id,
-                driver_id: d.id,
+                [erpDocuments ? 'erp_driver_id' : 'driver_id']: d.id,
                 kind: doc.document_type,
                 drive_id: folder.driveId,
                 folder_id: folder.folderId,
                 file_name: filename,
+                ...(erpDocuments ? { page_number: doc.page_number } : {}),
               },
             });
             const item = await (
@@ -1387,7 +1487,7 @@ export function makeHandler(
               '기사 운수사가 변경되었습니다. 다시 시도해 주세요.',
               409,
             );
-          await db('rpc/onedrive_replace_company_documents', {
+          await db(erpDocuments ? 'rpc/onedrive_replace_erp_company_documents' : 'rpc/onedrive_replace_company_documents', {
             method: 'POST',
             body: {
               p_user: user.id,
@@ -1407,7 +1507,7 @@ export function makeHandler(
           throw fail('취합할 사진 용량이 너무 큽니다.', 413);
         const form = await req.formData(),
           id = String(form.get('driverId') || '');
-        const d = await driver(user, id);
+        const d = await (erpDocuments ? subject(user, id) : driver(user, id));
         const includeCompany = form.get('includeCompany') !== 'false';
         let versions;
         try {
@@ -1428,10 +1528,10 @@ export function makeHandler(
         )
           throw fail('저장된 서류 사진을 선택해 주세요.');
         const snapshot = await db(
-          'driver_documents?select=id,document_type,page_number,request_id,uploaded_at&driver_id=eq.' +
+          'driver_documents?select=id,document_type,page_number,request_id,uploaded_at&' + driverOwner + '=eq.' +
             enc(id) +
             '&order=page_number.asc',
-          { token: user.token },
+          { token: documentToken(user) },
         );
         const keyFor = (row) =>
           Object.hasOwn(versions, row.id) ? row.id : row.document_type;
@@ -1469,12 +1569,12 @@ export function makeHandler(
             throw fail('취합 사진 변환에 실패했습니다.');
           images.push(bytes);
         }
-        return await withLock(async () => {
+        return await withDocumentLock(async () => {
           const check = async () => {
             const docs = await db(
-              'driver_documents?select=id,document_type,request_id,uploaded_at&driver_id=eq.' +
+              'driver_documents?select=id,document_type,request_id,uploaded_at&' + driverOwner + '=eq.' +
                 enc(id),
-              { token: user.token },
+              { token: documentToken(user) },
             );
             if (!matches(docs))
               throw fail(
@@ -1512,7 +1612,7 @@ export function makeHandler(
             ':/' +
             enc(filename);
           const prior = (
-            await db('driver_document_pdfs?select=*&driver_id=eq.' + enc(id))
+            await db('driver_document_pdfs?select=*&' + driverOwner + '=eq.' + enc(id))
           )[0];
           const found = await graph(path, connection.accessToken, {
             allowMissing: true,
@@ -1532,11 +1632,11 @@ export function makeHandler(
             throw fail('PDF 용량이 너무 큽니다.', 413);
           await check();
           // Reserve the name before Graph I/O so interrupted writes can be retried.
-          await db('driver_document_pdfs?on_conflict=driver_id', {
+          await db('driver_document_pdfs?on_conflict=' + driverOwner, {
             method: 'POST',
             prefer: 'resolution=merge-duplicates',
             body: {
-              driver_id: id,
+              [erpDocuments ? 'erp_driver_id' : 'driver_id']: id,
               drive_id: target.driveId,
               file_name: filename,
               item_id: existing?.id || null,
@@ -1554,7 +1654,7 @@ export function makeHandler(
           if (item.size !== pdf.length)
             throw fail('PDF 저장 결과를 확인하지 못했습니다.', 502);
           await driver(user, id);
-          await db('driver_document_pdfs?driver_id=eq.' + enc(id), {
+          await db('driver_document_pdfs?' + driverOwner + '=eq.' + enc(id), {
             method: 'PATCH',
             body: {
               item_id: item.id,
@@ -1574,7 +1674,7 @@ export function makeHandler(
           !b.version
         )
           throw fail('삭제할 사진을 다시 확인해 주세요.');
-        return await withLock(async () => {
+        return await withDocumentLock(async () => {
           const candidates = await db(
             table +
               '?select=*&' +
@@ -1584,7 +1684,7 @@ export function makeHandler(
               '&document_type=eq.' +
               enc(b.kind) +
               pageFilter(b),
-            { token: user.token },
+            { token: documentToken(user) },
           );
           if (!candidates.length) return json({ removed: true });
           const item = candidates.find(
@@ -1698,7 +1798,7 @@ export function makeHandler(
             '&document_type=eq.' +
             enc(b.kind) +
             pageFilter(b),
-          { token: user.token },
+          { token: documentToken(user) },
         );
         if (!candidates.length) throw fail('저장된 사진이 없습니다.', 404);
         if (!b.version && candidates.length > 1)
@@ -1713,7 +1813,7 @@ export function makeHandler(
           throw fail('사진이 변경되었습니다. 다시 취합해 주세요.', 409);
         if (b.version && (item.request_id || item.uploaded_at) !== b.version)
           throw fail('사진이 변경되었습니다. 다시 취합해 주세요.', 409);
-        return await withLock(async () => {
+        return await withDocumentLock(async () => {
           const connection = await connected();
           // Graph follows the temporary download redirect server-side, so storage host changes do not block saved photos.
           const res = await graph(
@@ -1734,6 +1834,14 @@ export function makeHandler(
           });
         });
       }
+      if (action === 'retry-health-expiry' && erpDocuments) {
+        const { driverId, requestId, confirmedRevision } = await req.json();
+        if (!/^[0-9a-f-]{36}$/i.test(requestId || '') ||
+            (confirmedRevision !== undefined && (!Number.isSafeInteger(confirmedRevision) || confirmedRevision < 1)))
+          throw fail('다시 저장할 보건증 요청을 확인해 주세요.');
+        await subject(user, driverId);
+        return await withDocumentLock(async () => json(await finishExpiry(user, driverId, requestId, confirmedRevision)));
+      }
       if (action === 'upload') {
         if (Number(req.headers.get('content-length')) > LIMIT + 65536)
           throw fail('사진은 10MB 이하만 가능합니다.', 413);
@@ -1743,6 +1851,7 @@ export function makeHandler(
           request = String(form.get('requestId') || ''),
           expiry = String(form.get('expiresOn') || '');
         const d = await subject(user, id);
+        const erpExpiry = erpDocuments && !companyMode && kind === 'health_certificate';
         if (!permittedKinds.includes(kind) || !/^[0-9a-f-]{36}$/i.test(request))
           throw fail('업로드 정보가 올바르지 않습니다.');
         if (kind === 'health_certificate' && !validDate(expiry))
@@ -1760,13 +1869,13 @@ export function makeHandler(
         if (file.type !== mime)
           throw fail('파일 내용과 사진 형식이 일치하지 않습니다.');
         const fingerprint = await hash(bytes);
-        return await withLock(async (holder) => {
+        return await withDocumentLock(async (holder) => {
           const completed = (
             await db(
               table +
                 '?select=' +
                 owner +
-                ',document_type,uploaded_by&request_id=eq.' +
+                ',document_type,uploaded_by' + (erpExpiry ? ',document_expiry' : '') + '&request_id=eq.' +
                 request,
             )
           )[0];
@@ -1777,7 +1886,7 @@ export function makeHandler(
               completed.uploaded_by !== user.id
             )
               throw fail('업로드 요청이 일치하지 않습니다.', 409);
-            return json({ saved: true });
+            return json(erpExpiry && completed.document_expiry ? await expiryAfterDocumentCommit(user, id, request) : { saved: true });
           }
           const connection = await connected(),
             folder = companyMode
@@ -1797,14 +1906,14 @@ export function makeHandler(
             if (companyMode) {
               if (kind.endsWith('_back')) {
                 const pages = await db(
-                  'company_documents?select=page_number&company_id=eq.' +
+                  'company_documents?select=page_number&' + companyOwner + '=eq.' +
                     enc(id) +
                     '&document_type=eq.' +
                     enc(kind) +
                     '&order=page_number.desc&limit=1',
                 );
                 const reservations = await db(
-                  'onedrive_uploads?select=page_number&company_id=eq.' +
+                  'onedrive_uploads?select=page_number&' + companyOwner + '=eq.' +
                     enc(id) +
                     '&kind=eq.' +
                     enc(kind) +
@@ -1835,14 +1944,14 @@ export function makeHandler(
             } else {
               if (kind.endsWith('_back')) {
                 const pages = await db(
-                  'driver_documents?select=page_number&driver_id=eq.' +
+                  'driver_documents?select=page_number&' + driverOwner + '=eq.' +
                     enc(id) +
                     '&document_type=eq.' +
                     enc(kind) +
                     '&order=page_number.desc&limit=1',
                 );
                 const reservations = await db(
-                  'onedrive_uploads?select=page_number&driver_id=eq.' +
+                  'onedrive_uploads?select=page_number&' + driverOwner + '=eq.' +
                     enc(id) +
                     '&kind=eq.' +
                     enc(kind) +
@@ -1871,7 +1980,8 @@ export function makeHandler(
             (journal.user_id !== user.id ||
               journal[owner] !== id ||
               journal.kind !== kind ||
-              journal.content_hash !== fingerprint)
+              journal.content_hash !== fingerprint ||
+              (erpExpiry && journal.document_expiry !== expiry))
           )
             throw fail(
               '기존 업로드 요청과 다릅니다. 사진을 다시 선택해 주세요.',
@@ -1881,13 +1991,14 @@ export function makeHandler(
             journal = {
               request_id: request,
               user_id: user.id,
-              [owner]: id,
+              [erpDocuments ? (companyMode ? 'erp_company_id' : 'erp_driver_id') : owner]: id,
               kind,
               drive_id: folder.driveId,
               folder_id: folder.folderId,
               file_name: filename,
               content_hash: fingerprint,
               page_number: pageNumber,
+              ...(erpExpiry ? { document_expiry: expiry, expiry_expected_revision: d.revision } : {}),
             };
             await db('onedrive_uploads', { method: 'POST', body: journal });
           }
@@ -1896,7 +2007,8 @@ export function makeHandler(
               '이미 삭제한 업로드입니다. 사진을 새로 선택해 주세요.',
               409,
             );
-          if (journal.status === 'committed') return json({ saved: true });
+          if (journal.status === 'committed')
+            return json(erpExpiry && journal.document_expiry ? await expiryAfterDocumentCommit(user, id, request) : { saved: true });
           const path =
             '/drives/' +
             enc(journal.drive_id) +
@@ -1936,7 +2048,7 @@ export function makeHandler(
             }
           }
           // Replace the current document in its category folder, never reuse bytes by size alone.
-          const item = await (
+          const item = erpDocuments && journal.item_id && existing?.id === journal.item_id ? existing : await (
             await graph(path + ':/content', connection.accessToken, {
               method: 'PUT',
               headers: { 'Content-Type': mime },
@@ -1951,6 +2063,15 @@ export function makeHandler(
           });
           // Recheck caller visibility after external I/O.
           await subject(user, id);
+          if (erpDocuments) {
+            await db('rpc/onedrive_commit_erp_document', {
+              method: 'POST', body: {
+                p_user: user.id, p_id: id, p_company: companyMode, p_kind: kind, p_item: item.id,
+                p_mime: mime, p_size: file.size, p_request: request, p_holder: holder,
+              },
+            });
+            return json(erpExpiry ? await expiryAfterDocumentCommit(user, id, request) : { saved: true });
+          }
           await db(
             'rpc/' +
               (companyMode

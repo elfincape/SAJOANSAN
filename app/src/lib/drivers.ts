@@ -1,11 +1,28 @@
 import { supabase } from './supabase';
-import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+import { catalogList, useErpCatalog, useErpReferenceCatalog, type CatalogEntity } from './erp-course-catalog';
+import { oneDriveCall } from './onedrive';
 import { fetchAllRows } from './pagination';
 import type { CompanyOption } from './vehicles';
 export interface Driver { id: string; name: string; phone: string | null; company_id: string | null; memo: string | null; health_certificate_expires_on?: string | null; updated_at: string | null }
 interface RouteReference { id: string; primary_driver_id: string | null; secondary_driver_id: string | null }
 export interface DocumentCheckRow { id?: string; driver_id?: string; document_type: string }
 export async function loadDrivers(center: string) {
+  if (useErpReferenceCatalog) {
+    const [drivers, companyRows, routeRows, summary] = await Promise.all([
+      catalogList<CatalogEntity<Omit<Driver,'id'>>>('driver', { center }),
+      catalogList<CatalogEntity<Omit<CompanyOption,'id'>>>('company', { center }),
+      catalogList<CatalogEntity<Omit<RouteReference,'id'>>>('route', { center }),
+      oneDriveCall<{documents: DocumentCheckRow[]}>('document-summary', { center }).catch(() => null),
+    ]);
+    const rows = drivers.map(({fields,id}) => ({ ...fields,id }));
+    return {
+      rows,
+      companies: companyRows.map(({fields,id}) => ({ ...fields,id })),
+      routes: routeRows.map(({fields,id}) => ({ ...fields,id })),
+      documents: new Map(rows.map(({id}) => [id, summary?.documents.filter(row => row.driver_id === id) ?? null])),
+      healthSchemaReady: true,
+    };
+  }
   const [rows, companies, routes, health] = await Promise.all([
     fetchAllRows<Driver>(() => supabase.from('drivers').select('*').order('id').eq('center_code', center)),
     supabase.from('companies').select('id, name').order('name').eq('center_code', center).returns<CompanyOption[]>(),

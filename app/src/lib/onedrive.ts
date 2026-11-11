@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { DocumentAdapter, DocumentRecord, DocumentUpload } from '../domain/driver-documents';
+import type { DocumentAdapter, DocumentRecord, DocumentUpload, DocumentUploadResult } from '../domain/driver-documents';
 import type { PdfSaved } from '../domain/driver-documents';
 import { prepareCompilation } from './driver-pdf';
 
@@ -35,6 +35,8 @@ export const companyDocuments: DocumentAdapter = {
 };
 export const oneDriveDocuments: DocumentAdapter & typeof oneDriveConnection & { compilePdf: NonNullable<DocumentAdapter['compilePdf']> } = {
   ...oneDriveConnection,
+  retryExpiry: (driverId, requestId, confirmedRevision) =>
+    oneDriveCall<DocumentUploadResult>('retry-health-expiry', { driverId, requestId, confirmedRevision }),
   replaceCompany: (driverId, kind) => oneDriveCall<{ count: number }>('replace-company', { driverId, kind }),
   compilePdf: async (driverId, onProgress, { includeCompany = true } = {}): Promise<PdfSaved> => {
     const { versions, images } = await prepareCompilation(oneDriveDocuments, driverId, onProgress);
@@ -49,7 +51,7 @@ export const oneDriveDocuments: DocumentAdapter & typeof oneDriveConnection & { 
     const form = new FormData(); form.set('driverId', driverId); form.set('kind', kind); form.set('file', file); form.set('expiresOn', expiresOn || ''); form.set('requestId', requestId);
     if (companyId !== undefined) form.set('companyId', companyId || '');
     for (let attempt = 0; ; attempt++) {
-      try { return await oneDriveCall('upload', form); }
+      try { return await oneDriveCall<DocumentUploadResult>('upload', form); }
       catch (error) {
         const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
         if (attempt >= 2 || ![409, 429, 502, 503].includes(status)) throw error;

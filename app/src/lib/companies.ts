@@ -1,8 +1,18 @@
 import { supabase } from './supabase';
-import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
+import { catalogList, useErpCatalog, useErpReferenceCatalog, type CatalogEntity } from './erp-course-catalog';
 export interface Company { id: string; name: string; memo: string | null; updated_at: string | null }
 interface Reference { id: string; company_id: string | null }
 export async function loadCompanies(center: string) {
+  if (useErpReferenceCatalog) {
+    const companyRows = catalogList<CatalogEntity<Omit<Company,'id'>>>('company', { center });
+    const references = (kind: 'driver'|'vehicle'|'route') =>
+      catalogList<CatalogEntity<Omit<Reference,'id'>>>(kind, { center })
+        .then(items => items.map(({fields,id}) => ({ ...fields,id })));
+    const [rows, drivers, vehicles, routes] = await Promise.all([
+      companyRows, references('driver'), references('vehicle'), references('route'),
+    ]);
+    return { rows: rows.map(({fields,id}) => ({ ...fields,id })), drivers, vehicles, routes };
+  }
   const [companies, drivers, vehicles, routes] = await Promise.all([
     supabase.from('companies').select('*').eq('center_code', center).returns<Company[]>(),
     supabase.from('drivers').select('id, company_id').eq('center_code', center).returns<Reference[]>(),

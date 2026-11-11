@@ -7,6 +7,24 @@ export const DOCUMENT_TYPES = [
 export interface DocumentRecord {
   id?: string; document_type: string; request_id?: string; uploaded_at: string;
   page_number?: number; file_name?: string;
+  document_expiry?: string | null; expiry_pending?: boolean;
+}
+export interface DocumentUploadResult {
+  saved: boolean;
+  expiry?: {
+    state: 'saved' | 'pending' | 'conflict' | 'superseded';
+    requestId?: string;
+    currentRevision?: number;
+    currentExpiry?: string | null;
+  };
+}
+export function expiryMessage(result: DocumentUploadResult) {
+  switch (result.expiry?.state) {
+    case 'pending': return '사진 저장 완료 · ERP 만료일 저장 대기';
+    case 'conflict': return '사진 저장 완료 · ERP 만료일 변경 충돌';
+    case 'superseded': return '사진이 교체되어 이전 만료일은 적용하지 않았습니다.';
+    default: return '저장 완료';
+  }
 }
 export interface PdfSaved { saved: boolean; fileName: string }
 export interface DocumentUpload { driverId: string; kind: string; file: File; expiresOn?: string; requestId: string; companyId?: string | null }
@@ -15,7 +33,8 @@ export interface DocumentAdapter {
   list: (ownerId: string) => Promise<DocumentRecord[]>;
   download: (ownerId: string, kind: string, version: string, id?: string) => Promise<Blob>;
   remove: (ownerId: string, kind: string, version: string, id?: string) => Promise<unknown>;
-  upload: (input: DocumentUpload) => Promise<unknown>;
+  upload: (input: DocumentUpload) => Promise<DocumentUploadResult>;
+  retryExpiry?: (ownerId: string, requestId: string, confirmedRevision?: number) => Promise<DocumentUploadResult>;
   replaceCompany?: (ownerId: string, kind: string) => Promise<{ count: number }>;
   compilePdf?: (ownerId: string, onProgress?: (message: string) => void, options?: { includeCompany?: boolean }) => Promise<PdfSaved>;
 }

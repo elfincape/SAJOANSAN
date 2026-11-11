@@ -4,10 +4,30 @@ const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:
 const id='00000000-0000-4000-8000-000000000001',uid='00000000-0000-4000-8000-000000000002';
 const kinds=['food_transport','livestock_transport','freight_license','vehicle_registration','identity','health_certificate'];
 let permissionGranted=true,deniedCenter=null;let role='admin',active=true,visible=true,oauth,connection,journal,document,commits=0,puts=0,locked=false,dbFail=false,graphFail=false;
+let erpRevision=7, erpExpiry='2026-12-01', erpFailure=true, erpDocumentEnabled=false;
+const erpCalls=[];
+const erpOnly='00000000-0000-4000-8000-000000000011';
 const graphFiles=new Map(),graphFolders=new Map();
 const result=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json'}});
 async function fake(input,options={}){
  const url=new URL(input),p=url.pathname,b=typeof options.body==='string'?JSON.parse(options.body):null;
+ if(url.hostname==='erp.example.test') {
+   assert.equal(options.headers.Authorization,'Bearer user');
+   if(p.endsWith('/driver-health-expiry')){
+     erpCalls.push(b);
+     if(erpFailure) return result({},502);
+     const change=b.changes[0];
+     if(change.expectedRevision!==erpRevision) return result({code:'REVISION_CONFLICT'},409);
+     assert.equal(change.targetId,erpOnly);
+     erpExpiry=change.fields.health_certificate_expires_on; erpRevision++;
+     return result({commandId:b.commandId});
+   }
+   if(url.searchParams.get('kind')==='route') return result({items:[],nextAfter:null});
+   const subjectId=url.searchParams.get('id');
+   assert.equal(subjectId,erpOnly);
+   return result({id:subjectId,kind:'driver',revision:erpRevision,fields:{name:'ERP 시험 기사',health_certificate_expires_on:erpExpiry},
+     attributes:{center:['b14b130d-eb5c-17aa-5c6a-33e1233aa48b']}});
+ }
  if(p==='/auth/v1/user')return result(options.headers.Authorization==='Bearer user'?{id:uid}:{},options.headers.Authorization==='Bearer user'?200:401);
  if(p.startsWith('/rest/v1/')){
    const table=p.slice('/rest/v1/'.length),method=options.method||'GET';
@@ -28,7 +48,7 @@ async function fake(input,options={}){
      return result([{plate_number:'경기80바1234'}]);
    }
    assert.equal(options.headers.Authorization,'Bearer test-service','private DB reads must use server credential');
-   if(table==='onedrive_settings')return result([{expected_drive_id:'drive',folders:Object.fromEntries(kinds.map(k=>[k,'https://1drv.ms/'+k]))}]);
+   if(table==='onedrive_settings')return result([{erp_document_catalog_enabled:erpDocumentEnabled,expected_drive_id:'drive',folders:Object.fromEntries(kinds.map(k=>[k,'https://1drv.ms/'+k]))}]);
    if(table==='onedrive_oauth'){
      if(method==='POST'){oauth=b;return result(null);}
      if(method==='DELETE')return result(null);
@@ -47,7 +67,7 @@ async function fake(input,options={}){
    }
    if(table==='driver_documents')return result(document&&(!url.searchParams.has('request_id')||url.searchParams.get('request_id')==='eq.'+document.request_id)?[document]:[]);
    if(table==='onedrive_uploads'){
-     if(method==='POST'){journal=b;return result(null);}
+     if(method==='POST'){journal=b.erp_driver_id ? {...b,subject_driver_id:b.erp_driver_id,status:'pending'} : b;return result(null);}
      if(method==='PATCH'){journal={...journal,...b};return result(null);}
      return result(journal?[journal]:[]);
    }
@@ -55,6 +75,14 @@ async function fake(input,options={}){
      if(dbFail)return result({},500);
      commits++;document={driver_id:b.p_driver,document_type:b.p_kind,uploaded_by:b.p_user,request_id:b.p_request,drive_id:'drive',item_id:'item',mime_type:'image/png'};
      assert.equal(b.p_expiry,'2027-01-01');return result(null);
+   }
+   if(table==='rpc/onedrive_commit_erp_document'){
+     assert.equal(b.p_id,erpOnly);assert.equal(b.p_user,uid);assert.equal(b.p_request,journal.request_id);
+     assert.equal(journal.expiry_expected_revision,7);
+     commits++;
+     document={subject_driver_id:b.p_id,document_type:b.p_kind,uploaded_by:b.p_user,request_id:b.p_request,document_expiry:journal.document_expiry};
+     journal={...journal,status:'committed'};
+     return result(null);
    }
    throw Error('unexpected DB '+table);
  }
@@ -98,9 +126,9 @@ assert.equal((await handler(request('finish',{state:start.state,proof:'wrong'}))
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,200);
 assert.equal((await handler(request('finish',{state:start.state,proof:start.proof}))).status,409);
 assert.equal((await (await handler(request('status'))).json()).connected,true);
-function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01',requestId='00000000-0000-4000-8000-000000000003',companyId){
+function upload(bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]),type='image/png',expiry='2027-01-01',requestId='00000000-0000-4000-8000-000000000003',companyId,driverId=id){
  const form=new FormData();
- form.set('driverId',id);form.set('kind','health_certificate');form.set('expiresOn',expiry);
+ form.set('driverId',driverId);form.set('kind','health_certificate');form.set('expiresOn',expiry);
  form.set('requestId',requestId);form.set('file',new File([bytes],'private-name.png',{type}));
  if(companyId!==undefined)form.set('companyId',companyId);
  return new Request(env.SUPABASE_URL+'/functions/v1/onedrive-auth/upload',{method:'POST',headers:{Authorization:'Bearer user'},body:form});
@@ -151,3 +179,25 @@ assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-00
 assert.equal((await handler(request('download',{driverId:id,kind:'health_certificate'}))).status,403);
 permissionGranted=true;deniedCenter='002';assert.equal((await handler(upload(changed,'image/png','2027-01-01','00000000-0000-4000-8000-000000000010'))).status,403);assert.equal(puts,previousWrites);assert.equal(commits,previousCommits);
 console.log('OneDrive auth, CSRF/browser proof, roles, encrypted tokens, upload validation, retry and DB failure tests passed');
+deniedCenter=null;journal=null;document=null;erpDocumentEnabled=true;
+const erpHandler=makeHandler({...env,ERP_DOCUMENT_CATALOG_URL:'https://erp.example.test'},fake);
+const requestId='00000000-0000-4000-8000-000000000012';
+const input=()=>upload(undefined,'image/png','2027-01-01',requestId,undefined,erpOnly);
+const retry=confirmedRevision=>erpHandler(request('retry-health-expiry',{driverId:erpOnly,requestId,confirmedRevision}));
+const partial=await (await erpHandler(input())).json();
+assert.deepEqual(partial,{saved:true,expiry:{state:'pending',requestId}});
+assert.equal(puts,previousWrites+1);
+assert.equal(commits,previousCommits+1);
+assert.equal(erpExpiry,'2026-12-01');
+erpFailure=false;erpRevision++;
+const conflict=await (await retry()).json();
+assert.equal(conflict.expiry.state,'conflict');
+assert.equal(conflict.expiry.currentRevision,8);
+assert.deepEqual(erpCalls[0],erpCalls[1],'retry keeps the original ERP command until conflict confirmation');
+assert.equal((await (await retry(7)).json()).expiry.state,'conflict');
+assert.equal((await (await retry(8)).json()).expiry.state,'saved');
+assert.equal(erpExpiry,'2027-01-01');
+assert.equal((await (await erpHandler(input())).json()).expiry.state,'saved');
+assert.equal(puts,previousWrites+1,'ERP-only retry must not upload a second file');
+assert.equal(commits,previousCommits+1,'ERP-only retry must not create a second document');
+console.log('ERP-only driver document, partial success, conflict and retry passed');
