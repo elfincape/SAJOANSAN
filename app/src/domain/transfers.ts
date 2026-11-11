@@ -2,6 +2,7 @@ import type { Center } from '../lib/center';
 import type { StoredTransfer } from '../lib/transfers';
 export interface TransferRow { _uid:string; id:string|null;center:string;center_code:string;delivery_date:string;company_id:string|null;route_id:string|null;driver_id:string|null;vehicle_id:string|null;company_name:string;route_name:string;driver_name:string;driver_phone:string;vehicle_plate:string;photos:(string|null)[];memo:string;created_at?:string;updated_at?:string;_dirty:boolean }
 export function dbRowToStateRow(x: StoredTransfer, selectedCenter: Center): TransferRow {
+  const erp = x.erp_route_id != null;
   return {
     _uid: makeUid(),
     id: x.id,
@@ -10,10 +11,10 @@ export function dbRowToStateRow(x: StoredTransfer, selectedCenter: Center): Tran
     center_code: x.center_code || selectedCenter.code,
     delivery_date: x.delivery_date || '',
 
-    company_id: x.company_id,
-    route_id: x.route_id,
-    driver_id: x.driver_id,
-    vehicle_id: x.vehicle_id,
+    company_id: erp ? x.erp_company_id ?? null : x.company_id,
+    route_id: x.erp_route_id ?? x.route_id,
+    driver_id: erp ? x.erp_driver_id ?? null : x.driver_id,
+    vehicle_id: erp ? x.erp_vehicle_id ?? null : x.vehicle_id,
 
     company_name: x.company_name || '',
     route_name: x.route_name || '',

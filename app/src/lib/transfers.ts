@@ -1,7 +1,10 @@
 import { supabase } from './supabase';
 import type { TransferRow } from '../domain/transfers';
 import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-catalog';
-export interface StoredTransfer extends Omit<TransferRow,'_uid'|'_dirty'|'photos'> { photo1_data_url:string|null;photo2_data_url:string|null;photo3_data_url:string|null;photo4_data_url:string|null }
+export interface StoredTransfer extends Omit<TransferRow,'_uid'|'_dirty'|'photos'> {
+ photo1_data_url:string|null;photo2_data_url:string|null;photo3_data_url:string|null;photo4_data_url:string|null;
+ erp_route_id?:string|null;erp_company_id?:string|null;erp_driver_id?:string|null;erp_vehicle_id?:string|null;
+}
 export interface TransferMasters {companies:{id:string;name:string}[];routes:{id:string;name:string;car_number:string|null;company_id:string|null;primary_driver_id:string|null;primary_vehicle_id:string|null}[];drivers:{id:string;name:string;phone:string|null;contact:string|null;company_id:string|null}[];vehicles:{id:string;plate_number:string;company_id:string|null}[]}
 export async function loadTransferMasters(center:string):Promise<TransferMasters>{
  if(useErpCatalog){
@@ -47,8 +50,13 @@ const fields = `
       created_by,
       created_at,
       updated_at
-    `;
+    ` + (useErpCatalog ? ',erp_route_id,erp_company_id,erp_driver_id,erp_vehicle_id' : '');
 export function loadSavedTransfers(center:string){return supabase.from('transfer_deliveries').select(fields).eq('center_code',center).order('delivery_date',{ascending:true}).order('created_at',{ascending:true}).limit(1000).returns<StoredTransfer[]>();}
-export function saveTransfer(center:string,id:string|null,payload:Record<string,unknown>){const query=id ? supabase.from('transfer_deliveries').update(payload).eq('center_code',center).eq('id',id) : supabase.from('transfer_deliveries').insert(payload);return query.select(fields).single<StoredTransfer>();}
+export function saveTransfer(center:string,id:string|null,payload:Record<string,unknown>){
+ const {route_id,company_id,driver_id,vehicle_id,...snapshot}=payload;
+ const values=useErpCatalog ? {...snapshot,erp_route_id:route_id,erp_company_id:company_id,erp_driver_id:driver_id,erp_vehicle_id:vehicle_id} : payload;
+ const query=id ? supabase.from('transfer_deliveries').update(values).eq('center_code',center).eq('id',id) : supabase.from('transfer_deliveries').insert(values);
+ return query.select(fields).single<StoredTransfer>();
+}
 export function deleteTransfer(center:string,id:string){return supabase.from('transfer_deliveries').delete().eq('center_code',center).eq('id',id);}
 export function deleteTransfers(center:string,ids:string[]){return supabase.from('transfer_deliveries').delete().eq('center_code',center).in('id',ids);}
