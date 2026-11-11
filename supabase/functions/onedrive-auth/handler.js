@@ -6,7 +6,7 @@ import { mailAiConfiguration } from '../_shared/luna.js';
 import { handleApiManagement } from '../_shared/ai-providers.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
 import { authorizeMailWork } from './private-mail-worker-auth.js';
-import { makeDocumentCatalog } from './erp-document-catalog.js';
+import { makeDocumentCatalog, makeLegacyDocumentCatalog } from './erp-document-catalog.js';
 import {
   startNotesAuth,
   completeNotesAuth,
@@ -315,7 +315,7 @@ export function makeHandler(
     if (!row) throw fail('해당 운수사에 접근할 수 없습니다.', 403);
     return row;
   }
-  const documentCatalog = makeDocumentCatalog(
+  const documentCatalog = env.LEGACY_COMMON_CATALOG === 'true' ? makeLegacyDocumentCatalog(db, fail) : makeDocumentCatalog(
     env.ERP_DOCUMENT_CATALOG_URL || 'https://211.233.219.199:8443/', fetcher, fail,
   );
   async function erpDocumentMode() {

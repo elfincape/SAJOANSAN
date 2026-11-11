@@ -20,8 +20,8 @@ export interface DocumentUploadResult {
 }
 export function expiryMessage(result: DocumentUploadResult) {
   switch (result.expiry?.state) {
-    case 'pending': return '사진 저장 완료 · ERP 만료일 저장 대기';
-    case 'conflict': return '사진 저장 완료 · ERP 만료일 변경 충돌';
+    case 'pending': return '사진 저장 완료 · 원장 만료일 저장 대기';
+    case 'conflict': return '사진 저장 완료 · 원장 만료일 변경 충돌';
     case 'superseded': return '사진이 교체되어 이전 만료일은 적용하지 않았습니다.';
     default: return '저장 완료';
   }

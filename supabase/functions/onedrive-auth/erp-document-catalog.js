@@ -1,3 +1,59 @@
+// The upload journal keeps a numeric concurrency token. In legacy mode it is
+// updated_at in microseconds (not an ERP revision); pending ERP intents must be
+// drained before switching the writer. Preserve PostgreSQL's full precision.
+export function legacyDocumentRevision(value) {
+  const milliseconds = Date.parse(value);
+  const fraction = String(value).match(/\.(\d+)(?:Z|[+-]\d\d(?::?\d\d)?)$/)?.[1] || '';
+  const revision = milliseconds * 1000 + Number(fraction.padEnd(6, '0').slice(3, 6));
+  if (!Number.isSafeInteger(revision) || revision < 1000000000000000)
+    throw Error('Invalid document concurrency timestamp');
+  return revision;
+}
+
+export function makeLegacyDocumentCatalog(db, fail) {
+  const tables = { driver: 'drivers', company: 'companies', route: 'routes', vehicle: 'vehicles' };
+  function table(kind) {
+    if (!Object.hasOwn(tables, kind)) throw fail('지원하지 않는 원본입니다.', 400);
+    return tables[kind];
+  }
+  async function subject(user, kind, id) {
+    if (!/^[0-9a-f-]{36}$/i.test(id || '')) throw fail('원본을 선택해 주세요.', 400);
+    const [row] = await db(table(kind) + '?select=*&id=eq.' + encodeURIComponent(id), { token: user.token });
+    if (!row || row.deleted_at) throw fail('해당 원본에 접근할 수 없습니다.', 403);
+    return { ...row, revision: legacyDocumentRevision(row.updated_at) };
+  }
+  async function list(user, kind, center) {
+    const result = [];
+    let after;
+    for (;;) {
+      const rows = await db(table(kind) + '?select=*&deleted_at=is.null&order=id&limit=500'
+        + '&center_code=eq.' + encodeURIComponent(center)
+        + (after ? '&id=gt.' + encodeURIComponent(after) : ''), { token: user.token });
+      result.push(...rows);
+      if (rows.length < 500) return result;
+      const next = rows.at(-1).id;
+      if (next === after) throw fail('원장 조회가 반복되었습니다.', 502);
+      after = next;
+    }
+  }
+  async function saveHealth(user, journal) {
+    const latest = await subject(user, 'driver', journal.subject_driver_id);
+    const conflict = () => ({ state: 'conflict', currentRevision: latest.revision,
+      currentExpiry: latest.health_certificate_expires_on });
+    if (latest.revision !== journal.expiry_expected_revision) return conflict();
+    const saved = await db('drivers?id=eq.' + encodeURIComponent(latest.id)
+      + '&updated_at=eq.' + encodeURIComponent(latest.updated_at) + '&deleted_at=is.null', {
+      token: user.token, method: 'PATCH', prefer: 'return=representation',
+      body: { health_certificate_expires_on: journal.document_expiry },
+    });
+    if (saved?.length === 1) return { state: 'saved' };
+    const current = await subject(user, 'driver', latest.id);
+    return { state: 'conflict', currentRevision: current.revision,
+      currentExpiry: current.health_certificate_expires_on };
+  }
+  return { subject, list, saveHealth };
+}
+
 export function makeDocumentCatalog(origin, fetcher, fail) {
   if (!origin) return null;
   const base = new URL(origin);

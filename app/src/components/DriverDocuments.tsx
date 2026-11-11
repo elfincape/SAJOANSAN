@@ -110,7 +110,7 @@ export function DriverDocuments({ ownerId, adapter, companyMode = false, getExpi
                   const request = row.request_id!;
                   let result = await adapter.retryExpiry!(ownerId, request);
                   if (result.expiry?.state === 'conflict' && result.expiry.currentRevision !== undefined &&
-                      window.confirm(`ERP 현재 만료일 ${result.expiry.currentExpiry || '없음'}을 사진의 만료일 ${row.document_expiry}로 바꿀까요?`))
+                      window.confirm(`원장의 현재 만료일 ${result.expiry.currentExpiry || '없음'}을 사진의 만료일 ${row.document_expiry}로 바꿀까요?`))
                     result = await adapter.retryExpiry!(ownerId, request, result.expiry.currentRevision);
                   if (result.expiry?.state === 'saved' && row.document_expiry) onSaved(ownerId, kind, row.document_expiry);
                   return expiryMessage(result);

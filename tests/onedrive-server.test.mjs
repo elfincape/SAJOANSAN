@@ -201,3 +201,33 @@ assert.equal((await (await erpHandler(input())).json()).expiry.state,'saved');
 assert.equal(puts,previousWrites+1,'ERP-only retry must not upload a second file');
 assert.equal(commits,previousCommits+1,'ERP-only retry must not create a second document');
 console.log('ERP-only driver document, partial success, conflict and retry passed');
+
+// Legacy document bridge uses the caller's RLS and exact updated_at, while the
+// existing upload journal keeps the file-success/expiry-conflict separation.
+const { makeLegacyDocumentCatalog, legacyDocumentRevision } = await import('../supabase/functions/onedrive-auth/erp-document-catalog.js');
+let localRow = { id: erpOnly, name: '격리 기사', center_code: '002', updated_at: '2026-11-11T03:04:05.123456+00:00', health_certificate_expires_on: '2026-12-01' };
+const localWrites=[];
+const localCatalog=makeLegacyDocumentCatalog(async (path, options) => {
+  assert.equal(options.token, 'actual-user');
+  if(options.method==='PATCH') {
+    localWrites.push({path,...options});
+    assert.equal(new URLSearchParams(path.split('?')[1]).get('updated_at'), 'eq.'+localRow.updated_at);
+    localRow={...localRow,...options.body,updated_at:'2026-11-11T03:04:06.123456+00:00'};
+  }
+  return [{...localRow}];
+}, (message,status)=>Object.assign(new Error(message),{status}));
+assert.equal(legacyDocumentRevision(localRow.updated_at), 1794366245123456);
+assert.equal(legacyDocumentRevision('2026-11-11T12:04:05.123456+09:00'),1794366245123456);
+assert.equal(legacyDocumentRevision('2026-11-11T03:04:05.123457Z'),1794366245123457);
+const localUser={token:'actual-user'};
+const localSubject=await localCatalog.subject(localUser,'driver',erpOnly);
+const localJournal={subject_driver_id:erpOnly,expiry_expected_revision:localSubject.revision,document_expiry:'2027-01-01'};
+assert.equal((await localCatalog.saveHealth(localUser,{...localJournal,expiry_expected_revision:7})).state,'conflict');
+assert.equal(localWrites.length,0,'an unfinished ERP revision must never be reused as a legacy timestamp');
+assert.equal((await localCatalog.saveHealth(localUser,localJournal)).state,'saved');
+assert.deepEqual(localWrites[0].body,{health_certificate_expires_on:'2027-01-01'});
+assert.equal((await localCatalog.saveHealth(localUser,localJournal)).state,'conflict');
+assert.equal(localWrites.length,1,'lost-response retry retains the original timestamp and does not write again');
+localRow.deleted_at='2026-11-11T04:00:00Z';
+await assert.rejects(localCatalog.subject(localUser,'driver',erpOnly),/접근/);
+console.log('Legacy document caller-RLS, microsecond CAS, conflict and partial retry transport checks passed');
