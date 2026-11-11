@@ -66,7 +66,23 @@ if (process.env.PGLITE_MODULE) {
     create policy insert_access on ${table} for insert to authenticated with check(operations_resource_allowed('${resource}','edit',${center}));
     create policy delete_access on ${table} for delete to authenticated using(operations_resource_allowed('${resource}','edit',${center}));`);
   }
-  await db.exec('grant usage on schema public,auth to authenticated;grant select on all tables in schema public to authenticated;grant insert,update,delete on routes,route_stops,delivery_points,drivers,vehicles,companies to authenticated;');
+  await db.exec(`grant usage on schema public,auth to authenticated;grant select on all tables in schema public to authenticated;
+   create table charter_trips(id text);create table charter_archives(id text);
+   create table onedrive_uploads(status text,expiry_erp_saved boolean,document_expiry date);
+   create function save_pyeongtaek_dispatch_profiles(jsonb) returns void language sql as $$select$$;
+   revoke all on function save_pyeongtaek_dispatch_profiles(jsonb) from public;
+   create function fixture_frozen() returns trigger language plpgsql as $$begin raise exception 'frozen';end$$;
+   create trigger ean_catalog_frozen before insert or update or delete on routes for each row execute function fixture_frozen();
+   create trigger ean_catalog_no_truncate before truncate on routes for each statement execute function fixture_frozen();
+   insert into onedrive_uploads values('committed',false,'2026-12-31');`);
+  await assert.rejects(db.exec(sql('legacy-common-catalog-activate.sql')),/pending document/);
+  await db.exec('rollback;delete from onedrive_uploads;');
+  assert.equal((await db.query("select count(*)::int n from pg_trigger where tgname='ean_catalog_frozen'")).rows[0].n,1,'failed activation keeps the old write fence');
+  await db.exec(sql('legacy-common-catalog-activate.sql'));
+  assert.equal((await db.query("select has_table_privilege('authenticated','drivers','UPDATE') ok")).rows[0].ok,true);
+  assert.equal((await db.query("select has_table_privilege('authenticated','drivers','DELETE') ok")).rows[0].ok,false,'originals stay soft-delete only');
+  assert.equal((await db.query("select has_table_privilege('anon','drivers','UPDATE') ok")).rows[0].ok,false);
+  assert.equal((await db.query("select count(*)::int n from pg_trigger where tgname='ean_catalog_no_truncate'")).rows[0].n,1);
   const actor=async n=>db.exec(`reset role;select set_config('request.jwt.claim.sub','${id(n)}',false);set role authenticated;`);
   await actor(1);
   assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,3,'OP includes unclassified');
@@ -89,7 +105,7 @@ if (process.env.PGLITE_MODULE) {
   assert.deepEqual(await snapshot(10),before,'failure rolls back temporary ordering and partial rows');
   await db.exec(`update drivers set deleted_at=now() where id='${id(30)}'`);
   assert.equal((await db.query(`select primary_driver_id from routes where id='${id(10)}'`)).rows[0].primary_driver_id,id(30));
-  await assert.rejects(db.exec(`delete from drivers where id='${id(30)}'`),/연결은 보존/);
+  await assert.rejects(db.exec(`delete from drivers where id='${id(30)}'`),/연결은 보존|permission denied/);
   await actor(2);
   assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,1);
   assert.equal((await db.query('select count(*)::int n from delivery_points')).rows[0].n,0);

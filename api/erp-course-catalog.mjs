@@ -11,6 +11,8 @@ export default {
     const authorization = request.headers.get('authorization');
     if (!/^Bearer [A-Za-z0-9._-]{1,6000}$/.test(authorization ?? ''))
       return reply('UNAUTHENTICATED', 401);
+    if (process.env.VITE_LEGACY_COMMON_CATALOG === 'true')
+      return reply('CATALOG_MOVED_REFRESH_REQUIRED', 409);
     try {
       const upstream = new URL(process.env.ERP_COURSE_CATALOG_URL ?? '');
       if (upstream.protocol !== 'https:' || upstream.pathname !== '/' ||

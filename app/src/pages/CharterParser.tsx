@@ -111,12 +111,4 @@ function CharterParserContent(){
   </section>
  </main>{editing?<CharterEditor trip={editing} onApply={applyEdit} onClose={()=>setEditing(null)}/>:null}<a ref={downloadRef} hidden href={downloadUrl?.url} download={downloadUrl?.name}/>{feedback}</>;
 }
-function CharterEntry() {
- const { center } = useAdminPage();
- if (center.code !== '002') return <CharterParserContent/>;
- return <main className="panel">
-  <h2>평택 용차내역 관리</h2>
-  <a className="btn btn-primary" href="https://211.233.219.199:8443/charter">ERP에서 평택 용차내역 열기</a>
- </main>;
-}
-export default function CharterParser(){return <AdminPage title="평택 용차내역 관리"><CharterEntry/></AdminPage>;}
+export default function CharterParser(){return <AdminPage title="평택 용차내역 관리"><CharterParserContent/></AdminPage>;}

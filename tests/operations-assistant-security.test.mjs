@@ -77,12 +77,32 @@ console.log('frontend catalog: own session, explicit all/unclassified, fail-clos
 const readStart=edge.indexOf('async function restAll('),readEnd=edge.indexOf('\nasync function safeRestVariants',readStart);
 const code=stripTypeScriptTypes(edge.slice(readStart,readEnd)).replace('async function restAll','export async function restAll');
 const reader=await import('data:text/javascript;base64,'+Buffer.from('const REST_PAGE_SIZE=1000;const coded=(code,status)=>Object.assign(Error(code),{code,status});'+code).toString('base64'));
+const envCode=stripTypeScriptTypes(edge.slice(edge.indexOf('function envs('),edge.indexOf('\nfunction bearer('))).replace('function envs','export function envs');
+const settings={SUPABASE_URL:'https://isolated.invalid',SUPABASE_ANON_KEY:'public',LEGACY_COMMON_CATALOG:'true'};
+const configReader=await import('data:text/javascript;base64,'+Buffer.from('const Deno={env:{get:key=>('+JSON.stringify(settings)+')[key]}};const coded=()=>Error("missing configuration");'+envCode).toString('base64'));
+assert.equal(configReader.envs(true,true).catalogEnabled,false,'old clients cannot force the ERP source after legacy activation');
+assert.equal(configReader.envs(true,true).legacyCommon,true);
 try {
  const ranges=[];let batch=0;
  globalThis.fetch=async(_url,options)=>{assert.equal(options.headers.authorization,'Bearer caller');ranges.push(options.headers.Range);return Response.json([[{id:1},{id:2}],[{id:3}],[]][batch++]);};
  assert.deepEqual(await reader.restAll({url:'https://isolated.invalid',anon:'public'},'caller','routes','select=id'),[{id:1},{id:2},{id:3}]);
  assert.deepEqual(ranges,['0-999','2-1001','3-1002']);
+ globalThis.fetch=async(url)=>{assert.match(String(url),/deleted_at=is.null/);return Response.json([]);};
+ await reader.restAll({url:'https://isolated.invalid',anon:'public',legacyCommon:true},'caller','routes','select=id');
  globalThis.fetch=async()=>new Response('',{status:403});
  await assert.rejects(reader.restAll({url:'https://isolated.invalid',anon:'public'},'caller','routes','select=id'),/QUERY_FAILED/);
 } finally {globalThis.fetch=originalFetch;}
 console.log('Legacy assistant REST: caller token, capped pages and explicit query errors passed');
+
+const {default:oldCatalogBridge}=await import('../api/erp-course-catalog.mjs');
+const priorMode=process.env.VITE_LEGACY_COMMON_CATALOG;
+try{
+ process.env.VITE_LEGACY_COMMON_CATALOG='true';
+ globalThis.fetch=async()=>{throw Error('retired bridge must not call ERP');};
+ for(const method of ['GET','POST']){
+  const response=await oldCatalogBridge.fetch(new Request('https://isolated.invalid/api/erp-course-catalog',{method,headers:{authorization:'Bearer old-session','content-type':'application/json'},...(method==='POST'?{body:'{}'}:{})}));
+  assert.equal(response.status,409);assert.equal((await response.json()).code,'CATALOG_MOVED_REFRESH_REQUIRED');
+ }
+ assert.equal((await oldCatalogBridge.fetch(new Request('https://isolated.invalid/api/erp-course-catalog'))).status,401);
+}finally{globalThis.fetch=originalFetch;if(priorMode===undefined)delete process.env.VITE_LEGACY_COMMON_CATALOG;else process.env.VITE_LEGACY_COMMON_CATALOG=priorMode;}
+console.log('Legacy activation: old ERP bridge refuses reads/writes without upstream calls');
