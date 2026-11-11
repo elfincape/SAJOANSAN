@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 export const useErpCatalog = import.meta.env.VITE_ERP_COURSE_CATALOG === 'true';
-type CatalogKind = 'route' | 'delivery_point';
+type CatalogKind = 'route' | 'delivery_point' | 'company' | 'driver' | 'vehicle';
 export interface CatalogEntity<T = Record<string, unknown>> {
   id: string;
   label: string;
@@ -82,7 +82,7 @@ export function catalogWorkspace(id: string) {
   }>('route', new URLSearchParams({ id, workspaces: 'true' }));
 }
 
-export function erpCourseHref(kind: CatalogKind, id: string) {
+export function erpCourseHref(kind: 'route' | 'delivery_point', id: string) {
   const origin = new URL(import.meta.env.VITE_ERP_COURSE_OPEN_URL || 'https://211.233.219.199:8443/');
   if (origin.protocol !== 'https:') throw Error('ERP 링크를 확인해 주세요.');
   return new URL((kind === 'route' ? '/routes/' : '/data/') + encodeURIComponent(id), origin).href;

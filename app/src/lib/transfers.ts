@@ -4,13 +4,22 @@ import { catalogList, useErpCatalog, type CatalogEntity } from './erp-course-cat
 export interface StoredTransfer extends Omit<TransferRow,'_uid'|'_dirty'|'photos'> { photo1_data_url:string|null;photo2_data_url:string|null;photo3_data_url:string|null;photo4_data_url:string|null }
 export interface TransferMasters {companies:{id:string;name:string}[];routes:{id:string;name:string;car_number:string|null;company_id:string|null;primary_driver_id:string|null;primary_vehicle_id:string|null}[];drivers:{id:string;name:string;phone:string|null;contact:string|null;company_id:string|null}[];vehicles:{id:string;plate_number:string;company_id:string|null}[]}
 export async function loadTransferMasters(center:string):Promise<TransferMasters>{
+ if(useErpCatalog){
+  const [co,ro,dr,ve]=await Promise.all([
+   catalogList<CatalogEntity<Omit<TransferMasters['companies'][number],'id'>>>('company'),
+   catalogList<CatalogEntity<Omit<TransferMasters['routes'][number],'id'>>>('route',{center}),
+   catalogList<CatalogEntity<Omit<TransferMasters['drivers'][number],'id'>>>('driver'),
+   catalogList<CatalogEntity<{plate:string;company_id:string|null}>>('vehicle')
+  ]);
+  const rows=<T,>(items:CatalogEntity<T>[])=>items.filter(item=>!item.deletedAt).map(item=>({...item.fields,id:item.id}));
+  return {companies:rows(co).sort((a,b)=>a.name.localeCompare(b.name,'ko')),
+   routes:rows(ro).sort((a,b)=>(a.car_number||'').localeCompare(b.car_number||'','ko',{numeric:true})),
+   drivers:rows(dr).sort((a,b)=>a.name.localeCompare(b.name,'ko')),
+   vehicles:rows(ve).map(({plate,...vehicle})=>({...vehicle,plate_number:plate})).sort((a,b)=>a.plate_number.localeCompare(b.plate_number,'ko'))};
+ }
  const [co,ro,dr,ve]=await Promise.all([
  supabase.from('companies').select('id, name').order('name').eq('center_code',center),
- useErpCatalog
-  ? catalogList<CatalogEntity<Omit<TransferMasters['routes'][number], 'id'>>>('route', { center })
-    .then(items => ({ data: items.map(item => ({ ...item.fields, id: item.id }))
-      .sort((a, b) => (a.car_number || '').localeCompare(b.car_number || '', 'ko')), error: null }))
-  : supabase.from('routes').select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id').order('car_number').eq('center_code',center),
+ supabase.from('routes').select('id, name, car_number, company_id, primary_driver_id, primary_vehicle_id').order('car_number').eq('center_code',center),
  supabase.from('drivers').select('id, name, phone, contact, company_id').order('name').eq('center_code',center),
  supabase.from('vehicles').select('id, plate_number, company_id').order('plate_number').eq('center_code',center)]);
  if(co.error||ro.error||dr.error||ve.error)throw co.error||ro.error||dr.error||ve.error;
