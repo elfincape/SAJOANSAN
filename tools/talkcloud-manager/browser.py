@@ -120,6 +120,7 @@ class Browser:
     def rooms(self, offset):
         self.page.goto(BASE+'/photo',wait_until='domcontentloaded')
         self.page.get_by_role('tablist',name='채팅방 목록').wait_for()
+        self.page.wait_for_function("() => [...document.querySelectorAll('a[role=\"tab\"][href^=\"/photo/\"]')].some(e=>e.getAttribute('href')!='/photo/all' && e.textContent.trim()!=='전체')",timeout=30000)
         rows=self.page.locator('a[role="tab"][href^="/photo/"]').evaluate_all("els=>els.map(e=>({id:e.getAttribute('href'),name:e.querySelector('.txt_name')?.textContent.trim()||e.textContent.trim()}))")
         rows=[r for r in rows if re.fullmatch(r'/photo/[a-zA-Z0-9_=-]+',r['id']) and r['id']!='/photo/all' and r['name']!='전체']
         self.known={r['id']:r['name'] for r in rows}
