@@ -9,7 +9,9 @@
 - 작업 브랜치: codex/employee-permission-workflow
 - 운영 URL: https://sajoansan.vercel.app/portal/?view=permissions
 - Vercel: sajoansan / prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7
-- 배포 결과: 커밋 후 운영 반영 확인 결과를 아래에 추가한다.
+- 구현 커밋: e5cf22541ebf252287718bd289c03407476ee840. 작업 브랜치와 main Push 완료.
+- 운영 배포: dpl_9TYXT9TMtCbCwHc64jQtTPQq7ats / READY / production. 위 구현 커밋이 sajoansan.vercel.app에 반영됨을 2026-11-12 KST 확인했다.
+- 문서 후속 커밋은 위 구현에 배포 확인 결과만 추가한다.
 
 ## 확인한 원인과 수정
 
@@ -39,10 +41,12 @@
 - 변경 TSX/TS/CSS Prettier 검사, 변경 JS 검사, git diff --check 통과. Impeccable detect 결과 []이다.
 - Ego Lite 격리 UI: 직원 선택, 조회 역할 수정 차단, 변경 후 범위, 저장 충돌 입력 보존, 동일 요청 재시도, 권한 새로고침 후 stale 저장 차단, 직원 왕복 초안 보존, 역할 화면 왕복, 센터 반복 표 제거, 라이트·다크 배치와 가로 넘침 없음 확인.
 - 격리 UI의 API는 대역이다. 실제 SQL 저장 검사 및 운영 SQL 읽기 대조와 구분한다. 운영 직원의 권한을 시험 목적으로 변경하지 않았다.
+- 운영 Ego Lite 실제 OP 세션에서 새 프런트를 다시 열어 직원 선택, 업무 분류, 업무 검색 입력, 업무/허용 동작/자료 범위/실제 적용 4열과 공통 원장 미분류 포함 표시를 확인했다. 수정 전과 같은 직원을 선택한 화면을 캡처해 비교했고 가로 넘침이 없었다. 실계정 저장은 시험하지 않았으며 저장·충돌 검사는 위 격리 SQL 및 UI 검사 범위이다.
 
 ## 복구와 범위
 
 - 프런트 문제 시 직전 Vercel 배포로 되돌릴 수 있다. 이번 작업은 DB migration이 없으므로 DB 복원이나 쓰기 차단 변경이 필요하지 않다.
+- 직전 운영 배포: dpl_2mMKiXDrjKmDQC1oy56g3CQptDyL / 소스 2366517428dc186efeb233e3ffb81ae9e9cf57b1. 복구가 필요하면 해당 프런트로 되돌리되 이번 빈 센터 값 판정 수정도 되돌아가는 점을 함께 확인한다.
 - 권한 설정 후 생긴 실제 직원별 변경은 기존 변경 이력과 현재값을 보존한다. 과거 권한 데이터로 일괄 덮어쓰지 않는다.
 - 운영에서 특정 직원에게 필요한 실제 권한 변경은 관리자가 직원 선택 → 업무 선택 → 허용 동작/범위 → 변경사항 저장 후 확인한다. 실제 직원 계정별 재로그인 검사는 이번에 대신 수행하지 않았다.
 - 새 ERP, 원장 이관, 다른 도구 기능, OneDrive 자료, 비공개 이관 자료는 변경하지 않았다.
