@@ -7,6 +7,7 @@ const host = window as Window & { talkcloudRequest?: HubRequest };
 
 function Content() {
   const frame = useRef<HTMLIFrameElement>(null);
+  const result = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(650);
   const [message, setMessage] = useState('연결 상태 확인 중');
   const [resultVersion, setResultVersion] = useState(0);
@@ -74,9 +75,10 @@ function Content() {
       .catch(() => {});
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
   }, [resultVersion]);
+  useEffect(() => { if (resultImage) result.current?.scrollIntoView({ block: 'start' }); }, [resultImage]);
   return <main id="work-main" tabIndex={-1} className="app-main px-4 py-6">
     <div role="status" aria-live="polite" style={{ position: 'sticky', top: 'calc(var(--app-header-height, 64px) + 8px)', zIndex: 20, background: 'var(--theme-panel)', border: '1px solid var(--theme-border)', borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>{message}</div>
-    {resultImage && <figure style={{ margin: '0 0 20px' }}><figcaption style={{ marginBottom: 8 }}>삭제 완료 후 휴지통 화면</figcaption><img src={resultImage} alt="삭제 완료 후 톡클라우드 휴지통" style={{ display: 'block', maxWidth: '100%', maxHeight: 420, borderRadius: 10 }} /></figure>}
+    {resultImage && <figure ref={result} style={{ margin: '0 0 20px', scrollMarginTop: 'calc(var(--app-header-height, 64px) + 80px)' }}><figcaption style={{ marginBottom: 8 }}>삭제 완료 후 휴지통 화면</figcaption><img src={resultImage} alt="삭제 완료 후 톡클라우드 휴지통" style={{ display: 'block', maxWidth: '100%', maxHeight: 420, borderRadius: 10 }} /></figure>}
     {accountValid && <iframe ref={frame} src="/talkcloud/index.html" title="톡클라우드 사진·동영상 정리"
       style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }} />}
   </main>;
