@@ -141,8 +141,11 @@ class Browser:
         cards=self.page.locator('li[data-target="talk"]')
         if cards.count():
             cards.last.scroll_into_view_if_needed()
+            box=cards.last.bounding_box()
+            if box:
+                self.page.mouse.move(min(1270,max(10,box['x']+box['width']/2)),min(890,max(10,box['y']+box['height']/2)))
         self.page.mouse.wheel(0,650)
-        self.page.wait_for_timeout(650)
+        self.page.wait_for_timeout(900)
 
     def scan(self, rid, start, end):
         self.room(rid)
@@ -173,7 +176,9 @@ class Browser:
                 same=0
             if len(seen)>=total:
                 return found
-            if same>=12:
+            if same>=25:
+                print(f'Incomplete photo list: seen={len(seen)}, expected={total}, visible={len(cards)}',flush=True)
+                print(self.page.locator('li[data-target="talk"]').last.evaluate("e=>{const a=[];for(let p=e.parentElement;p;p=p.parentElement){if(p.scrollHeight>p.clientHeight)a.push({tag:p.tagName,class:p.className,top:p.scrollTop,height:p.clientHeight,total:p.scrollHeight,overflow:getComputedStyle(p).overflowY})}return a}"),flush=True)
                 raise ValueError('전체 목록을 불러오지 못했습니다. 다시 조회하세요.')
             self.state.update(message='선택한 방의 사진을 정리하고 있습니다.')
             self.scroll()
