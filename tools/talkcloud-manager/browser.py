@@ -135,7 +135,7 @@ class Browser:
         self.state.update(rooms=result,message='방과 날짜를 선택하세요.')
 
     def cards(self):
-        return self.page.locator('li[data-target="talk"]').evaluate_all("""els=>els.map(e=>({id:e.querySelector('input')?.id,date:e.querySelector('.txt_sub')?.textContent.trim(),video:!!e.querySelector('video')||!!e.querySelector('.info_desc')?.textContent.trim(),kind:e.querySelector('.thm_type')?.className})).filter(e=>e.id)""")
+        return self.page.locator('li[data-target="talk"]').evaluate_all("""els=>els.map(e=>({id:e.querySelector('input')?.id,date:e.querySelector('.txt_sub')?.textContent.trim()})).filter(e=>e.id)""")
 
     def scroll(self):
         box=self.page.locator('.scroll_talk').bounding_box()
@@ -166,7 +166,7 @@ class Browser:
                 if not m:
                     raise ValueError('사진 날짜를 확인할 수 없어 중단했습니다.')
                 day=date(*map(int,m.groups())).isoformat()
-                if start<=day<=end and not c['video']:
+                if start<=day<=end:
                     found[c['id']]=day
             if len(seen)==before:
                 same+=1
@@ -178,7 +178,7 @@ class Browser:
                 print(f'Incomplete photo list: seen={len(seen)}, expected={total}, visible={len(cards)}',flush=True)
                 print(self.page.locator('li[data-target="talk"]').last.evaluate("e=>{const a=[];for(let p=e.parentElement;p;p=p.parentElement){if(p.scrollHeight>p.clientHeight)a.push({tag:p.tagName,class:p.className,top:p.scrollTop,height:p.clientHeight,total:p.scrollHeight,overflow:getComputedStyle(p).overflowY})}return a}"),flush=True)
                 raise ValueError('전체 목록을 불러오지 못했습니다. 다시 조회하세요.')
-            self.state.update(message='선택한 방의 사진을 정리하고 있습니다.')
+            self.state.update(message='선택한 방의 사진·동영상을 정리하고 있습니다.')
             self.scroll()
         raise ValueError('목록 확인 제한시간을 초과했습니다. 삭제하지 않았습니다.')
 
@@ -194,7 +194,7 @@ class Browser:
             ids=self.scan(r['id'],start,end)
             self.plan.append({'id':r['id'],'start':start,'end':end,'files':ids})
         count=sum(len(r['files']) for r in self.plan)
-        self.state.update(message='선택한 기간의 사진을 휴지통으로 이동합니다.')
+        self.state.update(message='선택한 기간의 사진·동영상을 휴지통으로 이동합니다.')
 
     def delete(self):
         if not self.plan:
@@ -218,11 +218,21 @@ class Browser:
                         if c['id'] not in remaining or c['id'] in selected:
                             continue
                         m=re.fullmatch(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})',c['date'] or '')
-                        if not m or c['video'] or date(*map(int,m.groups())).isoformat()!=remaining[c['id']]:
+                        if not m or date(*map(int,m.groups())).isoformat()!=remaining[c['id']]:
                             raise ValueError('조회한 사진 정보가 변경돼 중단했습니다.')
                         card=self.page.locator('li[data-target="talk"]').filter(has=self.page.locator('input[id="'+c['id']+'"]'))
-                        card.hover()
-                        card.locator('label').click()
+                        box=card.bounding_box()
+                        gallery=self.page.locator('.scroll_talk').bounding_box()
+                        if not box or not gallery or not gallery['y']+24<=box['y']+18<min(890,gallery['y']+gallery['height']):
+                            continue
+                        self.page.mouse.move(box['x']+18,box['y']+18)
+                        label=card.locator('label')
+                        point=label.evaluate("e=>{const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);return r.width&&r.height&&e.contains(hit)?{x,y}:null}")
+                        if not point:
+                            continue
+                        self.page.mouse.click(point['x'],point['y'])
+                        if not card.locator('input').is_checked():
+                            raise ValueError('파일 선택을 확인하지 못해 중단했습니다.')
                         selected.append(c['id'])
                         if len(selected)>=100:
                             break
@@ -246,13 +256,13 @@ class Browser:
                 for fid in selected:
                     remaining.pop(fid)
                 deleted+=len(selected)
-                self.state.update(message=f'사진 {deleted}개 휴지통 이동 처리 중')
+                self.state.update(message=f'사진·동영상 {deleted}개 휴지통 이동 처리 중')
             check=self.scan(r['id'],r['start'],r['end'])
             if set(check)&set(r['files']):
                 raise ValueError('일부 사진이 남아 있습니다. 재조회가 필요합니다.')
         self.plan=[]
         self.state.pop('preview',None)
-        self.state.update(message=f'완료 · 사진 {deleted}개를 휴지통으로 이동했습니다.')
+        self.state.update(message=f'완료 · 사진·동영상 {deleted}개를 휴지통으로 이동했습니다.')
 
     def trash(self):
         self.page.goto(BASE+'/trashcan',wait_until='domcontentloaded')
