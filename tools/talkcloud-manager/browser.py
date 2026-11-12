@@ -138,14 +138,12 @@ class Browser:
         return self.page.locator('li[data-target="talk"]').evaluate_all("""els=>els.map(e=>({id:e.querySelector('input')?.id,date:e.querySelector('.txt_sub')?.textContent.trim(),video:!!e.querySelector('video')||!!e.querySelector('.info_desc')?.textContent.trim(),kind:e.querySelector('.thm_type')?.className})).filter(e=>e.id)""")
 
     def scroll(self):
-        cards=self.page.locator('li[data-target="talk"]')
-        if cards.count():
-            cards.last.scroll_into_view_if_needed()
-            box=cards.last.bounding_box()
-            if box:
-                self.page.mouse.move(min(1270,max(10,box['x']+box['width']/2)),min(890,max(10,box['y']+box['height']/2)))
-        self.page.mouse.wheel(0,650)
-        self.page.wait_for_timeout(900)
+        box=self.page.locator('.scroll_talk').bounding_box()
+        if not box:
+            raise ValueError('사진 목록 영역을 확인할 수 없습니다.')
+        self.page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
+        self.page.mouse.wheel(0,max(100,min(350,int(box['height']/2))))
+        self.page.wait_for_timeout(650)
 
     def scan(self, rid, start, end):
         self.room(rid)
