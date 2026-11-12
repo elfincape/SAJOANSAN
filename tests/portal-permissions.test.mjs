@@ -343,12 +343,20 @@ if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
  result=ctx.employeePermissionSummary(config,{...p,role:'admin'},centers,name);
  assert.equal(result.readScope,'전체 자료 · 미분류 포함');
  result=ctx.employeePermissionSummary({...config,resource:'settings'},{...p,role:'admin'},centers,name);
- assert.equal(result.label,'접근 불가','non-owner admin must not be displayed as permitted for private pages');
+ assert.equal(result.label,'불가','non-owner admin must not be displayed as permitted for private pages');
  result=ctx.employeePermissionSummary(cfg,{...p,active:false},centers,name);
- assert.equal(result.label,'접근 불가');assert.equal(result.reason,'비활성 계정');
+ assert.equal(result.label,'불가');assert.equal(result.reason,'비활성 계정');
  result=ctx.employeePermissionSummary({...config,resource:'tasks',write_rule:{...rule,scope:'own'}},p,centers,name);
  assert.equal(result.readScope,'전체 센터 자료');assert.equal(result.editScope,'안산','different read/write scopes stay separate');
  assert.equal(ctx.permissionTitle({...config,resource:'permissions'}),'직원별 업무 권한');
+ for(const [level,label,read,edit] of [['edit','사용',true,true],['read','조회',true,false],['none','불가',false,false]]){
+  const rule={...config,member_overrides:{[p.id]:{level,scope:'all'}}};
+  const summary=ctx.employeePermissionSummary(rule,p,centers,name);
+  assert.equal(summary.level,level);assert.equal(summary.label,label);
+  assert.equal(summary.read,read);assert.equal(summary.edit,edit);
+ }
+ const inherited=ctx.employeePermissionSummary(config,p,centers,name);
+ assert.equal(inherited.level,'edit');assert.equal(inherited.label,'사용','existing grants display their effective level without an inherit option');
  console.log('PASS employee summary: unclassified denial, OP, fixed restrictions, inactive, distinct read/write scope');
 }
 
@@ -377,6 +385,12 @@ if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
   await actor(2);await assert.rejects(call(10,change(1,{level:'edit',scope:'all'})),/관리자만/);
   await actor(1);const grant=change(1,{level:'edit',scope:'all'});
   const first=await call(10,grant);assert.equal(first.rows[0].result.rules[0].member_overrides[id(2)].level,'edit');
+  const access=async()=>{
+   await db.exec('reset role;');
+   const result=await db.query("select operations_permission_for_actor('routes','read',null,$1) as read, operations_permission_for_actor('routes','edit',null,$1) as edit",[id(2)]);
+   await actor(1);return result.rows[0];
+  };
+  assert.deepEqual(await access(),{read:true,edit:true},'사용 includes both read and edit through actual SQL');
   assert.deepEqual((await call(10,grant)).rows,first.rows,'lost-response retry returns original receipt');
   await assert.rejects(call(10,change(1,{level:'none',scope:'all'})),/이미 사용/);
   await assert.rejects(call(11,change(1,{level:'none',scope:'all'})),/다른 관리자가 업무 권한/);
@@ -385,10 +399,14 @@ if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
   await db.exec('reset role;');
   assert.equal((await db.query("select version from operations_permissions where resource='routes'")).rows[0].version,2,'failed batch is atomic');
   assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,1,'retry creates no second history');
-  await actor(1);await call(14,change(2,{level:'none',scope:'all'}));await call(15,change(3,null));
-  await assert.rejects(call(16,change(4,{level:'edit',scope:'all'}),3,{display_name:'조회 직원',role:'viewer',centers:[]}),/조회 전용 직원/);
+  await actor(1);await call(14,change(2,{level:'none',scope:'all'}));
+  assert.deepEqual(await access(),{read:false,edit:false},'불가 denies reads as well as edits through actual SQL');
+  await call(18,change(3,{level:'read',scope:'all'}));
+  assert.deepEqual(await access(),{read:true,edit:false},'조회 cannot edit through actual SQL');
+  await call(15,change(4,null));
+  await assert.rejects(call(16,change(5,{level:'edit',scope:'all'}),3,{display_name:'조회 직원',role:'viewer',centers:[]}),/조회 전용 직원/);
   await db.exec(`reset role;update user_profiles set active=false where id='${id(1)}';`);
-  await actor(1);await assert.rejects(call(17,change(4,{level:'read',scope:'all'})),/관리자만/);
+  await actor(1);await assert.rejects(call(17,change(5,{level:'read',scope:'all'})),/관리자만/);
   console.log('PASS isolated actual member RPC: admin boundary, atomic save, deny/inherit, role ceiling, stale member/rule, idempotency and history');
  }finally {await db.close();}
 }

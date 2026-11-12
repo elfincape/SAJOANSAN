@@ -243,7 +243,7 @@ function EmployeePermissions({
       </header>
       {person.role === 'admin' && (
         <p className="employee-permission-notice">
-          관리자 기본 권한 · 지정 사용자 전용 기능은 별도 제한
+          관리자 · 지정 사용자 전용 기능은 별도 제한
         </p>
       )}
       {!person.active && (
@@ -335,6 +335,14 @@ function EmployeePermissions({
                     centerName,
                   );
                   const changed = Object.hasOwn(drafts, config.resource);
+                  const level = permission?.level ?? summary.level;
+                  const scopeFor = (nextLevel: MemberPermission['level']) =>
+                    permission?.scope ??
+                    ((nextLevel === 'edit'
+                      ? config.write_rule.scope
+                      : config.read_rule.scope) === 'all'
+                      ? 'all'
+                      : 'own');
                   const editAllowed =
                     person.role === 'editor' ||
                     ['incidents', 'notifications'].includes(config.resource);
@@ -346,13 +354,7 @@ function EmployeePermissions({
                     >
                       <th scope="row">
                         <strong>{permissionTitle(config)}</strong>
-                        <small>
-                          {changed
-                            ? '변경됨'
-                            : permission
-                              ? '직원별 지정'
-                              : '기본 권한'}
-                        </small>
+                        {changed && <small>변경됨</small>}
                       </th>
                       <td data-label="허용 동작">
                         {summary.fixed ? (
@@ -364,34 +366,24 @@ function EmployeePermissions({
                             </span>
                             <select
                               data-permission-level={config.resource}
-                              value={permission?.level ?? 'inherit'}
+                              value={level}
                               disabled={state.busy || stale}
                               onChange={(event) =>
-                                change(
-                                  config,
-                                  event.target.value === 'inherit'
-                                    ? null
-                                    : {
-                                        level: event.target
-                                          .value as MemberPermission['level'],
-                                        scope:
-                                          permission?.scope ??
-                                          (config.read_rule.scope === 'all' &&
-                                          config.write_rule.scope === 'all'
-                                            ? 'all'
-                                            : 'own'),
-                                      },
-                                )
+                                change(config, {
+                                  level: event.target
+                                    .value as MemberPermission['level'],
+                                  scope: scopeFor(
+                                    event.target
+                                      .value as MemberPermission['level'],
+                                  ),
+                                })
                               }
                             >
-                              <option value="inherit">기본 권한 사용</option>
-                              <option value="none">접근 불가</option>
-                              <option value="read">
-                                {summary.actions.read}
-                              </option>
                               <option value="edit" disabled={!editAllowed}>
-                                {summary.actions.edit}
+                                사용
                               </option>
+                              <option value="read">조회</option>
+                              <option value="none">불가</option>
                             </select>
                           </label>
                         )}
@@ -407,20 +399,18 @@ function EmployeePermissions({
                         )}
                       </td>
                       <td data-label="자료 범위">
-                        {!summary.fixed &&
-                        permission &&
-                        permission.level !== 'none' ? (
+                        {!summary.fixed && level !== 'none' ? (
                           <label>
                             <span className="sr-only">
                               {permissionTitle(config)} 자료 범위
                             </span>
                             <select
                               data-permission-scope={config.resource}
-                              value={permission.scope}
+                              value={scopeFor(level)}
                               disabled={state.busy || stale}
                               onChange={(event) =>
                                 change(config, {
-                                  ...permission,
+                                  level,
                                   scope: event.target
                                     .value as MemberPermission['scope'],
                                 })

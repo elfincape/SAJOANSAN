@@ -51,34 +51,6 @@ export function sharedPermission(resource: string) {
   );
 }
 
-export function permissionActions(resource: string, role: string) {
-  if (resource === 'notifications')
-    return { read: '조회', edit: '조회·알림 확인' };
-  if (resource === 'incidents' && role === 'viewer')
-    return { read: '조회', edit: '조회·처리 상태 변경' };
-  if (catalogs.includes(resource))
-    return { read: '조회', edit: '조회·등록·수정·삭제' };
-  if (
-    [
-      'distance_tools',
-      'gimhae_dispatch',
-      'pdf_converter',
-      'straightener',
-      'excel_compare',
-      'pallet_slips',
-      'temperature',
-      'haul',
-      'coupang',
-      'dispatch_parser',
-      'one_top',
-      'charter',
-      'busan',
-    ].includes(resource)
-  )
-    return { read: '열기·조회', edit: '사용·저장' };
-  return { read: '조회', edit: '조회·수정' };
-}
-
 // The SQL resource predicate determines access; feature restrictions are an
 // additional page boundary, never an alternative grant or a data-scope filter.
 export function employeePermissionSummary(
@@ -92,7 +64,6 @@ export function employeePermissionSummary(
     ? '비활성 계정'
     : (restriction ??
       (config.admin_only && person.role !== 'admin' ? '관리자 전용' : null));
-  const actions = permissionActions(config.resource, person.role);
   const shared = sharedPermission(config.resource);
   const overview = reason
     ? { read: false, edit: false }
@@ -122,12 +93,12 @@ export function employeePermissionSummary(
     ...overview,
     reason,
     shared,
-    actions,
-    label: overview.edit
-      ? actions.edit
+    level: overview.edit
+      ? ('edit' as const)
       : overview.read
-        ? actions.read
-        : '접근 불가',
+        ? ('read' as const)
+        : ('none' as const),
+    label: overview.edit ? '사용' : overview.read ? '조회' : '불가',
     readScope: scope('read'),
     editScope: scope('edit'),
     fixed: person.role === 'admin' || !!config.admin_only || !!restriction,
