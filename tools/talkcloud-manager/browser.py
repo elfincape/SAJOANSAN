@@ -75,6 +75,7 @@ class Browser:
             raise ValueError('현재 계정에서 확인한 방만 선택할 수 있습니다.')
         self.page.goto(BASE+rid,wait_until='domcontentloaded')
         self.page.get_by_role('button',name='파일정보',exact=True).wait_for()
+        self.page.locator('main .txt').filter(has_text=re.compile(r'[\d,]+개의 파일\s*/')).wait_for(timeout=30000)
         selected=self.page.locator('a[role="tab"][aria-selected="true"]')
         if selected.get_attribute('href')!=rid or '/search' in self.page.url:
             raise ValueError('채팅방 선택 확인에 실패했습니다. 삭제하지 않습니다.')
@@ -83,7 +84,7 @@ class Browser:
         self.page.goto(BASE+'/photo',wait_until='domcontentloaded')
         self.page.get_by_role('tablist',name='채팅방 목록').wait_for()
         rows=self.page.locator('a[role="tab"][href^="/photo/"]').evaluate_all("els=>els.map(e=>({id:e.getAttribute('href'),name:e.querySelector('.txt_name')?.textContent.trim()||e.textContent.trim()}))")
-        rows=[r for r in rows if re.fullmatch(r'/photo/[a-zA-Z0-9_=-]+',r['id'])]
+        rows=[r for r in rows if re.fullmatch(r'/photo/[a-zA-Z0-9_=-]+',r['id']) and r['id']!='/photo/all' and r['name']!='전체']
         self.known={r['id']:r['name'] for r in rows}
         result=[]
         for r in rows[offset:offset+20]:
@@ -136,7 +137,7 @@ class Browser:
                 return found
             if same>=12:
                 raise ValueError('전체 목록을 불러오지 못했습니다. 다시 조회하세요.')
-            self.state.update(message=f'{self.known[rid]} · {len(seen)}개 확인, 대상 사진 {len(found)}개')
+            self.state.update(message='선택한 방의 사진을 정리하고 있습니다.')
             self.scroll()
         raise ValueError('목록 확인 제한시간을 초과했습니다. 삭제하지 않았습니다.')
 
@@ -152,7 +153,7 @@ class Browser:
             ids=self.scan(r['id'],start,end)
             self.plan.append({'id':r['id'],'start':start,'end':end,'files':ids})
         count=sum(len(r['files']) for r in self.plan)
-        self.state.update(preview={'count':count,'rooms':len(self.plan),'rules':rules},message=f'조회 완료 · 사진 {count}개. 삭제 실행을 누르면 휴지통으로 이동합니다.')
+        self.state.update(message='선택한 기간의 사진을 휴지통으로 이동합니다.')
 
     def delete(self):
         if not self.plan:

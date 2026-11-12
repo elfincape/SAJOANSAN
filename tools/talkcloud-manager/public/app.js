@@ -1,21 +1,21 @@
 const $=id=>document.getElementById(id);
-let rooms=[],offset=0,selection=new Map(),polling=false,busy=false,previewRules=null;
+let rooms=[],offset=0,selection=new Map(),polling=false,busy=false;
 async function api(path,body){const r=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'요청 실패');return data;}
 function say(s){$('status').textContent=s;}
 function dates(){return {mode:$('mode').value,from:$('from').value,to:$('to').value};}
-function changed(){previewRules=null;$('delete').disabled=true;$('summary').textContent=selection.size+'개 방 선택';}
+function changed(){$('delete').disabled=busy||!selection.size||[...selection.values()].some(r=>!r.to||(r.mode==='range'&&!r.from));$('summary').textContent=selection.size+'개 방 선택';}
 function render(){const fragment=document.createDocumentFragment();for(const r of rooms){const tr=document.createElement('tr');const cell=document.createElement('td');const check=document.createElement('input');check.type='checkbox';check.disabled=busy;check.checked=selection.has(r.id);check.setAttribute('aria-label',r.name+' 선택');check.onchange=()=>{check.checked?selection.set(r.id,{id:r.id,name:r.name,...dates()}):selection.delete(r.id);changed();render();};cell.append(check);tr.append(cell);for(const value of [r.name,r.size||'조회 중']){const td=document.createElement('td');td.textContent=value;tr.append(td);}const td=document.createElement('td');const setting=selection.get(r.id);td.textContent=setting?.to?`${setting.mode==='range'?setting.from+' ~ ':setting.mode==='before'?'미만: ':setting.mode==='through'?'까지: ':'하루: '}${setting.to}`:'날짜 미설정';tr.append(td);fragment.append(tr);}$('rooms').replaceChildren(fragment);$('prev').disabled=offset===0||busy;$('next').disabled=rooms.length<20||busy;}
 async function run(action){try{await action();}catch(e){say(e.message);}}
-async function monitor(){if(polling)return;polling=true;try{while(true){const s=await api('state');busy=s.busy;say(s.message);$('logout').hidden=false;$('cancel').hidden=!s.busy;$('login').hidden=s.phase!=='idle';$('workspace').hidden=!s.authenticated;for(const id of ['refresh','preview','apply','all','none','trash-info','empty-trash','mode','from','to'])$(id).disabled=s.busy;if(s.rooms){rooms=s.rooms;render();}if(s.preview&&previewRules===JSON.stringify([...selection.values()])&&previewRules===JSON.stringify(s.preview.rules)){$('summary').textContent=`${s.preview.count}개 사진 · ${s.preview.rooms}개 방`;$('delete').disabled=s.busy||s.preview.count===0;}else $('delete').disabled=true;if(s.trash)$('trash-size').textContent=s.trash;if(s.phase==='failed'){const message=s.message;await api('logout',{});$('login').hidden=false;$('logout').hidden=true;say(message);break;}if(s.phase==='closed')break;await new Promise(r=>setTimeout(r,1500));}}catch(e){say(e.message);}finally{polling=false;}}
+async function monitor(){if(polling)return;polling=true;try{while(true){const s=await api('state');busy=s.busy;say(s.message);$('logout').hidden=false;$('cancel').hidden=!s.busy;$('login').hidden=s.phase!=='idle';$('workspace').hidden=!s.authenticated;for(const id of ['refresh','apply','all','none','trash-info','empty-trash','mode','from','to'])$(id).disabled=s.busy;if(s.rooms){rooms=s.rooms;render();}changed();if(s.trash)$('trash-size').textContent=s.trash;if(s.phase==='failed'){const message=s.message;await api('logout',{});$('login').hidden=false;$('logout').hidden=true;say(message);break;}if(s.phase==='closed')break;await new Promise(r=>setTimeout(r,1500));}}catch(e){say(e.message);$('login').hidden=false;$('workspace').hidden=true;$('logout').hidden=true;}finally{polling=false;}}
 $('login-form').onsubmit=e=>{e.preventDefault();run(async()=>{const password=$('password').value;$('password').value='';await api('login',{account:$('account').value,password});monitor();});};
-$('from').onchange=changed;$('to').onchange=changed;
-$('mode').onchange=()=>{$('from-label').hidden=$('mode').value!=='range';changed();};
+function applyDates(){for(const [id,r] of selection)selection.set(id,{...r,...dates()});changed();render();}
+$('from').onchange=applyDates;$('to').onchange=applyDates;
+$('mode').onchange=()=>{$('from-label').hidden=$('mode').value!=='range';applyDates();};
 $('apply').onclick=()=>{for(const [id,r] of selection)selection.set(id,{...r,...dates()});changed();render();};
 $('all').onclick=()=>{for(const r of rooms)selection.set(r.id,{id:r.id,name:r.name,...dates()});changed();render();};$('none').onclick=()=>{selection.clear();changed();render();};
 async function load(){await api('rooms',{offset});}
 $('refresh').onclick=()=>run(load);$('prev').onclick=()=>run(async()=>{offset=Math.max(0,offset-20);await load();});$('next').onclick=()=>run(async()=>{offset+=20;await load();});
-$('preview').onclick=()=>run(async()=>{previewRules=JSON.stringify([...selection.values()]);await api('preview',{rooms:[...selection.values()]});$('delete').disabled=true;});
-$('delete').onclick=()=>run(async()=>{$('delete').disabled=true;await api('delete',{rooms:[...selection.values()]});previewRules=null;});
+$('delete').onclick=()=>run(async()=>{busy=true;changed();await api('delete',{rooms:[...selection.values()]});});
 $('cancel').onclick=()=>run(()=>api('cancel',{}));$('logout').onclick=()=>run(async()=>{await api('logout',{});location.reload();});
 $('trash-info').onclick=()=>run(()=>api('trash',{}));$('empty-trash').onclick=()=>{$('confirm').showModal();};$('confirm').onclose=()=>{if($('confirm').returnValue==='yes')run(()=>api('empty-trash',{confirm:true}));};
 run(async()=>{await api('state');monitor();});

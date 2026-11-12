@@ -4,9 +4,11 @@ import queue
 import secrets
 import threading
 import time
+import traceback
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 from browser import Browser, bounds
 
 ORIGIN=os.environ['PUBLIC_ORIGIN'].rstrip('/')
@@ -47,8 +49,9 @@ class Session:
                             account=None
                     elif browser and self.state['authenticated']:
                         if action=='rooms': browser.rooms(payload['offset'])
-                        elif action=='preview': browser.preview(payload['rooms'])
-                        elif action=='delete': browser.delete()
+                        elif action=='delete':
+                            browser.preview(payload['rooms'])
+                            browser.delete()
                         elif action=='trash': browser.trash()
                         elif action=='empty-trash': browser.empty_trash()
                 except ValueError as error:
@@ -58,8 +61,10 @@ class Session:
                     self.state.pop('preview',None)
                     if not self.state['authenticated']:
                         self.state['phase']='failed'
-                except Exception:
-                    self.state.update(message='톡클라우드 화면 처리에 실패했습니다. 대상 목록을 다시 조회하세요.')
+                except Exception as error:
+                    frame=traceback.extract_tb(error.__traceback__)[-1]
+                    print(f'{action}: {type(error).__name__} at {frame.name}:{frame.lineno}',flush=True)
+                    self.state.update(message='톡클라우드 화면 처리에 실패했습니다. 다시 시도해 주세요.')
                     if browser: browser.plan=[]
                     self.state.pop('preview',None)
                     if not self.state['authenticated']:
@@ -108,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def do_GET(self):
+        self.path=urlsplit(self.path).path
         if self.path=='/health': return self.send(200,{'ok':True})
         if self.path=='/api/availability': return self.send(200,{'available':session is None})
         if self.path=='/api/state':
@@ -153,16 +159,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200,{'ok':True})
             if s.state['busy']: return self.send(409,{'error':'현재 작업이 끝난 후 실행하세요.'})
             if not s.state['authenticated']: return self.send(401,{'error':'로그인을 완료하세요.'})
-            if action not in ('rooms','preview','delete','trash','empty-trash'): return self.send(404,{'error':'없는 작업입니다.'})
+            if action not in ('rooms','delete','trash','empty-trash'): return self.send(404,{'error':'없는 작업입니다.'})
             try:
-                if action=='preview':
+                if action=='delete':
                     if not isinstance(body.get('rooms'),list) or not 1<=len(body['rooms'])<=20: raise ValueError()
                     for rule in body['rooms']: bounds(rule)
                 if action=='rooms':
                     offset=body.get('offset',0)
                     if type(offset)!=int or offset<0 or offset>10000: raise ValueError()
-                if action=='delete' and body.get('rooms')!=s.state.get('preview',{}).get('rules'):
-                    raise ValueError()
                 if action=='empty-trash' and body.get('confirm') is not True: raise ValueError()
             except Exception:
                 return self.send(400,{'error':'방과 날짜 조건을 확인하세요.'})

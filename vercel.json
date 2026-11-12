@@ -3,6 +3,13 @@
   "installCommand": "npm ci --omit=dev && cd app && npm ci",
   "buildCommand": "cd app && npm run build",
   "outputDirectory": "app/dist",
+  "redirects": [
+    {
+      "source": "/admin/talkcloud",
+      "destination": "https://211.233.219.199:8443/",
+      "permanent": false
+    }
+  ],
   "functions": {
     "api/erp-course-catalog.mjs": {
       "maxDuration": 60
