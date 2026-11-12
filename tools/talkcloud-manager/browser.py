@@ -81,7 +81,7 @@ class Browser:
                     pass
                 if refresh:
                     challenge_version+=1
-                    self.state['challenge_image']=self.page.screenshot(mask=[self.page.locator('input[name="password"]'),self.page.locator('input[name="loginId"]')])
+                    self.state['challenge_image']=self.page.screenshot(style='input[name="password"],input[name="loginId"]{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}')
                     self.state['challenge']={'version':challenge_version,'width':1280,'height':900}
                 self.state['message']='카카오 보안문제를 아래 화면에서 직접 풀어 주세요. 완료하면 로그인이 이어집니다.'
             else:
