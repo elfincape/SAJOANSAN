@@ -68,12 +68,6 @@ class Session:
                     frames=traceback.extract_tb(error.__traceback__)
                     frame=next((f for f in reversed(frames) if f.filename.endswith('browser.py')),frames[-1])
                     print(f'{action}: {type(error).__name__} at {frame.name}:{frame.lineno}',flush=True)
-                    if browser and action=='delete':
-                        try:
-                            browser.page.screenshot(path='/opt/talkcloud/last-error.png')
-                            print(str(error).split('Call log:')[0][:700],flush=True)
-                        except Exception:
-                            pass
                     self.state.update(message='톡클라우드 화면 처리에 실패했습니다. 다시 시도해 주세요.')
                     if browser: browser.plan=[]
                     self.state.pop('preview',None)
