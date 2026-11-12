@@ -1,0 +1,175 @@
+import json
+import os
+import queue
+import secrets
+import threading
+import time
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from browser import Browser, bounds
+
+ORIGIN=os.environ['PUBLIC_ORIGIN'].rstrip('/')
+ROOT=Path(__file__).parent/'public'
+lock=threading.RLock()
+session=None
+
+class Session:
+    def __init__(self):
+        self.token=secrets.token_urlsafe(32)
+        self.state={'phase':'idle','authenticated':False,'busy':False,'message':'연결 대기'}
+        self.commands=queue.Queue(maxsize=1)
+        self.cancel=threading.Event()
+        self.created=self.touched=time.monotonic()
+        self.closed=False
+        threading.Thread(target=self.worker,daemon=True).start()
+
+    def worker(self):
+        global session
+        browser=None
+        try:
+            while not self.closed:
+                if time.monotonic()-self.touched>600 or time.monotonic()-self.created>3600:
+                    break
+                try:
+                    action,payload=self.commands.get(timeout=1)
+                except queue.Empty:
+                    continue
+                try:
+                    if action=='login':
+                        browser=Browser(self.state,self.cancel)
+                        account=payload.pop('account')
+                        password=payload.pop('password')
+                        try:
+                            browser.login(account,password)
+                        finally:
+                            password=None
+                            account=None
+                    elif browser and self.state['authenticated']:
+                        if action=='rooms': browser.rooms(payload['offset'])
+                        elif action=='preview': browser.preview(payload['rooms'])
+                        elif action=='delete': browser.delete()
+                        elif action=='trash': browser.trash()
+                        elif action=='empty-trash': browser.empty_trash()
+                except ValueError as error:
+                    self.state.update(message=str(error))
+                    if browser:
+                        browser.plan=[]
+                    self.state.pop('preview',None)
+                    if not self.state['authenticated']:
+                        self.state['phase']='failed'
+                except Exception:
+                    self.state.update(message='톡클라우드 화면 처리에 실패했습니다. 대상 목록을 다시 조회하세요.')
+                    if browser: browser.plan=[]
+                    self.state.pop('preview',None)
+                    if not self.state['authenticated']:
+                        self.state['phase']='failed'
+                finally:
+                    payload.clear()
+                    self.state['busy']=False
+                    self.touched=time.monotonic()
+        finally:
+            if browser:
+                try: browser.close()
+                except Exception: pass
+            self.state.update(phase='closed',authenticated=False,busy=False)
+            self.closed=True
+            with lock:
+                if session is self: session=None
+
+class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(10)
+
+    def log_message(self,*args):
+        pass
+
+    def send(self,status,body,content='application/json; charset=utf-8',cookie=None):
+        if isinstance(body,dict): body=json.dumps(body,ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header('Content-Type',content)
+        self.send_header('Content-Length',str(len(body)))
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('Referrer-Policy','no-referrer')
+        self.send_header('Content-Security-Policy',"default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+        if cookie: self.send_header('Set-Cookie',cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def owner(self):
+        cookie=SimpleCookie()
+        try: cookie.load(self.headers.get('Cookie',''))
+        except Exception: return None
+        token=cookie.get('tc_session')
+        if session and token and secrets.compare_digest(token.value,session.token):
+            return session
+        return None
+
+    def do_GET(self):
+        if self.path=='/health': return self.send(200,{'ok':True})
+        if self.path=='/api/availability': return self.send(200,{'available':session is None})
+        if self.path=='/api/state':
+            with lock:
+                s=self.owner()
+                if not s: return self.send(401,{'error':'다른 사용자가 작업 중입니다.' if session else '계정을 입력해 연결하세요.'})
+                return self.send(200,dict(s.state))
+        files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
+        if self.path not in files: return self.send(404,{'error':'없는 경로입니다.'})
+        name,mime=files[self.path]
+        self.send(200,(ROOT/name).read_bytes(),mime)
+
+    def do_POST(self):
+        global session
+        if self.headers.get('Origin')!=ORIGIN:
+            return self.send(403,{'error':'허용되지 않은 요청입니다.'})
+        if self.headers.get('Content-Type','').split(';')[0]!='application/json':
+            return self.send(415,{'error':'잘못된 요청 형식입니다.'})
+        try:
+            n=int(self.headers.get('Content-Length','0'))
+            if not 0<n<=16384: raise ValueError()
+            body=json.loads(self.rfile.read(n))
+            if not isinstance(body,dict): raise ValueError()
+        except Exception:
+            return self.send(400,{'error':'요청 내용을 확인하세요.'})
+        action=self.path.removeprefix('/api/')
+        with lock:
+            s=self.owner()
+            if action=='login':
+                if session: return self.send(409,{'error':'현재 한 사용자가 연결 중입니다. 작업 종료 후 다시 연결하세요.'})
+                if not isinstance(body.get('account'),str) or not isinstance(body.get('password'),str) or not 1<=len(body['account'])<=254 or not 1<=len(body['password'])<=256:
+                    return self.send(400,{'error':'계정과 비밀번호를 확인하세요.'})
+                body={'account':body['account'],'password':body['password']}
+                s=session=Session()
+                s.state.update(phase='connecting',busy=True,message='카카오 계정에 연결 중입니다.')
+                s.commands.put(('login',body))
+                return self.send(202,{'ok':True},cookie='tc_session='+s.token+'; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600')
+            if not s: return self.send(401,{'error':'로그인 연결이 필요합니다.'})
+            s.touched=time.monotonic()
+            if action in ('logout','cancel'):
+                s.cancel.set()
+                if action=='logout': s.closed=True
+                return self.send(200,{'ok':True})
+            if s.state['busy']: return self.send(409,{'error':'현재 작업이 끝난 후 실행하세요.'})
+            if not s.state['authenticated']: return self.send(401,{'error':'로그인을 완료하세요.'})
+            if action not in ('rooms','preview','delete','trash','empty-trash'): return self.send(404,{'error':'없는 작업입니다.'})
+            try:
+                if action=='preview':
+                    if not isinstance(body.get('rooms'),list) or not 1<=len(body['rooms'])<=20: raise ValueError()
+                    for rule in body['rooms']: bounds(rule)
+                if action=='rooms':
+                    offset=body.get('offset',0)
+                    if type(offset)!=int or offset<0 or offset>10000: raise ValueError()
+                if action=='delete' and body.get('rooms')!=s.state.get('preview',{}).get('rules'):
+                    raise ValueError()
+                if action=='empty-trash' and body.get('confirm') is not True: raise ValueError()
+            except Exception:
+                return self.send(400,{'error':'방과 날짜 조건을 확인하세요.'})
+            s.cancel.clear()
+            s.state['busy']=True
+            s.commands.put((action,body))
+            self.send(202,{'ok':True})
+
+if __name__=='__main__':
+    ThreadingHTTPServer(('127.0.0.1',19220),Handler).serve_forever()

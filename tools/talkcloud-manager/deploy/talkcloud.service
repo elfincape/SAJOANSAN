@@ -1,0 +1,21 @@
+[Unit]
+Description=Talkcloud photo manager
+After=network-online.target
+[Service]
+User=talkcloud
+Group=talkcloud
+WorkingDirectory=/opt/talkcloud
+Environment=PUBLIC_ORIGIN=https://211.233.219.199:8443
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/talkcloud/browsers
+ExecStart=/opt/talkcloud/venv/bin/python /opt/talkcloud/server.py
+Restart=on-failure
+MemoryMax=550M
+TasksMax=160
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/talkcloud
+[Install]
+WantedBy=multi-user.target
