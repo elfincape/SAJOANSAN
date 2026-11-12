@@ -2,7 +2,7 @@ import re
 import time
 import queue
 from datetime import date, timedelta
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE = 'https://talkcloud.kakao.com'
 
@@ -257,7 +257,11 @@ class Browser:
 
     def trash(self):
         self.page.goto(BASE+'/trashcan',wait_until='domcontentloaded')
-        self.page.get_by_role('heading',name='휴지통',exact=True).wait_for()
+        self.page.locator('main').wait_for()
+        try:
+            self.page.wait_for_load_state('networkidle',timeout=10000)
+        except PlaywrightTimeoutError:
+            pass
         text=self.page.locator('main').inner_text()
         size=re.search(r'/\s*([\d.]+\s*[KMGT]?B)',text)
         self.state.update(trash=size.group(1) if size else '비어 있거나 용량 확인 불가')

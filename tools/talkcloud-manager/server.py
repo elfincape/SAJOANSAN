@@ -58,11 +58,11 @@ class Session:
                             completed=self.state['message']
                             try:
                                 browser.trash()
-                                browser.page.wait_for_function("() => /개의 파일|휴지통이 비어|파일이 없/.test(document.querySelector('main')?.innerText || '')",timeout=15000)
                                 self.state['result_image']=browser.page.screenshot()
                                 self.state['result_version']=time.time_ns()
                                 self.state['message']=completed+' · 5분간 미사용 시 연결이 종료됩니다.'
-                            except Exception:
+                            except Exception as error:
+                                print('Trash capture: '+type(error).__name__,flush=True)
                                 self.state['message']=completed+' 휴지통 화면을 가져오지 못했습니다. 5분간 미사용 시 연결이 종료됩니다.'
                         elif action=='trash': browser.trash()
                         elif action=='empty-trash': browser.empty_trash()
