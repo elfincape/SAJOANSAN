@@ -53,6 +53,9 @@ if (parent === window) location.replace('/admin/talkcloud.html');
 new ResizeObserver(notifyFrame).observe(document.querySelector('main'));
 function syncTheme(){const style=parent.getComputedStyle(parent.document.documentElement);for(const name of ['--theme-text','--theme-muted','--theme-panel','--theme-border','--theme-border-soft','--theme-hover','--theme-accent','--theme-danger','--theme-danger-bg','--ean-control-radius','--ean-control-fill','--ean-popup-fill','--ean-surface','--ean-table-head','--ean-shadow'])document.documentElement.style.setProperty(name,style.getPropertyValue(name));document.documentElement.style.colorScheme=style.colorScheme;}
 syncTheme();
+// Reuse the same-origin workspace's loaded font faces; iframe CSS does not inherit them.
+document.documentElement.style.fontFamily=parent.getComputedStyle(parent.document.body).fontFamily;
+parent.document.fonts.forEach(face=>{if(face.family.includes('Pretendard'))document.fonts.add(face);});
 new MutationObserver(syncTheme).observe(parent.document.documentElement,{attributes:true,attributeFilter:['class','data-theme','style']});
 
 let lastActivity=0,trailingActivity;

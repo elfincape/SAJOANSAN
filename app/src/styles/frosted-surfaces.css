@@ -45,6 +45,38 @@
   }
 
   /* Blur belongs to the few floating surfaces, never to text, rows or scrolling cells. */
+  html[data-theme] body.workspace-ui #modal-root > .ean-modal-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-theme]
+    body.workspace-ui
+    dialog:is(
+      #edit-dialog,
+      #dispatch-edit-dialog,
+      #gm-preview-dialog,
+      #gm-fixed-dialog,
+      [data-portal-motion]
+    ),
+  html[data-theme] body.workspace-ui .ean-rail-tooltip {
+    background: var(--ean-popup-fill);
+  }
+  html[data-theme]
+    body.workspace-ui
+    :is(
+      #gm-app,
+      #edit-dialog,
+      #dispatch-edit-dialog,
+      #gm-preview-dialog,
+      #gm-fixed-dialog,
+      dialog[data-portal-motion]
+    )
+    :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+    background-color: var(--ean-control-fill);
+    color: var(--theme-text);
+    border-color: transparent;
+    font-variant-numeric: tabular-nums;
+  }
   html[data-theme]
     body.workspace-ui:is(
       .app-shell,
