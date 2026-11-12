@@ -51,13 +51,18 @@ function Content() {
     return () => { window.removeEventListener('message', update); setControlsDisabled(false); };
   }, [setControlsDisabled]);
   useEffect(() => {
+    let trailing: ReturnType<typeof setTimeout> | undefined;
     function activity() {
-      if (!active.current || Date.now() - lastActivity.current < 15000) return;
+      if (!active.current) return;
+      if (Date.now() - lastActivity.current < 15000) {
+        if (!trailing) trailing = setTimeout(() => { trailing = undefined; activity(); }, 15000);
+        return;
+      }
       lastActivity.current = Date.now();
       void host.talkcloudRequest?.('activity', {}).catch(() => {});
     }
     for (const type of ['pointerdown', 'keydown', 'wheel']) window.addEventListener(type, activity, { passive: true });
-    return () => { for (const type of ['pointerdown', 'keydown', 'wheel']) window.removeEventListener(type, activity); };
+    return () => { clearTimeout(trailing); for (const type of ['pointerdown', 'keydown', 'wheel']) window.removeEventListener(type, activity); };
   }, []);
   useEffect(() => {
     if (!resultVersion) { setResultImage(''); return; }

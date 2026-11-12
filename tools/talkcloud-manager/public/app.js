@@ -42,7 +42,7 @@ $('delete').onclick=()=>run(async()=>{busy=true;changed();await api('delete',{ro
 $('cancel').onclick=()=>run(()=>api('cancel',{}));$('logout').onclick=()=>run(async()=>{await api('logout',{});location.reload();});
 run(async()=>{try{await api('state');monitor();}catch(e){say(e.message);const s=await api('availability');$('login').hidden=!s.available;$('qr-login').disabled=!s.available;}});
 
-setInterval(async()=>{if(polling)return;try{const s=await api('availability');$('qr-login').disabled=!s.available;if(!s.available){$('login').hidden=true;say('다른 사용자가 작업 중입니다.');}else{$('login').hidden=false;}}catch{}},5000);
+setInterval(async()=>{if(polling)return;try{const s=await api('availability');if(polling)return;$('qr-login').disabled=!s.available;if(!s.available){$('login').hidden=true;say('다른 사용자가 작업 중입니다.');}else{$('login').hidden=false;}}catch{}},5000);
 
 
 $('challenge-refresh').onclick=()=>run(()=>api('verification',{kind:'refresh'}));
@@ -55,6 +55,6 @@ function syncTheme(){const style=parent.getComputedStyle(parent.document.documen
 syncTheme();
 new MutationObserver(syncTheme).observe(parent.document.documentElement,{attributes:true,attributeFilter:['class','data-theme','style']});
 
-let lastActivity=0;
-function activity(){if(!authenticated||busy||Date.now()-lastActivity<15000)return;lastActivity=Date.now();void api('activity',{}).catch(()=>{});}
+let lastActivity=0,trailingActivity;
+function activity(){if(!authenticated||busy)return;if(Date.now()-lastActivity<15000){if(!trailingActivity)trailingActivity=setTimeout(()=>{trailingActivity=undefined;activity();},15000);return;}lastActivity=Date.now();void api('activity',{}).catch(()=>{});}
 for(const type of ['pointerdown','keydown','wheel'])addEventListener(type,activity,{passive:true});
