@@ -117,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ('/api/state','/api/challenge'):
             with lock:
                 s=self.owner()
-                if not s: return self.send(401,{'error':'다른 사용자가 작업 중입니다.' if session else '계정을 입력해 연결하세요.'})
+                if not s: return self.send(401,{'error':'다른 사용자가 작업 중입니다.' if session else '카카오톡 QR로 연결하세요.'})
                 if self.path=='/api/challenge':
                     frame=s.state.get('challenge_image')
                     return self.send(200,frame,'image/png') if frame else self.send(404,{'error':'보안문제가 없습니다.'})
