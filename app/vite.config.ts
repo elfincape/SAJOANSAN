@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
 import { PAGE_PATHS, PAGE_TITLES } from './src/page-paths.ts';
@@ -10,6 +11,10 @@ export default defineConfig({
       name: 'legacy-html-paths',
       enforce: 'post',
       generateBundle(_options, bundle) {
+        for (const name of ['index.html', 'app.js', 'style.css']) {
+          this.emitFile({ type: 'asset', fileName: 'talkcloud/' + name,
+            source: readFileSync(new URL('../tools/talkcloud-manager/public/' + name, import.meta.url), 'utf8') });
+        }
         const index = bundle['index.html'];
         if (!index || index.type !== 'asset')
           this.error('기본 HTML 빌드 결과가 없습니다.');

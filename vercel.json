@@ -6,9 +6,12 @@
   "redirects": [
     {
       "source": "/admin/talkcloud",
-      "destination": "https://211.233.219.199:8443/",
+      "destination": "/admin/talkcloud.html",
       "permanent": false
     }
+  ],
+  "rewrites": [
+    { "source": "/api/talkcloud/:action", "destination": "https://211.233.219.199:8443/api/:action" }
   ],
   "functions": {
     "api/erp-course-catalog.mjs": {

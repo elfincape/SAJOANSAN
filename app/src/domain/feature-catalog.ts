@@ -20,9 +20,9 @@ export const FEATURE_CATALOG = Object.freeze(
   ([
     {
       id: 'talkcloud',
-      href: '/admin/talkcloud',
+      href: '/admin/talkcloud.html',
       title: '톡클라우드 사진·동영상 정리',
-      desc: '카카오 계정 연결 · 채팅방과 기간별 사진·동영상 정리',
+      desc: '카카오톡 QR 연결 · 채팅방과 기간별 사진·동영상 정리',
       category: 'documents',
       navigationScope: 'shared',
       fixed: true,

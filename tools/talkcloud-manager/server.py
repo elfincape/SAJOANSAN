@@ -7,12 +7,10 @@ import time
 import traceback
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import urlsplit
 from browser import Browser, bounds
 
 ORIGIN=os.environ['PUBLIC_ORIGIN'].rstrip('/')
-ROOT=Path(__file__).parent/'public'
 lock=threading.RLock()
 session=None
 
@@ -41,13 +39,7 @@ class Session:
                 try:
                     if action=='login':
                         browser=Browser(self.state,self.cancel,self.verification)
-                        account=payload.pop('account')
-                        password=payload.pop('password')
-                        try:
-                            browser.login(account,password,payload.get('method','password'))
-                        finally:
-                            password=None
-                            account=None
+                        browser.login()
                     elif browser and self.state['authenticated']:
                         if action=='rooms': browser.rooms(payload['offset'])
                         elif action=='delete':
@@ -130,10 +122,7 @@ class Handler(BaseHTTPRequestHandler):
                     frame=s.state.get('challenge_image')
                     return self.send(200,frame,'image/png') if frame else self.send(404,{'error':'보안문제가 없습니다.'})
                 return self.send(200,{key:value for key,value in s.state.items() if key!='challenge_image'})
-        files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
-        if self.path not in files: return self.send(404,{'error':'없는 경로입니다.'})
-        name,mime=files[self.path]
-        self.send(200,(ROOT/name).read_bytes(),mime)
+        return self.send(404,{'error':'관리허브에서 이용하세요.'})
 
     def do_POST(self):
         global session
@@ -153,16 +142,12 @@ class Handler(BaseHTTPRequestHandler):
             s=self.owner()
             if action=='login':
                 if session: return self.send(409,{'error':'현재 한 사용자가 연결 중입니다. 작업 종료 후 다시 연결하세요.'})
-                if body.get('method')=='qr':
-                    body={'method':'qr','account':'','password':''}
-                elif not isinstance(body.get('account'),str) or not isinstance(body.get('password'),str) or not 1<=len(body['account'])<=254 or not 1<=len(body['password'])<=256:
-                    return self.send(400,{'error':'계정과 비밀번호를 확인하세요.'})
-                else:
-                    body={'method':'password','account':body['account'],'password':body['password']}
+                if body != {'method':'qr'}:
+                    return self.send(400,{'error':'카카오톡 QR로 연결하세요.'})
                 s=session=Session()
                 s.state.update(phase='connecting',busy=True,message='카카오 계정에 연결 중입니다.')
                 s.commands.put(('login',body))
-                return self.send(202,{'ok':True},cookie='tc_session='+s.token+'; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600')
+                return self.send(202,{'ok':True},cookie='tc_session='+s.token+'; Secure; HttpOnly; SameSite=Strict; Path=/api/talkcloud; Max-Age=3600')
             if not s: return self.send(401,{'error':'로그인 연결이 필요합니다.'})
             s.touched=time.monotonic()
             if action in ('logout','cancel'):
@@ -173,8 +158,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not s.state.get('challenge') or s.state['authenticated']:
                     return self.send(409,{'error':'현재 카카오 로그인 확인 단계가 아닙니다.'})
                 kind=body.get('kind')
-                valid=(kind=='click' and type(body.get('x')) is int and type(body.get('y')) is int and 0<=body['x']<1280 and 0<=body['y']<900) or (kind=='text' and isinstance(body.get('text'),str) and 0<len(body['text'])<=256) or (kind=='key' and body.get('key') in ('Enter','Backspace','Tab'))
-                if not valid and kind!='refresh': return self.send(400,{'error':'입력 내용을 확인하세요.'})
+                if kind!='refresh': return self.send(400,{'error':'QR 화면 갱신만 지원합니다.'})
                 try: s.verification.put_nowait(body)
                 except queue.Full: return self.send(409,{'error':'앞선 입력을 처리하고 있습니다.'})
                 return self.send(202,{'ok':True})

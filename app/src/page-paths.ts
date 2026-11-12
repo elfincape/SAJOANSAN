@@ -1,4 +1,5 @@
 export const PAGE_PATHS = {
+  '/admin/talkcloud.html': 'Talkcloud',
   '/login.html': 'Login',
   '/portal/': 'Portal',
   '/portal/index.html': 'Portal',
@@ -44,6 +45,7 @@ export const PAGE_TITLES: Record<
   (typeof PAGE_PATHS)[keyof typeof PAGE_PATHS],
   string
 > = {
+  Talkcloud: '톡클라우드 사진·동영상 정리 · 관리 허브',
   Login: '로그인 · EAN',
   Portal: '업무 포털 · EAN',
   Operations: '운영 업무 · 관리 허브',

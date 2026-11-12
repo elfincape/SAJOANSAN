@@ -46,17 +46,11 @@ class Browser:
         finally:
             self.pw.stop()
 
-    def login(self, account, password, method='password'):
+    def login(self):
         self.page.goto('https://accounts.kakao.com/login/?continue=https://talkcloud.kakao.com/#login', wait_until='domcontentloaded')
-        if method=='qr':
-            self.page.get_by_role('button',name='QR코드 로그인',exact=True).click()
-            self.page.wait_for_url('https://accounts.kakao.com/qr_login/**')
-            self.page.locator('canvas').wait_for()
-        else:
-            self.page.locator('input[name="loginId"]').fill(account)
-            self.page.locator('input[name="password"]').fill(password)
-            self.page.get_by_role('button', name='로그인', exact=True).click()
-        password = None
+        self.page.get_by_role('button',name='QR코드 로그인',exact=True).click()
+        self.page.wait_for_url('https://accounts.kakao.com/qr_login/**')
+        self.page.locator('canvas').wait_for()
         self.state.update(phase='auth', message='카카오 로그인 결과를 확인하고 있습니다.')
         deadline = time.monotonic()+600
         challenge_version=0
@@ -77,9 +71,6 @@ class Browser:
                 refresh=self.state.get('challenge',{}).get('mode')!=mode
                 try:
                     action=self.verification.get_nowait()
-                    if action['kind']=='click': self.page.mouse.click(action['x'],action['y'])
-                    elif action['kind']=='text': self.page.keyboard.insert_text(action['text'])
-                    elif action['kind']=='key': self.page.keyboard.press(action['key'])
                     action.clear()
                     self.page.wait_for_timeout(700)
                     refresh=True

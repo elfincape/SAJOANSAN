@@ -5,7 +5,7 @@ After=network-online.target
 User=talkcloud
 Group=talkcloud
 WorkingDirectory=/opt/talkcloud
-Environment=PUBLIC_ORIGIN=https://211.233.219.199:8443
+Environment=PUBLIC_ORIGIN=https://sajoansan.vercel.app
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/talkcloud/browsers
 ExecStart=/opt/talkcloud/venv/bin/python /opt/talkcloud/server.py
 Restart=on-failure
