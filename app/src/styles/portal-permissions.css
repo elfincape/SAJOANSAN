@@ -8,6 +8,61 @@
 .employee-permission-editor {
   min-width: 0;
 }
+.employee-permission-directory {
+  position: sticky;
+  top: calc(var(--app-header-height) + 20px);
+  max-height: calc(100dvh - var(--app-header-height) - 40px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.employee-permission-toolbar,
+.employee-permission-save-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.employee-permission-toolbar {
+  margin: 20px 0;
+}
+.employee-permission-toolbar > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.employee-permission-workspace .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.employee-permission-toolbar > label:first-child {
+  flex: 1;
+}
+.employee-permission-toolbar input[type='search'] {
+  width: 100%;
+  max-width: 340px;
+}
+.employee-permission-table tr[data-changed='true'] {
+  box-shadow: inset 2px 0 var(--theme-text);
+}
+.permission-simulation-details {
+  margin-top: 24px;
+}
+.permission-simulation-details summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+.permission-simulation-details small {
+  display: block;
+  color: var(--theme-muted);
+}
 .employee-permission-list-heading {
   display: flex;
   align-items: baseline;
@@ -70,6 +125,7 @@ html[data-theme] body.portal-shell .employee-permission-people > button {
 }
 html[data-theme] body.portal-shell .employee-permission-people > button:hover {
   background: var(--theme-hover);
+  border-radius: 10px;
 }
 html[data-theme]
   body.portal-shell
@@ -155,7 +211,7 @@ html[data-theme]
   body.portal-shell
   .employee-permission-category[data-state='active'] {
   color: var(--theme-selected-text);
-  background: transparent;
+  background: var(--theme-selected);
 }
 .employee-permission-table {
   min-width: 0;
@@ -253,9 +309,9 @@ html[data-theme]
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
-  .employee-permission-people,
-  .employee-permission-list-heading {
-    display: none;
+  .employee-permission-directory {
+    position: static;
+    max-height: 220px;
   }
   .employee-permission-mobile-select {
     display: grid;

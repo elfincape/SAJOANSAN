@@ -1,7 +1,8 @@
-import { MentionText } from './PortalMentions';
-import { effectivePermission } from '../../domain/portal-permissions';
+import {
+  employeePermissionSummary,
+  permissionTitle,
+} from '../../domain/employee-permissions';
 import type { PermissionConfig, PortalMember } from '../../domain/portal-types';
-import { resourceFeatureRestriction } from '../../domain/feature-catalog';
 import { usePortal } from './PortalStore';
 export function PortalPermissionPreview({
   rules,
@@ -11,57 +12,54 @@ export function PortalPermissionPreview({
   person: Pick<PortalMember, 'active' | 'role' | 'centers'> &
     Partial<Pick<PortalMember, 'id'>>;
 }) {
-  const { state, centerName } = usePortal(),
-    centers = state.context?.centers ?? [];
+  const { state, centerName } = usePortal();
   return (
-    <>
-      <h3>적용 권한 미리보기</h3>
-      <p>
-        역할·담당 센터와 직원별 업무 설정을 적용한 결과 · 저장 전 미반영 · 개별
-        기록 제한 별도
-      </p>
+    <details className="permission-simulation-details">
+      <summary>역할·담당 범위 변경 후 권한 확인</summary>
+      <p>저장 전 미리보기 · 업무별 설정은 직원별 업무 권한에서 변경합니다.</p>
       <div className="permission-preview-table">
         <table>
           <thead>
             <tr>
-              <th>페이지·업무</th>
-              {centers.map((c) => (
-                <th key={c.code}>
-                  <MentionText>{centerName(c.code)}</MentionText>
-                </th>
-              ))}
+              <th scope="col">업무</th>
+              <th scope="col">허용 동작</th>
+              <th scope="col">자료 범위</th>
             </tr>
           </thead>
           <tbody>
-            {rules.map((config) => (
-              <tr key={config.resource}>
-                <th>
-                  <MentionText>{config.title}</MentionText>
-                </th>
-                {centers.map((c) => {
-                  const access = effectivePermission(config, person, c.code);
-                  const restriction = resourceFeatureRestriction(config.resource, person);
-                  return (
-                    <td key={c.code}>
-                      <MentionText>
-                        {restriction ?? (access.edit
-                          ? config.resource === 'notifications'
-                            ? '알림 확인'
-                            : config.resource === 'incidents'
-                              ? '열람·처리 상태 변경'
-                              : '열람·수정'
-                          : access.read
-                            ? '열람 전용'
-                            : '접근 불가')}
-                      </MentionText>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {rules.map((config) => {
+              const summary = employeePermissionSummary(
+                config,
+                person,
+                state.context?.centers ?? [],
+                centerName,
+              );
+              return (
+                <tr key={config.resource}>
+                  <th scope="row">{permissionTitle(config)}</th>
+                  <td>
+                    {summary.label}
+                    {summary.reason && (
+                      <small>
+                        {summary.reason === '본인 전용'
+                          ? '지정 사용자 전용'
+                          : summary.reason}
+                      </small>
+                    )}
+                  </td>
+                  <td>
+                    {summary.readScope}
+                    {summary.edit &&
+                      summary.editScope !== summary.readScope && (
+                        <small>수정: {summary.editScope}</small>
+                      )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-    </>
+    </details>
   );
 }

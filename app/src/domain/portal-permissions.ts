@@ -8,10 +8,6 @@ export const centerEditResources = [
   'forms',
   'trash',
 
-
-
-
-
   'transfers',
   'charter',
   'dispatch_parser',
@@ -41,7 +37,9 @@ export function effectivePermission(
     const inScope =
       override.scope === 'all' ||
       (override.scope === 'own' &&
-        (center ? person.centers.includes(center) : person.centers.length > 0));
+        (center != null
+          ? person.centers.includes(center)
+          : person.centers.length > 0));
     const read = override.level !== 'none' && inScope;
     const edit =
       read &&
@@ -58,13 +56,17 @@ export function effectivePermission(
         (rule.centers ?? []).some((c) => memberships.includes(c))) &&
       (rule.scope === 'all' ||
         (rule.scope === 'own' &&
-          (center ? memberships.includes(center) : memberships.length > 0))),
+          (center != null
+            ? memberships.includes(center)
+            : memberships.length > 0))),
     edit =
       (person.role === 'editor' ||
         ['incidents', 'notifications'].includes(config.resource)) &&
       matches(config.write_rule) &&
       (!centerEditResources.includes(config.resource) ||
-        (center ? memberships.includes(center) : memberships.length > 0));
+        (center != null
+          ? memberships.includes(center)
+          : memberships.length > 0));
   return { read: matches(config.read_rule) || edit, edit };
 }
 export const memberRoleLabels: Record<string, string> = {

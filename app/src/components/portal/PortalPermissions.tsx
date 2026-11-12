@@ -1,64 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
-import {
-  FEATURE_CATALOG,
-  FEATURE_CATEGORIES,
-  resourceFeatureRestriction,
-} from '../../domain/feature-catalog';
+import { FEATURE_CATEGORIES } from '../../domain/feature-catalog';
 import type {
   MemberPermission,
   MemberPermissionChange,
   PermissionConfig,
   PortalMember,
 } from '../../domain/portal-types';
+import { memberRoleLabels } from '../../domain/portal-permissions';
 import {
-  centerEditResources,
-  effectivePermission,
-  memberRoleLabels,
-} from '../../domain/portal-permissions';
+  employeePermissionSummary,
+  permissionCategory,
+  permissionTitle,
+} from '../../domain/employee-permissions';
 import { usePortal } from './PortalStore';
 import { useFeedback } from '../useFeedback';
 import { portalApi } from '../../lib/portal';
+import { registerWorkspaceNavigationGuard } from '../../lib/workspace-navigation';
 import '../../styles/portal-permissions.css';
 
-function categoryFor(config: PermissionConfig) {
-  const feature = FEATURE_CATALOG.find(
-    (item) => item.resource === config.resource,
-  );
-  if (feature) return feature.category;
-  if (
-    [
-      'tasks',
-      'forms',
-      'incidents',
-      'hq',
-      'briefing',
-      'notifications',
-      'history',
-      'search',
-      'trash',
-    ].includes(config.resource)
-  )
-    return 'daily';
-  if (['mail', 'backups', 'connections'].includes(config.resource))
-    return 'documents';
-  return 'administration';
-}
-function levelOf(access: {
-  read: boolean;
-  edit: boolean;
-}): MemberPermission['level'] {
-  return access.edit ? 'edit' : access.read ? 'read' : 'none';
-}
-function samePermission(
-  a: MemberPermission | null,
-  b: MemberPermission | null,
-) {
-  return a === null || b === null
-    ? a === b
-    : a.level === b.level && a.scope === b.scope;
-}
+type EditSession = {
+  person: PortalMember;
+  rules: PermissionConfig[];
+  drafts: Record<string, MemberPermission | null>;
+};
 
 function EmployeePermissions({
   person,
@@ -67,85 +32,165 @@ function EmployeePermissions({
   person: PortalMember;
   onDirty: (dirty: boolean) => void;
 }) {
-  const { state, mutate, centerName, viewState } = usePortal();
-  const [drafts, setDrafts] = useState<Record<string, MemberPermission | null>>(
-    {},
+  const { state, mutate, centerName, viewState, refresh, update } = usePortal();
+  const draftKey = `employee-permission-draft:${person.id}`;
+  const [session, setSession] = useState<EditSession | null>(
+    () => (viewState.get(draftKey) as EditSession | undefined) ?? null,
   );
   const [category, setCategory] = useState(() =>
     String(viewState.get('permissionCategory') ?? 'dispatch'),
   );
-  const [previewCenter, setPreviewCenter] = useState(
-    String(
-      viewState.get('permissionPreviewCenter') ??
-        person.centers[0] ??
-        state.context?.centers[0]?.code ??
-        '',
-    ),
-  );
-  const reducedMotion = useReducedMotion();
+  const [search, setSearch] = useState('');
+  const [changedOnly, setChangedOnly] = useState(false);
+  const saving = useRef(false);
   const rules = state.permissions.rules;
-  const categories = Object.entries(FEATURE_CATEGORIES).filter(([key]) =>
-    rules.some((rule) => categoryFor(rule) === key),
-  );
-  const selectedCategory = categories.some(([key]) => key === category)
-    ? category
-    : (categories[0]?.[0] ?? '');
-  const changes: MemberPermissionChange[] = rules
-    .filter((rule) =>
-      Object.prototype.hasOwnProperty.call(drafts, rule.resource),
-    )
+  const drafts = session?.drafts ?? {};
+  const changes: MemberPermissionChange[] = (session?.rules ?? rules)
+    .filter((rule) => Object.hasOwn(drafts, rule.resource))
     .map((rule) => ({
       resource: rule.resource,
       version: rule.version,
       permission: drafts[rule.resource],
     }));
+  const memberChanged =
+    session &&
+    JSON.stringify([
+      session.person.display_name,
+      session.person.role,
+      [...session.person.centers].sort(),
+    ]) !==
+      JSON.stringify([
+        person.display_name,
+        person.role,
+        [...person.centers].sort(),
+      ]);
+  const stale =
+    !!memberChanged ||
+    changes.some(
+      (change) =>
+        rules.find((rule) => rule.resource === change.resource)?.version !==
+        change.version,
+    );
+  const categories = Object.entries(FEATURE_CATEGORIES).filter(([key]) =>
+    rules.some((rule) => permissionCategory(rule) === key),
+  );
+  const selectedCategory = categories.some(([key]) => key === category)
+    ? category
+    : (categories[0]?.[0] ?? '');
   useEffect(() => {
     onDirty(changes.length > 0);
-  }, [changes.length, onDirty]);
+    if (session) viewState.set(draftKey, session);
+    else viewState.delete(draftKey);
+  }, [session, draftKey, viewState, changes.length, onDirty]);
+  useEffect(() => {
+    if (!changes.length) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [changes.length]);
   function permissionFor(config: PermissionConfig) {
-    return Object.prototype.hasOwnProperty.call(drafts, config.resource)
+    return Object.hasOwn(drafts, config.resource)
       ? drafts[config.resource]
       : (config.member_overrides?.[person.id] ?? null);
   }
-  function previewConfig(config: PermissionConfig) {
-    if (!Object.prototype.hasOwnProperty.call(drafts, config.resource))
-      return config;
-    const member_overrides = { ...config.member_overrides };
+  function preview(config: PermissionConfig) {
+    const base =
+      session?.rules.find((rule) => rule.resource === config.resource) ??
+      config;
+    const member_overrides = { ...base.member_overrides };
     const permission = permissionFor(config);
     if (permission) member_overrides[person.id] = permission;
     else delete member_overrides[person.id];
-    return { ...config, member_overrides };
+    return employeePermissionSummary(
+      { ...base, member_overrides },
+      person,
+      state.context?.centers ?? [],
+      centerName,
+    );
   }
   function change(
     config: PermissionConfig,
     permission: MemberPermission | null,
   ) {
-    setDrafts((previous) => {
-      const next = { ...previous };
+    setSession((previous) => {
+      const next = previous ?? {
+        person: structuredClone(person),
+        rules: structuredClone(rules),
+        drafts: {},
+      };
+      const drafts = { ...next.drafts };
+      const saved =
+        next.rules.find((rule) => rule.resource === config.resource)
+          ?.member_overrides?.[person.id] ?? null;
       if (
-        samePermission(permission, config.member_overrides?.[person.id] ?? null)
+        saved === null
+          ? permission === null
+          : permission?.level === saved.level &&
+            permission?.scope === saved.scope
       )
-        delete next[config.resource];
-      else next[config.resource] = permission;
-      return next;
+        delete drafts[config.resource];
+      else drafts[config.resource] = permission;
+      return Object.keys(drafts).length ? { ...next, drafts } : null;
     });
   }
   async function save() {
-    if (!changes.length || state.busy || person.role === 'admin') return;
-    const saved = await mutate(
-      JSON.stringify([
-        'member-permissions',
-        person.id,
-        person.display_name,
-        person.role,
-        person.centers,
-        changes,
-      ]),
-      (requestId) =>
-        portalApi.updateMemberPermissions({ requestId, person, changes }),
-    );
-    if (saved) setDrafts({});
+    if (
+      !session ||
+      !changes.length ||
+      state.busy ||
+      saving.current ||
+      stale ||
+      person.role === 'admin'
+    )
+      return;
+    saving.current = true;
+    try {
+      const saved = await mutate(
+        JSON.stringify([
+          'member-permissions',
+          person.id,
+          session.person,
+          changes,
+        ]),
+        (requestId) =>
+          portalApi.updateMemberPermissions({
+            requestId,
+            person: session.person,
+            changes,
+          }),
+        (result) =>
+          update((s) => {
+            s.permissions = {
+              ...s.permissions,
+              rules: s.permissions.rules.map(
+                (rule) =>
+                  result.rules.find(
+                    (saved) => saved.resource === rule.resource,
+                  ) ?? rule,
+              ),
+            };
+          }),
+      );
+      if (saved) {
+        setSession(null);
+        viewState.delete(draftKey);
+      }
+    } finally {
+      saving.current = false;
+    }
   }
+  const shown = rules.filter(
+    (rule) =>
+      (search.trim()
+        ? permissionTitle(rule)
+            .toLowerCase()
+            .includes(search.trim().toLowerCase())
+        : changedOnly || permissionCategory(rule) === selectedCategory) &&
+      (!changedOnly || Object.hasOwn(drafts, rule.resource)),
+  );
   return (
     <section
       className="employee-permission-editor"
@@ -157,14 +202,11 @@ function EmployeePermissions({
           <div className="employee-permission-meta">
             <span>{memberRoleLabels[person.role] ?? person.role}</span>
             <span>{person.active ? '활성' : '비활성 · 접근 불가'}</span>
-            <span>
-              담당 센터: {person.centers.map(centerName).join(' · ') || '없음'}
-            </span>
           </div>
           <a
             href={`/portal/?view=members&user=${encodeURIComponent(person.id)}`}
           >
-            역할·센터 변경
+            역할·담당 범위 설정
           </a>
         </div>
         <div className="employee-permission-save">
@@ -173,294 +215,302 @@ function EmployeePermissions({
               ? `${changes.length}개 업무 변경 · 저장 전`
               : '저장된 권한'}
           </span>
-          <button
-            type="button"
-            className="primary"
-            disabled={state.busy || !changes.length || person.role === 'admin'}
-            onClick={() => void save()}
-          >
-            {state.busy ? '저장 중…' : '변경사항 저장'}
-          </button>
+          <div className="employee-permission-save-actions">
+            {changes.length > 0 && (
+              <button
+                type="button"
+                disabled={state.busy}
+                onClick={() => setSession(null)}
+              >
+                변경 취소
+              </button>
+            )}
+            <button
+              type="button"
+              className="primary"
+              disabled={
+                state.busy ||
+                !changes.length ||
+                stale ||
+                person.role === 'admin'
+              }
+              onClick={() => void save()}
+            >
+              {state.busy ? '처리 중…' : '변경사항 저장'}
+            </button>
+          </div>
         </div>
       </header>
-      {person.role === 'admin' ? (
+      {person.role === 'admin' && (
         <p className="employee-permission-notice">
-          관리자 · 모든 업무와 센터에 접근 가능
+          관리자 기본 권한 · 지정 사용자 전용 기능은 별도 제한
         </p>
-      ) : !person.active ? (
+      )}
+      {!person.active && (
         <p className="employee-permission-notice">
-          비활성 계정 · 설정을 저장해도 계정이 활성화되기 전에는 접근할 수
-          없습니다.
+          비활성 계정은 저장한 권한과 관계없이 접근할 수 없습니다.
         </p>
-      ) : null}
-      <div className="employee-permission-preview">
+      )}
+      {stale && (
+        <p role="alert" className="employee-permission-notice">
+          직원 정보 또는 저장된 권한이 변경됐습니다. 입력은 보존했습니다. 변경
+          취소 후 최신 권한을 확인하고 다시 설정하세요.
+        </p>
+      )}
+      <div className="employee-permission-toolbar">
         <label>
-          적용 확인 센터
-          <select
-            value={previewCenter}
-            onChange={(event) => {
-              setPreviewCenter(event.target.value);
-              viewState.set('permissionPreviewCenter', event.target.value);
-            }}
-          >
-            {state.context?.centers.map((center) => (
-              <option key={center.code} value={center.code}>
-                {centerName(center.code)}
-              </option>
-            ))}
-          </select>
+          <span className="sr-only">업무 검색</span>
+          <input
+            type="search"
+            name="permission-work-search"
+            placeholder="업무 검색"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </label>
-      </div>
-      <LayoutGroup id={`employee-permissions-${person.id}`}>
-        <Tabs.Root
-          value={selectedCategory}
-          onValueChange={(value) => {
-            setCategory(value);
-            viewState.set('permissionCategory', value);
-          }}
-          className="employee-permission-tabs"
+        <label>
+          <input
+            type="checkbox"
+            checked={changedOnly}
+            onChange={(event) => setChangedOnly(event.target.checked)}
+          />
+          변경한 업무만
+        </label>
+        <button
+          type="button"
+          disabled={state.busy}
+          onClick={() => void refresh()}
         >
-          <Tabs.List
-            aria-label="업무 분류"
-            className="employee-permission-categories"
-          >
-            {categories.map(([key, title]) => (
-              <Tabs.Trigger
-                key={key}
-                value={key}
-                className="employee-permission-category"
-              >
-                {selectedCategory === key ? (
-                  <motion.span
-                    aria-hidden="true"
-                    className="workspace-selection"
-                    layoutId="employee-category"
-                    style={{ borderRadius: 10 }}
-                    transition={
-                      reducedMotion
-                        ? { duration: 0 }
-                        : { type: 'spring', stiffness: 420, damping: 38 }
-                    }
-                  />
-                ) : null}
-                {title}
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-          {categories.map(([key]) => (
-            <Tabs.Content
+          최신 권한 확인
+        </button>
+      </div>
+      <Tabs.Root
+        value={selectedCategory}
+        onValueChange={(value) => {
+          setCategory(value);
+          setSearch('');
+          viewState.set('permissionCategory', value);
+        }}
+      >
+        <Tabs.List
+          aria-label="업무 분류"
+          className="employee-permission-categories"
+        >
+          {categories.map(([key, title]) => (
+            <Tabs.Trigger
               key={key}
               value={key}
-              className="employee-permission-panel"
+              className="employee-permission-category"
             >
-              <div
-                className="employee-permission-table"
-                role="region"
-                aria-label={`${FEATURE_CATEGORIES[key as keyof typeof FEATURE_CATEGORIES]} 권한`}
-                tabIndex={0}
-              >
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">업무</th>
-                      <th scope="col">권한</th>
-                      <th scope="col">자료 범위</th>
-                      <th scope="col">{centerName(previewCenter)} 적용</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rules
-                      .filter((config) => categoryFor(config) === key)
-                      .map((config) => {
-                        const permission = permissionFor(config);
-                        const featureRestriction = resourceFeatureRestriction(config.resource, person);
-                        const sharedTool = ['distance_tools', 'gimhae_dispatch'].includes(config.resource);
-                        const effective = effectivePermission(
-                          previewConfig(config),
-                          person,
-                          sharedTool ? undefined : previewCenter,
-                        );
-                        const level = permission?.level ?? 'inherit';
-                        const fixed =
-                          person.role === 'admin' || config.admin_only || !!featureRestriction;
-                        const editAllowed =
-                          person.role === 'editor' ||
-                          ['incidents', 'notifications'].includes(
-                            config.resource,
-                          );
-                        const statusOnly =
-                          config.resource === 'incidents' &&
-                          person.role === 'viewer';
-                        const editLabel =
-                          config.resource === 'notifications'
-                            ? '알림 확인'
-                            : statusOnly
-                              ? '처리 상태 변경'
-                              : '수정';
-                        const actualLabel = featureRestriction ?? (effective.edit
-                          ? config.resource === 'notifications'
-                            ? '알림 확인'
-                            : statusOnly
-                              ? '처리 상태 변경'
-                              : '조회·수정'
-                          : effective.read
-                            ? '조회'
-                            : '불가');
-                        const related = [
-                          ...new Set(
-                            FEATURE_CATALOG.filter(
-                              (feature) =>
-                                feature.resource === config.resource &&
-                                feature.title !== config.title,
-                            ).map((feature) => feature.title),
-                          ),
-                        ];
-                        return (
-                          <tr
-                            key={config.resource}
-                            data-resource={config.resource}
-                            data-changed={Object.prototype.hasOwnProperty.call(
-                              drafts,
-                              config.resource,
-                            )}
-                          >
-                            <th scope="row">
-                              <strong>{config.title}</strong>
-                              {related.length > 0 ? (
-                                <small>{related.join(' · ')}</small>
-                              ) : null}
-                              {config.admin_only ? (
-                                <small>관리자 전용</small>
-                              ) : null}
-                              {featureRestriction && !config.admin_only ? <small>{featureRestriction} · 직원 권한으로 해제되지 않음</small> : null}
-                            </th>
-                            <td data-label="권한">
-                              <label>
-                                <span className="sr-only">
-                                  {config.title} 권한
-                                </span>
-                                <select
-                                  data-permission-level={config.resource}
-                                  value={
-                                    fixed
-                                      ? person.role === 'admin'
-                                        ? 'edit'
-                                        : 'none'
-                                      : level
-                                  }
-                                  disabled={state.busy || fixed}
-                                  onChange={(event) =>
-                                    change(
-                                      config,
-                                      event.target.value === 'inherit'
-                                        ? null
-                                        : {
-                                            level: event.target
-                                              .value as MemberPermission['level'],
-                                            scope: sharedTool ? 'all' : permission?.scope ?? 'own',
-                                          },
-                                    )
-                                  }
-                                >
-                                  <option value="inherit">기존 설정</option>
-                                  <option value="none">불가</option>
-                                  <option value="read">조회</option>
-                                  <option value="edit" disabled={!editAllowed}>
-                                    {editLabel}
-                                  </option>
-                                </select>
-                              </label>
-                              {fixed ? (
-                                <small>
-                                  {featureRestriction ?? (config.admin_only
-                                    ? '관리자 전용'
-                                    : '관리자 권한')}
-                                </small>
-                              ) : null}
-                            </td>
-                            <td data-label="자료 범위">
-                              <label>
-                                <span className="sr-only">
-                                  {config.title} 자료 범위
-                                </span>
-                                <select
-                                  data-permission-scope={config.resource}
-                                  value={
-                                    sharedTool || person.role === 'admin'
-                                      ? 'all'
-                                      : (permission?.scope ?? 'inherit')
-                                  }
-                                  disabled={
-                                    state.busy ||
-                                    sharedTool ||
-                                    fixed ||
-                                    !permission ||
-                                    level === 'none'
-                                  }
-                                  onChange={(event) => {
-                                    if (permission)
-                                      change(config, {
-                                        ...permission,
-                                        scope: event.target
-                                          .value as MemberPermission['scope'],
-                                      });
-                                  }}
-                                >
-                                  <option value="inherit">기존 범위</option>
-                                  <option value="own">담당센터</option>
-                                  <option value="all">{sharedTool ? '센터 무관' : '전체센터'}</option>
-                                </select>
-                              </label>
-                              {level === 'edit' &&
-                              centerEditResources.includes(config.resource) ? (
-                                <small>{permission?.scope === 'all' ? '전체센터 조회·수정' : '담당센터 조회·수정'}</small>
-                              ) : null}
-                            </td>
-                            <td
-                              data-label={`${centerName(previewCenter)} 적용`}
-                            >
-                              <span
-                                className="employee-permission-effective"
-                                data-level={featureRestriction ? 'none' : levelOf(effective)}
-                              >
-                                {sharedTool ? `공용 · ${actualLabel}` : actualLabel}
-                              </span>
-                              {!person.active ? (
-                                <small>계정 비활성</small>
-                              ) : !editAllowed &&
-                                permission?.level === 'edit' ? (
-                                <small>조회 전용 역할</small>
-                              ) : null}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </Tabs.Content>
+              {title}
+            </Tabs.Trigger>
           ))}
-        </Tabs.Root>
-      </LayoutGroup>
-      {!rules.length ? (
-        <p className="employee-permission-notice">등록된 업무 없음</p>
-      ) : null}
+        </Tabs.List>
+        <Tabs.Content value={selectedCategory}>
+          <div
+            className="employee-permission-table"
+            role="region"
+            aria-label="직원 업무 권한"
+            tabIndex={0}
+          >
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">업무</th>
+                  <th scope="col">허용 동작</th>
+                  <th scope="col">자료 범위</th>
+                  <th scope="col">
+                    {changes.length ? '저장 후 적용' : '실제 적용'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((config) => {
+                  const permission = permissionFor(config);
+                  const summary = preview(config);
+                  const original = employeePermissionSummary(
+                    config,
+                    person,
+                    state.context?.centers ?? [],
+                    centerName,
+                  );
+                  const changed = Object.hasOwn(drafts, config.resource);
+                  const editAllowed =
+                    person.role === 'editor' ||
+                    ['incidents', 'notifications'].includes(config.resource);
+                  return (
+                    <tr
+                      key={config.resource}
+                      data-resource={config.resource}
+                      data-changed={changed}
+                    >
+                      <th scope="row">
+                        <strong>{permissionTitle(config)}</strong>
+                        <small>
+                          {changed
+                            ? '변경됨'
+                            : permission
+                              ? '직원별 지정'
+                              : '기본 권한'}
+                        </small>
+                      </th>
+                      <td data-label="허용 동작">
+                        {summary.fixed ? (
+                          <span>{summary.label}</span>
+                        ) : (
+                          <label>
+                            <span className="sr-only">
+                              {permissionTitle(config)} 허용 동작
+                            </span>
+                            <select
+                              data-permission-level={config.resource}
+                              value={permission?.level ?? 'inherit'}
+                              disabled={state.busy || stale}
+                              onChange={(event) =>
+                                change(
+                                  config,
+                                  event.target.value === 'inherit'
+                                    ? null
+                                    : {
+                                        level: event.target
+                                          .value as MemberPermission['level'],
+                                        scope:
+                                          permission?.scope ??
+                                          (config.read_rule.scope === 'all' &&
+                                          config.write_rule.scope === 'all'
+                                            ? 'all'
+                                            : 'own'),
+                                      },
+                                )
+                              }
+                            >
+                              <option value="inherit">기본 권한 사용</option>
+                              <option value="none">접근 불가</option>
+                              <option value="read">
+                                {summary.actions.read}
+                              </option>
+                              <option value="edit" disabled={!editAllowed}>
+                                {summary.actions.edit}
+                              </option>
+                            </select>
+                          </label>
+                        )}
+                        {summary.reason && (
+                          <small>
+                            {summary.reason === '본인 전용'
+                              ? '지정 사용자 전용'
+                              : summary.reason}
+                          </small>
+                        )}
+                        {!editAllowed && !summary.fixed && (
+                          <small>조회 전용 역할</small>
+                        )}
+                      </td>
+                      <td data-label="자료 범위">
+                        {!summary.fixed &&
+                        permission &&
+                        permission.level !== 'none' ? (
+                          <label>
+                            <span className="sr-only">
+                              {permissionTitle(config)} 자료 범위
+                            </span>
+                            <select
+                              data-permission-scope={config.resource}
+                              value={permission.scope}
+                              disabled={state.busy || stale}
+                              onChange={(event) =>
+                                change(config, {
+                                  ...permission,
+                                  scope: event.target
+                                    .value as MemberPermission['scope'],
+                                })
+                              }
+                            >
+                              <option value="all">
+                                {summary.shared
+                                  ? '센터 배정 무관'
+                                  : '전체 자료'}
+                              </option>
+                              <option value="own">
+                                {summary.shared
+                                  ? '센터 배정된 직원'
+                                  : '담당 센터 자료'}
+                              </option>
+                            </select>
+                          </label>
+                        ) : (
+                          <span>{summary.read ? summary.readScope : '—'}</span>
+                        )}
+                        {summary.edit &&
+                          summary.editScope !== summary.readScope && (
+                            <small>수정: {summary.editScope}</small>
+                          )}
+                      </td>
+                      <td data-label="실제 적용">
+                        <span
+                          className="employee-permission-effective"
+                          data-level={
+                            summary.edit
+                              ? 'edit'
+                              : summary.read
+                                ? 'read'
+                                : 'none'
+                          }
+                        >
+                          {summary.label}
+                        </span>
+                        {summary.read && <small>{summary.readScope}</small>}
+                        {changed && (
+                          <small>
+                            현재: {original.label} · {original.readScope}
+                            {original.edit &&
+                            original.editScope !== original.readScope
+                              ? ` / 수정 ${original.editScope}`
+                              : ''}
+                          </small>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!shown.length && (
+              <p className="employee-permission-notice">
+                {changedOnly
+                  ? '선택한 분류에 변경한 업무가 없습니다.'
+                  : '일치하는 업무가 없습니다.'}
+              </p>
+            )}
+          </div>
+        </Tabs.Content>
+      </Tabs.Root>
     </section>
   );
 }
 
 export function PortalPermissions() {
   const { state, centerName, viewState } = usePortal();
-  const [selected, setSelected] = useState(() =>
-    String(
-      viewState.get('permissionMemberId') ??
-        new URLSearchParams(location.search).get('user') ??
-        '',
-    ),
+  const [selected, setSelected] = useState(
+    () =>
+      new URLSearchParams(location.search).get('user') ??
+      String(viewState.get('permissionMemberId') ?? ''),
   );
   const [search, setSearch] = useState('');
   const [dirty, setDirty] = useState(false);
   const { confirm, feedback } = useFeedback();
+  useEffect(
+    () =>
+      registerWorkspaceNavigationGuard((recheck) => {
+        if (state.busy) return false;
+        if (recheck || !dirty) return true;
+        return confirm(
+          '저장하지 않은 업무 권한이 있습니다. 저장하지 않고 이동할까요?',
+          { okText: '이동', cancelText: '계속 편집' },
+        );
+      }),
+    [state.busy, dirty, confirm],
+  );
   const members = state.members.filter((person) =>
     [person.name, person.email, ...person.centers.map(centerName)]
       .filter(Boolean)
@@ -476,15 +526,18 @@ export function PortalPermissions() {
     if (userId === person?.id || state.busy) return;
     if (
       dirty &&
-      !(await confirm('저장하지 않은 변경사항을 버리고 직원을 변경할까요?', {
-        okText: '변경사항 버리기',
-        cancelText: '계속 편집',
-      }))
+      !(await confirm(
+        '변경사항은 저장하지 않고 보관합니다. 다른 직원을 선택할까요?',
+        { okText: '직원 변경', cancelText: '계속 편집' },
+      ))
     )
       return;
     setDirty(false);
     setSelected(userId);
     viewState.set('permissionMemberId', userId);
+    const url = new URL(location.href);
+    url.searchParams.set('user', userId);
+    history.replaceState(history.state, '', url);
   }
   return (
     <>
@@ -507,23 +560,6 @@ export function PortalPermissions() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
-          <label className="employee-permission-mobile-select">
-            직원 선택
-            <select
-              value={person?.id ?? ''}
-              disabled={state.busy}
-              onChange={(event) => void select(event.target.value)}
-            >
-              {person && !members.some((member) => member.id === person.id) ? (
-                <option value={person.id}>{person.name} (현재 편집)</option>
-              ) : null}
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <div className="employee-permission-people">
             {members.map((member) => (
               <button
@@ -537,25 +573,19 @@ export function PortalPermissions() {
                 <strong>{member.name}</strong>
                 <span>
                   {member.active
-                    ? member.centers.map(centerName).join(' · ') ||
-                      memberRoleLabels[member.role] ||
-                      member.role
+                    ? (memberRoleLabels[member.role] ?? member.role)
                     : '비활성'}
                 </span>
               </button>
             ))}
           </div>
-          {!members.length ? (
+          {!members.length && (
             <p className="employee-permission-notice">검색 결과 없음</p>
-          ) : null}
+          )}
         </section>
         {person ? (
           <EmployeePermissions
-            key={
-              person.id +
-              JSON.stringify(person) +
-              JSON.stringify(state.permissions.rules)
-            }
+            key={person.id}
             person={person}
             onDirty={setDirty}
           />

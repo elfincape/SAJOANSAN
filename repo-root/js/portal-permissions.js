@@ -27,7 +27,7 @@ export function effectivePermission(config, person, center) {
     const override = config.member_overrides[person.id];
     if (!override || !['none', 'read', 'edit'].includes(override.level) || !['own', 'all'].includes(override.scope))
       return { read: false, edit: false };
-    const inScope = override.scope === 'all' || (center ? memberships.includes(center) : memberships.length > 0);
+    const inScope = override.scope === 'all' || (center != null ? memberships.includes(center) : memberships.length > 0);
     const read = override.level !== 'none' && inScope;
     return { read, edit: read && override.level === 'edit' && (person.role === 'editor' || ['incidents', 'notifications'].includes(config.resource)) };
   }
@@ -38,13 +38,13 @@ export function effectivePermission(config, person, center) {
       (rule.centers ?? []).some((c) => memberships.includes(c))) &&
     (rule.scope === 'all' ||
       (rule.scope === 'own' &&
-        (center ? memberships.includes(center) : memberships.length > 0)));
+        (center != null ? memberships.includes(center) : memberships.length > 0)));
   const edit =
     (person.role === 'editor' ||
       ['incidents', 'notifications'].includes(config.resource)) &&
     matches(config.write_rule) &&
     (!centerEditResources.includes(config.resource) ||
-      (center ? memberships.includes(center) : memberships.length > 0));
+      (center != null ? memberships.includes(center) : memberships.length > 0));
   return { read: matches(config.read_rule) || edit, edit };
 }
 export function renderPermissionPreview({

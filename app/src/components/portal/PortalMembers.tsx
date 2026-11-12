@@ -24,7 +24,9 @@ function MemberEditor({ person }: { person: PortalMember }) {
       <h2>
         <MentionText>{person.name}</MentionText> · 역할·센터 설정
       </h2>
-      <a href={`/portal/?view=permissions&user=${encodeURIComponent(person.id)}`}>
+      <a
+        href={`/portal/?view=permissions&user=${encodeURIComponent(person.id)}`}
+      >
         업무 권한 설정
       </a>
       <p>
@@ -103,7 +105,11 @@ function MemberEditor({ person }: { person: PortalMember }) {
           역할·담당 센터 저장
         </button>
       </form>
-      <a href="/portal/?view=permissions">페이지별 허용 조건 설정</a>
+      <a
+        href={`/portal/?view=permissions&user=${encodeURIComponent(person.id)}`}
+      >
+        이 직원의 업무 권한 설정
+      </a>
       <section className="permission-simulation">
         <PortalPermissionPreview
           rules={state.permissions.rules}
@@ -117,8 +123,8 @@ export function PortalMembers() {
   const { state, centerName, viewState } = usePortal(),
     [selected, setSelected] = useState(() =>
       String(
-        viewState.get('memberId') ??
-          new URLSearchParams(location.search).get('user') ??
+        new URLSearchParams(location.search).get('user') ??
+          viewState.get('memberId') ??
           '',
       ),
     ),
@@ -192,9 +198,7 @@ export function PortalMembers() {
               person={person}
             />
           ) : (
-            <p>
-              직원을 선택하세요.
-            </p>
+            <p>직원을 선택하세요.</p>
           )}
         </aside>
       </div>

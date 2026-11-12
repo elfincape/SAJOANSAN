@@ -21,7 +21,7 @@ assert.equal(permissionAllowed(catalog,'routes','edit','unclassified'),false);
 
 if (process.env.PGLITE_MODULE) {
  const {PGlite}=await import(process.env.PGLITE_MODULE), {readFileSync}=await import('node:fs');
- const db=new PGlite(), sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8');
+ const db=new PGlite(), sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n');
  const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
  try {
   await db.exec(`create role authenticated; create role anon; create schema auth;
@@ -141,7 +141,7 @@ console.log('PASS: active state, role, center membership, audience vs data scope
 if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
  const {PGlite}=await import(process.env.PGLITE_MODULE),{readFileSync}=await import('node:fs');
  const db=new PGlite();
- const sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8');
+ const sql=name=>readFileSync(new URL('../repo-root/sql/'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n');
  const member='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
  try{
   await db.exec(`create role authenticated;create role anon;create role service_role bypassrls;create schema auth;
@@ -323,4 +323,72 @@ if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
  assert.equal(await loading,null,'request started before logout must not restore an authenticated context');
  assert.equal(logout.auth.getLoadedAuthContext(),undefined,'logout must keep the auth cache empty after an old request finishes');
  console.log('PASS browser permission cache: forced refresh supersedes old requests and logout rejects late responses');
+}
+
+// Employee editor uses the existing permission predicate, including explicit unclassified scope.
+{
+ const {stripTypeScriptTypes}=await import('node:module'),{readFileSync}=await import('node:fs'),{default:vm}=await import('node:vm');
+ const ctx={MAIL_DIAGNOSTIC_OWNER_ID:'fixture-owner'};
+ for(const path of ['feature-catalog.ts','portal-permissions.ts','employee-permissions.ts']){
+  const code=stripTypeScriptTypes(readFileSync(new URL('../app/src/domain/'+path,import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'').replace(/\bexport /g,'');
+  vm.runInNewContext(code,ctx);
+ }
+ const p={id:'fixture-employee',active:true,role:'editor',centers:['001']};
+ const cfg={...config,member_overrides:{[p.id]:{level:'edit',scope:'own'}}};
+ const centers=[{code:'001'},{code:'002'}],name=code=>code==='001'?'안산':'평택';
+ assert.deepEqual(JSON.parse(JSON.stringify(ctx.effectivePermission(cfg,p,''))),{read:false,edit:false},'unclassified is not the global overview');
+ assert.deepEqual(effectivePermission(cfg,p,''),{read:false,edit:false},'legacy unclassified preview follows SQL');
+ let result=ctx.employeePermissionSummary(cfg,p,centers,name);
+ assert.equal(result.readScope,'안산');assert.equal(result.editScope,'안산');
+ result=ctx.employeePermissionSummary(config,{...p,role:'admin'},centers,name);
+ assert.equal(result.readScope,'전체 자료 · 미분류 포함');
+ result=ctx.employeePermissionSummary({...config,resource:'settings'},{...p,role:'admin'},centers,name);
+ assert.equal(result.label,'접근 불가','non-owner admin must not be displayed as permitted for private pages');
+ result=ctx.employeePermissionSummary(cfg,{...p,active:false},centers,name);
+ assert.equal(result.label,'접근 불가');assert.equal(result.reason,'비활성 계정');
+ result=ctx.employeePermissionSummary({...config,resource:'tasks',write_rule:{...rule,scope:'own'}},p,centers,name);
+ assert.equal(result.readScope,'전체 센터 자료');assert.equal(result.editScope,'안산','different read/write scopes stay separate');
+ assert.equal(ctx.permissionTitle({...config,resource:'permissions'}),'직원별 업무 권한');
+ console.log('PASS employee summary: unclassified denial, OP, fixed restrictions, inactive, distinct read/write scope');
+}
+
+if(process.env.PGLITE_MODULE && !process.env.LEGACY_CATALOG_ONLY){
+ const {PGlite}=await import(process.env.PGLITE_MODULE),{readFileSync}=await import('node:fs');
+ const db=new PGlite(); const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+ try {
+  await db.exec(`create role authenticated;create role anon;create role service_role;create schema auth;
+   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+   create table user_profiles(id uuid primary key,role text,active boolean,display_name text);
+   create table centers(code text primary key);
+   create table operations_center_members(user_id uuid,center_code text);
+   create table operations_permissions(resource text primary key,admin_only boolean default false,read_rule jsonb,write_rule jsonb,version integer default 1,updated_by uuid,updated_at timestamptz);
+   create table operations_task_events(id bigserial,actor_id uuid,request_id uuid,request_body jsonb,membership_user_id uuid,action text,before_value jsonb,after_value jsonb,unique(actor_id,request_id));
+   create function is_admin() returns boolean language sql stable security definer as $$select exists(select 1 from user_profiles where id=auth.uid() and active and role='admin')$$;
+   create function operations_permission_match(jsonb,uuid,text) returns boolean language sql stable as $$select false$$;
+   insert into user_profiles values('${id(1)}','admin',true,'관리자'),('${id(2)}','editor',true,'격리 직원'),('${id(3)}','viewer',true,'조회 직원');
+   insert into centers values('001'),('002');insert into operations_center_members values('${id(2)}','001');
+   insert into operations_permissions(resource,admin_only,read_rule,write_rule) values('routes',false,'{}','{}'),('permissions',true,'{}','{}');
+   grant usage on schema public,auth to authenticated;`);
+  await db.exec(readFileSync(new URL('../repo-root/sql/operations-member-permissions.sql',import.meta.url),'utf8'));
+  const actor=async n=>db.exec(`reset role;select set_config('request.jwt.claim.sub','${id(n)}',false);set role authenticated;`);
+  const expected={display_name:'격리 직원',role:'editor',centers:['001']};
+  const change=(version,permission)=>[{resource:'routes',version,permission}];
+  const call=(request,changes,person=2,exp=expected)=>db.query('select operations_update_member_permissions($1,$2,$3,$4) result',[id(request),id(person),JSON.stringify(exp),JSON.stringify(changes)]);
+  await actor(2);await assert.rejects(call(10,change(1,{level:'edit',scope:'all'})),/관리자만/);
+  await actor(1);const grant=change(1,{level:'edit',scope:'all'});
+  const first=await call(10,grant);assert.equal(first.rows[0].result.rules[0].member_overrides[id(2)].level,'edit');
+  assert.deepEqual((await call(10,grant)).rows,first.rows,'lost-response retry returns original receipt');
+  await assert.rejects(call(10,change(1,{level:'none',scope:'all'})),/이미 사용/);
+  await assert.rejects(call(11,change(1,{level:'none',scope:'all'})),/다른 관리자가 업무 권한/);
+  await assert.rejects(call(12,change(2,{level:'read',scope:'all'}),2,{...expected,centers:['002']}),/직원 정보를 변경/);
+  await assert.rejects(call(13,[...change(2,{level:'none',scope:'all'}),{resource:'permissions',version:1,permission:{level:'edit',scope:'all'}}]),/관리자 전용/);
+  await db.exec('reset role;');
+  assert.equal((await db.query("select version from operations_permissions where resource='routes'")).rows[0].version,2,'failed batch is atomic');
+  assert.equal((await db.query('select count(*)::int n from operations_task_events')).rows[0].n,1,'retry creates no second history');
+  await actor(1);await call(14,change(2,{level:'none',scope:'all'}));await call(15,change(3,null));
+  await assert.rejects(call(16,change(4,{level:'edit',scope:'all'}),3,{display_name:'조회 직원',role:'viewer',centers:[]}),/조회 전용 직원/);
+  await db.exec(`reset role;update user_profiles set active=false where id='${id(1)}';`);
+  await actor(1);await assert.rejects(call(17,change(4,{level:'read',scope:'all'})),/관리자만/);
+  console.log('PASS isolated actual member RPC: admin boundary, atomic save, deny/inherit, role ceiling, stale member/rule, idempotency and history');
+ }finally {await db.close();}
 }
