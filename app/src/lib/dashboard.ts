@@ -141,21 +141,17 @@ export async function loadDashboard(center: Center) {
       .map(unassignedDashboardRow),
   ];
 }
-export function dashboardHealth(center: Center) {
+export function dashboardHealth(center: Center, driverIds?: string[]) {
   if (useErpReferenceCatalog)
     return catalogList<CatalogEntity<{ health_certificate_expires_on: string | null }>>('driver', { center: center.code })
       .then(items => items.filter(item => !item.deletedAt)
         .map(({ id, fields }) => ({ id, health_certificate_expires_on: fields.health_certificate_expires_on })));
-  return fetchAllRows(() =>
-    supabase
-      .from('drivers')
-      .select('id,health_certificate_expires_on')
-      .eq('center_code', center.code)
-      .order('id')
-      .returns<
-        { id: string; health_certificate_expires_on: string | null }[]
-      >(),
-  );
+  if (driverIds && !driverIds.length) return Promise.resolve([]);
+  return fetchAllRows(() => {
+    const query = supabase.from('drivers').select('id,health_certificate_expires_on');
+    return (driverIds ? query.in('id', driverIds) : query.eq('center_code',center.code)).order('id')
+      .returns<{ id: string; health_certificate_expires_on: string | null }[]>();
+  });
 }
 export function dashboardDetail(center: Center, id: string) {
   if (useErpCatalog)

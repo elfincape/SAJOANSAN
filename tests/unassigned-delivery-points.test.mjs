@@ -75,3 +75,29 @@ assert.equal(cleared['대면'],'');assert.equal(cleared['보안키'],'');assert.
 const inherited=currentExport.rowToFlat({route:null,delivery_point:shared,condition_modes:{delivery_method:'inherit',deadline:'inherit'},override_delivery_method:'무인',deadline_text:'14:00',deadline_business_min:840});
 assert.equal(inherited['대면'],'O');assert.equal(inherited['무인'],'');assert.equal(inherited['납품마감'],'12:00');
 console.log('React point patch and export: unchanged null/empty/0/false, inherit/set/clear passed');
+
+const time = await domain('time.ts');
+const cellSource = ts.transpileModule(readFileSync(new URL('../app/src/lib/dashboard-edit.ts', import.meta.url),'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText
+  .replace(/^import[\s\S]*?;\s*/gm,'').replace(/^export /gm,'');
+const cellEdit = new Function('displayToMin','minToDisplay', cellSource + '\nreturn {cellPatch,editedStops,initialCellDraft,cellResource};')(time.displayToMin,time.minToDisplay);
+const stops = [1,2,3].map(n=>({id:'s'+n,route_id:'r',delivery_point_id:'p'+n,stop_order:n,override_delivery_method:'무인',condition_modes:{delivery_method:'set',access_method:'clear'},memo:'원문'}));
+const cellSnapshot = {column:'delivery_method',scope:'value',table:'routes',id:'r',source:{},field:'override_delivery_method',stops,stopId:'s2',candidates:[]};
+const cellDraft = {...cellEdit.initialCellDraft(cellSnapshot),value:'',mode:'set'};
+assert.deepEqual(cellEdit.cellPatch(cellSnapshot,cellDraft),{override_delivery_method:'',condition_modes:{delivery_method:'set',access_method:'clear'}});
+const cellClear=cellEdit.editedStops(cellSnapshot,{...cellDraft,mode:'clear'});
+assert.equal(cellClear[1].override_delivery_method,null);
+assert.equal(cellClear[1].condition_modes.delivery_method,'clear');
+assert.deepEqual(cellClear[0],stops[0]);assert.deepEqual(cellClear[2],stops[2]);
+const reordered=cellEdit.editedStops({...cellSnapshot,column:'stop_order',field:'stop_order'},{...cellDraft,value:'1'});
+assert.deepEqual(reordered.map(s=>s.id),['s2','s1','s3']);
+assert.deepEqual(reordered.map(s=>s.stop_order),[1,2,3]);
+assert.throws(()=>cellEdit.editedStops({...cellSnapshot,column:'stop_order',field:'stop_order'},{...cellDraft,value:'1.5'}));
+const clock={...cellSnapshot,column:'arrival_business_min',field:'arrival_business_min'};
+assert.deepEqual(cellEdit.cellPatch(clock,{...cellDraft,value:'00:00'}),{arrival_business_min:0,arrival_text:'00:00'});
+assert.throws(()=>cellEdit.cellPatch(clock,{...cellDraft,value:'25:30'}));
+assert.equal(cellEdit.cellPatch({...cellSnapshot,column:'effective_deadline_business_min',field:'deadline_business_min'},{...cellDraft,value:'이전 원문',mode:'inherit'}).deadline_business_min,null);
+const sourceOnly={...cellSnapshot,column:'primary_driver_phone',table:'drivers',field:'phone',stops:undefined};
+assert.deepEqual(cellEdit.cellPatch(sourceOnly,{...cellDraft,value:''}),{phone:''});
+assert.deepEqual(cellEdit.cellResource({route_id:'r',primary_driver_id:'d'},'primary_driver_name','link'),{table:'routes',id:'r',isStop:false});
+assert.deepEqual(cellEdit.cellResource({route_id:'r',primary_driver_id:'d'},'primary_driver_name','value'),{table:'drivers',id:'d',isStop:false});
+console.log('Course table edits: owner vs relationship, one-link changes, stable reorder IDs, midnight/empty/clear/inherit, invalid time/order passed');

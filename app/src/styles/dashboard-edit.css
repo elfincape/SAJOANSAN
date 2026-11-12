@@ -1,0 +1,100 @@
+.dashboard-edit-cell {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 5px;
+  text-align: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  cursor: text;
+}
+.dashboard-edit-cell:hover,
+.dashboard-edit-cell:focus-visible {
+  background: var(--ean-interaction-surface);
+  outline: 1px solid var(--ean-focus-ring, currentColor);
+  outline-offset: -1px;
+}
+.dashboard-cell-editor {
+  position: fixed;
+  z-index: 180;
+  width: 320px;
+  max-height: calc(100dvh - 96px);
+  overflow: auto;
+  padding: 16px;
+  border-radius: 16px;
+  color: var(--theme-text);
+  background: var(--ean-popup-fill);
+  box-shadow: var(--ean-shadow);
+  backdrop-filter: blur(20px);
+}
+.dashboard-cell-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dashboard-cell-heading h2 {
+  font-size: 14px;
+  font-weight: 650;
+}
+.dashboard-cell-scopes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.dashboard-cell-scopes [aria-pressed='true'] {
+  background: var(--ean-interaction-surface);
+  font-weight: 700;
+}
+.dashboard-cell-editor fieldset {
+  display: grid;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.dashboard-cell-editor label {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.dashboard-cell-editor .app-input {
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+}
+.dashboard-cell-editor button[type='submit'] {
+  position: sticky;
+  bottom: 0;
+  background: var(--theme-selected);
+}
+.dashboard-cell-error {
+  color: var(--ean-danger, #d84c64);
+  font-size: 12px;
+  margin-top: 10px;
+}
+.dashboard-cell-compare,
+.dashboard-cell-hint {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+}
+.dashboard-cell-hint {
+  opacity: 0.72;
+}
+.dashboard-save-status {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dashboard-cell-editor {
+    backdrop-filter: none;
+    background: var(--ean-surface);
+  }
+}

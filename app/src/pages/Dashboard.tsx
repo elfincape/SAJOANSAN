@@ -6,6 +6,13 @@ import '../styles/dashboard.css';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { Modal, ModalClose } from '../components/Modal';
 import { DashboardDetail } from '../components/DashboardDetail';
+import {
+  DashboardCellEditor,
+  pendingCell,
+  type CellSelection,
+  type CellEditorHandle,
+} from '../components/DashboardCellEditor';
+import { canOfferCell } from '../lib/dashboard-edit';
 import { OperationsAssistant } from '../components/OperationsAssistant';
 import { SavedViews } from '../components/SavedViews';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -264,7 +271,7 @@ function Work({
   showMe: boolean;
   onCloseMe: () => void;
 }) {
-  const { center, profile } = useAdminPage(),
+  const { center, profile, permissions, setControlsDisabled } = useAdminPage(),
     { toast, feedback } = useFeedback(),
     [rows, setRows] = useState<DashboardRow[]>([]),
     [healthAvailable, setHealthAvailable] = useState(false),
@@ -278,6 +285,45 @@ function Work({
     [search, setSearch] = useState(urlInitial.filters.search),
     [openFilter, setOpenFilter] = useState<string | null>(null),
     [detail, setDetail] = useState<DashboardRow | null>(null);
+  const [editingCell, setEditingCell] = useState<CellSelection | null>(null);
+  const [restoredCell, setRestoredCell] = useState(() =>
+    pendingCell(profile.id),
+  );
+  const [saveStatus, setSaveStatus] = useState('');
+  const cellEditor = useRef<CellEditorHandle>(null);
+  const cellOpening = useRef(false);
+  const activeCenter = useRef(center.code);
+  activeCenter.current = center.code;
+  useEffect(() => {
+    setControlsDisabled(!!editingCell);
+    return () => setControlsDisabled(false);
+  }, [editingCell, setControlsDisabled]);
+  async function openCell(
+    row: DashboardRow,
+    column: string,
+    element: HTMLElement,
+  ) {
+    if (restoredCell && !editingCell) {
+      setEditingCell(restoredCell.selection);
+      setSaveStatus('이전 미저장 입력을 복원했습니다.');
+      return;
+    }
+    if (
+      editingCell?.row.stop_id === row.stop_id &&
+      editingCell?.column === column
+    )
+      return;
+    if (cellOpening.current) return;
+    cellOpening.current = true;
+    try {
+      if (cellEditor.current && !(await cellEditor.current.commit())) return;
+      const rect = element.getBoundingClientRect();
+      setRestoredCell(null);
+      setEditingCell({ row, column, left: rect.left, top: rect.bottom + 4 });
+    } finally {
+      cellOpening.current = false;
+    }
+  }
   const [storedColumns] = useState(() =>
     dashboardColumns({
       order: loadJSON<unknown>('dash.colOrder', ALL_KEYS),
@@ -306,7 +352,16 @@ function Work({
       .then(async (data) => {
         if (!active) return;
         try {
-          const health = await dashboardHealth(center);
+          const health = await dashboardHealth(center, [
+            ...new Set(
+              data
+                .flatMap((row) => [
+                  row.primary_driver_id,
+                  row.secondary_driver_id,
+                ])
+                .filter((id): id is string => !!id),
+            ),
+          ]);
           if (!active) return;
           const byDriver = new Map(
             health.map((d) => [String(d.id), d.health_certificate_expires_on]),
@@ -464,7 +519,7 @@ function Work({
       );
     }
   }
-  const modalOpen = !!detail || !!columnConfig || showMe;
+  const modalOpen = !!detail || !!columnConfig || showMe || !!editingCell;
   useWorkspaceActions([
     {
       id: 'dashboard-search',
@@ -738,8 +793,58 @@ function Work({
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(row);
   }
+  async function refreshSavedRows() {
+    const code = center.code;
+    const value = await loadDashboard(center);
+    const health = await dashboardHealth(center, [
+      ...new Set(
+        value
+          .flatMap((row) => [row.primary_driver_id, row.secondary_driver_id])
+          .filter((id): id is string => !!id),
+      ),
+    ]).catch(() => null);
+    if (activeCenter.current !== code) return;
+    const dates = new Map(
+      (health ?? []).map((row) => [row.id, row.health_certificate_expires_on]),
+    );
+    setHealthAvailable(health !== null);
+    setRows(
+      value.map((row) => ({
+        ...row,
+        primary_driver_health_expires_on:
+          dates.get(String(row.primary_driver_id)) ?? null,
+        secondary_driver_health_expires_on:
+          dates.get(String(row.secondary_driver_id)) ?? null,
+      })),
+    );
+    if (!health) throw Error('보건증 현재값을 다시 불러오지 못했습니다.');
+  }
   function saveDetail(_id: string, _payload: Record<string, unknown>) {
-    void loadDashboard(center).then(value => setRows(value)).catch(error => toast('저장은 완료됐지만 현재 목록을 다시 불러오지 못했습니다: '+String(error),'error'));
+    void refreshSavedRows().catch((error) =>
+      toast(
+        '저장은 완료됐지만 현재 목록을 다시 불러오지 못했습니다: ' +
+          String(error),
+        'error',
+      ),
+    );
+  }
+  function editableCell(row: DashboardRow, key: string) {
+    if (useErpCatalog || !canOfferCell(permissions, row, key))
+      return cell(row, key);
+    return (
+      <button
+        type="button"
+        data-cell-edit={key}
+        className="dashboard-edit-cell"
+        aria-label={`${COL_MAP[key]?.label || key} 셀 수정 · ${row.route_name || row.dp_name || ''}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          void openCell(row, key, event.currentTarget);
+        }}
+      >
+        {cell(row, key) || <span className="muted">—</span>}
+      </button>
+    );
   }
   const groupKeys = [
     'stop_order',
@@ -761,8 +866,28 @@ function Work({
   return (
     <>
       <div id="app" className="app-main" tabIndex={-1}>
-        {useErpCatalog && <p className="text-xs text-zinc-400">{catalogScopeLabel(center.code)}</p>}
+        {useErpCatalog && (
+          <p className="text-xs text-zinc-400">
+            {catalogScopeLabel(center.code)}
+          </p>
+        )}
         <div id="filter-bar">
+          <div
+            className="dashboard-save-status"
+            role="status"
+            aria-live="polite"
+          >
+            {saveStatus}
+          </div>
+          {restoredCell && !editingCell && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setEditingCell(restoredCell.selection)}
+            >
+              미저장 셀 복원
+            </button>
+          )}
           <div className="dashboard-query">
             <input
               id="search-input"
@@ -1056,7 +1181,9 @@ function Work({
                           : ''
                       }
                       data-stop-id={row.stop_id ?? ''}
-                      onClick={() => setDetail(row)}
+                      onClick={() => {
+                        if (!editingCell) setDetail(row);
+                      }}
                     >
                       {cols.map((c) => (
                         <td
@@ -1089,7 +1216,7 @@ function Work({
                               : undefined
                           }
                         >
-                          {cell(row, c.key)}
+                          {editableCell(row, c.key)}
                         </td>
                       ))}
                     </tr>
@@ -1184,7 +1311,9 @@ function Work({
                                     : ''
                                 }
                                 data-stop-id={row.stop_id ?? ''}
-                                onClick={() => setDetail(row)}
+                                onClick={() => {
+                                  if (!editingCell) setDetail(row);
+                                }}
                               >
                                 {groupKeys.map((key) => (
                                   <td
@@ -1197,7 +1326,7 @@ function Work({
                                           : undefined
                                     }
                                   >
-                                    {cell(row, key)}
+                                    {editableCell(row, key)}
                                   </td>
                                 ))}
                               </tr>
@@ -1211,6 +1340,20 @@ function Work({
           </div>
         </div>
       </div>
+      {editingCell && (
+        <DashboardCellEditor
+          key={`${editingCell.row.stop_id}:${editingCell.column}`}
+          ref={cellEditor}
+          selection={editingCell}
+          restored={restoredCell}
+          close={() => {
+            setEditingCell(null);
+            setRestoredCell(null);
+          }}
+          saved={refreshSavedRows}
+          status={setSaveStatus}
+        />
+      )}
       {detail ? (
         <DashboardDetail
           key={detail.stop_id}

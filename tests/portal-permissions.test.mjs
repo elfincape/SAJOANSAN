@@ -114,6 +114,58 @@ if (process.env.PGLITE_MODULE) {
   await db.exec(`reset role;update operations_permissions set member_overrides=jsonb_build_object('${id(2)}',jsonb_build_object('level','none','scope','all')) where resource='routes';set role authenticated;`);
   assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,0);
   await actor(4);assert.equal((await db.query('select count(*)::int n from routes')).rows[0].n,0);
+  // Execute the new cell writer against this same isolated PostgreSQL fixture.
+  await db.exec(`reset role; alter table delivery_points add column updated_at timestamptz default now();
+    create function cell_test_stamp() returns trigger language plpgsql as $$begin new.updated_at=clock_timestamp();return new;end$$;
+    create trigger cell_test_stamp before update on delivery_points for each row execute function cell_test_stamp();`);
+  await actor(1);
+  const {createRequire}=await import('node:module');
+  const ts=createRequire(import.meta.url)('../app/node_modules/typescript');
+  const cellJs=ts.transpileModule(readFileSync(new URL('../app/src/lib/dashboard-edit.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import[\s\S]*?;\s*/gm,'').replace(/^export /gm,'');
+  let dropResponse=false;
+  const quoted=value=>{assert.match(value,/^[a-z_]+$/);return '"'+value+'"';};
+  const databaseClient={from(table){
+    let patch=null,filters=[],columns='*';
+    const q={update(value){patch=value;return q;},eq(key,value){filters.push([key,value]);return q;},is(key,value){assert.equal(value,null);filters.push([key,null]);return q;},select(value){columns=value;return q;},single(){return q;},maybeSingle(){return q;},async then(ok,bad){
+      try{
+        const args=[],bind=value=>{args.push(value);return '$'+args.length;};
+        const set=patch?Object.entries(patch).map(([k,v])=>quoted(k)+'='+bind(v)).join(','):'';
+        const where=filters.map(([k,v])=>quoted(k)+(v===null?' is null':'='+bind(v))).join(' and ');
+        const selected=columns==='*'?'*':columns.split(',').map(quoted).join(',');
+        const sql=patch?`update ${quoted(table)} set ${set} where ${where} returning ${selected}`:`select ${selected} from ${quoted(table)} where ${where}`;
+        const result=await db.query(sql,args);
+        if(patch&&dropResponse){dropResponse=false;return ok({data:null,error:{message:'isolated lost response'}});}
+        return ok({data:result.rows[0]??null,error:null});
+      }catch(error){return ok({data:null,error});}
+    }};return q;
+  }};
+  const writer=new Function('supabase','saveRouteStops',cellJs+';return {writeCell};')(databaseClient,async(routeId,expected,next)=>{
+    try{return {data:(await db.query('select legacy_save_route_stops($1,$2,$3) result',[routeId,JSON.stringify(expected),JSON.stringify(next)])).rows[0],error:null};}catch(error){return {error};}
+  });
+  const source=(await db.query('select * from delivery_points where id=$1',[id(20)])).rows[0];
+  source.updated_at=new Date(source.updated_at).toISOString();
+  const cell={column:'dp_address',scope:'value',table:'delivery_points',id:id(20),source,field:'address',candidates:[]};
+  const input={value:'셀에서 저장한 주소',mode:'set',conditions:{}};
+  dropResponse=true;
+  await assert.rejects(writer.writeCell(cell,input),{message:'isolated lost response'});
+  const afterFirst=(await db.query('select updated_at from delivery_points where id=$1',[id(20)])).rows[0].updated_at;
+  await writer.writeCell(cell,input);
+  assert.deepEqual((await db.query('select updated_at from delivery_points where id=$1',[id(20)])).rows[0].updated_at,afterFirst,'lost-response retry must not write again');
+  assert.equal((await db.query("select count(*)::int n from course_view where dp_address='셀에서 저장한 주소'")).rows[0].n,2,'actual cell write appears on both linked routes');
+  await assert.rejects(writer.writeCell(cell,{...input,value:'stale overwrite'}),/다른 작업/);
+  const stopExpected=await snapshot(10);
+  await writer.writeCell({column:'delivery_method',scope:'value',table:'routes',id:id(10),source:{},field:'override_delivery_method',stops:stopExpected,stopId:id(40),candidates:[]},{...input,value:'',mode:'inherit'});
+  assert.equal((await db.query('select delivery_method from course_view where stop_id=$1',[id(40)])).rows[0].delivery_method,'대면');
+  await db.query('insert into delivery_points(id,name,center_code) values($1,$2,$3)',[id(21),'격리 교체 납품처','001']);
+  const replacement={column:'dp_name',scope:'link',table:'routes',id:id(10),source:{},field:'delivery_point_id',stops:await snapshot(10),stopId:id(40),candidates:[{id:id(21),label:'격리 교체 납품처'}]};
+  await writer.writeCell(replacement,{...input,value:id(21)});
+  assert.equal((await snapshot(10))[0].id,id(40),'replacement preserves stable relationship ID');
+  assert.equal((await snapshot(10))[0].delivery_point_id,id(21));
+  assert.equal((await snapshot(11))[0].delivery_point_id,id(20),'other course keeps its destination');
+  assert.equal((await db.query('select count(*)::int n from delivery_points')).rows[0].n,2,'replacement never deletes the common source');
+  await actor(3);
+  await assert.rejects(writer.writeCell(cell,{...input,value:'forbidden'}));
+  console.log('PASS cell writer + isolated PostgreSQL: persisted shared edit, lost response retry without duplicate write, stale conflict, existing stop RPC, viewer denial');
   console.log('PASS isolated SQL: RLS list/detail/write denial, OP unclassified, shared source, cross-attribute links, clear/empty/0/false, atomic retry/conflict/rollback, deletion reference preservation');
  } finally {await db.close();}
 }
