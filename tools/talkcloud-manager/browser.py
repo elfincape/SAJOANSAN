@@ -132,22 +132,29 @@ class Browser:
         box=self.page.locator('.scroll_talk').bounding_box()
         if not box:
             raise ValueError('사진 목록 영역을 확인할 수 없습니다.')
+        before=[c['id'] for c in self.cards()]
+        top=self.page.locator('.scroll_talk').evaluate('e=>e.scrollTop')
         self.page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
         self.page.mouse.wheel(0,max(100,min(350,int(box['height']/2))))
-        self.page.wait_for_timeout(650)
+        self.page.wait_for_timeout(100)
+        try:
+            self.page.wait_for_function("({ids,top}) => {const current=[...document.querySelectorAll('li[data-target=\"talk\"] input')].map(e=>e.id);return document.querySelector('.scroll_talk').scrollTop!==top||JSON.stringify(current)!==JSON.stringify(ids)}",arg={'ids':before,'top':top},timeout=1200)
+        except PlaywrightTimeoutError:
+            pass
+
+    def file_count(self):
+        match=re.search(r'([\d,]+)개의 파일',self.page.locator('main').inner_text())
+        if not match:
+            raise ValueError('방의 전체 파일 수를 확인하지 못했습니다.')
+        return int(match.group(1).replace(',',''))
 
     def scan(self, rid, start, end):
         self.room(rid)
-        total_text=self.page.locator('main').inner_text()
-        total_match=re.search(r'([\d,]+)개의 파일',total_text)
-        if not total_match:
-            raise ValueError('방의 전체 파일 수를 확인하지 못했습니다.')
-        total=int(total_match.group(1).replace(',',''))
+        total=self.file_count()
         found={}
         seen=set()
-        same=0
-        deadline=time.monotonic()+300
-        while time.monotonic()<deadline:
+        progressed=time.monotonic()
+        while True:
             self.check()
             cards=self.cards()
             before=len(seen)
@@ -155,23 +162,18 @@ class Browser:
                 seen.add(c['id'])
                 m=re.fullmatch(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})',c['date'] or '')
                 if not m:
-                    raise ValueError('사진 날짜를 확인할 수 없어 중단했습니다.')
+                    raise ValueError('파일 날짜를 확인할 수 없어 중단했습니다.')
                 day=date(*map(int,m.groups())).isoformat()
                 if start<=day<=end:
                     found[c['id']]=day
-            if len(seen)==before:
-                same+=1
-            else:
-                same=0
+            if len(seen)>before:
+                progressed=time.monotonic()
             if len(seen)>=total:
                 return found
-            if same>=25:
-                print(f'Incomplete photo list: seen={len(seen)}, expected={total}, visible={len(cards)}',flush=True)
-                print(self.page.locator('li[data-target="talk"]').last.evaluate("e=>{const a=[];for(let p=e.parentElement;p;p=p.parentElement){if(p.scrollHeight>p.clientHeight)a.push({tag:p.tagName,class:p.className,top:p.scrollTop,height:p.clientHeight,total:p.scrollHeight,overflow:getComputedStyle(p).overflowY})}return a}"),flush=True)
-                raise ValueError('전체 목록을 불러오지 못했습니다. 다시 조회하세요.')
-            self.state.update(message='선택한 방의 사진·동영상을 정리하고 있습니다.')
+            if time.monotonic()-progressed>60:
+                raise ValueError('목록을 60초 동안 더 불러오지 못해 중단했습니다. 연결 상태를 확인하세요.')
+            self.state.update(message=f'{self.known[rid]} · 목록 확인 {len(seen):,}/{total:,}개 · 대상 {len(found):,}개')
             self.scroll()
-        raise ValueError('목록 확인 제한시간을 초과했습니다. 삭제하지 않았습니다.')
 
     def preview(self, rules):
         self.plan=[]
@@ -182,78 +184,102 @@ class Browser:
             raise ValueError('중복 방 선택입니다.')
         for r in rules:
             start,end=bounds(r)
-            ids=self.scan(r['id'],start,end)
-            self.plan.append({'id':r['id'],'start':start,'end':end,'files':ids})
-        count=sum(len(r['files']) for r in self.plan)
-        self.state.update(message='선택한 기간의 사진·동영상을 휴지통으로 이동합니다.')
+            if r['id'] not in self.known:
+                raise ValueError('현재 계정에서 확인한 방만 선택할 수 있습니다.')
+            self.plan.append({'id':r['id'],'start':start,'end':end})
 
     def delete(self):
         if not self.plan:
-            raise ValueError('먼저 삭제 대상을 조회하세요.')
+            raise ValueError('삭제할 방과 날짜를 선택하세요.')
         deleted=0
-        for r in self.plan:
-            remaining=dict(r['files'])
+        for room_index,r in enumerate(self.plan,1):
+            remaining=self.scan(r['id'],r['start'],r['end'])
+            if not remaining:
+                continue
+            self.room(r['id'])
+            restarted=False
             while remaining:
                 self.check()
-                self.room(r['id'])
                 selected=[]
-                stale=0
+                batch_top=None
                 seen=set()
-                deadline=time.monotonic()+300
-                while len(selected)<100 and stale<8 and time.monotonic()<deadline:
+                progressed=time.monotonic()
+                while len(selected)<500:
                     self.check()
                     cards=self.cards()
-                    before=len(seen)
+                    before=(len(seen),len(selected))
                     for c in cards:
                         seen.add(c['id'])
                         if c['id'] not in remaining or c['id'] in selected:
                             continue
                         m=re.fullmatch(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})',c['date'] or '')
                         if not m or date(*map(int,m.groups())).isoformat()!=remaining[c['id']]:
-                            raise ValueError('조회한 사진 정보가 변경돼 중단했습니다.')
+                            raise ValueError('조회한 파일 정보가 변경돼 중단했습니다.')
                         card=self.page.locator('li[data-target="talk"]').filter(has=self.page.locator('input[id="'+c['id']+'"]'))
                         box=card.bounding_box()
                         gallery=self.page.locator('.scroll_talk').bounding_box()
                         if not box or not gallery or not gallery['y']+24<=box['y']+18<min(890,gallery['y']+gallery['height']):
                             continue
                         self.page.mouse.move(box['x']+18,box['y']+18)
-                        label=card.locator('label')
-                        point=label.evaluate("e=>{const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);return r.width&&r.height&&e.contains(hit)?{x,y}:null}")
+                        point=card.locator('label').evaluate("e=>{const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);return r.width&&r.height&&e.contains(hit)?{x,y}:null}")
                         if not point:
                             continue
                         self.page.mouse.click(point['x'],point['y'])
                         if not card.locator('input').is_checked():
                             raise ValueError('파일 선택을 확인하지 못해 중단했습니다.')
+                        if batch_top is None:
+                            batch_top=self.page.locator('.scroll_talk').evaluate('e=>Math.max(0,e.scrollTop-e.clientHeight)')
                         selected.append(c['id'])
-                        if len(selected)>=100:
+                        if len(selected)>=500:
                             break
-                    stale=stale+1 if len(seen)==before else 0
-                    if len(selected)>=100 or set(remaining).issubset(selected):
+                    if (len(seen),len(selected))!=before:
+                        progressed=time.monotonic()
+                    if len(selected)>=500 or len(selected)==len(remaining):
                         break
+                    bottom=self.page.locator('.scroll_talk').evaluate('e=>e.scrollTop+e.clientHeight>=e.scrollHeight-2')
+                    if bottom and selected and time.monotonic()-progressed>3:
+                        break
+                    if time.monotonic()-progressed>60:
+                        if bottom:
+                            break
+                        raise ValueError(f'파일 선택이 60초간 진행되지 않아 중단했습니다. 확인된 이동: {deleted:,}개')
+                    self.state.update(message=f'방 {room_index}/{len(self.plan)} · {self.known[r["id"]]} · 선택 {len(selected):,}개 / 남은 대상 {len(remaining):,}개 · 이동 완료 {deleted:,}개')
                     self.scroll()
                 if not selected:
-                    raise ValueError('조회한 사진을 다시 찾지 못했습니다. 대상을 다시 조회하세요.')
+                    if not restarted:
+                        self.room(r['id'])
+                        restarted=True
+                        continue
+                    raise ValueError(f'조회한 파일을 다시 찾지 못해 중단했습니다. 확인된 이동: {deleted:,}개')
                 label=self.page.get_by_role('button',name=re.compile('개 선택됨 선택 취소')).inner_text()
                 if int(re.search(r'[\d,]+',label).group().replace(',',''))!=len(selected):
                     raise ValueError('선택 수가 일치하지 않아 삭제하지 않습니다.')
                 if self.page.locator('a[role="tab"][aria-selected="true"]').get_attribute('href')!=r['id']:
                     raise ValueError('채팅방이 바뀌어 삭제하지 않습니다.')
+                expected=self.file_count()-len(selected)
                 self.check()
                 self.page.get_by_role('link',name='삭제하기',exact=True).click()
                 self.page.get_by_text('선택한 파일을 휴지통으로 이동하시겠습니까?',exact=False).wait_for()
                 self.check()
                 self.page.get_by_role('button',name='확인',exact=True).click()
-                self.page.get_by_role('button',name=re.compile('개 선택됨 선택 취소')).wait_for(state='hidden')
+                self.page.get_by_role('button',name=re.compile('개 선택됨 선택 취소')).wait_for(state='hidden',timeout=60000)
+                try:
+                    self.page.wait_for_function("({expected,ids})=>{const text=document.querySelector('main')?.innerText||'',m=text.match(/([\\d,]+)개의 파일/);return m&&Number(m[1].replaceAll(',',''))===expected&&!ids.some(id=>document.getElementById(id))}",arg={'expected':expected,'ids':selected},timeout=20000)
+                except PlaywrightTimeoutError:
+                    present=self.scan(r['id'],'0001-01-01','9999-12-31')
+                    if set(present).intersection(selected):
+                        raise ValueError(f'일부 파일의 삭제를 확인하지 못해 중단했습니다. 이전 확인 완료: {deleted:,}개')
                 for fid in selected:
                     remaining.pop(fid)
                 deleted+=len(selected)
-                self.state.update(message=f'사진·동영상 {deleted}개 휴지통 이동 처리 중')
-            check=self.scan(r['id'],r['start'],r['end'])
-            if set(check)&set(r['files']):
-                raise ValueError('일부 사진이 남아 있습니다. 재조회가 필요합니다.')
+                restarted=False
+                self.state.update(message=f'방 {room_index}/{len(self.plan)} · 사진·동영상 {deleted:,}개 휴지통 이동 확인 완료')
+                if remaining:
+                    self.page.locator('.scroll_talk').evaluate('(e,top)=>{e.scrollTop=Math.min(top,e.scrollHeight-e.clientHeight)}',batch_top)
+                    self.page.wait_for_timeout(150)
         self.plan=[]
         self.state.pop('preview',None)
-        self.state.update(message=f'완료 · 사진·동영상 {deleted}개를 휴지통으로 이동했습니다.')
+        self.state.update(message=f'완료 · 사진·동영상 {deleted:,}개를 휴지통으로 이동했습니다.')
 
     def trash(self):
         self.page.goto(BASE+'/trashcan',wait_until='domcontentloaded')

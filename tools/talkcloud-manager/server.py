@@ -27,7 +27,7 @@ class Session:
         self.commands=queue.Queue(maxsize=1)
         self.verification=queue.Queue(maxsize=5)
         self.cancel=threading.Event()
-        self.created=self.touched=time.monotonic()
+        self.touched=time.monotonic()
         self.idle_timeout=600
         self.closed=False
         threading.Thread(target=self.worker,daemon=True).start()
@@ -37,7 +37,7 @@ class Session:
         browser=None
         try:
             while not self.closed:
-                if time.monotonic()-self.touched>self.idle_timeout or time.monotonic()-self.created>3600:
+                if time.monotonic()-self.touched>self.idle_timeout:
                     break
                 try:
                     action,payload=self.commands.get(timeout=1)
