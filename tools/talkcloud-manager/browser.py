@@ -1,5 +1,6 @@
 import re
 import time
+import queue
 from datetime import date, timedelta
 from playwright.sync_api import sync_playwright
 
@@ -22,9 +23,10 @@ def bounds(rule):
     return start.isoformat(), end.isoformat()
 
 class Browser:
-    def __init__(self, state, cancelled):
+    def __init__(self, state, cancelled, verification):
         self.state = state
         self.cancelled = cancelled
+        self.verification = verification
         self.pw = sync_playwright().start()
         self.browser = self.pw.chromium.launch(headless=True, args=['--disable-dev-shm-usage'])
         self.context = self.browser.new_context(locale='ko-KR', timezone_id='Asia/Seoul', viewport={'width':1280,'height':900}, accept_downloads=False)
@@ -51,23 +53,44 @@ class Browser:
         self.page.get_by_role('button', name='로그인', exact=True).click()
         password = None
         self.state.update(phase='auth', message='카카오 로그인 결과를 확인하고 있습니다.')
-        deadline = time.monotonic()+180
+        deadline = time.monotonic()+600
+        challenge_version=0
         while time.monotonic()<deadline:
             self.check()
             if self.page.url.startswith(BASE+'/') and '/product' not in self.page.url:
                 if self.page.get_by_role('link',name='휴지통',exact=True).is_visible():
+                    self.state.pop('challenge',None)
+                    self.state.pop('challenge_image',None)
                     self.state.update(authenticated=True,phase='ready',message='연결됐습니다. 방 목록을 불러옵니다.')
                     self.rooms(0)
                     return
             body = self.page.locator('body').inner_text()
             if re.search('비밀번호가 일치하지|계정을 찾을 수 없|잘못된 비밀번호',body):
                 raise ValueError('카카오 계정 또는 비밀번호를 확인하세요.')
-            if re.search('보안문자|로봇이 아닙니다|CAPTCHA',body,re.I):
-                raise ValueError('카카오 보안문자 확인이 필요해 자동 연결을 중단했습니다. 잠시 후 다시 연결하세요.')
-            if re.search('2단계 인증|카카오톡.*인증|인증 요청',body):
-                self.state['message']='카카오 인증 화면입니다. 모바일 카카오톡에서 인증 요청을 확인해 주세요. '+body.replace(account,'[계정]')[:450]
+            if re.search('보안문자|로봇이 아닙니다|CAPTCHA|아래 문제에 답해',body,re.I) and self.page.url.startswith('https://accounts.kakao.com/'):
+                refresh='challenge' not in self.state
+                try:
+                    action=self.verification.get_nowait()
+                    if action['kind']=='click': self.page.mouse.click(action['x'],action['y'])
+                    elif action['kind']=='text': self.page.keyboard.insert_text(action['text'])
+                    else: self.page.keyboard.press(action['key'])
+                    action.clear()
+                    self.page.wait_for_timeout(700)
+                    refresh=True
+                except queue.Empty:
+                    pass
+                if refresh:
+                    challenge_version+=1
+                    self.state['challenge_image']=self.page.screenshot(mask=[self.page.locator('input[name="password"]'),self.page.locator('input[name="loginId"]')])
+                    self.state['challenge']={'version':challenge_version,'width':1280,'height':900}
+                self.state['message']='카카오 보안문제를 아래 화면에서 직접 풀어 주세요. 완료하면 로그인이 이어집니다.'
             else:
-                self.state['message']='카카오 로그인 안내: '+body.replace(account,'[계정]')[:650]
+                self.state.pop('challenge',None)
+                self.state.pop('challenge_image',None)
+                if re.search('2단계 인증|카카오톡.*인증|인증 요청',body):
+                    self.state['message']='모바일 카카오톡에 도착한 인증 요청을 승인해 주세요.'
+                else:
+                    self.state['message']='카카오 로그인 안내: '+body.replace(account,'[계정]')[:650]
             self.page.wait_for_timeout(1200)
         raise ValueError('로그인 승인 시간이 만료됐습니다. 다시 연결해 주세요.')
 

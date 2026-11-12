@@ -21,6 +21,7 @@ class Session:
         self.token=secrets.token_urlsafe(32)
         self.state={'phase':'idle','authenticated':False,'busy':False,'message':'연결 대기'}
         self.commands=queue.Queue(maxsize=1)
+        self.verification=queue.Queue(maxsize=5)
         self.cancel=threading.Event()
         self.created=self.touched=time.monotonic()
         self.closed=False
@@ -39,7 +40,7 @@ class Session:
                     continue
                 try:
                     if action=='login':
-                        browser=Browser(self.state,self.cancel)
+                        browser=Browser(self.state,self.cancel,self.verification)
                         account=payload.pop('account')
                         password=payload.pop('password')
                         try:
@@ -61,6 +62,8 @@ class Session:
                     self.state.pop('preview',None)
                     if not self.state['authenticated']:
                         self.state['phase']='failed'
+                        self.state.pop('challenge',None)
+                        self.state.pop('challenge_image',None)
                 except Exception as error:
                     frame=traceback.extract_tb(error.__traceback__)[-1]
                     print(f'{action}: {type(error).__name__} at {frame.name}:{frame.lineno}',flush=True)
@@ -69,6 +72,8 @@ class Session:
                     self.state.pop('preview',None)
                     if not self.state['authenticated']:
                         self.state['phase']='failed'
+                        self.state.pop('challenge',None)
+                        self.state.pop('challenge_image',None)
                 finally:
                     payload.clear()
                     self.state['busy']=False
@@ -116,11 +121,14 @@ class Handler(BaseHTTPRequestHandler):
         self.path=urlsplit(self.path).path
         if self.path=='/health': return self.send(200,{'ok':True})
         if self.path=='/api/availability': return self.send(200,{'available':session is None})
-        if self.path=='/api/state':
+        if self.path in ('/api/state','/api/challenge'):
             with lock:
                 s=self.owner()
                 if not s: return self.send(401,{'error':'다른 사용자가 작업 중입니다.' if session else '계정을 입력해 연결하세요.'})
-                return self.send(200,dict(s.state))
+                if self.path=='/api/challenge':
+                    frame=s.state.get('challenge_image')
+                    return self.send(200,frame,'image/png') if frame else self.send(404,{'error':'보안문제가 없습니다.'})
+                return self.send(200,{key:value for key,value in s.state.items() if key!='challenge_image'})
         files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
         if self.path not in files: return self.send(404,{'error':'없는 경로입니다.'})
         name,mime=files[self.path]
@@ -157,6 +165,15 @@ class Handler(BaseHTTPRequestHandler):
                 s.cancel.set()
                 if action=='logout': s.closed=True
                 return self.send(200,{'ok':True})
+            if action=='verification':
+                if not s.state.get('challenge') or s.state['authenticated']:
+                    return self.send(409,{'error':'현재 보안문제 입력 단계가 아닙니다.'})
+                kind=body.get('kind')
+                valid=(kind=='click' and type(body.get('x')) is int and type(body.get('y')) is int and 0<=body['x']<1280 and 0<=body['y']<900) or (kind=='text' and isinstance(body.get('text'),str) and 0<len(body['text'])<=256) or (kind=='key' and body.get('key') in ('Enter','Backspace','Tab'))
+                if not valid: return self.send(400,{'error':'입력 내용을 확인하세요.'})
+                try: s.verification.put_nowait(body)
+                except queue.Full: return self.send(409,{'error':'앞선 입력을 처리하고 있습니다.'})
+                return self.send(202,{'ok':True})
             if s.state['busy']: return self.send(409,{'error':'현재 작업이 끝난 후 실행하세요.'})
             if not s.state['authenticated']: return self.send(401,{'error':'로그인을 완료하세요.'})
             if action not in ('rooms','delete','trash','empty-trash'): return self.send(404,{'error':'없는 작업입니다.'})
