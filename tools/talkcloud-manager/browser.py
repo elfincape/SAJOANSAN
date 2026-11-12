@@ -46,11 +46,16 @@ class Browser:
         finally:
             self.pw.stop()
 
-    def login(self, account, password):
-        self.page.goto('https://accounts.kakao.com/login/?continue=https://talkcloud.kakao.com/', wait_until='domcontentloaded')
-        self.page.locator('input[name="loginId"]').fill(account)
-        self.page.locator('input[name="password"]').fill(password)
-        self.page.get_by_role('button', name='로그인', exact=True).click()
+    def login(self, account, password, method='password'):
+        self.page.goto('https://accounts.kakao.com/login/?continue=https://talkcloud.kakao.com/#login', wait_until='domcontentloaded')
+        if method=='qr':
+            self.page.get_by_role('button',name='QR코드 로그인',exact=True).click()
+            self.page.wait_for_url('https://accounts.kakao.com/qr_login/**')
+            self.page.locator('canvas').wait_for()
+        else:
+            self.page.locator('input[name="loginId"]').fill(account)
+            self.page.locator('input[name="password"]').fill(password)
+            self.page.get_by_role('button', name='로그인', exact=True).click()
         password = None
         self.state.update(phase='auth', message='카카오 로그인 결과를 확인하고 있습니다.')
         deadline = time.monotonic()+600
@@ -68,7 +73,7 @@ class Browser:
             if re.search('비밀번호가 일치하지|계정을 찾을 수 없|잘못된 비밀번호',body):
                 raise ValueError('카카오 계정 또는 비밀번호를 확인하세요.')
             if self.page.url.startswith('https://accounts.kakao.com/'):
-                mode='security' if re.search('보안문자|로봇이 아닙니다|CAPTCHA|아래 문제에 답해',body,re.I) else 'login'
+                mode='qr' if '/qr_login/' in self.page.url else 'security' if re.search('보안문자|로봇이 아닙니다|CAPTCHA|아래 문제에 답해',body,re.I) else 'login'
                 refresh=self.state.get('challenge',{}).get('mode')!=mode
                 try:
                     action=self.verification.get_nowait()
@@ -84,7 +89,9 @@ class Browser:
                     challenge_version+=1
                     self.state['challenge_image']=self.page.screenshot(style='input[name="password"],input[name="loginId"]{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}')
                     self.state['challenge']={'version':challenge_version,'width':1280,'height':900,'mode':mode}
-                if mode=='security':
+                if mode=='qr':
+                    self.state['message']='모바일 카카오톡 → 더보기 → QR코드 스캔으로 아래 코드를 스캔하고 로그인에 동의해 주세요.'
+                elif mode=='security':
                     self.state['message']='아래 카카오 화면에서 보안문제를 직접 풀어 주세요.'
                 elif re.search('2단계 인증|카카오톡.*인증|인증 요청',body):
                     self.state['message']='모바일 카카오톡의 인증 요청을 확인해 주세요. 추가 선택이 있으면 아래 화면에서 진행하세요.'

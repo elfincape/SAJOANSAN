@@ -44,7 +44,7 @@ class Session:
                         account=payload.pop('account')
                         password=payload.pop('password')
                         try:
-                            browser.login(account,password)
+                            browser.login(account,password,payload.get('method','password'))
                         finally:
                             password=None
                             account=None
@@ -152,9 +152,12 @@ class Handler(BaseHTTPRequestHandler):
             s=self.owner()
             if action=='login':
                 if session: return self.send(409,{'error':'현재 한 사용자가 연결 중입니다. 작업 종료 후 다시 연결하세요.'})
-                if not isinstance(body.get('account'),str) or not isinstance(body.get('password'),str) or not 1<=len(body['account'])<=254 or not 1<=len(body['password'])<=256:
+                if body.get('method')=='qr':
+                    body={'method':'qr','account':'','password':''}
+                elif not isinstance(body.get('account'),str) or not isinstance(body.get('password'),str) or not 1<=len(body['account'])<=254 or not 1<=len(body['password'])<=256:
                     return self.send(400,{'error':'계정과 비밀번호를 확인하세요.'})
-                body={'account':body['account'],'password':body['password']}
+                else:
+                    body={'method':'password','account':body['account'],'password':body['password']}
                 s=session=Session()
                 s.state.update(phase='connecting',busy=True,message='카카오 계정에 연결 중입니다.')
                 s.commands.put(('login',body))

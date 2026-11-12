@@ -20,7 +20,7 @@ $('cancel').onclick=()=>run(()=>api('cancel',{}));$('logout').onclick=()=>run(as
 $('trash-info').onclick=()=>run(()=>api('trash',{}));$('empty-trash').onclick=()=>{$('confirm').showModal();};$('confirm').onclose=()=>{if($('confirm').returnValue==='yes')run(()=>api('empty-trash',{confirm:true}));};
 run(async()=>{await api('state');monitor();});
 
-setInterval(async()=>{if(polling)return;try{const s=await api('availability');$('login-form').querySelector('button').disabled=!s.available;if(!s.available)say('다른 사용자가 작업 중입니다. 연결 가능 여부를 자동 확인합니다.');}catch{}},5000);
+setInterval(async()=>{if(polling)return;try{const s=await api('availability');for(const button of $('login-form').querySelectorAll('button'))button.disabled=!s.available;if(!s.available)say('다른 사용자가 작업 중입니다. 연결 가능 여부를 자동 확인합니다.');}catch{}},5000);
 
 $('challenge-screen').onclick=e=>run(()=>{const r=e.currentTarget.getBoundingClientRect();return api('verification',{kind:'click',x:Math.min(1279,Math.max(0,Math.floor((e.clientX-r.left)/r.width*1280))),y:Math.min(899,Math.max(0,Math.floor((e.clientY-r.top)/r.height*900)))});});
 $('challenge-form').onsubmit=e=>{e.preventDefault();run(async()=>{const text=$('challenge-answer').value;if(!text)return;await api('verification',{kind:'text',text});$('challenge-answer').value='';});};
@@ -28,3 +28,5 @@ $('challenge-backspace').onclick=()=>run(()=>api('verification',{kind:'key',key:
 $('challenge-enter').onclick=()=>run(()=>api('verification',{kind:'key',key:'Enter'}));
 
 $('challenge-refresh').onclick=()=>run(()=>api('verification',{kind:'refresh'}));
+
+$('qr-login').onclick=()=>run(async()=>{$('password').value='';await api('login',{method:'qr'});monitor();});
