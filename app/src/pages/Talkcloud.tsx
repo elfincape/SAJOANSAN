@@ -21,5 +21,5 @@ function Content() {
 }
 
 export default function Talkcloud() {
-  return <AdminPage title="톡클라우드 사진·동영상 정리" feature="talkcloud"><Content /></AdminPage>;
+  return <AdminPage title="톡클라우드 사진·동영상 정리"><Content /></AdminPage>;
 }
