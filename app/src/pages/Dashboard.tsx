@@ -290,6 +290,7 @@ function Work({
     pendingCell(profile.id),
   );
   const [saveStatus, setSaveStatus] = useState('');
+  const [cellHost, setCellHost] = useState<HTMLDivElement | null>(null);
   const cellEditor = useRef<CellEditorHandle>(null);
   const cellOpening = useRef(false);
   const activeCenter = useRef(center.code);
@@ -319,6 +320,7 @@ function Work({
       if (cellEditor.current && !(await cellEditor.current.commit())) return;
       const rect = element.getBoundingClientRect();
       setRestoredCell(null);
+      setSaveStatus('');
       setEditingCell({ row, column, left: rect.left, top: rect.bottom + 4 });
     } finally {
       cellOpening.current = false;
@@ -828,9 +830,22 @@ function Work({
       ),
     );
   }
-  function editableCell(row: DashboardRow, key: string) {
+  function editableCell(row: DashboardRow, key: string, tableView: string) {
     if (useErpCatalog || !canOfferCell(permissions, row, key))
       return cell(row, key);
+    if (
+      view === tableView &&
+      editingCell &&
+      editingCell.row.stop_id === row.stop_id &&
+      editingCell.column === key
+    )
+      return (
+        <div
+          ref={setCellHost}
+          data-cell-edit={key}
+          className="dashboard-cell-host"
+        />
+      );
     return (
       <button
         type="button"
@@ -872,12 +887,15 @@ function Work({
           </p>
         )}
         <div id="filter-bar">
-          <div
-            className="dashboard-save-status"
-            role="status"
-            aria-live="polite"
-          >
-            {saveStatus}
+          <div className="dashboard-edit-statusbar">
+            <div
+              className="dashboard-save-status"
+              role="status"
+              aria-live="polite"
+            >
+              {saveStatus}
+            </div>
+            <div id="dashboard-cell-actions" />
           </div>
           {restoredCell && !editingCell && (
             <button
@@ -1216,7 +1234,7 @@ function Work({
                               : undefined
                           }
                         >
-                          {editableCell(row, c.key)}
+                          {editableCell(row, c.key, 'flat')}
                         </td>
                       ))}
                     </tr>
@@ -1326,7 +1344,7 @@ function Work({
                                           : undefined
                                     }
                                   >
-                                    {editableCell(row, key)}
+                                    {editableCell(row, key, 'group')}
                                   </td>
                                 ))}
                               </tr>
@@ -1345,6 +1363,7 @@ function Work({
           key={`${editingCell.row.stop_id}:${editingCell.column}`}
           ref={cellEditor}
           selection={editingCell}
+          host={cellHost}
           restored={restoredCell}
           close={() => {
             setEditingCell(null);

@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { createPortal } from 'react-dom';
 import type { DashboardRow } from '../domain/dashboard';
 import { COL_MAP } from '../domain/dashboard';
 import { useAdminPage } from './AdminPage';
@@ -56,13 +56,14 @@ export const DashboardCellEditor = forwardRef<
   CellEditorHandle,
   {
     selection: CellSelection;
+    host: HTMLElement | null;
     restored?: PendingCell | null;
     close: () => void;
     saved: () => Promise<void>;
     status: (message: string) => void;
   }
 >(function DashboardCellEditor(
-  { selection, restored, close, saved, status },
+  { selection, host, restored, close, saved, status },
   ref,
 ) {
   const { permissions, profile } = useAdminPage();
@@ -82,6 +83,7 @@ export const DashboardCellEditor = forwardRef<
     null,
   );
   const [query, setQuery] = useState('');
+  const editor = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   const mounted = useRef(true),
     locked = useRef(false);
@@ -135,11 +137,67 @@ export const DashboardCellEditor = forwardRef<
     };
   }, [selection, scope, permissions, restored]);
   useEffect(() => {
-    if (!loading) input.current?.focus({ preventScroll: true });
-  }, [loading, scope]);
+    if (!loading && host) {
+      input.current?.focus({ preventScroll: true });
+      if (input.current instanceof HTMLInputElement) input.current.select();
+    }
+  }, [loading, scope, host]);
+  function originCell() {
+    return [...document.querySelectorAll<HTMLElement>('[data-cell-edit]')].find(
+      (el) =>
+        el.dataset.cellEdit === selection.column &&
+        el.closest<HTMLElement>('[data-stop-id]')?.dataset.stopId ===
+          selection.row.stop_id &&
+        el.offsetParent,
+    );
+  }
+  function focusOrigin() {
+    requestAnimationFrame(() => {
+      if (!document.querySelector('.dashboard-cell-editor'))
+        originCell()?.focus({ preventScroll: true });
+    });
+  }
+  async function finishKey(direction?: number) {
+    const cells = [
+      ...document.querySelectorAll<HTMLElement>('[data-cell-edit]'),
+    ].filter((el) => el.offsetParent);
+    const current = originCell();
+    const adjacent =
+      direction && current ? cells[cells.indexOf(current) + direction] : null;
+    const next = adjacent
+      ? {
+          column: adjacent.dataset.cellEdit,
+          stop: adjacent.closest<HTMLElement>('[data-stop-id]')?.dataset.stopId,
+        }
+      : null;
+    if (!(await commit())) {
+      input.current?.focus({ preventScroll: true });
+      return;
+    }
+    requestAnimationFrame(() => {
+      if (next) {
+        const target = [
+          ...document.querySelectorAll<HTMLElement>('[data-cell-edit]'),
+        ].find(
+          (el) =>
+            el.offsetParent &&
+            el.dataset.cellEdit === next.column &&
+            el.closest<HTMLElement>('[data-stop-id]')?.dataset.stopId ===
+              next.stop,
+        );
+        if (target) {
+          target.focus({ preventScroll: true });
+          target.click();
+          return;
+        }
+      }
+      focusOrigin();
+    });
+  }
   function retain(next: CellDraft, source = snapshot) {
     setDraft(next);
     setError('');
+    status('미저장');
     if (source) {
       try {
         sessionStorage.setItem(
@@ -160,6 +218,7 @@ export const DashboardCellEditor = forwardRef<
     } catch {
       /* Storage can be unavailable. */
     }
+    status('');
     close();
   }
   async function commit() {
@@ -230,288 +289,286 @@ export const DashboardCellEditor = forwardRef<
               companies: '운수사 공통정보',
             }[spec.table];
   const pendingCondition = !!spec.condition && !!snapshot?.stops;
-  const editorTop = Math.max(
-    80,
-    selection.top + 150 < window.innerHeight
-      ? selection.top
-      : selection.top - 310,
-  );
-  return (
-    <Dialog.Root open modal={false}>
-      <Dialog.Portal>
-        <Dialog.Content
-          aria-describedby={undefined}
-          aria-modal={false}
-          className="dashboard-cell-editor"
-          style={{
-            left: Math.max(
-              12,
-              Math.min(selection.left, window.innerWidth - 332),
-            ),
-            top: editorTop,
-            maxHeight: window.innerHeight - editorTop - 12,
-          }}
-          onOpenAutoFocus={(event) => {
+  const content = (
+    <div
+      ref={editor}
+      className="dashboard-cell-editor"
+      role="group"
+      aria-label={`${label} 셀 편집`}
+      aria-busy={saving || loading}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          discard();
+          focusOrigin();
+        }
+        if (
+          event.key === 'Tab' &&
+          event.target === input.current &&
+          scope !== 'link'
+        ) {
+          event.preventDefault();
+          void finishKey(event.shiftKey ? -1 : 1);
+        }
+      }}
+      onBlur={(event) => {
+        const target = event.relatedTarget;
+        if (
+          !target ||
+          editor.current?.contains(target as Node) ||
+          (target instanceof Element &&
+            target.closest('#dashboard-cell-actions'))
+        )
+          return;
+        if (target instanceof Element && target.closest('[data-cell-edit]'))
+          return;
+        void commit();
+      }}
+    >
+      {loading ? (
+        <p role="status">현재값 확인 중…</p>
+      ) : snapshot && draft ? (
+        <form
+          id="dashboard-cell-form"
+          onSubmit={(event) => {
             event.preventDefault();
-            input.current?.focus({ preventScroll: true });
-          }}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            requestAnimationFrame(() => {
-              if (document.querySelector('.dashboard-cell-editor')) return;
-              const origin = [
-                ...document.querySelectorAll<HTMLElement>('[data-cell-edit]'),
-              ].find(
-                (element) =>
-                  element.dataset.cellEdit === selection.column &&
-                  element.closest<HTMLElement>('[data-stop-id]')?.dataset
-                    .stopId === selection.row.stop_id &&
-                  element.offsetParent,
-              );
-              (
-                origin ?? document.querySelector<HTMLElement>('#search-input')
-              )?.focus({ preventScroll: true });
-            });
-          }}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-            discard();
-          }}
-          onInteractOutside={(event) => {
-            event.preventDefault();
-            if (!(
-              event.target instanceof Element &&
-              event.target.closest('[data-cell-edit]')
-            ))
-              void commit();
+            void finishKey();
           }}
         >
-          <div className="dashboard-cell-heading">
-            <Dialog.Title>{label}</Dialog.Title>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              aria-label="셀 편집 취소"
-              disabled={saving}
-              onClick={discard}
-            >
-              취소
-            </button>
-          </div>
-          <div className="dashboard-cell-scopes">
-            {cellScopes(selection.row, selection.column).map((value) => (
-              <button
-                type="button"
-                key={value}
-                className="btn btn-ghost"
-                aria-pressed={scope === value}
-                disabled={saving || (dirty && scope !== value)}
-                onClick={() => {
-                  setScope(value);
-                  setQuery('');
-                }}
-              >
-                {scopeLabel(value)}
-              </button>
-            ))}
-          </div>
-          {loading ? (
-            <p role="status">현재값 확인 중…</p>
-          ) : snapshot && draft ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void commit();
-              }}
-            >
-              <fieldset disabled={saving || !canWrite}>
-                {pendingCondition && (
-                  <label>
-                    적용 방식
-                    <select
-                      className="app-input"
-                      aria-label="조건 적용 방식"
-                      value={draft.mode}
-                      onChange={(event) =>
-                        retain({
-                          ...draft,
-                          mode: event.target.value as CellDraft['mode'],
-                        })
-                      }
-                    >
-                      <option value="inherit">공통값 사용</option>
-                      <option value="set">이 코스에 지정</option>
-                      <option value="clear">이 코스에서 비움</option>
-                    </select>
-                  </label>
-                )}
-                {scope === 'link' ? (
-                  <>
-                    <input
-                      className="app-input"
-                      aria-label="연결 후보 검색"
-                      placeholder="후보 검색"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                    />
-                    <select
-                      ref={(node) => {
-                        input.current = node;
-                      }}
-                      className="app-input"
-                      aria-label={`${label} 연결`}
-                      value={draft.value}
-                      onChange={(event) =>
-                        retain({ ...draft, value: event.target.value })
-                      }
-                    >
-                      {snapshot.field !== 'delivery_point_id' && (
-                        <option value="">연결 없음</option>
-                      )}
-                      {snapshot.candidates
-                        .filter(
-                          (item) =>
-                            item.id === draft.value ||
-                            item.label
-                              .toLowerCase()
-                              .includes(query.toLowerCase()),
-                        )
-                        .map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.label}
-                          </option>
-                        ))}
-                    </select>
-                  </>
-                ) : spec.type === 'conditions' ? (
-                  entryFields.map((field, index) => (
-                    <label key={field}>
-                      {
-                        ['1톤 이하', '3.5톤 이하', '5톤 초과', '무인 진입'][
-                          index
-                        ]
-                      }
-                      <select
-                        className="app-input"
-                        aria-label={
-                          ['1톤 이하', '3.5톤 이하', '5톤 초과', '무인 진입'][
-                            index
-                          ]
-                        }
-                        value={
-                          draft.conditions[field] == null
-                            ? 'null'
-                            : String(draft.conditions[field])
-                        }
-                        onChange={(event) =>
-                          retain({
-                            ...draft,
-                            conditions: {
-                              ...draft.conditions,
-                              [field]:
-                                event.target.value === 'null'
-                                  ? null
-                                  : event.target.value === 'true',
-                            },
-                          })
-                        }
-                      >
-                        <option value="null">미지정</option>
-                        <option value="true">허용</option>
-                        <option value="false">불가</option>
-                      </select>
-                    </label>
-                  ))
-                ) : (
-                  <input
-                    ref={(node) => {
-                      input.current = node;
-                    }}
-                    className="app-input"
-                    aria-label={`${label} 수정값`}
-                    name={snapshot.field}
-                    autoComplete="off"
-                    value={draft.value}
-                    disabled={pendingCondition && draft.mode !== 'set'}
-                    inputMode={spec.type === 'number' ? 'decimal' : undefined}
-                    placeholder={spec.type === 'time' ? '00:00' : undefined}
-                    onChange={(event) =>
-                      retain({ ...draft, value: event.target.value })
-                    }
-                    onKeyDown={(event) => {
-                      if (
-                        event.nativeEvent.isComposing &&
-                        event.key === 'Enter'
-                      )
-                        event.preventDefault();
-                    }}
-                  />
-                )}
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={!dirty}
+          <fieldset
+            className={
+              pendingCondition || scope === 'link' || spec.type === 'conditions'
+                ? 'dashboard-cell-complex'
+                : undefined
+            }
+            disabled={saving || !canWrite}
+          >
+            {pendingCondition && (
+              <label>
+                적용 방식
+                <select
+                  className="app-input"
+                  aria-label="조건 적용 방식"
+                  value={draft.mode}
+                  onChange={(event) =>
+                    retain({
+                      ...draft,
+                      mode: event.target.value as CellDraft['mode'],
+                    })
+                  }
                 >
-                  {saving ? '저장 중…' : '저장'}
-                </button>
-              </fieldset>
-            </form>
-          ) : null}
-          {error && (
-            <div role="alert" className="dashboard-cell-error">
-              <p>{error}</p>
-              {snapshot && (
-                <button
-                  className="btn btn-ghost"
-                  type="button"
-                  disabled={saving}
-                  onClick={() => {
-                    void readCell(
-                      selection.row,
-                      selection.column,
-                      scope,
-                      permissions,
-                    )
-                      .then((latest) => {
-                        setLatestSnapshot(latest);
-                        const value = initialCellDraft(latest);
-                        setCompare(
-                          `${scope === 'link' ? latest.candidates.find((item) => item.id === value.value)?.label || '연결 없음' : value.value || '(빈 값)'}${latest.stops && spec.condition ? ' · ' + { inherit: '공통값 사용', set: '개별 지정', clear: '비움' }[value.mode] : ''}`,
-                        );
-                      })
-                      .catch((reason) =>
-                        setError(reason.message || String(reason)),
-                      );
+                  <option value="inherit">공통값 사용</option>
+                  <option value="set">이 코스에 지정</option>
+                  <option value="clear">이 코스에서 비움</option>
+                </select>
+              </label>
+            )}
+            {scope === 'link' ? (
+              <>
+                <input
+                  className="app-input"
+                  aria-label="연결 후보 검색"
+                  placeholder="후보 검색"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <select
+                  ref={(node) => {
+                    input.current = node;
                   }}
+                  className="app-input"
+                  aria-label={`${label} 연결`}
+                  value={draft.value}
+                  onChange={(event) =>
+                    retain({ ...draft, value: event.target.value })
+                  }
                 >
-                  최신값 확인
-                </button>
-              )}
-            </div>
-          )}
-          {compare && (
-            <p className="dashboard-cell-compare">현재 저장값: {compare}</p>
-          )}
-          {latestSnapshot && draft && (
+                  {snapshot.field !== 'delivery_point_id' && (
+                    <option value="">연결 없음</option>
+                  )}
+                  {snapshot.candidates
+                    .filter(
+                      (item) =>
+                        item.id === draft.value ||
+                        item.label.toLowerCase().includes(query.toLowerCase()),
+                    )
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                </select>
+              </>
+            ) : spec.type === 'conditions' ? (
+              entryFields.map((field, index) => (
+                <label key={field}>
+                  {['1톤 이하', '3.5톤 이하', '5톤 초과', '무인 진입'][index]}
+                  <select
+                    className="app-input"
+                    aria-label={
+                      ['1톤 이하', '3.5톤 이하', '5톤 초과', '무인 진입'][index]
+                    }
+                    value={
+                      draft.conditions[field] == null
+                        ? 'null'
+                        : String(draft.conditions[field])
+                    }
+                    onChange={(event) =>
+                      retain({
+                        ...draft,
+                        conditions: {
+                          ...draft.conditions,
+                          [field]:
+                            event.target.value === 'null'
+                              ? null
+                              : event.target.value === 'true',
+                        },
+                      })
+                    }
+                  >
+                    <option value="null">미지정</option>
+                    <option value="true">허용</option>
+                    <option value="false">불가</option>
+                  </select>
+                </label>
+              ))
+            ) : (
+              <input
+                ref={(node) => {
+                  input.current = node;
+                }}
+                className="app-input"
+                aria-label={`${label} 수정값`}
+                name={snapshot.field}
+                autoComplete="off"
+                value={draft.value}
+                disabled={pendingCondition && draft.mode !== 'set'}
+                inputMode={spec.type === 'number' ? 'decimal' : undefined}
+                placeholder={spec.type === 'time' ? '00:00' : undefined}
+                onChange={(event) =>
+                  retain({ ...draft, value: event.target.value })
+                }
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing && event.key === 'Enter')
+                    event.preventDefault();
+                }}
+              />
+            )}
+          </fieldset>
+        </form>
+      ) : null}
+      {error && (
+        <div role="alert" className="dashboard-cell-error">
+          <p>{error}</p>
+          {snapshot && (
             <button
               className="btn btn-ghost"
               type="button"
               disabled={saving}
               onClick={() => {
-                setSnapshot(latestSnapshot);
-                retain(draft, latestSnapshot);
-                setLatestSnapshot(null);
-                input.current?.focus();
+                void readCell(
+                  selection.row,
+                  selection.column,
+                  scope,
+                  permissions,
+                )
+                  .then((latest) => {
+                    setLatestSnapshot(latest);
+                    const value = initialCellDraft(latest);
+                    setCompare(
+                      `${scope === 'link' ? latest.candidates.find((item) => item.id === value.value)?.label || '연결 없음' : value.value || '(빈 값)'}${latest.stops && spec.condition ? ' · ' + { inherit: '공통값 사용', set: '개별 지정', clear: '비움' }[value.mode] : ''}`,
+                    );
+                  })
+                  .catch((reason) =>
+                    setError(reason.message || String(reason)),
+                  );
               }}
             >
-              내 입력을 유지하고 최신값 기준으로 재검토
+              최신값 확인
             </button>
           )}
-          <span className="dashboard-cell-hint">
-            Enter · 다른 셀 선택 시 저장 / Esc 취소
-          </span>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+      )}
+      {compare && (
+        <p className="dashboard-cell-compare">현재 저장값: {compare}</p>
+      )}
+      {latestSnapshot && draft && (
+        <button
+          className="btn btn-ghost"
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            setSnapshot(latestSnapshot);
+            retain(draft, latestSnapshot);
+            setLatestSnapshot(null);
+            input.current?.focus();
+          }}
+        >
+          내 입력을 유지하고 최신값 기준으로 재검토
+        </button>
+      )}
+    </div>
+  );
+  const toolbar = document.getElementById('dashboard-cell-actions');
+  const actions = (
+    <div
+      className="dashboard-cell-toolbar"
+      role="group"
+      aria-label="셀 편집 작업"
+    >
+      <span>
+        {label} · {scopeLabel(scope)}
+      </span>
+      <button
+        className="btn btn-primary"
+        type="submit"
+        form="dashboard-cell-form"
+        disabled={saving || loading || !canWrite || !dirty}
+        aria-label="셀 저장"
+        title="저장 (Enter)"
+      >
+        {saving ? '저장 중…' : '저장'}
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        aria-label="셀 편집 취소"
+        disabled={saving}
+        title="취소 (Esc)"
+        onClick={() => {
+          discard();
+          focusOrigin();
+        }}
+      >
+        취소
+      </button>
+      {cellScopes(selection.row, selection.column).length > 1 && (
+        <select
+          className="app-input"
+          aria-label="수정 대상"
+          value={scope}
+          disabled={saving || dirty}
+          onChange={(event) => {
+            setScope(event.target.value as CellScope);
+            setQuery('');
+          }}
+        >
+          {cellScopes(selection.row, selection.column).map((value) => (
+            <option key={value} value={value}>
+              {scopeLabel(value)}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+  return (
+    <>
+      {host ? createPortal(content, host) : content}
+      {toolbar ? createPortal(actions, toolbar) : actions}
+    </>
   );
 });

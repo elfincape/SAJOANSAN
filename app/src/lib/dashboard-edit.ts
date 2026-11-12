@@ -180,11 +180,13 @@ export interface CellDraft {
 
 export function defaultCellScope(row: DashboardRow, column: string): CellScope {
   const spec = cellFields[column];
-  return spec?.link && row.route_id ? 'link' : 'value';
+  // Editing the displayed value updates its master. Only an absent master
+  // starts with explicit linking; never replace a current ID implicitly.
+  return spec?.link && row.route_id && !row[spec.idKey] ? 'link' : 'value';
 }
 export function cellScopes(row: DashboardRow, column: string): CellScope[] {
   const spec = cellFields[column];
-  if (spec?.link && row.route_id) return ['link', 'value'];
+  if (spec?.link && row.route_id) return ['value', 'link'];
   if ((spec?.condition || column === 'stop_memo') && row.route_id)
     return ['value', 'common'];
   return ['value'];

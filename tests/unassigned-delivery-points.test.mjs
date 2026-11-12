@@ -79,7 +79,10 @@ console.log('React point patch and export: unchanged null/empty/0/false, inherit
 const time = await domain('time.ts');
 const cellSource = ts.transpileModule(readFileSync(new URL('../app/src/lib/dashboard-edit.ts', import.meta.url),'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText
   .replace(/^import[\s\S]*?;\s*/gm,'').replace(/^export /gm,'');
-const cellEdit = new Function('displayToMin','minToDisplay', cellSource + '\nreturn {cellPatch,editedStops,initialCellDraft,cellResource};')(time.displayToMin,time.minToDisplay);
+const cellEdit = new Function('displayToMin','minToDisplay', cellSource + '\nreturn {cellPatch,editedStops,initialCellDraft,cellResource,defaultCellScope};')(time.displayToMin,time.minToDisplay);
+assert.equal(cellEdit.defaultCellScope({route_id:'r',primary_driver_id:'d'},'primary_driver_name'),'value','driver name edits the existing master by default');
+assert.equal(cellEdit.defaultCellScope({route_id:'r',delivery_point_id:'p'},'dp_name'),'value','delivery point name edits the existing master by default');
+assert.equal(cellEdit.defaultCellScope({route_id:'r',primary_driver_id:null},'primary_driver_name'),'link','missing master requires explicit linking');
 const stops = [1,2,3].map(n=>({id:'s'+n,route_id:'r',delivery_point_id:'p'+n,stop_order:n,override_delivery_method:'무인',condition_modes:{delivery_method:'set',access_method:'clear'},memo:'원문'}));
 const cellSnapshot = {column:'delivery_method',scope:'value',table:'routes',id:'r',source:{},field:'override_delivery_method',stops,stopId:'s2',candidates:[]};
 const cellDraft = {...cellEdit.initialCellDraft(cellSnapshot),value:'',mode:'set'};
