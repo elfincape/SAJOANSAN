@@ -67,13 +67,14 @@ class Browser:
             body = self.page.locator('body').inner_text()
             if re.search('비밀번호가 일치하지|계정을 찾을 수 없|잘못된 비밀번호',body):
                 raise ValueError('카카오 계정 또는 비밀번호를 확인하세요.')
-            if re.search('보안문자|로봇이 아닙니다|CAPTCHA|아래 문제에 답해',body,re.I) and self.page.url.startswith('https://accounts.kakao.com/'):
-                refresh='challenge' not in self.state
+            if self.page.url.startswith('https://accounts.kakao.com/'):
+                mode='security' if re.search('보안문자|로봇이 아닙니다|CAPTCHA|아래 문제에 답해',body,re.I) else 'login'
+                refresh=self.state.get('challenge',{}).get('mode')!=mode
                 try:
                     action=self.verification.get_nowait()
                     if action['kind']=='click': self.page.mouse.click(action['x'],action['y'])
                     elif action['kind']=='text': self.page.keyboard.insert_text(action['text'])
-                    else: self.page.keyboard.press(action['key'])
+                    elif action['kind']=='key': self.page.keyboard.press(action['key'])
                     action.clear()
                     self.page.wait_for_timeout(700)
                     refresh=True
@@ -82,15 +83,20 @@ class Browser:
                 if refresh:
                     challenge_version+=1
                     self.state['challenge_image']=self.page.screenshot(style='input[name="password"],input[name="loginId"]{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}')
-                    self.state['challenge']={'version':challenge_version,'width':1280,'height':900}
-                self.state['message']='카카오 보안문제를 아래 화면에서 직접 풀어 주세요. 완료하면 로그인이 이어집니다.'
+                    self.state['challenge']={'version':challenge_version,'width':1280,'height':900,'mode':mode}
+                if mode=='security':
+                    self.state['message']='아래 카카오 화면에서 보안문제를 직접 풀어 주세요.'
+                elif re.search('2단계 인증|카카오톡.*인증|인증 요청',body):
+                    self.state['message']='모바일 카카오톡의 인증 요청을 확인해 주세요. 추가 선택이 있으면 아래 화면에서 진행하세요.'
+                else:
+                    self.state['message']='카카오 로그인 화면이 남아 있습니다. 아래 화면에서 로그인 또는 추가 확인을 진행해 주세요.'
             else:
                 self.state.pop('challenge',None)
                 self.state.pop('challenge_image',None)
                 if re.search('2단계 인증|카카오톡.*인증|인증 요청',body):
                     self.state['message']='모바일 카카오톡에 도착한 인증 요청을 승인해 주세요.'
                 else:
-                    self.state['message']='카카오 로그인 안내: '+body.replace(account,'[계정]')[:650]
+                    self.state['message']='톡클라우드 연결을 확인하고 있습니다.'
             self.page.wait_for_timeout(1200)
         raise ValueError('로그인 승인 시간이 만료됐습니다. 다시 연결해 주세요.')
 

@@ -26,3 +26,5 @@ $('challenge-screen').onclick=e=>run(()=>{const r=e.currentTarget.getBoundingCli
 $('challenge-form').onsubmit=e=>{e.preventDefault();run(async()=>{const text=$('challenge-answer').value;if(!text)return;await api('verification',{kind:'text',text});$('challenge-answer').value='';});};
 $('challenge-backspace').onclick=()=>run(()=>api('verification',{kind:'key',key:'Backspace'}));
 $('challenge-enter').onclick=()=>run(()=>api('verification',{kind:'key',key:'Enter'}));
+
+$('challenge-refresh').onclick=()=>run(()=>api('verification',{kind:'refresh'}));

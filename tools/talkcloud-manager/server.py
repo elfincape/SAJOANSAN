@@ -167,10 +167,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200,{'ok':True})
             if action=='verification':
                 if not s.state.get('challenge') or s.state['authenticated']:
-                    return self.send(409,{'error':'현재 보안문제 입력 단계가 아닙니다.'})
+                    return self.send(409,{'error':'현재 카카오 로그인 확인 단계가 아닙니다.'})
                 kind=body.get('kind')
                 valid=(kind=='click' and type(body.get('x')) is int and type(body.get('y')) is int and 0<=body['x']<1280 and 0<=body['y']<900) or (kind=='text' and isinstance(body.get('text'),str) and 0<len(body['text'])<=256) or (kind=='key' and body.get('key') in ('Enter','Backspace','Tab'))
-                if not valid: return self.send(400,{'error':'입력 내용을 확인하세요.'})
+                if not valid and kind!='refresh': return self.send(400,{'error':'입력 내용을 확인하세요.'})
                 try: s.verification.put_nowait(body)
                 except queue.Full: return self.send(409,{'error':'앞선 입력을 처리하고 있습니다.'})
                 return self.send(202,{'ok':True})
