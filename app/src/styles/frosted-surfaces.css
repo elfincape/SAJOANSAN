@@ -1,0 +1,447 @@
+/* Shared screen material. Printed sheets, PDF canvases and semantic states retain their own rendering. */
+@media screen {
+  html[data-theme] {
+    --theme-border: transparent;
+    --theme-border-soft: transparent;
+    --theme-sidebar-border: transparent;
+    --theme-selected-border: transparent;
+    --theme-control-border: transparent;
+    --ean-rim: transparent;
+    --ean-edge: transparent;
+    --ean-interaction-rim: transparent;
+    --ean-interaction-sheen: transparent;
+    --ean-glass: rgb(255 255 255 / 0.58);
+    --ean-surface: var(--ean-glass);
+    --ean-floor: linear-gradient(180deg, #f5f4f7, #edecf1);
+    --ean-shadow: 0 8px 28px -16px rgb(30 28 40 / 0.16);
+    --ean-control-fill: rgb(255 255 255 / 0.72);
+    --ean-popup-fill: rgb(250 249 252 / 0.92);
+    --ean-table-head: #eeedf2;
+    --ean-table-row: rgb(42 38 54 / 0.025);
+    --ean-surface-blur: 18px;
+    --theme-hover: rgb(49 43 64 / 0.065);
+    --theme-selected: rgb(49 43 64 / 0.1);
+    --theme-muted: #5e5b68;
+    --ean-interaction-fill: var(--theme-hover);
+  }
+  html[data-theme='dark'] {
+    --ean-glass: rgb(60 59 66 / 0.48);
+    --ean-sidebar-glass: rgb(60 59 66 / 0.32);
+    --ean-surface: var(--ean-glass);
+    --ean-floor: linear-gradient(180deg, #202024, #1b1b1e);
+    --ean-shadow: 0 10px 28px -16px rgb(0 0 0 / 0.42);
+    --ean-control-fill: rgb(255 255 255 / 0.075);
+    --ean-popup-fill: rgb(44 43 49 / 0.93);
+    --ean-table-head: #333238;
+    --ean-table-row: rgb(255 255 255 / 0.025);
+    --theme-hover: rgb(255 255 255 / 0.085);
+    --theme-selected: rgb(255 255 255 / 0.14);
+    --theme-muted: #bcb9c5;
+  }
+
+  html[data-theme] body.workspace-ui:is(.app-shell, .work-embedded) {
+    --workspace-table-line: transparent;
+    --workspace-table-head: var(--ean-table-head);
+  }
+
+  /* Blur belongs to the few floating surfaces, never to text, rows or scrolling cells. */
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(
+      #app-header,
+      #app-sidebar[data-rail],
+      dialog,
+      .account-glass,
+      .workspace-center-menu,
+      .workspace-command-panel,
+      .ops-assistant-panel
+    ) {
+    border-color: transparent;
+    box-shadow: var(--ean-shadow);
+    -webkit-backdrop-filter: blur(var(--ean-surface-blur));
+    backdrop-filter: blur(var(--ean-surface-blur));
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    :is(#app-header, #app-sidebar[data-rail]) {
+    border-color: transparent;
+    box-shadow: var(--ean-shadow);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(
+      dialog,
+      .ean-account-menu .account-glass,
+      .workspace-center-menu,
+      .workspace-command-panel
+    ) {
+    background: var(--ean-popup-fill);
+    color: var(--theme-text);
+  }
+  html[data-theme] body.workspace-ui .ean-modal-panel .ean-detail-section {
+    background: var(--ean-control-fill);
+    border: 0;
+    border-radius: var(--ean-control-radius);
+    padding: 16px;
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(
+      .panel,
+      .work-panel,
+      .work-editor,
+      .work-list,
+      .list,
+      #detail,
+      .step-card,
+      .work-surface,
+      .employee-permission-table,
+      #flat-view,
+      #route-grid,
+      .hub-directory,
+      .permission-preview-table
+    ) {
+    background: var(--ean-surface);
+    border-color: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(
+      .work-panel,
+      .work-editor,
+      .work-list,
+      .panel,
+      .step-card,
+      .work-surface,
+      .employee-permission-table,
+      #flat-view,
+      .hub-directory
+    ) {
+    border-radius: var(--ean-panel-radius);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(
+      .list-heading,
+      .panel-heading,
+      .employee-permission-heading,
+      .ops-assistant-head,
+      .modal-header,
+      .modal-footer
+    ) {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  html[data-theme] body.workspace-ui .employee-permission-heading {
+    background: var(--theme-page);
+  }
+
+  /* Existing controls keep their dimensions and focus behavior; fill replaces the outline. */
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(
+      input:not([type='checkbox']):not([type='radio']):not([type='range']):not(
+          [type='color']
+        ),
+      select,
+      textarea,
+      .app-input,
+      .app-select,
+      .app-textarea
+    ) {
+    background-color: var(--ean-control-fill);
+    color: var(--theme-text);
+    font-variant-numeric: tabular-nums;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(input, textarea)::placeholder {
+    color: var(--theme-muted);
+    opacity: 1;
+  }
+  html[data-theme] body.workspace-ui select option {
+    background: var(--theme-panel);
+    color: var(--theme-text);
+  }
+  html[data-theme] body.workspace-ui input[type='file']::file-selector-button {
+    border: 0;
+    border-radius: var(--ean-control-radius);
+    background: var(--theme-hover);
+    color: var(--theme-text);
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    #app-header
+    :is(.workspace-command-trigger, .theme-toggle) {
+    border-color: transparent;
+    box-shadow: none;
+    background: var(--ean-control-fill);
+    color: var(--theme-text);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(
+      .btn,
+      button.btn,
+      .employee-permission-toolbar button,
+      .employee-permission-save-actions button:not(.primary)
+    ) {
+    border-color: transparent;
+    box-shadow: none;
+    background-color: var(--ean-control-fill);
+    color: var(--theme-text);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(.btn-primary, .btn-green, button.primary) {
+    background: var(--theme-primary);
+    color: #fff;
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(.btn-danger, button.danger) {
+    color: var(--theme-danger);
+    background: var(--theme-danger-bg);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(.btn, button.btn):not(:disabled):hover {
+    background-color: var(--theme-hover);
+    color: var(--theme-text);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(.btn-primary, .btn-green, button.primary):not(:disabled):hover {
+    background: var(--theme-control-hover);
+    color: #fff;
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(.btn-danger, button.danger):not(:disabled):hover {
+    background: var(--theme-danger-bg);
+    color: var(--theme-danger);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(input, select, textarea)[aria-invalid='true'] {
+    outline: 2px solid var(--theme-danger);
+    outline-offset: 1px;
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(input, select, textarea, button, a, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: 2px;
+  }
+
+  /* Decorative rules only. Never change exported/printed sheet cell borders or status fills. */
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(
+      .app-table,
+      .data-table,
+      .employee-permission-table table,
+      .permission-preview-table table,
+      .ops-assistant-table,
+      .work-list table,
+      #trip-table,
+      #result-table,
+      .work-surface table
+    ) {
+    background: transparent;
+    font-variant-numeric: tabular-nums;
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(
+      .app-table,
+      .data-table,
+      .employee-permission-table table,
+      .permission-preview-table table,
+      .ops-assistant-table,
+      .work-list table,
+      #trip-table,
+      #result-table,
+      .work-surface table
+    )
+    :is(th, td) {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(.app-table, .data-table, .work-list table)
+    thead
+    th {
+    background: var(--ean-table-head);
+    color: var(--theme-muted);
+    box-shadow: none;
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(.app-table, .data-table, .work-list table)
+    tbody
+    tr:nth-child(even):not([class]):not([aria-selected='true'])
+    > td {
+    background-color: var(--ean-table-row);
+  }
+  html[data-theme]
+    body.workspace-ui:is(.app-shell, .work-embedded)
+    :is(
+      .app-table,
+      .data-table,
+      .employee-permission-table table,
+      .permission-preview-table table
+    )
+    tbody
+    tr:not([aria-selected='true']):not(.selected):not(.is-selected):hover
+    > :is(th, td):not([class]):not([style]) {
+    background-color: var(--theme-hover);
+  }
+  html[data-theme] body.workspace-ui.app-shell #route-grid {
+    --ag-border-color: transparent;
+    --ag-row-border-color: transparent;
+    --ag-header-column-separator-display: none;
+    --ag-background-color: var(--theme-panel);
+    --ag-header-background-color: var(--ean-table-head);
+    --ag-odd-row-background-color: var(--theme-stripe);
+    --ag-font-family: 'Pretendard Variable', Pretendard, sans-serif;
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    #route-grid
+    :is(.ag-row, .ag-header, .ag-root-wrapper, .ag-paging-panel) {
+    border-color: transparent;
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    :is(
+      .hub-directory .hub-tool,
+      .employee-permission-people > button,
+      .task-row:not(.calendar-task-bar),
+      .ean-interactive-row
+    ) {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  html[data-theme]
+    body.workspace-ui.app-shell
+    :is(
+      .hub-directory .hub-tool,
+      .employee-permission-people > button,
+      .task-row,
+      .ean-interactive-row
+    )::before {
+    box-shadow: none;
+  }
+}
+
+@media screen and (prefers-reduced-transparency: reduce),
+  screen and (prefers-contrast: more) {
+  html[data-theme] {
+    --ean-glass: var(--theme-panel);
+    --ean-surface: var(--theme-panel);
+    --ean-popup-fill: var(--theme-panel);
+    --ean-control-fill: var(--theme-soft);
+    --ean-surface-blur: 0px;
+  }
+}
+@media screen and (prefers-contrast: more) {
+  html[data-theme] {
+    --theme-border: var(--theme-muted);
+    --theme-border-soft: var(--theme-muted);
+    --theme-control-border: var(--theme-muted);
+  }
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(input, select, textarea, button, th, td) {
+    border-color: var(--theme-muted);
+  }
+}
+@media (forced-colors: active) {
+  html[data-theme]
+    body.workspace-ui:is(
+      .app-shell,
+      .portal-shell,
+      .work-embedded,
+      .workspace-login
+    )
+    :is(input, select, textarea, button, th, td) {
+    border-color: ButtonText;
+  }
+}

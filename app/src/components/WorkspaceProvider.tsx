@@ -9,6 +9,7 @@ import '../styles/theme.css';
 import '../styles/ean.css';
 import '../styles/workspace-tables.css';
 import '../styles/workspace-dialogs.css';
+import '../styles/frosted-surfaces.css';
 
 const storageKey = 'sajo.appearance.v1';
 type Theme = 'light' | 'dark';

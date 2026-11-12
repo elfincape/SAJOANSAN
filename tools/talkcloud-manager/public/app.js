@@ -51,7 +51,7 @@ $('qr-login').onclick=()=>run(async()=>{await api('login',{method:'qr'});monitor
 
 if (parent === window) location.replace('/admin/talkcloud.html');
 new ResizeObserver(notifyFrame).observe(document.querySelector('main'));
-function syncTheme(){const style=parent.getComputedStyle(parent.document.documentElement);for(const name of ['--theme-text','--theme-muted','--theme-panel','--theme-border','--theme-border-soft','--ean-control-radius'])document.documentElement.style.setProperty(name,style.getPropertyValue(name));document.documentElement.style.colorScheme=style.colorScheme;}
+function syncTheme(){const style=parent.getComputedStyle(parent.document.documentElement);for(const name of ['--theme-text','--theme-muted','--theme-panel','--theme-border','--theme-border-soft','--theme-hover','--theme-accent','--theme-danger','--theme-danger-bg','--ean-control-radius','--ean-control-fill','--ean-popup-fill','--ean-surface','--ean-table-head','--ean-shadow'])document.documentElement.style.setProperty(name,style.getPropertyValue(name));document.documentElement.style.colorScheme=style.colorScheme;}
 syncTheme();
 new MutationObserver(syncTheme).observe(parent.document.documentElement,{attributes:true,attributeFilter:['class','data-theme','style']});
 

@@ -14,5 +14,16 @@ th,#status{background:var(--theme-panel,#f0f3f7);color:var(--theme-text,#202b3b)
 
 #status{display:none}
 
+/* Use the workspace material inside the embedded tool as well. */
+input,select,button{background:var(--ean-control-fill,var(--theme-panel));box-shadow:none}
+.table{background:var(--ean-surface,var(--theme-panel));font-variant-numeric:tabular-nums}
+th{background:var(--ean-table-head,var(--theme-panel))}
+dialog{background:var(--ean-popup-fill,var(--theme-panel));box-shadow:var(--ean-shadow);backdrop-filter:blur(18px)}
+button:not(.primary):not(:disabled):hover{background:var(--theme-hover);color:var(--theme-text)}
+.primary{background:#2755b5;color:#fff}.primary:hover{background:#1e4598;color:#fff}
+.danger{color:var(--theme-danger)}.danger:not(:disabled):hover{background:var(--theme-danger-bg);color:var(--theme-danger)}
+:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}
+@media(prefers-reduced-transparency:reduce){dialog{backdrop-filter:none}}
+
 #verification{text-align:center;padding:20px 0}#challenge-screen{width:240px;max-width:80%;margin:24px auto;padding:16px;background:#fff;border-radius:12px;image-rendering:pixelated}
 .qr-steps{display:flex;justify-content:center;gap:28px;list-style:none;padding:0;margin:28px 0}.qr-steps li{display:flex;align-items:center;gap:10px;text-align:left;line-height:1.5}.qr-steps span{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border:1px solid var(--theme-border);border-radius:50%;font-size:13px;color:var(--theme-muted)}.qr-steps strong{font-size:14px;font-weight:600}@media(max-width:600px){.qr-steps{gap:14px;flex-wrap:wrap}}
