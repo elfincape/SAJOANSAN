@@ -78,10 +78,10 @@ class Browser:
                     pass
                 if refresh:
                     challenge_version+=1
-                    self.state['challenge_image']=self.page.screenshot(style='input[name="password"],input[name="loginId"]{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}')
+                    self.state['challenge_image']=self.page.locator('canvas').screenshot() if mode=='qr' and self.page.locator('canvas').is_visible() else self.page.screenshot(style='input[name="password"],input[name="loginId"]{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}')
                     self.state['challenge']={'version':challenge_version,'width':1280,'height':900,'mode':mode}
                 if mode=='qr':
-                    self.state['message']='모바일 카카오톡 → 더보기 → QR코드 스캔으로 아래 코드를 스캔하고 로그인에 동의해 주세요.'
+                    self.state['message']='카카오톡에서 QR코드를 스캔하고 로그인을 승인해 주세요.'
                 elif mode=='security':
                     self.state['message']='아래 카카오 화면에서 보안문제를 직접 풀어 주세요.'
                 elif re.search('2단계 인증|카카오톡.*인증|인증 요청',body):

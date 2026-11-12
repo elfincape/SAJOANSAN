@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>톡클라우드 사진·동영상 정리</title><link rel="stylesheet" href="./style.css"></head>
 <body><main><div class="toolbar"><button id="logout" hidden>연결 종료</button></div>
-<section id="login"><h1>카카오톡 QR로 연결</h1><p>모바일 카카오톡 → 더보기 → QR코드 스캔으로 로그인한 뒤 방과 날짜를 선택하세요.</p><button type="button" id="qr-login" class="primary">카카오톡 QR로 연결</button><p class="muted">ID와 비밀번호를 입력하거나 저장하지 않습니다.</p></section>
+<section id="login" hidden><h1>카카오톡 QR로 연결</h1><p>카카오톡으로 연결한 뒤 정리할 방과 날짜를 선택하세요.</p><button type="button" id="qr-login" class="primary">카카오톡 QR로 연결</button></section>
 <p id="status" role="status" aria-live="polite">연결 대기</p><button id="cancel" hidden>작업 중지</button>
-<section id="verification" hidden><h2>카카오톡에서 로그인 승인</h2><p>휴대폰 기본 카메라가 아닌 카카오톡 앱의 QR코드 스캔을 사용하세요. 추가 인증이 뜨면 모바일에서 승인해 주세요.</p><img id="challenge-screen" alt="카카오톡 로그인 QR코드"><button type="button" id="challenge-refresh">QR 화면 갱신</button></section>
+<section id="verification" hidden><h2>카카오톡 앱으로 스캔해 주세요</h2><ol class="qr-steps"><li><span>1</span><strong>카카오톡 실행</strong></li><li><span>2</span><strong>우측 하단<br>점 세 개 메뉴</strong></li><li><span>3</span><strong>우측 상단<br>QR 아이콘 클릭</strong></li></ol><p class="muted">아래 QR코드를 스캔한 뒤 휴대폰에서 로그인을 승인해 주세요.</p><img id="challenge-screen" alt="카카오톡 로그인 QR코드"><button type="button" id="challenge-refresh">QR 화면 갱신</button></section>
 <section id="workspace" hidden><div class="heading"><div><h1>정리할 채팅방</h1><p>정리할 방을 선택하세요. 더 많은 방은 목록 안에서 스크롤해 확인할 수 있습니다.</p></div><button id="refresh">목록 새로고침</button></div>
 <div class="toolbar"><button id="prev">이전 20개</button><button id="next">다음 20개</button></div>
 <div class="table" tabindex="0" role="region" aria-label="채팅방 목록"><table><thead><tr><th>선택</th><th>채팅방</th><th>보관 용량</th><th>기간 설정</th></tr></thead><tbody id="rooms"></tbody></table></div>
-<section class="settings"><h2>선택한 방에 날짜 적용</h2><div class="toolbar"><label>조건<select id="mode"><option value="before">특정일 이전 (기준일 제외)</option><option value="through">특정일까지 (기준일 포함)</option><option value="day">특정일 하루</option><option value="range">기간 구간 (양 끝 포함)</option></select></label><label id="from-label" hidden>시작일<input type="date" id="from"></label><label>기준일 / 종료일<input type="date" id="to" required></label><button id="apply">선택한 방에 적용</button></div></section>
+<section class="settings"><h2>삭제할 기간</h2><div class="toolbar"><label>조건<select id="mode"><option value="before">특정일 이전 (기준일 제외)</option><option value="through">특정일까지 (기준일 포함)</option><option value="day">특정일 하루</option><option value="range">기간 구간 (양 끝 포함)</option></select></label><label id="from-label" hidden>시작일<input type="date" id="from"></label><label>기준일 / 종료일<input type="date" id="to" required></label></div></section>
 <div class="actions"><p id="summary">방과 날짜를 선택하세요.</p><button class="danger" id="delete" disabled>사진·동영상 삭제</button></div><p class="muted">선택한 기간의 사진과 동영상을 함께 톡클라우드 휴지통으로 이동합니다.</p>
 
 </section></main><script src="./app.js" defer></script></body></html>
