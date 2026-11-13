@@ -1,3 +1,5 @@
+import { createWorkspaceStore } from '../lib/workspace-session';
+import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { catalogValueEqual } from '../lib/catalog-scope';
 import { CatalogSaveReview } from '../components/CatalogSaveReview';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
@@ -7,7 +9,7 @@ import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSel
 import { useWorkspaceActions } from '../lib/workspace-actions';
 import { permissionAllowed } from '../lib/permissions';
 import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FileArea } from '../components/FileArea';
@@ -29,30 +31,33 @@ function previewPhoto(photo: DeliveryPhoto) {
     popup.addEventListener('pagehide', () => root.unmount(), { once: true });
   }
 }
-type PointView = { scope:string; selected:string|null; draft:PointDraft; original?:DeliveryPoint; search:string; region:string; method:string; sort:string; scroll:number; createId:string };
-const pointViews = new Map<string,PointView>();
-const pointDrafts = new Map<string,{draft:PointDraft; original?:DeliveryPoint; createId:string}>();
+type PointView = { scope:string; selected:string|null; search:string; region:string; method:string; sort:string; scroll:number; selection:string[] };
+const pointViews = createWorkspaceStore<PointView>('point-view', value => ['scope','search','region','method','sort'].every(key => typeof value[key as keyof PointView] === 'string') && (value.selected === null || typeof value.selected === 'string') && Number.isFinite(value.scroll) && Array.isArray(value.selection) && value.selection.every(id => typeof id === 'string'));
+const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
+
 function DeliveryPointsContent() {
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const viewKey = profile.id+':'+center.code;
   const restored = useRef(pointViews.get(viewKey));
-  const original = useRef(restored.current?.original), createId = useRef(restored.current?.createId ?? crypto.randomUUID());
+  const restoredDraft = useRef(pointDrafts.get(viewKey+':'+(restored.current?.selected ?? 'new')));
+  const original = useRef(restoredDraft.current?.original), createId = useRef(restoredDraft.current?.createId ?? crypto.randomUUID());
+  const hydrated = useRef(Boolean(restoredDraft.current));
   const list = useRef<HTMLDivElement>(null), restoredScroll = useRef(false);
   const [catalogScope,setCatalogScope] = useState(restored.current?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
 
   const [saveError, setSaveError] = useState('');
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<DeliveryPoint[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
-  const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>restored.current?.draft ?? pointToDraft());
+  const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>restoredDraft.current?.draft ?? pointToDraft());
   const [search, setSearch] = useState(restored.current?.search ?? ''), [debouncedSearch, setDebouncedSearch] = useState(restored.current?.search ?? ''), [region, setRegion] = useState(restored.current?.region ?? ''), [method, setMethod] = useState(restored.current?.method ?? ''), [sort, setSort] = useState(restored.current?.sort ?? 'code');
   const [photoMessage, setPhotoMessage] = useState<{ text: string; error?: boolean } | null>(null), [photoBusy, setPhotoBusy] = useState(false);
   const photoBusyRef = useRef(false), savingRef = useRef(false), generation = useRef(0), nameInput = useRef<HTMLInputElement>(null);
   const initial = useRef<ReturnType<typeof loadDeliveryPoints> | undefined>(undefined);
-  pointViews.set(viewKey,{scope:catalogScope,selected,draft,original:original.current,search,region,method,sort,scroll:list.current?.scrollTop ?? restored.current?.scroll ?? 0,createId:createId.current});
-  pointDrafts.set(viewKey+':'+(selected ?? 'new'),{draft,original:original.current,createId:createId.current});
+
   function select(row?:DeliveryPoint,focus=false,force=false) {
     if (!force && (saving || photoBusy)) return;
+    if (force) pointDrafts.delete(viewKey+':'+(selected ?? 'new'));
     const cached = force ? undefined : pointDrafts.get(viewKey+':'+(row?.id ?? 'new'));
     generation.current++; original.current=cached?.original ?? row; createId.current=cached?.createId ?? crypto.randomUUID();
     setSaveError(''); setSelected(row?.id ?? null); setDraft(cached?.draft ?? pointToDraft(row)); setPhotoMessage(null);
@@ -60,7 +65,7 @@ function DeliveryPointsContent() {
   }
   useEffect(() => {
     let active = true; const requestedGeneration=generation.current; const request = initial.current = loadDeliveryPoints(catalogScope);
-    void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (linked && requestedGeneration===generation.current && linked.id!==selected) select(linked); }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
+    void Promise.resolve(request).then(({ data, error }) => { if (error) throw error; if (!active) return; setData(data || []); const linked = data?.find(row => row.id === new URLSearchParams(location.search).get('id')); if (requestedGeneration===generation.current) { if (linked && linked.id!==selected) select(linked); else if (!hydrated.current && selected) { const current = data?.find(row => row.id===selected); if(current) select(current); } hydrated.current=true; } }).catch(() => { if (active) toast('납품처 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [center.code, catalogScope, toast]);
   useEffect(()=>{ if (!loading && !restoredScroll.current && list.current) {list.current.scrollTop=restored.current?.scroll ?? 0;restoredScroll.current=true;} },[loading]);
@@ -85,10 +90,19 @@ function DeliveryPointsContent() {
   const rows = data.filter(row => (!region || row.region === region) && (!method || row.delivery_method === method) && (!debouncedSearch || [row.code, row.name, row.address, row.security_key_location, row.security_password].filter(Boolean).join(' ').toLowerCase().includes(debouncedSearch.toLowerCase()))).sort((a, b) => String(a[sort === 'name' ? 'name' : 'code'] ?? '').localeCompare(String(b[sort === 'name' ? 'name' : 'code'] ?? ''), 'ko', { numeric: true }));
   const regions = [...new Set(data.map(row => row.region).filter((region): region is string => !!region))].sort((a, b) => a.localeCompare(b, 'ko'));
   const selectedRow = original.current;
-  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
-  const dirty = editable && JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
+  const editable = pageEditable && (!selected || Boolean(selectedRow)) && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
+  const hasChanges = JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
+  const dirty = editable && hasChanges;
   useEditorGuard(dirty, saving || photoBusy, confirm);
-  const bulk = useRowSelection(rows.map(row => row.id));
+  const bulk = useRowSelection(rows.map(row => row.id), restored.current?.selection, !loading);
+  const draftKey = viewKey+':'+(selected ?? 'new');
+  useLayoutEffect(() => {
+    if (hasChanges) pointDrafts.set(draftKey,{draft,original:original.current,createId:createId.current});
+    else pointDrafts.delete(draftKey);
+  }, [draftKey, draft, hasChanges]);
+  useLayoutEffect(() => {
+    pointViews.set(viewKey,{scope:catalogScope,selected,search,region,method,sort,selection:[...bulk.selected],scroll:restoredScroll.current ? list.current?.scrollTop ?? 0 : restored.current?.scroll ?? 0});
+  }, [viewKey,catalogScope,selected,search,region,method,sort,bulk.selected]);
   const selectedRows = rows.filter(row => bulk.selected.has(row.id));
   const canExport = permissionAllowed(permissions, 'export', 'read', center.code);
   const { exportRows, downloadLink } = useSelectionExport('납품처_선택목록', ['코드', '이름', '주소', '지역', '납품방식'], selectedRows.map(row => [row.code, row.name, row.address, row.region, row.delivery_method]));
@@ -171,7 +185,7 @@ function DeliveryPointsContent() {
         </div>
         <p id="notion-points-status" className="px-3 text-xs text-zinc-400" role="status" aria-live="polite"></p>
 
-        <div ref={list} onScroll={()=>{const cached=pointViews.get(viewKey);if(cached && list.current) cached.scroll=list.current.scrollTop;}} className="table-wrap" style={{"maxHeight": "calc(100vh - 220px)", "border": "none", "borderRadius": "0"}} tabIndex={0} role="region" aria-label="목록">
+        <div ref={list} onScroll={()=>{const cached=pointViews.get(viewKey);if(cached && list.current && restoredScroll.current) pointViews.set(viewKey,{...cached,scroll:list.current.scrollTop});}} className="table-wrap" style={{"maxHeight": "calc(100vh - 220px)", "border": "none", "borderRadius": "0"}} tabIndex={0} role="region" aria-label="목록">
           <table className="app-table">
             <thead>
               <tr>
@@ -205,6 +219,7 @@ function DeliveryPointsContent() {
           <span id="form-meta" className="text-[11px] text-zinc-500">{draft.id && selectedRow?.updated_at ? `최종수정: ${new Date(selectedRow.updated_at).toLocaleString("ko-KR")}` : ""}</span>
         </div>
 
+        <WorkspaceDraftStatus storageKeys={[pointViews.storageKey(viewKey),pointDrafts.storageKey(draftKey)]} dirty={hasChanges} />
         <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} error={saveError} />
         <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)"}} onRebase={latest => {
           const before = pointToDraft(original.current), next = pointToDraft(latest);
@@ -355,4 +370,4 @@ function DeliveryPointsContent() {
     {downloadLink}{feedback}
   </>;
 }
-export default function DeliveryPoints() { return <AdminPage title="납품처 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><DeliveryPointsContent /></AdminPage>; }
+export default function DeliveryPoints() { return <AdminPage title="납품처 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><WorkspaceSessionScope><DeliveryPointsContent /></WorkspaceSessionScope></AdminPage>; }

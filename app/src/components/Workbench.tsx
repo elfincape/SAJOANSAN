@@ -36,13 +36,14 @@ export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { c
   </div>;
 }
 
-export function useRowSelection(ids: string[]) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+export function useRowSelection(ids: string[], initialIds: string[] = [], ready = true) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialIds));
   const signature = ids.join('|');
   useEffect(() => {
+    if (!ready) return;
     const visible = new Set(ids);
     setSelected(previous => { const next = new Set([...previous].filter(id => visible.has(id))); return next.size === previous.size ? previous : next; });
-  }, [signature]);
+  }, [signature, ready]);
   const toggle = (id: string) => setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   return { selected, toggle, clear: () => setSelected(new Set()), all: () => setSelected(selected.size === ids.length ? new Set() : new Set(ids)) };
 }
