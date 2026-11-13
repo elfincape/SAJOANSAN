@@ -2,7 +2,7 @@
 
 2026-11-13. 저장소 `elfincape/SAJOANSAN`, 작업 경로 `/workspace/legacy-workspace-upgrade`, 브랜치 `codex/web-ux-eight-stages`, 시작 커밋 `a4c412281ec1c75fe553cf489c32c0304c0a9655`.
 
-사용자의 “멈춤없이 마지막까지 작업” 지시로 [8단계 계획](../plans/WEB-UX-IMPROVEMENT-PLAN.md)을 연속 실행했다. **구현·격리 검증 8/8 완료, 운영 반영 확인 중**이다. 새 ERP, DB/RLS, 권한 정책, 계산·분석·출력 알고리즘은 변경하지 않았다. 기존 작업공간의 사용자 변경은 보존했다.
+사용자의 “멈춤없이 마지막까지 작업” 지시로 [8단계 계획](../plans/WEB-UX-IMPROVEMENT-PLAN.md)을 연속 실행했다. **8/8 완료: 구현·격리 검증·GitHub 병합·운영 배포 및 공개 경로 확인 완료**이다. 새 ERP, DB/RLS, 권한 정책, 계산·분석·출력 알고리즘은 변경하지 않았다. 기존 작업공간의 사용자 변경은 보존했다.
 
 ## 단계별 결과
 
@@ -106,4 +106,11 @@ git diff --check
 
 ## 배포
 
-대상은 기존 `sajoansan` 프로젝트와 `https://sajoansan.vercel.app`이다. PR/merge 커밋, Vercel READY·운영 alias, 공개 화면/비로그인 리디렉션 확인 결과는 배포 확인 후 이 절에 기록한다. 실제 계정으로 자료를 읽고 저장했다는 의미로 사용하지 않는다.
+- PR: [#165](https://github.com/elfincape/SAJOANSAN/pull/165), 구현 head `3cce37afd4f408b021cbca1ebb11abf9291c15f0`, main 병합 `ecae6d5b7bfbbbf4835e5621d8d18d367d21017b`.
+- Vercel 프로젝트 `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7` (`sajoansan`). 미리보기 `dpl_21terZGyCABU45gQhyp8mEVVxajM` READY 후 병합했다.
+- 운영 배포 `dpl_7HNw3L17NQKNzyr9jyH3y7dxjXmj`, target production, 위 main 커밋, **READY**, alias `sajoansan.vercel.app`, aliasError 없음 확인.
+- 실제 주소: https://sajoansan.vercel.app . 공개 `/admin/routes.html` HTTP 200 및 새 `index-Eh43wnrw.js` 확인. `Transfers-BLy4DfBa.js`, `ExcelCompare-B0asR-Kv.js`, `NotionHealth-DAB4M8Fu.js` HTTP 200과 변경 문자열 확인.
+- 실제 공개 주소의 내부 Chromium에서 비로그인 `/admin/routes.html`, `/admin/delivery-points.html` → `/login.html`, pageerror 0. `NODE_USE_ENV_PROXY=1 node /tmp/web-ux-implementation/production.cjs`로 확인했다. 최초 Node 직접 fetch는 작업환경 프록시 미사용으로 실패했고, 이미 설정된 환경 프록시를 사용한 재확인에서 통과했다.
+- 위 결과는 **실제 배포/공개 자산/비로그인 경로 확인**이다. 로그인한 실제 직원의 업무 읽기·수정, 외부 제공자 업무는 합성 UI 검사와 구분해 미확인으로 유지한다.
+- 이 확인 기록은 제품 코드를 바꾸지 않는 문서 후속 커밋으로 저장한다. PR 첨부 도구는 응답이 완료되지 않아 첨부 성공으로 집계하지 않았으며 PR 링크는 위에 직접 제공했다.
+- 문제가 생기면 해당 PR의 제품 변경을 되돌린 릴리스로 배포할 수 있다. DB·원본·파일 양식 변경이 없으므로 본 작업에 대한 데이터 migration rollback은 없다. 단, 사용자가 이미 저장한 업무 자료를 과거 사본으로 되돌리지 않는다.
