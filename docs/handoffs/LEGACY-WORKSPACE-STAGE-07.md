@@ -69,4 +69,10 @@
 - 앞선 단계의 일부 도구만 적용된 버전/재개, 같은 탭 sessionStorage 한계, 실제 OneDrive·AI·지도·Windows 미검증은 유지한다. Notion 폐기 유지.
 
 ## 운영 반영
-구현·격리 검사 완료. PR 병합·Vercel 운영 배포와 공개 자산/비로그인 진입 결과를 최종 기록한다.
+- PR https://github.com/elfincape/SAJOANSAN/pull/163 — MERGED. 구현 `b8a336244421ac50a54cc24965b407271bcc0e36`의 Vercel Preview SUCCESS 확인 후 병합.
+- main 병합/실제 배포 코드: `5706623e3d684eb4924269499e254a25fbc3eeb4`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_EZQJBVeC76LjgoNkVWahSzLFziE9`: READY. 위 SHA와 `sajoansan.vercel.app` alias 확인.
+- 공개 `assets/Portal-CXMmfuuh.js`에 등록 당시 업무·기준일 선택·과거 보관본 조회·보고/완료 분리·미래 날짜 거절 포함 확인.
+- 내부 Chromium에서 `/portal/`, `/admin/routes.html` 모두 비로그인 상태로 `/login.html` 이동, HTTP 200, 로그인 입력 표시, pageerror 0 확인. 실제 직원 로그인 후 보고 생성이나 업무 쓰기는 실행하지 않았다.
+- 실행: `python3 /tmp/legacy-stage7/assets.py`, `node /tmp/legacy-stage5/live.cjs`. 최종 결과 기록은 문서만 변경한다.
+- 총 7단계 중 7단계의 확정 실행 범위 완료. 모든 도구의 미이관 기능/외부 제공자 실증까지 완료됐다는 뜻은 아니다.
