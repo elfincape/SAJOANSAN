@@ -33,6 +33,11 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
     const target=`[data-linked-target="${CSS.escape(record.kind+':'+record.id)}"]`;
     const row=opener?.closest('[row-id]')?.getAttribute('row-id'), cell=opener?.closest('[col-id]')?.getAttribute('col-id');
     if(row && cell) return `[row-id="${CSS.escape(row)}"] [col-id="${CSS.escape(cell)}"] ${target}`;
+    const dashboardRow = opener?.closest('[data-dashboard-row]')?.getAttribute('data-dashboard-row');
+    const dashboardColumn = opener?.closest('[data-dashboard-column]')?.getAttribute('data-dashboard-column');
+    const dashboardView = opener?.closest('#flat-view, #group-view')?.id;
+    if (dashboardRow && dashboardColumn && dashboardView)
+      return `#${dashboardView} [data-dashboard-row="${CSS.escape(dashboardRow)}"] [data-dashboard-column="${CSS.escape(dashboardColumn)}"] ${target}`;
     const stop=opener?.closest('tr[data-id]')?.getAttribute('data-id');
     return stop ? `tr[data-id="${CSS.escape(stop)}"] ${target}` : target;
   });
@@ -59,7 +64,7 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
   const params = new URLSearchParams({ id:record.id, center:center.slug, embedded:'1', linked_detail:'1' });
   return <Dialog.Root open onOpenChange={open => { if(!open) void dismiss(); }}><Dialog.Portal>
     <Dialog.Overlay className="linked-record-overlay" />
-    <Dialog.Content className="linked-record-panel" aria-describedby="linked-record-purpose" onInteractOutside={event=>event.preventDefault()} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main'); target?.focus({preventScroll:true});});}}>
+    <Dialog.Content className="linked-record-panel" aria-describedby="linked-record-purpose" onInteractOutside={event=>event.preventDefault()} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main') ?? document.getElementById('app'); target?.focus({preventScroll:true});});}}>
       <header><div><Dialog.Title>{labels[record.kind]} 원본</Dialog.Title><p id="linked-record-purpose">공통 원본 수정 · 코스 연결은 유지됩니다.</p></div><button type="button" className="btn btn-ghost" disabled={closing} onClick={()=>void dismiss()}>{closing?'갱신 중…':'닫기'}</button></header>
       {error?<p role="alert">{error}</p>:null}
       <iframe ref={frame} src={`/admin/${pages[record.kind]}.html?${params}`} title={`${labels[record.kind]} 원본 편집`} />
