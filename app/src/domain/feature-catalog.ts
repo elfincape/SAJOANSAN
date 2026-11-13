@@ -240,6 +240,7 @@ export const FEATURE_CATALOG = Object.freeze(
     },
     {
       id: 'notionHealth',
+      hub: false,
       href: '/admin/notion-health.html',
       title: '보건증 Notion 연동',
       category: 'administration',

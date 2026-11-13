@@ -1,3 +1,5 @@
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
 import '../styles/one-top.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
@@ -74,6 +76,8 @@ function OneTopWorkContent() {
     [analysisButtonLabel, setAnalysisButtonLabel] = useState(''),
     [analyzing, setAnalyzing] = useState(false),
     [analyzingSelected, setAnalyzingSelected] = useState(false);
+  const {confirm,feedback}=useFeedback();
+  useEditorGuard(captures.length>0, matching || cloudSaving || analyzing || analyzingSelected, message=>confirm(message+' 서버에 보관하지 않은 캡처와 결과는 사라집니다.'));
   const [hoverImage, setHoverImage] = useState(''),
     hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
     flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -659,6 +663,7 @@ function OneTopWorkContent() {
   );
   return (
     <>
+      {feedback}
       <FileArea
         as="main"
         hint={false}

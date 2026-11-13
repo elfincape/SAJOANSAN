@@ -107,3 +107,8 @@ html[data-theme]
     backdrop-filter: none;
   }
 }
+
+.ean-modal-position[data-placement=right] { justify-content:flex-end; align-items:stretch; padding:0; }
+.ean-modal-position[data-placement=right] .ean-modal-panel { height:100dvh; }
+.ean-modal-position[data-placement=right] .ean-modal-panel > div:not(.ean-modal-surface) { max-height:100dvh !important; height:100%; border-radius:0 !important; }
+.ean-modal-position[data-placement=right] .ean-modal-surface { border-radius:0 !important; }

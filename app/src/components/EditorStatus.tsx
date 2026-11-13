@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { navigateWorkspace, registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
+import { navigateWorkspace, registerWorkspaceNavigationGuard, reportNavigationBlocked } from '../lib/workspace-navigation';
 import { useAdminPage } from './AdminPage';
 
 export function EditorStatus({ dirty, saving, editable, error }: { dirty: boolean; saving: boolean; editable: boolean; existing: boolean; error?: string }) {
@@ -22,7 +22,7 @@ export function useEditorGuard(dirty: boolean, busy: boolean, confirm: (message:
   useEffect(() => {
     async function allow() {
       const state = current.current;
-      if (state.busy) return false;
+      if (state.busy) { reportNavigationBlocked(); return false; }
       if (state.dirty && !await state.confirm('저장하지 않은 변경사항이 있습니다. 저장하지 않고 이동할까요?')) return false;
       leaving.current = true;
       return true;

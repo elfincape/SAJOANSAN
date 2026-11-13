@@ -1,3 +1,5 @@
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
 import '../styles/coupang.css';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -91,6 +93,8 @@ function CoupangEntryContent() {
     analyzing: false,
     exporting: false,
   });
+  const {confirm,feedback}=useFeedback();
+  useEditorGuard(!isPortal && Boolean(view.imageFile || view.dispatchText || view.scheduleJson),view.analyzing || view.exporting, message=>confirm(message+' 화면의 분석·파일 결과는 다시 불러와야 합니다.'));
   const current = useRef(view),
     mounted = useRef(true),
     [imageFocused, setImageFocused] = useState(false);
@@ -578,6 +582,7 @@ function CoupangEntryContent() {
   }, [isPortal, portalContext]);
   return (
     <>
+      {feedback}
       <main
         className="app-main flex-1 max-w-[1500px] w-full mx-auto px-4 py-6 space-y-5"
         id="work-main"

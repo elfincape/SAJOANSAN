@@ -1,5 +1,7 @@
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
 import '../styles/pallet-slips.css';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { FileArea } from '../components/FileArea';
 import { AdminPage } from '../components/AdminPage';
@@ -10,25 +12,32 @@ interface Source {
   workbook: XLSX.WorkBook;
 }
 type Result = ReturnType<typeof matchWorkbooks>;
-export default function PalletSlips() {
+function PalletSlipsContent() {
+  const {confirm,feedback}=useFeedback();
+  const [error,setError]=useState('');
+  const revision=useRef({source:0,upload:0});
   const [source, setSource] = useState<Source | null>(null);
   const [upload, setUpload] = useState<Source | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [skipHeader, setSkipHeader] = useState(true);
   const [ignoreSpaces, setIgnoreSpaces] = useState(true);
+  useEditorGuard(Boolean(source || upload),false,message=>confirm(message+' 비교 파일은 다시 선택해야 합니다.'));
   async function handleFile(kind: 'source' | 'upload', file?: File) {
     if (!file) return;
+    const request=++revision.current[kind];
+    setError('');
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), {
         type: 'array',
         cellDates: true,
       });
+      if(request!==revision.current[kind])return;
       if (kind === 'source') setSource({ file, workbook });
       else setUpload({ file, workbook });
       setResult(null);
     } catch (error) {
-      console.error(error);
-      alert(
+      if(request!==revision.current[kind])return;
+      setError(
         `파일을 읽지 못했습니다: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -52,10 +61,7 @@ export default function PalletSlips() {
   const matches = result?.matches ?? [],
     matched = matches.filter((item) => item.matched).length;
   return (
-    <AdminPage
-      title="파레트 전표관리"
-      bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"
-    >
+    <>{feedback}{error ? <p className="work-recovery" role="alert">{error}</p> : null}
       <main
         id="work-main"
         tabIndex={-1}
@@ -242,6 +248,11 @@ export default function PalletSlips() {
           </div>
         </section>
       </main>
-    </AdminPage>
+    </>
   );
 }
+
+export default function PalletSlips(){return <AdminPage
+      title="파레트 전표관리"
+      bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"
+    ><PalletSlipsContent /></AdminPage>;}

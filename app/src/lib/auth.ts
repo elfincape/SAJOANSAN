@@ -18,9 +18,17 @@ function invalidateContext() {
   pending = undefined;
 }
 
-export function getLoadedAuthContext() { return cached; }
+type AuthBridge = { load: (refresh?: boolean) => Promise<AuthContext | null>; peek: () => AuthContext | undefined };
+declare global { interface Window { workspaceAuth?: AuthBridge } }
+function parentAuth(): AuthBridge | undefined {
+  if (typeof window === 'undefined' || typeof parent === 'undefined' || parent === window || new URLSearchParams(location.search).get('linked_detail') !== '1') return;
+  try { if (parent.location.origin === location.origin) return parent.workspaceAuth; } catch { /* An external frame never shares auth context. */ }
+}
+export function getLoadedAuthContext(): AuthContext | undefined { return parentAuth()?.peek() ?? (Date.now() - checkedAt < 30000 ? cached : undefined); }
 
-export function loadAuthContext(refresh = false) {
+export function loadAuthContext(refresh = false): Promise<AuthContext | null> {
+  const bridge = parentAuth();
+  if (bridge) return bridge.load(refresh);
   if (refresh) invalidateContext();
   if (cached && Date.now() - checkedAt < 30000) return Promise.resolve(cached);
   if (cached) invalidateContext();
@@ -56,3 +64,5 @@ export async function signOut() {
   try { await supabase.auth.signOut(); }
   finally { invalidateContext(); clearSelectedCenter(); location.replace('/login.html'); }
 }
+
+if (typeof window !== 'undefined') window.workspaceAuth = { load: loadAuthContext, peek: getLoadedAuthContext };

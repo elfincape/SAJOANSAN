@@ -52,3 +52,11 @@ html[data-theme] body.workspace-ui .selection-actions button { min-height: 36px;
 .workspace-ui .selection-hitbox { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; cursor: pointer; vertical-align: middle; }
 .workspace-ui .selection-hitbox input { width: 18px; height: 18px; margin: 0; accent-color: var(--theme-accent); }
 html[data-theme] body.workspace-ui .app-table tbody tr[data-bulk-selected='true'] > td { background: var(--theme-selected); color: var(--theme-selected-text); }
+
+.work-editor .app-label { line-height:1.45; white-space:normal; }
+.work-editor .editor-fields > .grid { column-gap:12px; row-gap:12px; }
+.work-editor input:is([type=checkbox],[type=radio]) { flex-shrink:0; }
+.work-form-actions #btn-delete { margin-left:auto; color:var(--theme-danger,#b42318); }
+.workspace-ui .work-editor :is(input,select,textarea):focus-visible { outline:2px solid var(--theme-accent); outline-offset:2px; }
+
+.workspace-ui .work-editor label.cb { display:flex; align-items:center; gap:6px; min-height:28px; margin:0; }

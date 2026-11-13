@@ -1,8 +1,9 @@
-import { linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
+import { notifyLinkedRecordSaved, linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { CENTERS } from '../lib/center';
+import { WorkspaceDraftStatus } from '../components/WorkspaceDraftStatus';
 import { SavedViews } from '../components/SavedViews';
-import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
+import { useWorkbenchView, useRetainedMasterDraft, SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
 import { permissionAllowed } from '../lib/permissions';
 import { EditorStatus, useEditorGuard } from '../components/EditorStatus';
@@ -21,12 +22,14 @@ function VehiclesContent() {
   useLinkedRecordBridge();
   const { center, editable: pageEditable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
-  const [catalogScope,setCatalogScope] = useState(useLegacyCommonCatalog ? '' : center.code);
+  const view = useWorkbenchView('vehicles');
+  const [catalogScope,setCatalogScope] = useState(view.initial.scope ?? (useLegacyCommonCatalog ? '' : center.code));
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<Awaited<ReturnType<typeof loadVehicles>>>({ rows: [], companies: [], routes: [] });
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState(''), [debouncedSearch, setDebouncedSearch] = useState('');
-  const [company, setCompany] = useState(''), [sort, setSort] = useState('plate');
+  const [search, setSearch] = useState(view.initial.search ?? ''), [debouncedSearch, setDebouncedSearch] = useState(view.initial.search ?? '');
+  const [company, setCompany] = useState(view.initial.company ?? ''), [sort, setSort] = useState(view.initial.sort ?? 'plate');
   const [selected, setSelected] = useState<string | null>(null), [draft, setDraft] = useState(() => toDraft());
   const [inlineTonnage, setInlineTonnage] = useState(false);
   const inlineStart = useRef('');
@@ -36,13 +39,13 @@ function VehiclesContent() {
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
     let active = true; const request = initial.current = loadVehicles(catalogScope);
-    void request.then(value => { if (active) { setData(value); const linked=value.rows.find(row=>row.id===new URLSearchParams(location.search).get('id')); if(linked) select(linked); } }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
+    void request.then(value => { if (active) { setData(value); setLoadError(''); const linked=value.rows.find(row=>row.id===(new URLSearchParams(location.search).get('id') || view.initial.selected)); if(linked) select(linked); } }).catch(() => { if (active) setLoadError('목록을 불러오지 못했습니다. 다시 시도하세요.'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [center.code, catalogScope, toast]);
   const reload = useCallback(async () => {
     setLoading(true);
-    try { const next = await loadVehicles(catalogScope); setData(next); return next; }
-    catch { toast('데이터를 불러오지 못했습니다.', 'error'); return null; }
+    try { const next = await loadVehicles(catalogScope); setData(next); setLoadError(''); return next; }
+    catch { setLoadError('목록 갱신 실패 · 마지막으로 읽은 자료를 유지합니다.'); return null; }
     finally { setLoading(false); }
   }, [center.code, catalogScope, toast]);
   const companyById = new Map(data.companies.map(company => [company.id, company]));
@@ -55,7 +58,9 @@ function VehiclesContent() {
   const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'vehicles','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
   const dirty = editable && JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
   useEditorGuard(dirty, saving, confirm);
-  const bulk = useRowSelection(rows.map(row => row.id));
+  const bulk = useRowSelection(rows.map(row => row.id), view.selection, !loading);
+  const retained = useRetainedMasterDraft('vehicles', selected, draft, dirty, !loading);
+  useEffect(() => { view.remember({ scope: catalogScope, search, sort, selection: JSON.stringify([...bulk.selected]), selected: selected ?? '', company }); }, [catalogScope, search, sort, selected, company, bulk.selected]);
   const selectedRows = rows.filter(row => bulk.selected.has(row.id));
   const canExport = permissionAllowed(permissions, 'export', 'read', center.code);
   const { exportRows, downloadLink } = useSelectionExport('차량_선택목록', ['차량번호', '톤수', '팔레트', '운수사'], selectedRows.map(row => [row.plate_number, row.tonnage, row.pallet_capacity, companyById.get(row.company_id || '')?.name]));
@@ -79,12 +84,14 @@ function VehiclesContent() {
       const payload = { ...(draft.id ? { id: draft.id } : {}), center_code: selectedRow ? selectedRow.center_code ?? null : center.code, plate_number: plate, tonnage, pallet_capacity: Number.isFinite(pallet) ? pallet : null, company_id: draft.company || null, memo: draft.memo.trim() || null };
       const { data: row, error } = await saveVehicle(payload);
       if (error) { toast(error.code === '23505' ? '같은 운수사에 이미 같은 차량번호가 있습니다.' : `저장 실패: ${error.message}`, 'error'); return; }
+      notifyLinkedRecordSaved();
       toast(payload.id ? '수정되었습니다.' : '추가되었습니다.', 'success');
       const next = await reload(); const saved = next?.rows.find(item => item.id === row.id); if (saved) select(saved, false, true); else setSelected(row.id);
     } catch { toast('저장 중 오류가 발생했습니다.', 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   }
   async function remove() {
+    if (savingRef.current) return;
     if (!editable || !draft.id) return;
     const count = counts.get(draft.id) || { primary: 0, secondary: 0 };
     let message = `"${selectedRow?.plate_number || '이 차량'}"을 삭제할까요?`;
@@ -99,6 +106,15 @@ function VehiclesContent() {
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
       {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(event.target.value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
       <SavedViews scope="vehicles" value={{ search, company, sort }} defaultValue={{ search: '', company: '', sort: 'plate' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setCompany(next.company); setSort(next.sort); }} disabled={saving} />
+      {loadError ? <p className="work-recovery" role="alert">{loadError}<button disabled={loading} onClick={()=>void reload()}>목록 다시 읽기</button></p> : null}
+      <WorkspaceDraftStatus storageKeys={retained.storageKeys} />
+      {retained.pending ? <div className="work-recovery" role="status">이 탭에 저장하지 않은 입력이 있습니다. 복원 후 현재 서버 값과 변경사항을 비교하세요.
+        <button type="button" disabled={loading || saving} onClick={() => {
+          const saved = retained.pending!;
+          if (saved.selected && !data.rows.some(row => row.id === saved.selected)) { toast('현재 목록에서 원본을 확인할 수 없습니다. 필터와 접근 범위를 확인하세요.', 'warn'); return; }
+          setSelected(saved.selected); setDraft(saved.draft as typeof draft); retained.consume(); setEditorIntent(value => value + 1);
+        }}>입력 복원</button><button type="button" disabled={saving} onClick={retained.discard}>초안 버리기</button>
+      </div> : null}
       <SplitPane scope="vehicles" revealToken={editorIntent} revealFocus="#f-plate">
         <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{ minHeight: '60vh' }} aria-label="차량 목록">
           <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center"><input id="search-input" type="search" placeholder="차량번호 검색" aria-label="차량번호 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="filter-company" className="app-select w-44" aria-label="운수사 필터" value={company} onChange={event => setCompany(event.target.value)}><option value="">운수사(전체)</option>{data.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select><select id="sort-key" className="app-select w-28" aria-label="차량 정렬 기준" value={sort} onChange={event => setSort(event.target.value)}>{[['plate', '차량번호순'], ['tonnage', '톤수순'], ['company', '운수사순'], ['updated', '수정 최신순']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => { reset(); plateInput.current?.focus(); }}>+ 신규</button></div>
@@ -113,7 +129,7 @@ function VehiclesContent() {
             <div className="grid grid-cols-2 gap-3"><div><label className="app-label" htmlFor="f-tonnage-text">톤수</label><input id="f-tonnage-text" className="app-input" placeholder={'예: "3.5톤"'} aria-describedby="tonnage-help" value={draft.tonnage} onChange={event => update('tonnage', event.target.value)} onBlur={() => { const n = parseTonnage(draft.tonnage.trim()); if (n != null) update('tonnage', formatTonnage(n)); }} /><p id="tonnage-help" className="text-[10px] text-zinc-500 mt-1">숫자가 포함되면 자동으로 톤수 값에 반영됩니다.</p></div><div><label className="app-label" htmlFor="f-pallet">팔레트 적재량</label><input id="f-pallet" type="number" min="0" step="1" className="app-input" placeholder="예: 16" value={draft.pallet} onChange={event => update('pallet', event.target.value)} /></div></div>
             <div><label className="app-label" htmlFor="f-company">소속 운수사</label><select id="f-company" className="app-select" value={draft.company} onChange={event => update('company', event.target.value)}><option value="">선택 안 함</option>{data.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
             <div><label className="app-label" htmlFor="f-memo">비고</label><textarea id="f-memo" rows={2} className="app-textarea" value={draft.memo} onChange={event => update('memo', event.target.value)} /></div>
-            <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => setDraft(toDraft(selectedRow))}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable} onClick={() => void remove()}>삭제</button></div>
+            <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => setDraft(toDraft(selectedRow))}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable || saving} onClick={() => void remove()}>삭제</button></div>
           </fieldset></form>
         </section>
       </SplitPane>

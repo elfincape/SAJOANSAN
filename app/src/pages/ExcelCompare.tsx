@@ -1,7 +1,11 @@
 import '../styles/excel-compare.css';
 import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { AdminPage } from '../components/AdminPage';
+import { WorkspaceDraftStatus } from '../components/WorkspaceDraftStatus';
+import { createWorkspaceStore } from '../lib/workspace-session';
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
+import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { FileArea } from '../components/FileArea';
 import { readCompareSheet, compareSheets, buildCompareWorkbook, resultColumns, resultValues } from '../domain/excel-compare';
 import type { CompareData, Comparison, CompareOptions, ExportConfig } from '../domain/excel-compare';
@@ -12,26 +16,46 @@ interface Pair { id: number; left: number | null; right: number | null }
 interface Result { comparison: Comparison; config: ExportConfig }
 const sides: Side[] = ['left', 'right'];
 const emptySource = (): Source => ({ book: null, data: null, name: '', sheet: '', header: '1', info: '선택된 파일 없음 · 파일당 최대 20MB' });
-export default function ExcelCompare() {
-  const [sources, setSources] = useState({ left: emptySource(), right: emptySource() });
-  const [pairs, setPairs] = useState<Pair[]>([]);
-  const nextId = useRef(0), revisions = useRef({ left: 0, right: 0 });
-  const [imports, setImports] = useState({ left: [] as number[], right: [] as number[] });
-  const [options, setOptions] = useState<CompareOptions>({ trim: true, ignoreCase: false, duplicates: 'occurrence', valueMode: 'raw' });
-  const [existsOnly, setExistsOnly] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+type Snapshot = { sources: Record<Side, Source>; pairs: Pair[]; imports: Record<Side, number[]>; options: CompareOptions; existsOnly: boolean; result: Result | null; side: Side; filter: string; page: number; nextId: number };
+const memory = new Map<string, Snapshot>();
+const settings = createWorkspaceStore<{ options: CompareOptions; existsOnly: boolean; files: string[] }>('excel-compare', value => !!value.options && ['raw','display'].includes(value.options.valueMode) && ['occurrence','unique','first'].includes(value.options.duplicates) && Array.isArray(value.files));
+function ExcelCompareContent() {
+  const { profile, center } = useAdminPage();
+  const key = profile.id + ':' + center.code;
+  const [restored] = useState(() => memory.get(key));
+  const [saved] = useState(() => settings.get(key));
+  const { confirm, feedback } = useFeedback();
+  const [sources, setSources] = useState(restored?.sources ?? { left: emptySource(), right: emptySource() });
+  const [pairs, setPairs] = useState<Pair[]>(restored?.pairs ?? []);
+  const nextId = useRef(restored?.nextId ?? 0), revisions = useRef({ left: 0, right: 0 });
+  const [imports, setImports] = useState(restored?.imports ?? { left: [] as number[], right: [] as number[] });
+  const [options, setOptions] = useState<CompareOptions>(restored?.options ?? saved?.options ?? { trim: true, ignoreCase: false, duplicates: 'occurrence', valueMode: 'raw' });
+  const [existsOnly, setExistsOnly] = useState(restored?.existsOnly ?? saved?.existsOnly ?? false);
+  const [result, setResult] = useState<Result | null>(restored?.result ?? null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState({ text: '비교할 엑셀 파일 두 개를 선택해 주세요.', error: false });
-  const [side, setSide] = useState<Side>('left');
-  const [filter, setFilter] = useState('all');
-  const [page, setPage] = useState(0);
+  const [side, setSide] = useState<Side>(restored?.side ?? 'left');
+  const [filter, setFilter] = useState(restored?.filter ?? 'all');
+  const [page, setPage] = useState(restored?.page ?? 0);
   const bothReady = !!sources.left.data && !!sources.right.data;
   const message = (text: string, error = false) => setStatus({ text, error });
   function invalidate(text?: string) { setResult(null); setPage(0); if (text) message(text); }
+  const previousData = useRef([sources.left.data, sources.right.data]);
   useEffect(() => {
+    if (previousData.current[0] === sources.left.data && previousData.current[1] === sources.right.data) return;
+    previousData.current = [sources.left.data, sources.right.data];
     setResult(null); setPage(0); setImports({ left: [], right: [] });
     setPairs(sources.left.data && sources.right.data ? [{ id: ++nextId.current, left: null, right: null }] : []);
   }, [sources.left.data, sources.right.data]);
+  useEditorGuard(false, busy, confirm);
+  useEffect(() => {
+    memory.set(key, { sources, pairs, imports, options, existsOnly, result, side, filter, page, nextId: nextId.current });
+    settings.set(key, { options, existsOnly, files: sides.some(side => sources[side].name) ? sides.map(side => sources[side].name).filter(Boolean) : saved?.files ?? [] });
+  }, [key, sources, pairs, imports, options, existsOnly, result, side, filter, page]);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => { if (sources.left.book || sources.right.book || busy) { event.preventDefault(); event.returnValue = ''; } };
+    addEventListener('beforeunload', warn); return () => removeEventListener('beforeunload', warn);
+  }, [sources, busy]);
 
   function readSource(source: Source): Source {
     let data: CompareData | null = null;
@@ -98,8 +122,11 @@ export default function ExcelCompare() {
   const rows = result?.comparison[side].rows.filter(row => filter === 'all' || (filter === 'true' && row.exists === true) || (filter === 'false' && row.exists === false) || (filter === 'excluded' && !row.eligible) || (filter === 'duplicate' && row.duplicate)) ?? [];
   const totalPages = Math.max(1, Math.ceil(rows.length / 50)), currentPage = Math.min(page, totalPages - 1);
   const headers = result && sources[side].data && sources[other].data ? resultColumns(sources[side].data, sources[other].data, result.config[`${side}Imports`], result.config.existenceOnly) : [];
-  return <AdminPage title="엑셀 시트 비교" bodyClass="">
+  return <>
+    {feedback}
     <main id="work-main" tabIndex={-1} className="app-main compare-container">
+      <WorkspaceDraftStatus storageKeys={[settings.storageKey(key)]} />
+      {saved?.files.length && !sources.left.book && !sources.right.book ? <p role="status">이전 파일: {saved.files.join(' · ')}. 새로고침 후 파일을 다시 선택하세요. 비교 기준 설정은 이 탭에 보관됐습니다.</p> : null}
 
       <fieldset id="workspace" disabled={busy}>
         <section id="work-section-1" className="file-grid" aria-label="비교할 엑셀 파일">{sides.map((side, index) => {
@@ -111,14 +138,14 @@ export default function ExcelCompare() {
             <div id={`${side}-sample`} className="sample muted">{source.data ? <><table><thead><tr>{['행', ...source.data.columns.map(column => column.label)].map((label, i) => <th key={i}>{label}</th>)}</tr></thead><tbody>{source.data.rows.slice(0, 3).map(row => <tr key={row.rowNumber}>{[row.rowNumber, ...row.texts].map((value, i) => <td key={i}>{value}</td>)}</tr>)}</tbody></table>{source.data.rows.length ? null : '제목 행 다음에 비교할 데이터가 없습니다.'}</> : '표시할 데이터가 없습니다.'}</div>
           </FileArea>;
         })}</section>
-        <section id="work-section-2" className="panel section-gap"><div className="section-title"><h3 className="app-function-title">비교할 열 연결</h3><button id="add-pair" className="btn btn-ghost" type="button" disabled={!bothReady || pairs.length >= Math.min(sources.left.data?.columns.length ?? 0, sources.right.data?.columns.length ?? 0)} onClick={() => { setPairs(items => [...items, { id: ++nextId.current, left: null, right: null }]); invalidate(); }}>+ 비교 열 추가</button></div>
+        <section hidden={!bothReady} id="work-section-2" className="panel section-gap"><div className="section-title"><h3 className="app-function-title">비교할 열 연결</h3><button id="add-pair" className="btn btn-ghost" type="button" disabled={!bothReady || pairs.length >= Math.min(sources.left.data?.columns.length ?? 0, sources.right.data?.columns.length ?? 0)} onClick={() => { setPairs(items => [...items, { id: ++nextId.current, left: null, right: null }]); invalidate(); }}>+ 비교 열 추가</button></div>
 
           <div id="pairs" className="pairs">{bothReady ? pairs.map((pair, index) => <div key={pair.id} className="pair">{sides.map(side => <span key={side} style={{ display: 'contents' }}>{side === 'right' ? <span className="pair-arrow">↔</span> : null}<select data-side={side} aria-label={`비교 쌍 ${index + 1} · 시트 ${side === 'left' ? 1 : 2} 열`} value={pair[side] ?? ''} onChange={event => { const value = event.target.value === '' ? null : Number(event.target.value); setPairs(items => items.map(item => item.id === pair.id ? { ...item, [side]: value } : item)); invalidate('비교 열이 변경되었습니다. 비교를 실행해 주세요.'); }}><option value="">시트 {side === 'left' ? 1 : 2} 열 선택</option>{sources[side].data?.columns.map(col => <option key={col.index} value={col.index}>{col.label}</option>)}</select></span>)}<button className="btn btn-ghost" type="button" aria-label="이 비교 열 연결 삭제" onClick={() => { setPairs(items => items.filter(item => item.id !== pair.id)); invalidate('비교 열 연결을 삭제했습니다.'); }}>삭제</button></div>) : <p className="empty">비교 열 없음</p>}</div>
           <label className="duplicate-label">값 비교 기준<select id="value-mode" value={options.valueMode} onChange={event => changeOptions({ valueMode: event.target.value as CompareOptions['valueMode'] })}><option value="raw">실제 셀 값 (숫자·문자 구분)</option><option value="display">셀에 표시된 값</option></select></label>
           <div className="options"><label><input id="trim-values" type="checkbox" checked={options.trim} onChange={event => changeOptions({ trim: event.target.checked })} /> 앞뒤 공백 무시</label><label><input id="ignore-case" type="checkbox" checked={options.ignoreCase} onChange={event => changeOptions({ ignoreCase: event.target.checked })} /> 영문 대소문자 무시</label></div>
           <p className="hint">빈칸·공백·오류 셀은 비교에서 제외됩니다.</p>
         </section>
-        <section id="work-section-3" className="panel section-gap"><h3 className="app-function-title">결과 방식 선택</h3><div className="mode-options">{[['extract', '매칭한 행에서 값 가져오기'], ['exists', '존재 여부만 확인']].map(([value, title]) => <label key={value} className="mode-card"><input type="radio" name="result-mode" value={value} checked={existsOnly === (value === 'exists')} onChange={() => { setExistsOnly(value === 'exists'); invalidate('결과 방식이 변경되었습니다. 비교를 실행해 주세요.'); }} /><span><strong>{title}</strong></span></label>)}</div>
+        <section hidden={!bothReady} id="work-section-3" className="panel section-gap"><h3 className="app-function-title">결과 방식 선택</h3><div className="mode-options">{[['extract', '매칭한 행에서 값 가져오기'], ['exists', '존재 여부만 확인']].map(([value, title]) => <label key={value} className="mode-card"><input type="radio" name="result-mode" value={value} checked={existsOnly === (value === 'exists')} onChange={() => { setExistsOnly(value === 'exists'); invalidate('결과 방식이 변경되었습니다. 비교를 실행해 주세요.'); }} /><span><strong>{title}</strong></span></label>)}</div>
           <div id="extract-options" hidden={existsOnly}><div className="import-grid">{sides.map((side, index) => <div key={side}><h4>시트 {index ? 1 : 2}에서 → 시트 {index + 1}로 가져올 열</h4><div id={`${side}-imports`} className="column-choices">{bothReady ? sources[side === 'left' ? 'right' : 'left'].data?.columns.map(col => <label key={col.index} className="column-choice"><input type="checkbox" value={col.index} checked={imports[side].includes(col.index)} onChange={event => { const checked = event.target.checked; setImports(previous => ({ ...previous, [side]: checked ? [...previous[side], col.index].sort((a, b) => a - b) : previous[side].filter(index => index !== col.index) })); invalidate('가져올 열이 변경되었습니다. 다시 비교해 주세요.'); }} />{col.label}</label>) : '선택 가능한 열 없음'}</div></div>)}</div>
             <label className="duplicate-label">같은 비교 값이 여러 행에 있을 때<select id="duplicates" value={options.duplicates} onChange={event => changeOptions({ duplicates: event.target.value as CompareOptions['duplicates'] })}><option value="occurrence">등장 순서대로 1:1 연결</option><option value="unique">양쪽 모두 유일한 값만 가져오기</option><option value="first">상대 시트의 첫 행 사용 (중복 재사용)</option></select></label>
           </div>
@@ -142,5 +169,7 @@ export default function ExcelCompare() {
       </section>
       <p className="footer-note">수식은 저장된 계산값으로 비교합니다. 결과 파일에는 원본 서식·수식·매크로가 포함되지 않습니다.</p>
     </main>
-  </AdminPage>;
+  </>;
 }
+
+export default function ExcelCompare() { return <AdminPage title="엑셀 시트 비교" bodyClass=""><ExcelCompareContent /></AdminPage>; }

@@ -26,12 +26,16 @@ export function Modal({
   label = '작업 창',
   width = 'md',
   dismissable = true,
+  placement = 'center',
+  beforeClose,
 }: {
   children: ReactNode;
   onClose: () => void;
   label?: string;
   width?: 'sm' | 'md' | 'lg' | 'xl' | '5xl';
   dismissable?: boolean;
+  placement?: 'center' | 'right';
+  beforeClose?: () => boolean | Promise<boolean>;
 }) {
   const [opener] = useState(() => {
     const active = document.activeElement;
@@ -104,6 +108,7 @@ export function Modal({
   async function close(action?: () => void) {
     if (!dismissable || closingRef.current) return;
     closingRef.current = true;
+    if (beforeClose && !await beforeClose()) { closingRef.current = false; return; }
     openingAnimations.current.forEach((animation) => animation.stop());
     openingAnimations.current = [];
     if (action) {
@@ -161,7 +166,7 @@ export function Modal({
               transition={{ duration: reduced ? 0 : 0.2 }}
             />
           </Dialog.Overlay>
-          <div id="modal-root" className="ean-modal-position">
+          <div id="modal-root" className="ean-modal-position" data-placement={placement}>
             <Dialog.Content
               asChild
               aria-modal="true"

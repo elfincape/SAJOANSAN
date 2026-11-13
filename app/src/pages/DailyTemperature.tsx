@@ -1,3 +1,5 @@
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
 import '../styles/daily-temperature.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -39,6 +41,9 @@ function renumberCopy(rows: TemperatureRow[]) {
 function DailyTemperatureContent() {
   const { center } = useAdminPage(),
     { copy, clipboard } = useClipboard();
+  const {confirm,feedback}=useFeedback();
+  const [modified,setModified]=useState(false);
+  useEditorGuard(modified,false,message=>confirm(message+' 수정한 템플릿은 내려받아 보관하세요.'));
   const [template, setTemplate] = useState<TemperatureTemplate | null>(null),
     [templateInfo, setTemplateInfo] = useState<ReactNode>(
       '저장된 기본 템플릿을 불러오는 중...',
@@ -91,6 +96,7 @@ function DailyTemperatureContent() {
       kind: 'default' | 'upload',
     ) => {
       setTemplate(next);
+      setModified(kind === 'upload');
       const first = next.rows[0];
       if (first)
         setDefaults((previous) => ({
@@ -193,6 +199,7 @@ function DailyTemperatureContent() {
     }
   }
   function updateCell(index: number, field: TemperatureField, value: string) {
+    setModified(true);
     setTemplate((previous) => {
       if (!previous) return previous;
       let rows = previous.rows.map((row) => ({ ...row }));
@@ -227,6 +234,7 @@ function DailyTemperatureContent() {
     insertRowsByRole(next, added, role);
     const rows = sortRowsByRole(next);
     renumberRows(rows);
+    setModified(true);
     setTemplate({ ...template, rows });
     setAddText('');
     toast(`${role} ${added.length}행을 추가했습니다.`, 'success');
@@ -237,6 +245,7 @@ function DailyTemperatureContent() {
       toast('점검일자 일을 입력하세요.', 'error');
       return;
     }
+    setModified(true);
     setTemplate((previous) =>
       previous
         ? {
@@ -382,7 +391,8 @@ function DailyTemperatureContent() {
         <button
           className="text-xs text-rose-300 hover:text-rose-200"
           data-delete={index}
-          onClick={() =>
+          onClick={() => {
+            setModified(true);
             setTemplate((previous) =>
               previous
                 ? {
@@ -392,8 +402,8 @@ function DailyTemperatureContent() {
                     ),
                   }
                 : previous,
-            )
-          }
+            );
+          }}
         >
           삭제
         </button>
@@ -402,7 +412,8 @@ function DailyTemperatureContent() {
   ));
   return (
     <>
-      <main
+      {feedback}
+      <main onInputCapture={()=>setModified(true)}
         className="app-main flex-1 max-w-[1500px] w-full mx-auto px-4 py-6 space-y-5"
         id="work-main"
         tabIndex={-1}
@@ -558,6 +569,7 @@ function DailyTemperatureContent() {
               <button
                 id="renumber-btn"
                 onClick={() => {
+                  setModified(true);
                   setTemplate((previous) =>
                     previous
                       ? { ...previous, rows: renumberCopy(previous.rows) }
