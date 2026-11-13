@@ -12,6 +12,7 @@ let boundToken = '';
 const cacheKey = 'sajo.auth-context.v1';
 const maxAge = 30000;
 supabase.auth.onAuthStateChange?.((event, session) => {
+  if (event === 'TOKEN_REFRESHED' && !boundToken && !cached) { clearStoredContext(); return; }
   if (event === 'SIGNED_OUT' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED' ||
       event === 'SIGNED_IN' && (!session || cached && cached.profile.id !== session.user.id || boundToken && boundToken !== session.access_token)) invalidateContext();
 });
