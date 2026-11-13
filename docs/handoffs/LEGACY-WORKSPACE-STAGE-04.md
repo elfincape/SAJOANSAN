@@ -3,7 +3,7 @@
 - 저장소: https://github.com/elfincape/SAJOANSAN
 - 작업: `/workspace/legacy-workspace-upgrade`, `codex/legacy-workspace-stage4`
 - 시작 커밋: `75616e483ce4230de799e0b461a7cadd65f9740b`
-- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md)의 4단계. 구현·격리 검증 완료, 운영 반영 확인은 아래에 별도 기록한다. 5~7단계는 시작하지 않았다.
+- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md)의 4단계. 구현·격리 검증·운영 반영 확인 완료. 5~7단계는 시작하지 않았다.
 
 ## 결과와 범위
 기존 공통 코스·납품처의 `center_code`를 원본의 명시적 센터 속성으로 편집하고 표에 표시한다. `센터 속성 필터`는 조회 조건이며 `원본 센터 속성`은 저장 대상 값이다. 필터나 연결된 기사·차량·납품처의 속성을 원본으로 자동 복사하지 않는다. 신규 공통 원본은 미분류에서 시작하며 사용자가 직접 선택한다. 기존 비공통 모드의 생성 기본값은 유지한다.
@@ -58,4 +58,10 @@
 - 기존 1~3단계의 초안·충돌·원본 상세 경로와 접근 제한을 재사용한다. 다음은 5/7단계 파일·결과 버전이며 별도 요청 전 시작하지 않는다.
 
 ## 운영 반영 확인
-배포 확인 후 이 절을 갱신한다. 구현·격리 검증과 실제 운영 저장을 구분한다.
+- PR https://github.com/elfincape/SAJOANSAN/pull/160 — MERGED. 구현 `e623b8099872b8c7e465680e71f74300fb6f020d`의 Vercel Preview 검사 SUCCESS.
+- main 병합/실제 배포 코드: `e0841515de6cbd7f104c22ff57223f6882a9a92f`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_FZkhHvgZN1jW2X2q1ope7eu2wkBY`: READY. 위 SHA 및 `sajoansan.vercel.app` alias 확인.
+- 공개 공유 자산 `CatalogSaveReview-zAvcUDhp.js`에 센터 속성 필터·원본 할당·기존 값 표시 포함. `Routes-DN2O2t_3.js`, `DeliveryPoints-DFlWt2zr.js`에 대상 분류 저장 가드 포함 확인. 최초 자산 검사에서는 페이지 청크만 검색해 공유 청크를 놓쳤으며, 실제 import 의존성을 조회한 검사로 수정해 통과했다. 제품 코드 추가 수정은 없었다.
+- 내부 Chromium으로 `/admin/routes.html`, `/admin/delivery-points.html`, 납품처 linked_detail 주소 모두 비로그인 상태에서 `/login.html` 이동, HTTP 200, 로그인 입력 표시, pageerror 0 확인. 실제 직원 로그인 후 운영 분류 저장은 미실시이며 실제 자료를 임의 수정하지 않았다.
+- 실행: `python3 /tmp/legacy-stage4/assets.py`, `node /tmp/legacy-stage4/live.cjs`. 후속 기록은 문서만 변경한다.
+- 총 7단계 중 4단계 완료. 다음 5단계는 사용자 요청 후 진행한다.
