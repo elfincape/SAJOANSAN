@@ -4,7 +4,7 @@
 - 저장소: https://github.com/elfincape/SAJOANSAN
 - 작업: `/workspace/legacy-workspace-upgrade`, `codex/legacy-workspace-stage3`
 - 시작: `05ccde01706742d6cb8e55b72c8e84140bdd6c9d`
-- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md): 3단계 구현·격리 검증 완료, 배포 확인 중. 4~7단계 미착수.
+- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md): 총 7단계 중 3단계 구현·격리 검증·운영 반영 확인 완료. 4~7단계 미착수.
 
 ## 결과와 사용 흐름
 코스 표의 주/보조 기사·주차량 이름과 코스별 납품처 화면의 주/보조 기사·차량·납품처 이름을 누르면 오른쪽 원본 패널이 열린다. 이름으로 검색해 추정하지 않고 연결된 안정 ID를 사용한다. 기존 셸/표는 그대로 마운트해 필터·선택·스크롤을 유지하며, 닫을 때 참조 자료를 다시 읽고 원래 버튼으로 포커스를 복귀시킨다.
@@ -49,3 +49,11 @@
 - 오른쪽 상세를 새로고침 후 자동 재개하는 기능이나 모든 도구의 상세 통일은 추가하지 않았다. 기존 2단계 부모 화면/납품처 초안은 그대로 사용한다.
 - 별도 에이전트·새 UI 엔진·범용 iframe 작업 플랫폼을 추가하지 않았다. 대시보드의 기존 상세 및 다른 도구는 유지한다.
 - 다음은 4/7단계 속성: 분류·필터와 접근 범위를 구분하고 관계로 자동 전파하지 않는 기존 계획을 따른다.
+
+## 운영 반영 확인
+- PR https://github.com/elfincape/SAJOANSAN/pull/159 — MERGED. 최신 구현 `9994fa1d02f58e24c0a7b8465d9587c2c2857d28`의 Vercel Preview 검사 SUCCESS.
+- main 병합/실제 배포 코드: `2dba70895cac29a1dc9717028c5f1fd9abb70137`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_EFUaUTVZ8aJEegkLaBTfFn4gw5Ay`: READY. 위 SHA 및 `sajoansan.vercel.app` alias 확인.
+- `LinkedRecordDetail-UFJcX2ke.js`의 상세 모드·원본 안내·닫기 가드, `RouteEdit-C3gow5hZ.js`의 연결·조건 편집 구분 확인. Routes/Drivers/Vehicles/DeliveryPoints 자산도 조회 성공.
+- 배포 READY 이후 내부 Chromium: 코스 화면 및 기사/차량/납품처의 상세 전용 주소 4개 모두 비로그인 접근 시 `/login.html` 이동, HTTP 200, 비밀번호 입력 화면 1개, pageerror 0. 실제 직원 로그인/업무 저장은 미실시. 임의 실제 자료 변경 없음.
+- 실행: `python3 /tmp/legacy-stage3/assets.py`, `node /tmp/legacy-stage3/live.cjs`. 이 후속 기록은 문서만 변경한다.
