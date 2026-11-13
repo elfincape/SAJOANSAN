@@ -5,7 +5,7 @@
 - 작업: `/workspace/legacy-workspace-upgrade`, `codex/legacy-workspace-stages`
 - 시작: `fb75f7ff4df977c7b85691fabdac08dab4bc03f6`
 - 전체 구상/진척: [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md)
-- 구현·격리 검증 완료. 운영 배포 확인은 아래 후속 기록으로 구분한다.
+- 총 7단계 중 1단계 구현·격리 검증·운영 반영 확인 완료. 2~7단계 미착수.
 
 ## 변경
 코스·납품처 상세와 대시보드 셀 수정이 기존 `catalog-scope.ts`의 동일한 ID/updated_at 조건부 저장을 사용한다. 삭제된 원본은 수정 대상에서 제외한다. 최신 수정시각으로 자동 재시도하지 않는다. 같은 변경의 재시도는 조회 가능한 현재 필드가 모두 일치할 때 수렴한 결과를 반환한다. 이는 과거 실행을 증명하는 영속 영수증이 아니며 권한을 우회하지 않는다.
@@ -36,3 +36,11 @@ DB 스키마·RLS·권한·기존 이력/관계 저장 RPC 변경 없음. 새 ou
 
 ## 직접 변경 검토
 변경 호출자는 RouteForm, DeliveryPoints, DashboardCellEditor 및 dashboard의 납품처 저장 어댑터다. 기존 요청자 Supabase 세션/RLS를 그대로 사용한다. 최신값 조회는 쓰기가 아니며 재검토 후에도 다음 저장에 revision 검사를 수행한다. 일반 직원 권한을 새로 부여하지 않는다. 원본 수정과 코스 연결 교체를 합치지 않는다.
+
+## 운영 반영 확인
+- PR: https://github.com/elfincape/SAJOANSAN/pull/157 — MERGED.
+- 구현 커밋 `f00021f2aea4250f9bf278c2b8b0d8bd85d084d4`, main 병합 `d600a5281d5a9060bbb2ae8bec7c790f8e1075bd`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_5ZGizGPcg3qPESFTMHWyT5t9JGjy`: READY, main SHA와 alias 일치.
+- https://sajoansan.vercel.app 에서 `CatalogSaveReview-CC506a-S.js`, `catalog-scope-CqAtILUo.js`, `DeliveryPoints-ColbOh0e.js` 조회 성공. 새 재검토 문구/공통 저장 코드 포함 확인.
+- 배포 후 내부 Chromium: `/admin/routes.html` → `/login.html`, HTTP 200, 비밀번호 입력 화면 1개, pageerror 0. 운영 로그인 세션/실제 업무 저장은 확인하지 않았으며 업무 데이터 시험 변경 없음.
+- 이 후속 기록은 문서만 갱신하며 새 기능 배포를 추가하지 않는다.
