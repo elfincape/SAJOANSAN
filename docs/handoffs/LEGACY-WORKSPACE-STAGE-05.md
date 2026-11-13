@@ -3,7 +3,7 @@
 - 저장소: https://github.com/elfincape/SAJOANSAN
 - 작업: `/workspace/legacy-workspace-upgrade`, `codex/legacy-workspace-stage5`
 - 시작 커밋: `0fc61797dcaccb0fd02cbee6f958a074f4af1bde`
-- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md)의 5단계. 구현·격리 검증 완료, 배포 확인은 아래에 별도 기록한다. 6·7단계는 시작하지 않았다.
+- [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md)의 5단계. 구현·격리 검증·운영 반영 확인 완료. 6·7단계는 시작하지 않았다.
 
 ## 범위 결정과 기존 기반
 기존 파일 저장 전체를 새로 만들지 않고, 공통 업무 첨부와 실제 생성 결과를 쓰는 포털 쿠팡 입문확인 경로에 연결했다. 공통 첨부는 업무·이슈·업무조사가 함께 사용한다. 버전 선택 UI는 쿠팡 결과에 적용되며 다른 도구 전체에 같은 화면을 도입한 것은 아니다.
@@ -63,4 +63,11 @@
 - Notion 폐기, 기존 외부 제공자/Windows 미확인과 이전 단계 한계는 유지한다. 다음은 6/7단계 실패 후 재개이며 요청 전 시작하지 않는다.
 
 ## 운영 반영
-배포 확인 후 기록한다. 구현·격리 검증과 실제 업무 저장 검증을 구분한다.
+- PR https://github.com/elfincape/SAJOANSAN/pull/161 — MERGED. 구현 `87219513bb6aebeaccbf58d54c4fe54c13eb8e0d`의 Vercel Preview 검사 SUCCESS.
+- main 병합/실제 배포 코드: `a63230ed6d8b186ef50d096d0a27e56b778af0c7`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_CDMTmMgYQChNwrKy3s41N1aXuQgs`: READY. 위 SHA와 `sajoansan.vercel.app` alias 확인.
+- 공개 `assets/Portal-CIqekD-a.js`에 결과 버전·입력 근거, 최종 저장 영수증 검사, source_file_id, 부분 준비 표시 포함 확인.
+- 운영 `onedrive-auth` ACTIVE v170의 배포 소스를 읽어 operations.js가 commit RPC 후 `{id,saved:true}`를 반환하는 것을 확인했다. Edge 재배포나 실제 파일 업로드는 하지 않았다.
+- 내부 Chromium에서 `/portal/`, `/admin/routes.html` 모두 비로그인 상태로 `/login.html` 이동, HTTP 200, 로그인 입력 표시, pageerror 0 확인. 실제 직원 로그인 후 외부 파일 저장은 미실시.
+- 실행: `python3 /tmp/legacy-stage5/assets.py`, `node /tmp/legacy-stage5/live.cjs`. 후속 결과 기록은 문서만 변경한다.
+- 총 7단계 중 5단계 완료. 6단계는 다음 요청 후 진행한다.
