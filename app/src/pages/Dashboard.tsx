@@ -5,6 +5,7 @@ import '../styles/driver-documents.css';
 import '../styles/dashboard.css';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { Modal, ModalClose } from '../components/Modal';
+import { LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
 import { DashboardDetail } from '../components/DashboardDetail';
 import {
   DashboardCellEditor,
@@ -284,7 +285,8 @@ function Work({
     [view, setView] = useState(urlInitial.view),
     [search, setSearch] = useState(urlInitial.filters.search),
     [openFilter, setOpenFilter] = useState<string | null>(null),
-    [detail, setDetail] = useState<DashboardRow | null>(null);
+    [detail, setDetail] = useState<DashboardRow | null>(null),
+    [linked, setLinked] = useState<LinkedRecord | null>(null);
   const [editingCell, setEditingCell] = useState<CellSelection | null>(null);
   const [restoredCell, setRestoredCell] = useState(() =>
     pendingCell(profile.id),
@@ -521,7 +523,7 @@ function Work({
       );
     }
   }
-  const modalOpen = !!detail || !!columnConfig || showMe || !!editingCell;
+  const modalOpen = !!linked || !!detail || !!columnConfig || showMe || !!editingCell;
   useWorkspaceActions([
     {
       id: 'dashboard-search',
@@ -831,8 +833,6 @@ function Work({
     );
   }
   function editableCell(row: DashboardRow, key: string, tableView: string) {
-    if (useErpCatalog || !canOfferCell(permissions, row, key))
-      return cell(row, key);
     if (
       view === tableView &&
       editingCell &&
@@ -846,6 +846,28 @@ function Work({
           className="dashboard-cell-host"
         />
       );
+    if (!useErpCatalog) {
+      const reference = (kind: LinkedRecord['kind'], id: unknown, label: string, value: ReactNode, quickEdit = true) =>
+        typeof id === 'string' && id ? <button type="button" className="linked-record-trigger" data-linked-target={kind + ':' + id}
+          data-cell-edit={key} aria-label={`${label || '연결 원본 확인 필요'} 원본 열기`}
+          title={quickEdit && canOfferCell(permissions, row, key) ? '원본 상세 열기 · F2 셀 수정' : '원본 상세 열기'}
+          disabled={!!editingCell} onClick={event => { event.stopPropagation(); setLinked({ kind, id, label }); }}
+          onKeyDown={event => { if (event.key === 'F2' && quickEdit && canOfferCell(permissions, row, key)) { event.preventDefault(); event.stopPropagation(); void openCell(row, key, event.currentTarget); } }}>
+          {value || '—'}
+        </button> : <span title="연결 원본 ID 확인 필요" onClick={event => event.stopPropagation()}>{value || '—'}</span>;
+      if (key === 'primary_driver_name' || key === 'primary_driver_phone')
+        return <span className="inline-flex flex-wrap gap-2">{(['primary', 'secondary'] as const).map(role => {
+          const name = String(row[role + '_driver_name'] || '');
+          if (!row[role + '_driver_id'] && !name) return null;
+          const value = key === 'primary_driver_phone' ? formatPhone(String(row[role + '_driver_phone'] || '')) : name;
+          return <span key={role}>{role === 'secondary' ? '보조: ' : ''}{reference('driver', row[role + '_driver_id'], name, value, role === 'primary')}</span>;
+        })}</span>;
+      if (key === 'primary_vehicle_plate' || key === 'primary_vehicle_tonnage')
+        return reference('vehicle', row.primary_vehicle_id, row.primary_vehicle_plate || '연결 차량', cell(row, key));
+      if (['dp_code', 'dp_name', 'dp_region', 'dp_address', 'dp_contact', 'dp_contact_name', 'security_key_location', 'security_password', 'entry_cond'].includes(key))
+        return reference('delivery_point', row.delivery_point_id, row.dp_name || '연결 납품처', cell(row, key));
+    }
+    if (useErpCatalog || !canOfferCell(permissions, row, key)) return cell(row, key);
     return (
       <button
         type="button"
@@ -1199,6 +1221,7 @@ function Work({
                           : ''
                       }
                       data-stop-id={row.stop_id ?? ''}
+                      data-dashboard-row={row.stop_id ?? ''}
                       onClick={() => {
                         if (!editingCell) setDetail(row);
                       }}
@@ -1206,6 +1229,7 @@ function Work({
                       {cols.map((c) => (
                         <td
                           key={c.key}
+                          data-dashboard-column={c.key}
                           className={`${c.cls || ''} ${c.align === 'right' ? 'text-right' : ''}`}
                           data-health-copy={
                             c.key === 'driver_health' ? '' : undefined
@@ -1259,7 +1283,7 @@ function Work({
                       key={key}
                       className="border border-zinc-700 rounded-lg overflow-hidden bg-zinc-900/40"
                     >
-                      <header className="px-3 py-2 bg-zinc-800/60 border-b border-zinc-700 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <header data-dashboard-row={head.stop_id ?? ''} className="px-3 py-2 bg-zinc-800/60 border-b border-zinc-700 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                         <span className="font-semibold">
                           {head.route_name || '(코스명 없음)'}
                         </span>
@@ -1269,7 +1293,7 @@ function Work({
                         <span className="text-zinc-400">
                           {head.company_name || ''}
                         </span>
-                        <span className="text-zinc-400">{driver(head)}</span>
+                        <span data-dashboard-column="primary_driver_name" className="text-zinc-400">{editableCell(head, 'primary_driver_name', 'group')}</span>
                         <span
                           data-health-copy
                           onClick={() => {
@@ -1284,11 +1308,11 @@ function Work({
                         >
                           {health(head)}
                         </span>
-                        <span className="text-zinc-400">
-                          연락처: {contact(head)}
+                        <span data-dashboard-column="primary_driver_phone" className="text-zinc-400">
+                          연락처: {editableCell(head, 'primary_driver_phone', 'group')}
                         </span>
-                        <span className="text-zinc-500 text-xs">
-                          {head.primary_vehicle_plate || ''}
+                        <span data-dashboard-column="primary_vehicle_plate" className="text-zinc-500 text-xs">
+                          {editableCell(head, 'primary_vehicle_plate', 'group')}
                         </span>
                         <span className="ml-auto text-xs text-zinc-500">
                           납품처 {stops.length}개
@@ -1329,6 +1353,7 @@ function Work({
                                     : ''
                                 }
                                 data-stop-id={row.stop_id ?? ''}
+                                data-dashboard-row={row.stop_id ?? ''}
                                 onClick={() => {
                                   if (!editingCell) setDetail(row);
                                 }}
@@ -1336,6 +1361,7 @@ function Work({
                                 {groupKeys.map((key) => (
                                   <td
                                     key={key}
+                                    data-dashboard-column={key}
                                     className={
                                       key === 'stop_order'
                                         ? 'text-right'
@@ -1373,6 +1399,7 @@ function Work({
           status={setSaveStatus}
         />
       )}
+      {linked ? <LinkedRecordDetail key={linked.kind + linked.id} record={linked} close={() => setLinked(null)} refresh={refreshSavedRows}/> : null}
       {detail ? (
         <DashboardDetail
           key={detail.stop_id}
