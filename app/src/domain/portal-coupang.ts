@@ -87,6 +87,7 @@ export function coupangResultVersions(current: CoupangResult | null | undefined,
   return versions;
 }
 export interface CoupangPending {
+  resultBefore: string;
   runId: string;
   sourceFileId: string;
   inputDispatch: string;
@@ -98,7 +99,7 @@ export interface CoupangPending {
   dispatch: string;
   schedule: unknown[];
   imageError?: string;
-  files: { id: string; file: File; saved?: boolean; fileId?: string }[];
+  files: { id: string; file: File | null; saved?: boolean; fileId?: string; name?: string; byteSize?: number; mime?: string; sha256?: string }[];
 }
 export interface CoupangSession {
   file: File | null;
