@@ -1,10 +1,11 @@
+import { CenterAttributeInput, CenterAttributeFilter } from '../components/CenterAttribute';
+import { centerAccessKey, centerAttributeLabel } from '../domain/catalog-attributes';
 import { linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { catalogValueEqual } from '../lib/catalog-scope';
 import { CatalogSaveReview } from '../components/CatalogSaveReview';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
-import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SplitPane, SelectionActions, SelectionCheckbox, useRowSelection, useSelectionExport, TableSkeleton, ChangeReview } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -34,7 +35,7 @@ function previewPhoto(photo: DeliveryPhoto) {
 }
 type PointView = { scope:string; selected:string|null; search:string; region:string; method:string; sort:string; scroll:number; selection:string[] };
 const pointViews = createWorkspaceStore<PointView>('point-view', value => ['scope','search','region','method','sort'].every(key => typeof value[key as keyof PointView] === 'string') && (value.selected === null || typeof value.selected === 'string') && Number.isFinite(value.scroll) && Array.isArray(value.selection) && value.selection.every(id => typeof id === 'string'));
-const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
+const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => key==='centerCode' ? (value.draft.centerCode==null || typeof value.draft.centerCode==='string') : Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
 
 function DeliveryPointsContent() {
   const linkedId = linkedRecordId();
@@ -52,7 +53,7 @@ function DeliveryPointsContent() {
   const [saveError, setSaveError] = useState('');
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<DeliveryPoint[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
-  const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>restoredDraft.current?.draft ?? pointToDraft());
+  const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>({...pointToDraft(restoredDraft.current?.original), ...restoredDraft.current?.draft}));
   const [search, setSearch] = useState(restored.current?.search ?? ''), [debouncedSearch, setDebouncedSearch] = useState(restored.current?.search ?? ''), [region, setRegion] = useState(restored.current?.region ?? ''), [method, setMethod] = useState(restored.current?.method ?? ''), [sort, setSort] = useState(restored.current?.sort ?? 'code');
   const [photoMessage, setPhotoMessage] = useState<{ text: string; error?: boolean } | null>(null), [photoBusy, setPhotoBusy] = useState(false);
   const photoBusyRef = useRef(false), savingRef = useRef(false), generation = useRef(0), nameInput = useRef<HTMLInputElement>(null);
@@ -63,7 +64,7 @@ function DeliveryPointsContent() {
     if (force) pointDrafts.delete(viewKey+':'+(selected ?? 'new'));
     const cached = force ? undefined : pointDrafts.get(viewKey+':'+(row?.id ?? 'new'));
     generation.current++; original.current=cached?.original ?? row; createId.current=cached?.createId ?? crypto.randomUUID();
-    setSaveError(''); setSelected(row?.id ?? null); setDraft(cached?.draft ?? pointToDraft(row)); setPhotoMessage(null);
+    setSaveError(''); setSelected(row?.id ?? null); setDraft({...pointToDraft(cached?.original ?? row), ...cached?.draft}); setPhotoMessage(null);
     if(focus) {setEditorIntent(value=>value+1);nameInput.current?.focus();}
   }
   useEffect(() => {
@@ -93,7 +94,8 @@ function DeliveryPointsContent() {
   const rows = data.filter(row => (!region || row.region === region) && (!method || row.delivery_method === method) && (!debouncedSearch || [row.code, row.name, row.address, row.security_key_location, row.security_password].filter(Boolean).join(' ').toLowerCase().includes(debouncedSearch.toLowerCase()))).sort((a, b) => String(a[sort === 'name' ? 'name' : 'code'] ?? '').localeCompare(String(b[sort === 'name' ? 'name' : 'code'] ?? ''), 'ko', { numeric: true }));
   const regions = [...new Set(data.map(row => row.region).filter((region): region is string => !!region))].sort((a, b) => a.localeCompare(b, 'ko'));
   const selectedRow = original.current;
-  const editable = pageEditable && (!selected || Boolean(selectedRow)) && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',selectedRow ? selectedRow.center_code ?? 'unclassified' : center.code));
+  const editable = pageEditable && (!selected || Boolean(selectedRow)) && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',selectedRow ? centerAccessKey(selectedRow.center_code) : undefined));
+  const canSave = editable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'delivery_points','edit',centerAccessKey(draft.centerCode)));
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(pointToDraft(selectedRow));
   const dirty = editable && hasChanges;
   useEditorGuard(dirty, saving || photoBusy, confirm);
@@ -138,13 +140,13 @@ function DeliveryPointsContent() {
     finally { photoBusyRef.current = false; setPhotoBusy(false); }
   }
   async function save() {
-    if (!editable || savingRef.current) return;
+    if (!canSave || savingRef.current) return;
     if (!draft.name.trim()) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
     if (draft.deadline !== pointToDraft(selectedRow).deadline && draft.deadline.trim() && (!normalizeTime(draft.deadline.trim()) || displayToBizMin(normalizeTime(draft.deadline.trim())) == null)) { toast('마감 시간 형식이 올바르지 않습니다.', 'warn'); return; }
     const saveGeneration = generation.current;
     savingRef.current = true; setSaving(true); setSaveError('');
     try {
-      const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow), selectedRow?.updated_at, createId.current);
+      const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, useLegacyCommonCatalog ? draft.centerCode : selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow), selectedRow?.updated_at, createId.current);
       if (error) { setSaveError(error.message); toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       if (removedColumns.length) console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
       toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload().catch(() => null); const row = next?.find(row => row.id === saved?.id) ?? saved; if (!next) toast('저장은 완료됐지만 목록을 갱신하지 못했습니다. 저장된 원본은 유지됩니다.', 'warn'); if (row && generation.current === saveGeneration) { pointDrafts.delete(viewKey+':'+(selected ?? 'new')); select(row, false, true); }
@@ -163,7 +165,7 @@ function DeliveryPointsContent() {
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
     {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-          {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => { const value=event.target.value; if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
+          {useLegacyCommonCatalog ? <CenterAttributeFilter value={catalogScope} change={value => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}/> : null}
       <SavedViews scope="delivery-points" value={{ search, region, method, sort }} defaultValue={{ search: '', region: '', method: '', sort: 'code' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setRegion(next.region); setMethod(next.method); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="delivery-points" revealToken={editorIntent} revealFocus="#f-name">
 
@@ -195,13 +197,14 @@ function DeliveryPointsContent() {
               <tr>
                 <th className="selection-column"><SelectionCheckbox label="현재 목록 전체 선택" checked={rows.length > 0 && bulk.selected.size === rows.length} mixed={bulk.selected.size > 0 && bulk.selected.size < rows.length} onChange={bulk.all} /></th><th>코드</th>
                 <th>이름</th>
+                {useLegacyCommonCatalog ? <th>센터 속성</th> : null}
                 <th>코스 배정</th>
                 <th>지역</th>
                 <th>납품방식</th>
                 <th>마감</th>
               </tr>
             </thead>
-            <tbody id="dp-tbody">{loading && !data.length ? <TableSkeleton columns={7} /> : null}{rows.map(row => <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="selection-column"><SelectionCheckbox label={`${row.name || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td><td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td></tr>)}</tbody>
+            <tbody id="dp-tbody">{loading && !data.length ? <TableSkeleton columns={useLegacyCommonCatalog ? 8 : 7} /> : null}{rows.map(row => <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="selection-column"><SelectionCheckbox label={`${row.name || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td>{useLegacyCommonCatalog ? <td>{centerAttributeLabel(row.center_code)}</td> : null}<td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td></tr>)}</tbody>
           </table>
           <div id="empty-msg" className={`${rows.length ? "hidden " : ""}text-center text-sm text-zinc-500 py-12`}>
             조건에 맞는 납품처가 없습니다.
@@ -224,16 +227,17 @@ function DeliveryPointsContent() {
         </div>
 
         <WorkspaceDraftStatus storageKeys={[pointViews.storageKey(viewKey),pointDrafts.storageKey(draftKey)]} dirty={hasChanges} />
+        {editable && !canSave ? <p className="editor-status" role="status">저장할 센터 속성의 수정 권한이 필요합니다.</p> : null}
         <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} error={saveError} />
-        <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)"}} onRebase={latest => {
+        <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, useLegacyCommonCatalog ? draft.centerCode : selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{center_code:'센터 속성',name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)"}} onRebase={latest => {
           const before = pointToDraft(original.current), next = pointToDraft(latest);
           generation.current++; original.current = latest;
           setDraft(current => Object.fromEntries(Object.keys(next).map(key => [key, catalogValueEqual(current[key as keyof PointDraft], before[key as keyof PointDraft]) ? next[key as keyof PointDraft] : current[key as keyof PointDraft]])) as PointDraft);
           setSaveError('');
         }}/>
-          <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
+          <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ centerCode:'센터 속성', name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
         <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}><fieldset className="editor-fields space-y-4" disabled={!editable || saving}>
-          <input type="hidden" id="f-id" value={draft.id} />
+          {useLegacyCommonCatalog ? <CenterAttributeInput value={draft.centerCode} change={value=>update('centerCode',value)} permissions={permissions} resource="delivery_points"/> : null}<input type="hidden" id="f-id" value={draft.id} />
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -362,7 +366,7 @@ function DeliveryPointsContent() {
           </div>
 
           <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button>
+            <button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!canSave || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button>
             <button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => select(selectedRow, false, true)}>취소</button>
             <div className="flex-1"></div>
             <button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? "" : " hidden"}`} onClick={() => void remove()} disabled={!editable}>삭제</button>

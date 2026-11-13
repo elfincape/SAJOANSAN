@@ -11,14 +11,14 @@ export const textFields = {
 export const flags = { 'f-1ton': 'allow_under_1ton', 'f-3_5ton': 'allow_under_3_5ton', 'f-5ton': 'allow_over_5ton', 'f-yard': 'allow_unmanned_yard' } as const;
 export const radios = { dmethod: 'delivery_method', amethod: 'access_method', dloc: 'delivery_location' } as const;
 type TextKey = typeof textFields[keyof typeof textFields] | typeof radios[keyof typeof radios];
-export type PointDraft = Record<TextKey, string> & Record<typeof flags[keyof typeof flags], boolean> & { id: string; deadline: string; memo: string; photos: DeliveryPhoto[] };
+export type PointDraft = Record<TextKey, string> & Record<typeof flags[keyof typeof flags], boolean> & { centerCode: string | null; id: string; deadline: string; memo: string; photos: DeliveryPhoto[] };
 export function pointToDraft(row?: DeliveryPoint): PointDraft {
   const legacy = splitLegacyMemoAndPhotos(row?.memo || '');
   const photos = parseDeliveryPointPhotos(row?.photos);
   return {
     ...Object.fromEntries([...Object.values(textFields), ...Object.values(radios)].map(key => [key, row?.[key] || ''])) as Record<TextKey, string>,
     ...Object.fromEntries(Object.values(flags).map(key => [key, !!row?.[key]])) as Record<typeof flags[keyof typeof flags], boolean>,
-    id: row?.id || '', deadline: row?.deadline_text ?? (row?.deadline_business_min != null ? bizMinToDisplay(row.deadline_business_min) : ''),
+    centerCode: row?.center_code ?? null, id: row?.id || '', deadline: row?.deadline_text ?? (row?.deadline_business_min != null ? bizMinToDisplay(row.deadline_business_min) : ''),
     contact_mobile: row?.contact_mobile ?? row?.contact ?? '', memo: legacy.memo, photos: photos.length ? photos : legacy.photos,
   };
 }
@@ -33,7 +33,7 @@ export function pointPayload(draft: PointDraft, center: string | null, original?
   };
   if (draft.id) payload.id = draft.id;
   if (original) {
-    const baseline = pointPayload(pointToDraft(original), center);
+    const baseline = pointPayload(pointToDraft(original), original.center_code ?? null);
     for (const key of Object.keys(payload)) if (key !== 'id' && JSON.stringify(payload[key]) === JSON.stringify(baseline[key])) delete payload[key];
   }
   return payload;
