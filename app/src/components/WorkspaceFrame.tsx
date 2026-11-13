@@ -193,7 +193,6 @@ export function WorkspaceFrame({
         <div className="app-rail-heading">
           <button
             ref={close}
-            disabled={disabled}
             type="button"
             data-navigation-toggle
             aria-label={
@@ -312,7 +311,6 @@ export function WorkspaceFrame({
           </a>
           <button
             ref={toggle}
-            disabled={disabled}
             type="button"
             className="app-menu-toggle"
             data-navigation-toggle
@@ -332,8 +330,8 @@ export function WorkspaceFrame({
           </div>
           <div className="app-page-actions">{actions}</div>
           <div className="app-header-controls">
-            <WorkspaceCommands commands={commands} disabled={disabled} />
-            <ThemeToggle disabled={disabled} />
+            <WorkspaceCommands commands={commands} />
+            <ThemeToggle />
             <AccountMenu
               name={userName}
               disabled={disabled}

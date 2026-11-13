@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from 'react';
 import {
   navigateWorkspace,
+  reportNavigationBlocked,
   registerWorkspaceNavigationGuard,
 } from '../lib/workspace-navigation';
 import { getLoadedAuthContext, loadAuthContext } from '../lib/auth';
@@ -132,11 +133,8 @@ function Shell({
       : [];
   function navigateTo(href: string) {
     void (async () => {
-      if (
-        controlsDisabled ||
-        (centerChangeGuard.current && !(await centerChangeGuard.current()))
-      )
-        return;
+      if (controlsDisabled) { reportNavigationBlocked(); return; }
+      if (centerChangeGuard.current && !(await centerChangeGuard.current())) return;
       navigateWorkspace(withCenterParam(href, center), true);
     })();
   }
@@ -339,6 +337,7 @@ export function AdminPage({
     () => getLoadedAuthContext() ?? null,
   );
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [controlsDisabled, setControlsDisabled] = useState(false);
   const centerChangeGuard = useRef<CenterChangeGuard | null>(null);
   const setCenterChangeGuard = useCallback(
@@ -357,6 +356,7 @@ export function AdminPage({
     document.body.className = `workspace-ui work-shell ${embedded ? 'work-embedded' : 'app-shell'} ${linkedDetail ? 'work-linked-record' : ''} ${bodyClass}`;
     document.body.dataset.appArea = area;
     let active = true;
+    setError('');
     void loadAuthContext()
       .then((context) => {
         if (active) setAuth(context);
@@ -364,17 +364,17 @@ export function AdminPage({
       .catch(() => {
         if (active)
           setError(
-            '로그인 상태를 확인하지 못했습니다. 연결을 확인한 뒤 새로고침해 주세요.',
+            '로그인 상태를 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도하세요.',
           );
       });
     return () => {
       active = false;
     };
-  }, [title, bodyClass, embedded, linkedDetail, area]);
+  }, [title, bodyClass, embedded, linkedDetail, area, attempt]);
   if (error)
     return (
       <p className="text-sm text-red-400 p-3" role="alert">
-        {error}
+        {error} <button type="button" className="btn btn-ghost" onClick={()=>setAttempt(value=>value+1)}>다시 확인</button>
       </p>
     );
   if (!auth)
@@ -433,44 +433,18 @@ export function AdminPage({
         )
       : !permissionAllowed(auth.permissions, resource, 'read', center.code)
     : !allowedHub && rank[auth.profile.role] < rank[minRole];
-  if (denied)
-    return (
-      <div id="modal-root">
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="접근 권한"
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-        >
-          <div className="w-full max-w-md mx-4 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl p-5">
-            <p>
-              {resource
-                ? '이 목록의 열람 권한이 없습니다.'
-                : `이 페이지에 접근할 권한이 없습니다. 필요 권한: ${minRole} 현재 권한: ${auth.profile.role}`}
-            </p>
-            <button
-              type="button"
-              className="btn btn-primary mt-4"
-              onClick={() => location.replace(resource ? '/portal/' : '/')}
-            >
-              확인
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   if (feature && !loadPrivateFeatures(auth.profile)[feature]) {
     location.replace(withCenterParam('/admin/', center));
     return null;
   }
-  const editable =
+  const editable = !denied && (
     !resource ||
-    permissionAllowed(auth.permissions, resource, 'edit', commonResource ? undefined : center.code);
+    permissionAllowed(auth.permissions, resource, 'edit', commonResource ? undefined : center.code));
   const movedCatalog = useErpCatalog && [
     '/admin/routes.html', '/admin/route-edit.html', '/admin/delivery-points.html', '/admin/import.html',
   ].includes(location.pathname);
   const movedVehicles = useErpReferenceCatalog && location.pathname === '/admin/vehicles.html';
-  const content = movedCatalog || movedVehicles ? (
+  const content = denied ? <main id="work-main" tabIndex={-1} className="app-main"><p role="status">이 화면의 열람 권한이 없습니다. 접근 가능한 업무를 메뉴에서 선택하세요.</p><a className="btn btn-ghost" href={withCenterParam('/portal/', center)}>업무 포털</a></main> : movedCatalog || movedVehicles ? (
     <section className="panel p-5" aria-label="ERP 원장 관리">
       <h2 className="text-lg font-semibold">{movedVehicles ? '차량 관리' : '코스·납품처 관리'}</h2>
       <a className="btn btn-primary mt-4" href={erpCourseHref(

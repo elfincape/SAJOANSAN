@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
+import { useEditorGuard } from '../components/EditorStatus';
 import { useFeedback } from '../components/useFeedback';
 import { withCenterParam } from '../lib/center';
 import { normalizeUsername, validUsername } from '../lib/login';
@@ -12,19 +13,22 @@ function UsersContent() {
   const { profile, center } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const [data, setData] = useState<UserProfile[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [draft, setDraft] = useState(() => toDraft());
   const [search, setSearch] = useState(''), [query, setQuery] = useState(''), [role, setRole] = useState(''), [active, setActive] = useState('');
   const usernameInput = useRef<HTMLInputElement>(null), passwordInput = useRef<HTMLInputElement>(null), savingRef = useRef(false);
   const initial = useRef<ReturnType<typeof loadUsers> | undefined>(undefined);
   useEffect(() => { const timer = setTimeout(() => setQuery(search.trim().toLowerCase()), 200); return () => clearTimeout(timer); }, [search]);
-  useEffect(() => { let mounted = true; const request = initial.current ??= loadUsers(); void request.then(rows => { if (mounted) setData(rows); }).catch(() => { if (mounted) toast('사용자 목록을 불러오지 못했습니다.', 'error'); }).finally(() => { if (mounted) setLoading(false); }); return () => { mounted = false; }; }, [toast]);
-  const reload = useCallback(async () => { setLoading(true); try { const rows = await loadUsers(); setData(rows); return rows; } catch { toast('사용자 목록을 불러오지 못했습니다.', 'error'); setData([]); return []; } finally { setLoading(false); } }, [toast]);
+  useEffect(() => { let mounted = true; const request = initial.current ??= loadUsers(); void request.then(rows => { if (mounted) { setData(rows); setLoadError(''); } }).catch(() => { if (mounted) setLoadError('사용자 목록을 불러오지 못했습니다.'); }).finally(() => { if (mounted) setLoading(false); }); return () => { mounted = false; }; }, [toast]);
+  const reload = useCallback(async () => { setLoading(true); try { const rows = await loadUsers(); setData(rows); setLoadError(''); return rows; } catch { setLoadError('사용자 목록 갱신 실패 · 마지막으로 읽은 자료를 표시합니다.'); return []; } finally { setLoading(false); } }, [toast]);
   const rank = { admin: 0, editor: 1, viewer: 2 };
   const rows = data.filter(row => (!role || row.role === role) && (active !== 'active' || row.active) && (active !== 'inactive' || !row.active) && (!query || [row.username, row.email, row.display_name].filter(Boolean).join(' ').toLowerCase().includes(query))).sort((a,b) => Number(b.active)-Number(a.active) || (rank[a.role] ?? 9)-(rank[b.role] ?? 9) || String(a.display_name || a.email || '').localeCompare(String(b.display_name || b.email || ''), 'ko'));
   const selectedRow = data.find(row => row.id === draft.id);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(selectedRow));
+  useEditorGuard(dirty, saving, confirm);
   const selfMessages = draft.id === profile.id ? [draft.role !== 'admin' ? '자기 자신의 admin 권한을 박탈할 수 없습니다.' : '', !draft.active ? '자기 자신을 비활성화할 수 없습니다.' : ''].filter(Boolean) : [];
   const selfWarn = selfMessages.length ? '⚠ ' + selfMessages.join(' ') : '';
-  function select(row?: UserProfile, focus = false) { setDraft(toDraft(row)); if (focus) usernameInput.current?.focus(); }
+  function select(row?: UserProfile, focus = false, force = false) { if(saving) return; if(!force && dirty) { void confirm('저장하지 않은 사용자 입력을 버리고 선택을 바꿀까요?').then(ok=>{if(ok)select(row,focus,true);}); return; } setDraft(toDraft(row)); if (focus) usernameInput.current?.focus(); }
   const otherAdmins = (id: string) => data.filter(row => row.role === 'admin' && row.active && row.id !== id).length;
   async function save() {
     if (savingRef.current) return;
@@ -49,7 +53,7 @@ function UsersContent() {
         if (error) { toast(error.code === '23503' ? '해당 user_id가 auth.users에 없습니다. Supabase 대시보드에서 먼저 사용자를 생성하세요.' : error.code === '23505' ? '이미 사용 중인 아이디입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
         savedId = result.id; toast('수정되었습니다.', 'success');
       }
-      const next = await reload(); const row = next.find(row => row.id === savedId); if (row) select(row);
+      const next = await reload(); const row = next.find(row => row.id === savedId); if (row) { setDraft(toDraft(row)); }
     } catch (error) { toast(error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.', 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   }
@@ -73,6 +77,7 @@ function UsersContent() {
   return <>
   <main className="app-main flex-1 max-w-[1300px] w-full mx-auto px-4 py-3 space-y-4" id="work-main" tabIndex={-1}>
 
+    {loadError ? <p className="work-recovery" role="alert">{loadError}<button disabled={loading} onClick={()=>void reload()}>목록 다시 읽기</button></p> : null}
     <section className="border border-zinc-700 rounded-lg p-4 text-sm">
       <p>신규 계정의 아이디·비밀번호와 기본 역할을 설정합니다. 기존 사용자의 역할·담당 센터는 사용자 권한 설정에서 함께 관리합니다.</p>
       <p className="mt-2 text-xs text-zinc-400">계정 활성 상태는 접근 가능 여부, 역할·담당 센터와 페이지 조건은 실제 업무 범위를 정합니다.</p>
@@ -84,6 +89,7 @@ function UsersContent() {
       <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{"minHeight": "60vh"}} aria-label="사용자 목록">
         <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
           <input id="search-input" type="search" placeholder="아이디/이메일/이름 검색" aria-label="사용자 아이디, 이메일, 이름 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} />
+          <button type="button" className="btn btn-ghost" disabled={loading || saving} onClick={()=>void reload()}>목록 새로고침</button>
           <select id="filter-role" className="app-select w-32" aria-label="역할 필터" value={role} onChange={event => setRole(event.target.value)}>
             <option value="">역할(전체)</option>
             <option value="admin">관리자 · 배송팀</option>
@@ -111,8 +117,8 @@ function UsersContent() {
             </thead>
             <tbody id="list-tbody">{rows.map(row => <tr key={row.id} data-id={row.id} className={`cursor-pointer${row.id===draft.id ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="font-mono text-xs">{row.username || '-'}</td><td className="font-mono text-xs">{row.email?.endsWith('@accounts.sajoansan.vercel.app') ? '-' : row.email || '-'}{row.id===profile.id ? <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-emerald-900/40 border border-emerald-700 text-emerald-200">나</span> : null}</td><td>{row.display_name || ''}</td><td><span className={`text-[10px] px-1.5 py-0.5 rounded border ${roleClasses[row.role] || roleClasses.viewer}`}>{roleLabels[row.role] || '-'}</span></td><td><span className={`text-xs ${row.active ? 'text-emerald-400' : 'text-rose-400'}`}>{row.active ? '활성' : '비활성'}</span></td><td className="text-xs text-zinc-400">{row.updated_at ? new Date(row.updated_at).toLocaleString('ko-KR') : ''}</td><td className="text-right whitespace-nowrap"><button type="button" className="btn btn-ghost text-xs" aria-label={`${row.username || row.display_name || row.email || '사용자'} 편집`} onClick={event => {event.stopPropagation();select(row,true);}}>편집</button><button type="button" className={`btn btn-ghost text-xs ${row.active ? 'text-rose-300' : 'text-emerald-300'}`} aria-label={`${row.username || row.display_name || row.email || '사용자'} ${row.active ? '비활성화' : '활성화'}`} onClick={event => {event.stopPropagation();void toggle(row.id);}}>{row.active ? '비활성화' : '활성화'}</button></td></tr>)}</tbody>
           </table>
-          <div id="empty-msg" className={`text-center text-sm text-zinc-500 py-12${!!rows.length ? " hidden" : ""}`}>
-            등록된 프로필이 없습니다.
+          <div id="empty-msg" className={`text-center text-sm text-zinc-500 py-12${rows.length || loading || loadError ? " hidden" : ""}`}>
+            {data.length ? '현재 검색·필터에 맞는 사용자가 없습니다.' : '등록된 프로필이 없습니다.'}
           </div>
         </div>
         <div className="px-3 py-2 border-t border-zinc-700 text-xs text-zinc-400 flex items-center justify-between">

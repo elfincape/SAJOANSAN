@@ -1,14 +1,21 @@
 import '../styles/dispatch-parser.css';
 import { useEffect, useRef, useState } from 'react';
-import { AdminPage } from '../components/AdminPage';
+import { WorkspaceDraftStatus } from '../components/WorkspaceDraftStatus';
+import { createWorkspaceStore } from '../lib/workspace-session';
+import { AdminPage, useAdminPage } from '../components/AdminPage';
 import { parseDispatch, resultValue } from '../domain/dispatch-parser';
 import type { DispatchRecord } from '../domain/dispatch-parser';
 
 const columns = [['name', '거래처명'], ['ton', '톤수'], ['driver', '기사명'], ['vehicle', '차량번호'], ['phone', '연락처'], ['result', '결과값']] as const;
-export default function DispatchParser() {
-  const [raw, setRaw] = useState('');
-  const [records, setRecords] = useState<DispatchRecord[]>([]);
-  const [showResults, setShowResults] = useState(false);
+const inputs = createWorkspaceStore<{raw:string;records:DispatchRecord[];showResults:boolean}>('dispatch-parser', value => typeof value.raw === 'string' && Array.isArray(value.records) && typeof value.showResults === 'boolean');
+function DispatchParserContent() {
+  const {profile,center}=useAdminPage();
+  const key=profile.id+':'+center.code;
+  const [saved]=useState(()=>inputs.get(key));
+  const [raw, setRaw] = useState(saved?.raw ?? '');
+  const [records, setRecords] = useState<DispatchRecord[]>(saved?.records ?? []);
+  const [showResults, setShowResults] = useState(saved?.showResults ?? false);
+  useEffect(()=>inputs.set(key,{raw,records,showResults}),[key,raw,records,showResults]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [toast, setToast] = useState({ text: '복사됨', error: false, visible: false });
@@ -35,7 +42,7 @@ export default function DispatchParser() {
     const next = parseDispatch(raw); setRecords(next); setShowResults(true);
     if (next.length) requestAnimationFrame(() => section.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
-  return <AdminPage title="배차정보 파서" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col">
+  return <><WorkspaceDraftStatus storageKeys={[inputs.storageKey(key)]} />
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-6 flex flex-col gap-5">
       <section className="border border-zinc-700 rounded-lg overflow-hidden">
         <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap items-center gap-2"><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400" /><label htmlFor="raw-input" className="text-sm font-medium">1 · 배차 원문 입력</label></div><div className="flex-1" /><button id="clear-btn" className="btn btn-ghost text-xs" onClick={() => { setRaw(''); setShowResults(false); setRecords([]); input.current?.focus(); }}>지우기</button><button id="parse-btn" className="btn btn-primary" onClick={runParse}>파싱 실행</button></div>
@@ -67,5 +74,7 @@ export default function DispatchParser() {
     </main>
     <div id="toast" className={`fixed bottom-6 left-1/2 z-50 pointer-events-none opacity-0 -translate-x-1/2 translate-y-2 bg-zinc-700 border border-zinc-600 text-zinc-100 text-xs px-4 py-2 rounded-full shadow-xl flex items-center gap-1.5${toast.visible ? ' show' : ''}`} style={{ borderColor: toast.error ? '#ef4444' : '' }}><svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg><span id="toast-msg">{toast.text}</span></div>
     {fallback ? <textarea ref={clipboard} readOnly value={fallback.text} style={{ position: 'fixed', opacity: 0, top: 0, left: 0 }} /> : null}
-  </AdminPage>;
+  </>;
 }
+
+export default function DispatchParser(){return <AdminPage title="배차정보 파서" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><DispatchParserContent /></AdminPage>;}

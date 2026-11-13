@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useEditorGuard } from './EditorStatus';
+import { useFeedback } from './useFeedback';
 import { createPortal } from 'react-dom';
 import type { DashboardRow } from '../domain/dashboard';
 import { COL_MAP } from '../domain/dashboard';
@@ -92,6 +94,8 @@ export const DashboardCellEditor = forwardRef<
     !!snapshot &&
     !!draft &&
     JSON.stringify(draft) !== JSON.stringify(initialCellDraft(snapshot));
+  const { confirm, feedback } = useFeedback();
+  useEditorGuard(dirty, saving, confirm);
   const canWrite =
     !!snapshot &&
     permissionAllowed(
@@ -567,6 +571,7 @@ export const DashboardCellEditor = forwardRef<
   );
   return (
     <>
+      {feedback}
       {host ? createPortal(content, host) : content}
       {toolbar ? createPortal(actions, toolbar) : actions}
     </>

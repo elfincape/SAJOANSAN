@@ -272,7 +272,7 @@ function Work({
   showMe: boolean;
   onCloseMe: () => void;
 }) {
-  const { center, profile, permissions, setControlsDisabled } = useAdminPage(),
+  const { center, profile, permissions } = useAdminPage(),
     { toast, feedback } = useFeedback(),
     [rows, setRows] = useState<DashboardRow[]>([]),
     [healthAvailable, setHealthAvailable] = useState(false),
@@ -297,10 +297,6 @@ function Work({
   const cellOpening = useRef(false);
   const activeCenter = useRef(center.code);
   activeCenter.current = center.code;
-  useEffect(() => {
-    setControlsDisabled(!!editingCell);
-    return () => setControlsDisabled(false);
-  }, [editingCell, setControlsDisabled]);
   async function openCell(
     row: DashboardRow,
     column: string,

@@ -1,10 +1,13 @@
 import '../styles/image-straightener.css';
 import { useEffect, useRef, useState } from 'react';
 import { FileArea } from '../components/FileArea';
+import { useEditorGuard } from '../components/EditorStatus';
+import { useFeedback } from '../components/useFeedback';
 import { AdminPage } from '../components/AdminPage';
 
 interface Photo { url: string; rotation: number }
-export default function ImageStraightener() {
+function ImageStraightenerContent() {
+  const { confirm, feedback } = useFeedback();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -28,6 +31,7 @@ export default function ImageStraightener() {
       if (files.length) { event.preventDefault(); addFiles(files); }
     };
     const key = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable=true],[role=dialog]')) return;
       if (event.key === 'ArrowLeft') { event.preventDefault(); move(-1); }
       if (event.key === 'ArrowRight') { event.preventDefault(); move(1); }
     };
@@ -36,8 +40,9 @@ export default function ImageStraightener() {
     return () => { document.removeEventListener('paste', paste); document.removeEventListener('keydown', key); };
   }, [photos.length]);
   useEffect(() => () => { urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current = []; }, []);
+  useEditorGuard(photos.length > 0, false, message => confirm(message + ' 이미지는 다시 선택해야 합니다.'));
   const photo = photos[currentIndex];
-  return <AdminPage title="기울기 보정" feature="imageStraightener" bodyClass="bg-zinc-900 text-zinc-100 h-full flex flex-col">
+  return <>{feedback}
     <main id="work-main" tabIndex={-1} className="workspace app-main flex-1 flex flex-col">
       <section id="empty-state" className={`flex-1 flex items-center justify-center p-4${photo ? ' hidden' : ''}`}>
         <FileArea as="button" accept="image/*" multiple onFiles={addFiles} id="paste-target" type="button" className="paste-target rounded-2xl flex items-center justify-center" aria-label="사진 추가" onClick={event => event.currentTarget.focus()}><span className="plus">＋</span></FileArea>
@@ -60,5 +65,7 @@ export default function ImageStraightener() {
         </div>
       </section>
     </main>
-  </AdminPage>;
+  </>;
 }
+
+export default function ImageStraightener() { return <AdminPage title="기울기 보정" feature="imageStraightener" bodyClass="bg-zinc-900 text-zinc-100 h-full flex flex-col"><ImageStraightenerContent /></AdminPage>; }

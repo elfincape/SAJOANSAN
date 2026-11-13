@@ -55,7 +55,7 @@ export function RouteForm({ route, masters, close, saved, toast }: { route: Rout
     {editable && !canSave ? <p className="editor-status" role="status">저장할 센터 속성의 수정 권한이 필요합니다.</p> : null}
     <fieldset disabled={saving || !editable}><form id="route-form" className="space-y-3" noValidate onSubmit={async event => {
       event.preventDefault(); if (!canSave || submitting.current) return;
-      const name = draft.name.trim(); if (!name) { toast('코스명은 필수입니다.', 'warn'); return; }
+      const name = draft.name.trim(); if (!name) { toast('코스명은 필수입니다.', 'warn'); document.getElementById('r-name')?.focus(); return; }
       const payload = route ? { id: route.id, ...patch } : { center_code: center.code, ...patch };
       submitting.current = true; setSaving(true); setSaveError('');
       try { const { error } = await saveRoute(payload, original.current,createId.current); if (error) { setSaveError(error.message); toast(`저장 실패: ${error.message}`, 'error'); return; } toast(route ? '수정되었습니다.' : '추가되었습니다.', 'success'); completed.current = true; routeDrafts.delete(draftKey); close(); await saved().catch(() => toast('저장은 완료됐지만 목록을 갱신하지 못했습니다.', 'warn')); }

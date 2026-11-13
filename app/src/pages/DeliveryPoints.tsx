@@ -1,6 +1,6 @@
 import { CenterAttributeInput, CenterAttributeFilter } from '../components/CenterAttribute';
 import { centerAccessKey, centerAttributeLabel } from '../domain/catalog-attributes';
-import { linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
+import { notifyLinkedRecordSaved, linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { catalogValueEqual } from '../lib/catalog-scope';
@@ -149,6 +149,7 @@ function DeliveryPointsContent() {
       const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, useLegacyCommonCatalog ? draft.centerCode : selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow), selectedRow?.updated_at, createId.current);
       if (error) { setSaveError(error.message); toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       if (removedColumns.length) console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
+      notifyLinkedRecordSaved();
       toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload().catch(() => null); const row = next?.find(row => row.id === saved?.id) ?? saved; if (!next) toast('저장은 완료됐지만 목록을 갱신하지 못했습니다. 저장된 원본은 유지됩니다.', 'warn'); if (row && generation.current === saveGeneration) { pointDrafts.delete(viewKey+':'+(selected ?? 'new')); select(row, false, true); }
     } catch (error) { setSaveError('저장 결과를 확인하지 못했습니다. 입력을 보존했습니다. 같은 내용으로 재시도할 수 있습니다.'); toast(`납품처 저장 중 오류가 발생했습니다. ${error instanceof Error ? error.message : ''}`, 'error'); }
     finally { savingRef.current = false; setSaving(false); }

@@ -1,3 +1,5 @@
+import { useFeedback } from './useFeedback';
+import { useEditorGuard } from './EditorStatus';
 import { permissionAllowed } from '../lib/permissions';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from './Modal';
@@ -60,6 +62,10 @@ export function DashboardDetail({
     security_password: r.security_password || '',
     memo: r.dp_memo || '',
   }));
+  const {confirm,feedback}=useFeedback();
+  const originalPhotos=useRef<DeliveryPhoto[]>([]);
+  const dirty=loaded && (JSON.stringify(fields)!==JSON.stringify(originalFields.current) || JSON.stringify(photos)!==JSON.stringify(originalPhotos.current));
+  useEditorGuard(dirty,busy,confirm);
   const editable = !useErpCatalog && loaded && permissionAllowed(permissions,'delivery_points','edit',pointCenter.current ?? 'unclassified');
   const photosRef = useRef(photos);
   photosRef.current = photos;
@@ -84,6 +90,7 @@ export function DashboardDetail({
         originalFields.current = values; pointCenter.current = data?.center_code ?? null;
         setFields(values);
         const photos = parseDeliveryPointPhotos(data?.photos);
+        originalPhotos.current=photos;
         setPhotos(photos);
         setLarge(photos[0]?.dataUrl || '');
         setLoaded(true);
@@ -158,6 +165,7 @@ export function DashboardDetail({
       if (refreshed.error) throw refreshed.error;
       version.current = refreshed.data?.updated_at ?? null;
       originalFields.current = {...fields};
+      originalPhotos.current = photos;
       onSaved(r.delivery_point_id, payload);
       toast('납품처 정보가 저장되었습니다.', 'success');
     } finally {
@@ -203,7 +211,8 @@ export function DashboardDetail({
     );
   }
   return (
-    <Modal dismissable={!busy} width="5xl" onClose={onClose}>
+    <Modal placement="right" label="납품처 상세" beforeClose={()=>!dirty || confirm('저장하지 않은 상세 변경을 버리고 닫을까요?')} dismissable={!busy} width="xl" onClose={onClose}>
+      {feedback}
       <div
         className="p-5 max-h-[85vh] overflow-auto"
         onPaste={(event) => {

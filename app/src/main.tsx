@@ -1,5 +1,5 @@
 import { WorkspaceProvider } from './components/WorkspaceProvider';
-import { lazy, StrictMode, Suspense, useEffect, useLayoutEffect, useState } from 'react';
+import { lazy, StrictMode, Suspense, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
@@ -22,17 +22,20 @@ function Workspace() {
   const [current, setCurrent] = useState<{ Page: ComponentType; key: string }>(() => ({ Page: InitialPage!, key: location.href }));
   const [status, setStatus] = useState('');
   const [failed, setFailed] = useState(false);
-  useLayoutEffect(() => {
-    if (!status || failed) return;
-    const nodes = [...document.body.children].filter((node): node is HTMLElement =>
-      node instanceof HTMLElement && !node.matches('.workspace-navigation-status, .workspace-navigation-announcement, .workspace-navigation-progress'));
-    const previous = nodes.map(node => node.inert);
-    nodes.forEach(node => { node.inert = true; });
-    return () => nodes.forEach((node, i) => { node.inert = previous[i]; });
-  }, [status, failed]);
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const blocked = (event: Event) => { setNotice((event as CustomEvent<string>).detail); clearTimeout(timer); timer = setTimeout(() => setNotice(''), 5000); };
+    addEventListener('workspace:navigation-blocked', blocked);
+    return () => { clearTimeout(timer); removeEventListener('workspace:navigation-blocked', blocked); };
+  }, []);
   useEffect(() => {
     let index = Number(history.state?.[indexKey] ?? 0);
     let sequence = 0;
+    let inputRevision = 0;
+    const noteInput = () => { inputRevision++; };
+    addEventListener('input', noteInput);
+    addEventListener('change', noteInput);
     const previousScrollRestoration = history.scrollRestoration;
     history.scrollRestoration = 'manual';
     const storedScroll = history.state?.__workspaceScroll;
@@ -88,8 +91,11 @@ function Workspace() {
         setStatus('화면을 준비하고 있습니다.');
         const loader = loaderFor(url.pathname);
         if (!loader) return;
-        const [module, auth] = await Promise.all([loader(), loadAuthContext(true)]);
-        if (!auth || request !== sequence) return;
+        const beforeInput = inputRevision;
+        const [module, auth] = await Promise.all([loader(), loadAuthContext()]);
+        if (request !== sequence) return;
+        if (!auth) { finish(); return; }
+        if (beforeInput !== inputRevision) { finish(); return; }
         const ready = await allowWorkspaceNavigation(true);
         if (request !== sequence) return;
         if (!ready) { finish(); return; }
@@ -114,7 +120,7 @@ function Workspace() {
       } catch {
         if (request === sequence) {
           setFailed(true);
-          setStatus('화면을 열지 못했습니다. 연결을 확인하고 새로고침한 뒤 다시 선택해 주세요.');
+          setStatus('화면을 열지 못했습니다. 현재 입력은 유지됩니다. 메뉴에서 다시 선택해 주세요.');
         }
       } finally {
         if (request === sequence) {
@@ -168,6 +174,8 @@ function Workspace() {
       history.replaceState = replaceState;
       history.scrollRestoration = previousScrollRestoration;
       cancelScrollRestore();
+      removeEventListener('input', noteInput);
+      removeEventListener('change', noteInput);
       removeEventListener('click', click);
       removeEventListener('popstate', pop);
       removeEventListener('pagehide', saveScroll);
@@ -178,6 +186,7 @@ function Workspace() {
     <Suspense fallback={<div className="workspace-boot" role="status">화면을 불러오고 있습니다…</div>}>
       <Page key={current.key} />
     </Suspense>
+    {notice ? <div className="workspace-navigation-status" role="status">{notice}</div> : null}
     {status ? <>
       <div className={failed ? 'workspace-navigation-status' : 'workspace-navigation-announcement'} role={failed ? 'alert' : 'status'}>{status}</div>
       {!failed ? <div className="workspace-navigation-progress" aria-hidden="true" /> : null}

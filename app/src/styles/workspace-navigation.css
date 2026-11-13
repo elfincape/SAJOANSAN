@@ -32,3 +32,6 @@
 }
 @keyframes workspace-navigation-reveal { to { opacity: 1; } }
 .workspace-ui #app-sidebar:not(:modal):focus-visible { outline: none; }
+
+.work-recovery { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; margin:8px 0; font-size:12px; background:var(--theme-panel); color:var(--theme-text); border:1px solid var(--theme-border); border-radius:10px; }
+.work-recovery button { flex-shrink:0; padding:5px 9px; border:1px solid var(--theme-border); border-radius:6px; }

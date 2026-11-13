@@ -12,6 +12,9 @@ export function linkedRecordId() {
   return params.get('linked_detail') === '1' ? params.get('id') || '' : '';
 }
 declare global { interface Window { linkedRecordCanClose?: (recheck?: boolean) => Promise<boolean> } }
+export function notifyLinkedRecordSaved() {
+  if (linkedRecordId() && parent !== window) parent.postMessage({ type: 'linked-record-saved', id: linkedRecordId() }, location.origin);
+}
 export function useLinkedRecordBridge() {
   useEffect(() => {
     if (!linkedRecordId() || window === parent) return;
@@ -26,7 +29,7 @@ export function LinkedRecordButton({ record, open }: { record: LinkedRecord; ope
 }
 export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedRecord; close: () => void; refresh: () => Promise<void> }) {
   const { center } = useAdminPage();
-  const frame = useRef<HTMLIFrameElement>(null), pending = useRef(false);
+  const frame = useRef<HTMLIFrameElement>(null), pending = useRef(false), changed = useRef(false);
   const [closing, setClosing] = useState(false), [error, setError] = useState('');
   const [opener] = useState(() => document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const [originSelector] = useState(() => {
@@ -52,13 +55,13 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
     try {
       if (!await allowClose()) return;
       setClosing(true);
-      await refresh();
       close();
+      if (changed.current) void refresh().catch(() => dispatchEvent(new CustomEvent('workspace:navigation-blocked', { detail: '원본 저장은 완료됐지만 목록을 갱신하지 못했습니다. 목록 새로고침을 다시 실행하세요.' })));
     } catch { setError('목록을 갱신하지 못했습니다. 다시 닫기를 눌러 확인하세요.'); }
     finally { pending.current=false; setClosing(false); }
   }
   useEffect(() => {
-    const request = (event: MessageEvent) => { if(event.origin===location.origin && event.source===frame.current?.contentWindow && event.data?.type==='linked-record-close') void dismiss(); };
+    const request = (event: MessageEvent) => { if(event.origin!==location.origin || event.source!==frame.current?.contentWindow) return; if(event.data?.type==='linked-record-saved' && event.data.id===record.id) changed.current=true; if(event.data?.type==='linked-record-close') void dismiss(); };
     addEventListener('message',request); return () => removeEventListener('message',request);
   }, []);
   const params = new URLSearchParams({ id:record.id, center:center.slug, embedded:'1', linked_detail:'1' });

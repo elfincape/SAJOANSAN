@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useAdminPage } from './AdminPage';
+import { createWorkspaceStore } from '../lib/workspace-session';
 import { useDownload } from './useDownload';
 import './workbench.css';
 
@@ -8,7 +9,7 @@ export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { c
   const { profile, center } = useAdminPage();
   const key = `sajo.split.v1:${profile.id}:${center.code}:${scope}`;
   const [width, setWidth] = useState(() => { try { return Math.min(680, Math.max(320, Number(localStorage.getItem(key)) || 480)); } catch { return 480; } });
-  const [collapsed, setCollapsed] = useState(false), [available, setAvailable] = useState(1100);
+  const [collapsed, setCollapsed] = useState(() => { if (new URLSearchParams(location.search).has('id')) return false; try { return localStorage.getItem(key + ':collapsed') !== 'false'; } catch { return true; } }), [available, setAvailable] = useState(1100);
   const container = useRef<HTMLDivElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   useEffect(() => {
     if (!revealToken) return;
@@ -16,6 +17,7 @@ export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { c
     const frame = requestAnimationFrame(() => container.current?.querySelector<HTMLElement>(revealFocus || '.work-editor input:not(:disabled):not([type="hidden"]), .work-editor select:not(:disabled), .work-editor textarea:not(:disabled)')?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [revealToken, revealFocus]);
+  useEffect(() => { if (new URLSearchParams(location.search).get('linked_detail') === '1') return; try { localStorage.setItem(key + ':collapsed', String(collapsed)); } catch { /* Current layout remains usable. */ } }, [key, collapsed]);
   const maximum = Math.max(320, Math.min(680, available - 332));
   const effective = Math.min(width, maximum);
   useEffect(() => {
@@ -69,4 +71,39 @@ export function TableSkeleton({ columns }: { columns: number }) {
 export function ChangeReview({ fields }: { fields: { label: string; before: unknown; after: unknown }[] }) {
   const changed = fields.filter(field => JSON.stringify(field.before ?? '') !== JSON.stringify(field.after ?? ''));
   return changed.length ? <details className="change-review"><summary>저장 전 변경사항 {changed.length}개 확인</summary><dl>{changed.map(field => <div key={field.label}><dt>{field.label}</dt><dd><del>{String(field.before ?? '') || '비어 있음'}</del><span aria-hidden="true">→</span><ins>{String(field.after ?? '') || '비어 있음'}</ins></dd></div>)}</dl></details> : null;
+}
+
+const listViews = createWorkspaceStore<Record<string, string>>('master-list-view', value => Object.values(value).every(item => typeof item === 'string'));
+export function useWorkbenchView(scope: string) {
+  const { profile, center } = useAdminPage();
+  const key = `${profile.id}:${center.code}:${scope}:${new URLSearchParams(location.search).get('id') || 'list'}`;
+  const [initial] = useState(() => listViews.get(key) ?? {});
+  useEffect(() => {
+    const selector = '.work-list .table-wrap';
+    let restoring = true;
+    const restore = () => { const list = document.querySelector<HTMLElement>(selector); if (restoring && list) list.scrollTop = Number(initial.scroll || 0); };
+    const observer = new MutationObserver(restore);
+    observer.observe(document.getElementById('work-main') ?? document.body, { childList: true, subtree: true });
+    const stop = () => { restoring = false; observer.disconnect(); };
+    const timer = setTimeout(stop, 2000);
+    const rememberScroll = (event: Event) => { const list = event.target; if (!restoring && list instanceof HTMLElement && list.matches(selector)) listViews.set(key, { ...listViews.get(key), scroll: String(list.scrollTop) }); };
+    addEventListener('wheel', stop, { passive: true }); addEventListener('pointerdown', stop, { passive: true }); addEventListener('scroll', rememberScroll, true);
+    restore();
+    return () => { observer.disconnect(); clearTimeout(timer); removeEventListener('wheel', stop); removeEventListener('pointerdown', stop); removeEventListener('scroll', rememberScroll, true); };
+  }, [key, initial]);
+  let selection: string[] = [];
+  try { const value = JSON.parse(initial.selection || '[]'); if (Array.isArray(value) && value.every(id => typeof id === 'string')) selection = value; } catch { /* Ignore invalid selection metadata. */ }
+  return { initial, selection, remember: (value: Record<string, string>) => listViews.set(key, { ...listViews.get(key), ...value }) };
+}
+const retainedDrafts = createWorkspaceStore<{ selected: string | null; draft: Record<string, string> }>('master-input', value => (value.selected === null || typeof value.selected === 'string') && !!value.draft && Object.values(value.draft).every(item => typeof item === 'string'));
+export function useRetainedMasterDraft<T extends { [K in keyof T]: string }>(scope: string, selected: string | null, draft: T, dirty: boolean, ready: boolean) {
+  const { profile, center } = useAdminPage();
+  const key = `${profile.id}:${center.code}:${scope}:${new URLSearchParams(location.search).get('id') || 'list'}`;
+  const [pending, setPending] = useState(() => { const saved = retainedDrafts.get(key); return saved && Object.keys(draft).every(field => typeof saved.draft[field] === 'string') ? saved as unknown as { selected: string | null; draft: T } : undefined; });
+  useEffect(() => {
+    if (!ready || pending) return;
+    if (dirty) retainedDrafts.set(key, { selected, draft: { ...draft } });
+    else retainedDrafts.delete(key);
+  }, [key, selected, draft, dirty, ready, pending]);
+  return { pending, storageKeys: [retainedDrafts.storageKey(key), listViews.storageKey(key)], consume: () => setPending(undefined), discard: () => { retainedDrafts.delete(key); setPending(undefined); } };
 }

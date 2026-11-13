@@ -3,14 +3,17 @@ import { PAGE_PATHS } from '../page-paths';
 type Guard = (recheck?: boolean) => boolean | Promise<boolean>;
 const guards = new Set<Guard>();
 // Tools with document-owned styles or upload/unload lifecycles keep native navigation.
-const continuousPages = new Set(['Portal', 'AdminHub', 'Dashboard', 'Companies', 'Vehicles', 'DeliveryPoints', 'Routes', 'Settings', 'Users', 'AuditLog']);
+const continuousPages = new Set(['Portal', 'AdminHub', 'Dashboard', 'Companies', 'Drivers', 'RouteEdit', 'ExcelCompare', 'Vehicles', 'DeliveryPoints', 'Routes', 'Settings', 'Users', 'AuditLog']);
 let navigate: ((url: URL, guarded: boolean) => void) | undefined;
 export function registerWorkspaceNavigationGuard(guard: Guard) {
   guards.add(guard);
   return () => { guards.delete(guard); };
 }
+export function reportNavigationBlocked() {
+  dispatchEvent(new CustomEvent('workspace:navigation-blocked', { detail: '현재 작업을 저장하거나 취소한 뒤 이동하세요. 처리 중인 요청은 완료될 때까지 유지됩니다.' }));
+}
 export async function allowWorkspaceNavigation(recheck = false) {
-  for (const guard of guards) if (!await guard(recheck)) return false;
+  for (const guard of guards) if (!await guard(recheck)) { reportNavigationBlocked(); return false; }
   return true;
 }
 export function workspaceDestination(href: string) {
