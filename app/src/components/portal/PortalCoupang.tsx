@@ -1,11 +1,14 @@
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { PortalTask, PortalInputs } from '../../domain/portal-types';
+import type { PortalTask, PortalInputs, PortalEvent } from '../../domain/portal-types';
+import { portalStamp } from '../../domain/portal-types';
+import { portalApi } from '../../lib/portal';
 import {
   coupangEntryDate,
   validCoupangGenerated,
   coupangSessions,
+  coupangResultVersions,
 } from '../../domain/portal-coupang';
 import type {
   CoupangGenerated,
@@ -207,6 +210,12 @@ export function PortalCoupang({
   children: ReactNode;
 }) {
   const { refresh, message, state } = usePortal(),
+    [historyOpen, setHistoryOpen] = useState(false),
+    [events, setEvents] = useState<PortalEvent[]>([]),
+    [historyError, setHistoryError] = useState(''),
+    [selectedVersion, setSelectedVersion] = useState(''),
+    [sourceRecord, setSourceRecord] = useState<PortalFile | undefined>(),
+    { download, downloadLink } = useDownload(),
     [status, setStatus] = useState(''),
     [files, setFiles] = useState<PortalFile[]>([]),
     [resultError, setResultError] = useState(''),
@@ -222,6 +231,9 @@ export function PortalCoupang({
       id: string;
       dispatch: string;
       date: string;
+      sourceId: string;
+      taskVersion: number;
+      settings: CoupangResult['settings'];
     } | null>(null),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     settings = task.template_snapshot!.spec!.integration!,
@@ -233,7 +245,9 @@ export function PortalCoupang({
       },
     ).current,
     latest = useRef({ task, dispatch, collect, persist, writable }),
-    result = task.inputs?.coupang_result as CoupangResult | undefined | null;
+    currentResult = task.inputs?.coupang_result as CoupangResult | undefined | null,
+    versions = coupangResultVersions(currentResult, events),
+    result = selectedVersion ? versions.find(version => version.key === selectedVersion)?.result : currentResult;
   latest.current = { task, dispatch, collect, persist, writable };
   coupangSessions.set(task.id, session);
   function busy(value: boolean) {
@@ -251,15 +265,14 @@ export function PortalCoupang({
   }
   async function initialize() {
     if (!ready.current || !frame.current || !run.current) return;
-    let file = session.file;
-    if (!file && latest.current.task.inputs?.coupang_source_id) {
+    const executing = run.current;
+    let file = session.source?.fileId === executing.sourceId && session.source.saved ? session.file : null;
+    if (!file) {
       const blob = await operationsFiles.download(
-        String(latest.current.task.inputs.coupang_source_id),
+        executing.sourceId,
       );
-      if (!active.current) return;
+      if (!active.current || run.current !== executing) return;
       file = new File([blob], '배차표.jpg', { type: blob.type });
-      session.file = file;
-      redraw((s) => s + 1);
     }
     if (!file) throw Error('배차표 사진을 먼저 넣어 주세요.');
     frame.current.contentWindow?.postMessage(
@@ -270,7 +283,7 @@ export function PortalCoupang({
         date: run.current.date,
         dispatch: run.current.dispatch,
         file,
-        settings,
+        settings: executing.settings,
       },
       location.origin,
     );
@@ -289,16 +302,24 @@ export function PortalCoupang({
           requestId: entry.id,
           file: entry.file,
         });
-        entry.fileId = result.file?.id ?? result.id;
+        entry.fileId = result.id;
         if (!entry.fileId) throw Error('파일 저장 결과를 확인하지 못했습니다.');
         entry.saved = true;
       }
       if (!active.current) return;
-      const changed = latest.current.dispatch !== pending.dispatch;
+      if (latest.current.task.inputs?.coupang_source_id !== pending.sourceFileId)
+        throw Error('생성에 사용한 원본 사진과 현재 업무의 사진이 다릅니다. 생성 파일은 보존했으며 업무 연결은 저장하지 않았습니다.');
+      const changed = latest.current.dispatch !== pending.inputDispatch;
       await latest.current.persist({
         ...latest.current.collect(),
         coupang_schedule: pending.schedule,
         coupang_result: {
+          run_id: pending.runId,
+          source_file_id: pending.sourceFileId,
+          input_dispatch: pending.inputDispatch,
+          task_version: pending.taskVersion,
+          processor_version: 'portal-coupang-1',
+          settings: pending.settings,
           files: pending.files.map((f) => f.fileId),
           dispatch: pending.dispatch,
           schedule: pending.schedule,
@@ -315,18 +336,20 @@ export function PortalCoupang({
         { type: 'portal-coupang-saved', taskId: task.id },
         location.origin,
       );
-      await refresh();
-      message(
-        changed
+      let refreshFailed = false;
+      try { await refresh(); } catch { refreshFailed = true; }
+      if (!active.current) return;
+      const savedMessage = (changed
           ? '배차정보가 바뀌었습니다. 현재 입력으로 다시 생성해 주세요.'
           : pending.imageError
             ? '엑셀은 저장했습니다. 이미지 생성 실패: ' + pending.imageError
-            : '엑셀과 이미지를 저장했습니다.',
-      );
+            : '엑셀과 이미지를 저장했습니다.') + (refreshFailed ? ' 저장은 완료됐지만 목록을 갱신하지 못했습니다. 다시 조회해 주세요.' : '');
+      setStatus(savedMessage);
+      message(savedMessage);
     } catch (error) {
       if (active.current) {
         const text =
-          '파일 저장 실패: ' +
+          (pending.files.every(file=>file.saved) ? '파일 보관 완료 · 업무 연결 저장 확인 필요: ' : `결과 파일 ${pending.files.filter(file=>file.saved).length}/${pending.files.length}개 보관 · `) +
           (error instanceof Error ? error.message : String(error)) +
           ' 저장된 파일은 유지되며 재시도할 수 있습니다.';
         setStatus(text);
@@ -382,8 +405,14 @@ export function PortalCoupang({
           setStatus('생성 결과를 받지 못했습니다. 다시 생성해 주세요.');
           return;
         }
+        const completedRun = run.current;
         stop();
         session.pending = {
+          runId: completedRun.id,
+          sourceFileId: completedRun.sourceId,
+          inputDispatch: completedRun.dispatch,
+          taskVersion: completedRun.taskVersion,
+          settings: completedRun.settings,
           captureRange: data.captureRange,
           entryDate: data.entryDate,
           generatedAt: new Date().toISOString(),
@@ -424,13 +453,27 @@ export function PortalCoupang({
       window.removeEventListener('message', receive);
     };
   }, [task.id]);
+  useEffect(() => { setEvents([]); setSelectedVersion(''); setHistoryError(''); }, [task.id]);
+  useEffect(() => {
+    if (!historyOpen) return;
+    let active = true;
+    setHistoryError('이전 결과 확인 중…');
+    void portalApi.events({ taskId: task.id }).then(rows => {
+      if (active) { setEvents(rows); setHistoryError(''); }
+    }).catch(() => { if (active) setHistoryError('이전 결과를 불러오지 못했습니다. 기록을 닫았다 다시 열어 주세요.'); });
+    return () => { active = false; };
+  }, [task.id, task.version, historyOpen]);
+  const resultFilesKey = JSON.stringify([task.id, result?.files, result?.source_file_id]);
   useEffect(() => {
     let active = true;
+    setFiles([]);
+    setSourceRecord(undefined);
     if (!result?.files?.length) {
       setFiles([]);
       setResultError('');
       return;
     }
+    setResultError('결과 파일 확인 중…');
     void operationsFiles
       .list('task', task.id)
       .then((rows) => {
@@ -442,7 +485,9 @@ export function PortalCoupang({
               )
               .filter((file): file is PortalFile => !!file),
           );
-          setResultError('');
+          setSourceRecord(rows.find(file => file.id === result.source_file_id && file.status === 'saved'));
+          const count = result.files.filter(id => rows.some(file => file.id === id && file.status === 'saved')).length;
+          setResultError(count === result.files.length ? '' : `결과 파일 ${count}/${result.files.length}개 준비 · 나머지는 저장 상태 확인이 필요합니다.`);
         }
       })
       .catch((error) => {
@@ -452,7 +497,7 @@ export function PortalCoupang({
     return () => {
       active = false;
     };
-  }, [task.id, result]);
+  }, [resultFilesKey, task.version]);
   useEffect(() => {
     if (!session.file) return;
     const url = URL.createObjectURL(session.file);
@@ -496,7 +541,7 @@ export function PortalCoupang({
           requestId: session.source!.id,
           file,
         });
-        session.source!.fileId = result.file?.id ?? result.id;
+        session.source!.fileId = result.id;
         if (!session.source!.fileId) throw Error('사진 저장에 실패했습니다.');
         session.source!.saved = true;
       }
@@ -526,14 +571,22 @@ export function PortalCoupang({
       setStatus('배차정보를 먼저 입력해 주세요.');
       return;
     }
-    if (!session.file && !task.inputs?.coupang_source_id) {
+    const sourceId = latest.current.task.inputs?.coupang_source_id;
+    if (typeof sourceId !== 'string' || !sourceId) {
       setStatus('배차표 사진을 먼저 넣어 주세요.');
+      return;
+    }
+    if (session.source && (!session.source.saved || session.source.fileId !== sourceId)) {
+      setStatus('선택한 사진의 업무 연결 저장을 먼저 완료해 주세요. 같은 사진을 다시 선택해 확인할 수 있습니다.');
       return;
     }
     run.current = {
       id: crypto.randomUUID(),
       dispatch: latest.current.dispatch,
       date: coupangEntryDate(task),
+      sourceId,
+      taskVersion: latest.current.task.version,
+      settings: structuredClone(settings),
     };
     busy(true);
     setStatus('사진 분석 준비 중…');
@@ -614,15 +667,26 @@ export function PortalCoupang({
         </div>
       ) : null}
       <div className="coupang-results">
+        <details className="history" onToggle={event => setHistoryOpen(event.currentTarget.open)}>
+          <summary style={{ color: 'var(--theme-text)' }}>결과 버전·입력 근거</summary>
+          {historyError ? <p role="status">{historyError}</p> : null}
+          <label>보관 결과<select aria-label="보관 결과" value={selectedVersion} onChange={event=>setSelectedVersion(event.target.value)}><option value="">현재 결과</option>{versions.filter(version=>version.key!==JSON.stringify(currentResult?.files)).map(version=><option key={version.key} value={version.key}>{portalStamp(version.result.generated_at || version.recordedAt || '')} · {version.result.files.length}개 파일</option>)}</select></label>
+          {result ? <>
+            <p>생성 시각 · {result.generated_at ? portalStamp(result.generated_at) : '기록 없음'}</p>
+            <p>{result.input_dispatch === undefined ? '결과 배차정보' : '당시 입력'} · <MentionText>{result.input_dispatch ?? result.dispatch}</MentionText></p>
+            {result.source_file_id ? <button type="button" disabled={!sourceRecord || state.busy} onClick={async()=>{try{if(sourceRecord)download(await operationsFiles.download(sourceRecord.id),sourceRecord.file_name);}catch(error){setStatus(error instanceof Error ? error.message : String(error));}}}>당시 원본 다운로드{sourceRecord ? '' : ' · 저장 상태 확인 필요'}</button> : <p>당시 원본 파일 연결은 이 버전에 기록되지 않았습니다.</p>}
+          </> : <p>현재 연결된 결과가 없습니다. 기록에 남은 결과를 선택할 수 있습니다.</p>}
+        </details>
         {resultError ? (
           <p>
             <MentionText>{resultError}</MentionText>
           </p>
-        ) : !result?.files?.length ? (
+        ) : null}
+        {!result?.files?.length ? (
           <p>생성한 엑셀과 이미지가 여기에 표시됩니다.</p>
         ) : (
           <>
-            {result.dispatch !== dispatch ? (
+            {!selectedVersion && result.dispatch !== dispatch ? (
               <p>
                 배차정보가 변경되었습니다. 현재 입력으로 다시 생성해 주세요.
               </p>
@@ -639,6 +703,7 @@ export function PortalCoupang({
           </>
         )}
       </div>
+      {downloadLink}
       {hasFrame ? (
         <iframe
           ref={frame}
