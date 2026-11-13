@@ -32,3 +32,11 @@
 
 ## 진행 상태
 총 7/7단계 이후 발견된 3단계 대시보드 적용 누락을 보완한 작업이다. 다른 후속 도구나 새 단계는 시작하지 않았다. 운영 반영 결과는 배포 후 아래에 기록한다.
+
+## 운영 반영 확인
+- PR https://github.com/elfincape/SAJOANSAN/pull/164: MERGED. 구현 `57185dec1d00dd724b6c2cc5b3da308f6840289b`의 Vercel Preview SUCCESS 후 병합.
+- 실제 main 배포 코드: `000660042c7e474511558794697cb42f50c85d31`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_9ReWvS3pckthoAqjLyzbbcxZBnA7`: READY, 위 SHA 및 `sajoansan.vercel.app` alias 확인.
+- `python3 /tmp/dashboard-linked/assets.py`: 공개 `Dashboard-KwBvOO0B.js`의 원본 상세/F2/행 식별자, `LinkedRecordDetail-BwuAQBpO.js`의 복귀 처리 확인.
+- `node /tmp/dashboard-linked/live.cjs`: 운영 대시보드 `/`와 기사·차량·납품처 상세 전용 주소 4개 모두 비로그인 상태에서 로그인 화면으로 이동, HTTP 200, 비밀번호 입력 1개, pageerror 0.
+- 실제 직원 로그인 후 업무 저장은 수행하지 않았다. 상세 진입/상태 보존의 합성 확인과 운영 공개 자산/비로그인 진입 확인을 구분한다. 총 7/7단계 이후의 대시보드 누락 보완까지 운영 반영 확인 완료.
