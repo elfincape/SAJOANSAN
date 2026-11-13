@@ -4,7 +4,7 @@
 - 저장소: https://github.com/elfincape/SAJOANSAN
 - 작업: `/workspace/legacy-workspace-upgrade`, `codex/legacy-workspace-stage2`
 - 시작 커밋: `d1f11207dae329689b1f46750c74ad0e3f90f2ec`
-- 전체 진행: [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md). 2단계 구현·격리 검증 완료, 운영 반영 확인 중. 3~7단계 미착수.
+- 전체 진행: [7단계 실행안](../plans/LEGACY-WORKSPACE-UPGRADE.md). 총 7단계 중 2단계 구현·격리 검증·운영 반영 확인 완료. 3~7단계 미착수.
 
 ## 구현 결과
 기존 공통 셸·내부 이동·코스 표·납품처 상세를 유지하면서 메모리에만 있던 작업 문맥을 같은 탭의 sessionStorage에 연결했다. 코스/납품처 목록의 검색·필터·선택·스크롤과 코스 표의 열/정렬 상태를 보관한다. 코스 편집과 코스별 납품처 편집 창도 새로고침 후 해당 ID가 현재 조회 결과에 있을 때 다시 연다. 납품처 선택 상세는 저장된 초안이 없으면 최신 서버 자료를 다시 읽는다.
@@ -54,3 +54,11 @@
 - DB·RLS·권한·저장 RPC·업무 값 변경 없음. 기존 일반 직원 접근 계약을 유지한다. 실제 운영 계정의 저장 및 Windows 실기 검증은 하지 않았다.
 - 1단계의 SQL 기반 저장 검증 근거를 재사용하고 무관한 전체 검사를 반복하지 않았다.
 - 다음은 3/7단계의 연결 오른쪽 상세다. 원본 수정과 연결 교체를 구분하고 닫은 뒤 원래 작업 위치로 복귀하도록 이번 문맥 저장을 재사용한다.
+
+## 운영 반영
+- PR https://github.com/elfincape/SAJOANSAN/pull/158 — MERGED. Preview 검사 SUCCESS.
+- 구현 커밋 `f3ce0244bfd8e667e45b7fc28d109f85e53958fe`, main 병합 `f7e6d655094ab88787ce97885fa341c7da7ba688`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_3zadgn9UbgGVcwGxMheV7FDAjoG7`: READY, 위 main SHA 및 `sajoansan.vercel.app` alias 확인.
+- 공개 자산 `WorkspaceDraftStatus-ieQkRr8d.js`의 저장 prefix·초안 안내·저장 실패 안내 확인. `Routes-B8tW96_z.js`, `RouteEdit-edLuRbd5.js`, `DeliveryPoints-CHjLDF_R.js` 정상 조회.
+- 배포 READY 이후 내부 Chromium에서 `/admin/routes.html` → `/login.html`, HTTP 200, 비밀번호 입력 화면 1개, pageerror 0. 실제 직원 로그인/업무 저장은 미실시이며 운영 자료 시험 변경 없음.
+- 실행: `python3 /tmp/legacy-stage2/assets.py`, `node /tmp/legacy-stage2/live.cjs`. 이 후속 기록은 문서만 변경한다.
