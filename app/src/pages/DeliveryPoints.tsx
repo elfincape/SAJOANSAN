@@ -1,3 +1,4 @@
+import { linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { catalogValueEqual } from '../lib/catalog-scope';
@@ -36,9 +37,11 @@ const pointViews = createWorkspaceStore<PointView>('point-view', value => ['scop
 const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
 
 function DeliveryPointsContent() {
+  const linkedId = linkedRecordId();
+  useLinkedRecordBridge();
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
-  const viewKey = profile.id+':'+center.code;
+  const viewKey = profile.id+':'+center.code+(linkedId ? ':linked:'+linkedId : '');
   const restored = useRef(pointViews.get(viewKey));
   const restoredDraft = useRef(pointDrafts.get(viewKey+':'+(restored.current?.selected ?? 'new')));
   const original = useRef(restoredDraft.current?.original), createId = useRef(restoredDraft.current?.createId ?? crypto.randomUUID());
@@ -156,6 +159,7 @@ function DeliveryPointsContent() {
     if (!await confirm(message, { okText: '삭제', cancelText: '취소', danger: true })) return;
     try { const { error } = await deleteDeliveryPoint(center.code, draft.id); if (error) { toast(error.code === '23503' ? '코스에 등록된 납품처라 삭제할 수 없습니다.' : `삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); select(undefined, false, true); } catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
+  if (linkedId && (loading || selected !== linkedId)) return <p role="status" className="p-4">{loading ? '원본을 불러오는 중…' : '원본을 조회할 수 없습니다. 삭제 여부와 접근 권한을 확인하세요.'}</p>;
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
     {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
