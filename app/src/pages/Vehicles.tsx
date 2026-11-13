@@ -1,3 +1,4 @@
+import { linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
@@ -16,6 +17,8 @@ const parseTonnage = (text: string) => { if (!text) return null; const match = S
 const formatTonnage = (n?: number | null) => n == null ? '' : `${Number(n)}톤`;
 const toDraft = (row?: Vehicle | null): Draft => ({ id: row?.id || '', plate: row?.plate_number || '', tonnage: formatTonnage(row?.tonnage), pallet: row?.pallet_capacity == null ? '' : String(row.pallet_capacity), company: row?.company_id || '', memo: row?.memo || '' });
 function VehiclesContent() {
+  const linkedId = linkedRecordId();
+  useLinkedRecordBridge();
   const { center, editable: pageEditable, permissions } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const [catalogScope,setCatalogScope] = useState(useLegacyCommonCatalog ? '' : center.code);
@@ -33,7 +36,7 @@ function VehiclesContent() {
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 200); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
     let active = true; const request = initial.current = loadVehicles(catalogScope);
-    void request.then(value => { if (active) setData(value); }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
+    void request.then(value => { if (active) { setData(value); const linked=value.rows.find(row=>row.id===new URLSearchParams(location.search).get('id')); if(linked) select(linked); } }).catch(() => { if (active) toast('데이터를 불러오지 못했습니다.', 'error'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [center.code, catalogScope, toast]);
   const reload = useCallback(async () => {
@@ -90,6 +93,7 @@ function VehiclesContent() {
     try { const { error } = await deleteVehicle(center.code, draft.id); if (error) { toast(`삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); reset(true); }
     catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
+  if (linkedId && (loading || selected !== linkedId)) return <p role="status" className="p-4">{loading ? '원본을 불러오는 중…' : '원본을 조회할 수 없습니다. 삭제 여부와 접근 권한을 확인하세요.'}</p>;
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}

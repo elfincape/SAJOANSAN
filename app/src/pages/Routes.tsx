@@ -1,3 +1,4 @@
+import { LinkedRecordButton, LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
@@ -26,6 +27,7 @@ const defaultView = { search: '', company: '', columnFilters: false, gridFilters
 interface GridRow { id: string; route: Route; company: string; carNumber: string; routeName: string; primaryDriver: string; secondaryDriver: string; primaryVehicle: string; stopCount: number; closedDays: number[]; closedDaysText: string; activeLabel: string }
 function RoutesContent() {
   const { center, editable, permissions, profile } = useAdminPage();
+  const [linked, setLinked] = useState<LinkedRecord | null>(null);
   const { toast, confirm, feedback } = useFeedback();
   const [catalogScope,setCatalogScope] = useState(routeViews.get(profile.id+':'+center.code)?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
 
@@ -85,6 +87,15 @@ function RoutesContent() {
         destroy() { const root = this.root; if (root) queueMicrotask(() => root.unmount()); }
       };
     }
+    function reference(kind: 'driver'|'vehicle', field: 'primary_driver_id'|'secondary_driver_id'|'primary_vehicle_id') {
+      return class {
+        private host=document.createElement('div'); private root:Root|undefined;
+        getGui(){return this.host;}
+        init(params:ICellRendererParams<GridRow>){this.root=createRoot(this.host);this.refresh(params);}
+        refresh(params:ICellRendererParams<GridRow>){const id=params.data?.route[field];this.root?.render(id?<LinkedRecordButton record={{kind,id,label:params.value || '연결 원본 확인 필요'}} open={setLinked}/>:<>-</>);return true;}
+        destroy(){const root=this.root;if(root)queueMicrotask(()=>root.unmount());}
+      };
+    }
     function updateGrid(gridApi: GridApi<GridRow>) {
       if (!restoredGrid.current) return;
       const visible = new Set<string>();
@@ -101,9 +112,9 @@ function RoutesContent() {
         { field: 'company', headerName: '운수사', width: 160, minWidth: 140, sort: 'asc', sortIndex: 0 },
         { field: 'carNumber', headerName: '호차', width: 125, minWidth: 100, sort: 'asc', sortIndex: 1 },
         { field: 'routeName', headerName: '코스명', width: 170, minWidth: 145, sort: 'asc', sortIndex: 2 },
-        { field: 'primaryDriver', headerName: '주기사', width: 110, minWidth: 100 },
-        { field: 'secondaryDriver', headerName: '보조기사', width: 110, minWidth: 100, cellStyle: { color: 'var(--theme-muted)' } },
-        { field: 'primaryVehicle', headerName: '주차량', width: 160, minWidth: 155 },
+        { field: 'primaryDriver', cellRenderer: reference('driver','primary_driver_id'), headerName: '주기사', width: 110, minWidth: 100 },
+        { field: 'secondaryDriver', cellRenderer: reference('driver','secondary_driver_id'), headerName: '보조기사', width: 110, minWidth: 100, cellStyle: { color: 'var(--theme-muted)' } },
+        { field: 'primaryVehicle', cellRenderer: reference('vehicle','primary_vehicle_id'), headerName: '주차량', width: 160, minWidth: 155 },
         { field: 'stopCount', headerName: '납품처', width: 95, filter: 'agNumberColumnFilter', cellStyle: { textAlign: 'right' } },
         { field: 'closedDaysText', headerName: '휴무일', minWidth: 135, cellRenderer: cells('days') },
         { field: 'activeLabel', headerName: '상태', width: 95, cellRenderer: cells('status') },
@@ -176,6 +187,7 @@ function RoutesContent() {
     </main>
     {editing !== undefined ? <RouteForm key={editing?.id ?? "new"} route={editing} masters={masters} toast={toast} close={() => setEditing(undefined)} saved={reload} /> : null}
     {stops ? <Modal width="5xl" dismissable={false} label="납품처 편집" onClose={() => {}}><div className="p-4"><div className="flex items-center justify-between gap-3 mb-3"><div><h2 className="app-function-title text-base font-semibold">납품처 편집</h2><p className="text-xs text-zinc-400 mt-1">{stops.name || ''} · {stops.car_number || ''} · 납품처 {data.stopCounts.get(stops.id) || 0}개</p></div><button data-x className="btn btn-ghost text-xs" onClick={() => { setStops(null); void reload(); }}>닫기</button></div><iframe src={withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(stops.id)}`, center)} title={`${stops.name || '코스'} 납품처 편집`} className="w-full h-[78vh] rounded-lg border border-zinc-700 bg-zinc-950" /></div></Modal> : null}
+    {linked ? <LinkedRecordDetail key={linked.kind+linked.id} record={linked} close={()=>setLinked(null)} refresh={reload}/> : null}
     {feedback}
   </>;
 }

@@ -1,3 +1,4 @@
+import { LinkedRecordButton, LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { permissionAllowed } from '../lib/permissions';
@@ -24,6 +25,7 @@ const routeDetailViews = createWorkspaceStore<{editing?:string|null;scroll:numbe
 function RouteEditContent() {
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
+  const [linked, setLinked] = useState<LinkedRecord | null>(null);
   const routeId = new URLSearchParams(location.search).get('id') || '';
   const viewKey = profile.id+':'+center.code+':'+routeId;
   const restored = useRef(routeDetailViews.get(viewKey)), hydrated = useRef(false), restoredScroll = useRef(false);
@@ -247,12 +249,11 @@ function RouteEditContent() {
                 </div>
                 <div>
                   <span className="muted">주기사</span>{' '}
-                  {drivers.get(route.primary_driver_id || '')?.name || '-'}
+                  <LinkedRecordButton record={{kind:'driver',id:route.primary_driver_id || '',label:drivers.get(route.primary_driver_id || '')?.name || '연결 원본 확인 필요'}} open={setLinked}/>
                 </div>
                 <div>
                   <span className="muted">주차량</span>{' '}
-                  {vehicles.get(route.primary_vehicle_id || '')?.plate_number ||
-                    '-'}
+                  <LinkedRecordButton record={{kind:'vehicle',id:route.primary_vehicle_id || '',label:vehicles.get(route.primary_vehicle_id || '')?.plate_number || '연결 원본 확인 필요'}} open={setLinked}/>
                   {vehicles.get(route.primary_vehicle_id || '')?.tonnage
                     ? ' · ' +
                       vehicles.get(route.primary_vehicle_id || '')!.tonnage +
@@ -262,13 +263,13 @@ function RouteEditContent() {
                 {drivers.has(route.secondary_driver_id || '') ? (
                   <div>
                     <span className="muted">보조기사</span>{' '}
-                    {drivers.get(route.secondary_driver_id!)?.name}
+                    <LinkedRecordButton record={{kind:'driver',id:route.secondary_driver_id || '',label:drivers.get(route.secondary_driver_id || '')?.name || '연결 원본 확인 필요'}} open={setLinked}/>
                   </div>
                 ) : null}
                 {vehicles.has(route.secondary_vehicle_id || '') ? (
                   <div>
                     <span className="muted">보조차량</span>{' '}
-                    {vehicles.get(route.secondary_vehicle_id!)?.plate_number}
+                    <LinkedRecordButton record={{kind:'vehicle',id:route.secondary_vehicle_id || '',label:vehicles.get(route.secondary_vehicle_id || '')?.plate_number || '연결 원본 확인 필요'}} open={setLinked}/>
                   </div>
                 ) : null}
                 <div className="ml-auto">
@@ -383,7 +384,7 @@ function RouteEditContent() {
                       </td>
                       <td>{point?.code || '-'}</td>
                       <td>
-                        {point?.name ? point.name+(point.deleted_at ? ' (삭제됨)' : '') : `연결 원본 확인 필요 · ${stop.delivery_point_id}`}
+                        <LinkedRecordButton record={{kind:'delivery_point',id:stop.delivery_point_id,label:point?.name ? point.name+(point.deleted_at ? ' (삭제됨)' : '') : '연결 원본 확인 필요'}} open={setLinked}/>
                         <span className="ml-1 text-xs text-zinc-500">
                           {point?.region || ''}
                         </span>
@@ -476,7 +477,7 @@ function RouteEditContent() {
                           disabled={!editable || savingOrder}
                           onClick={() => setEditing(stop)}
                         >
-                          편집
+                          연결·조건 편집
                         </button>
                         <button
                           className="btn btn-ghost text-xs text-rose-400"
@@ -513,6 +514,7 @@ function RouteEditContent() {
           confirm={confirm}
         />
       ) : null}
+      {linked ? <LinkedRecordDetail key={linked.kind+linked.id} record={linked} close={()=>setLinked(null)} refresh={reload}/> : null}
       {feedback}
     </>
   );

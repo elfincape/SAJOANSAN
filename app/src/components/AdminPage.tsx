@@ -334,6 +334,7 @@ export function AdminPage({
   const params = new URLSearchParams(location.search);
   const portalEmbedded = params.has('portal_task') && parent !== window;
   const embedded = params.get('embedded') === '1' || portalEmbedded;
+  const linkedDetail = embedded && params.get('linked_detail') === '1';
   const [auth, setAuth] = useState<AuthContext | null>(
     () => getLoadedAuthContext() ?? null,
   );
@@ -353,7 +354,7 @@ export function AdminPage({
   );
   useLayoutEffect(() => {
     document.title = pageTitle(location.pathname) ?? `${title} · EAN`;
-    document.body.className = `workspace-ui work-shell ${embedded ? 'work-embedded' : 'app-shell'} ${bodyClass}`;
+    document.body.className = `workspace-ui work-shell ${embedded ? 'work-embedded' : 'app-shell'} ${linkedDetail ? 'work-linked-record' : ''} ${bodyClass}`;
     document.body.dataset.appArea = area;
     let active = true;
     void loadAuthContext()
@@ -369,7 +370,7 @@ export function AdminPage({
     return () => {
       active = false;
     };
-  }, [title, bodyClass, embedded, area]);
+  }, [title, bodyClass, embedded, linkedDetail, area]);
   if (error)
     return (
       <p className="text-sm text-red-400 p-3" role="alert">
@@ -492,7 +493,7 @@ export function AdminPage({
     >
       {embedded ? (
         <>
-          {portalEmbedded ? null : (
+          {portalEmbedded || linkedDetail ? null : (
             <header className="border-b border-zinc-800 sticky top-0 z-30 bg-zinc-900/95 backdrop-blur">
               <div className="max-w-[1500px] mx-auto px-4 py-3 flex items-center gap-3">
                 <a
