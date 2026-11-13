@@ -1,3 +1,5 @@
+import { catalogValueEqual } from '../lib/catalog-scope';
+import { CatalogSaveReview } from '../components/CatalogSaveReview';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
@@ -39,6 +41,7 @@ function DeliveryPointsContent() {
   const list = useRef<HTMLDivElement>(null), restoredScroll = useRef(false);
   const [catalogScope,setCatalogScope] = useState(restored.current?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
 
+  const [saveError, setSaveError] = useState('');
   const [editorIntent, setEditorIntent] = useState(0);
   const [data, setData] = useState<DeliveryPoint[]>([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<string | null>(restored.current?.selected ?? null), [draft, setDraft] = useState(()=>restored.current?.draft ?? pointToDraft());
@@ -52,7 +55,7 @@ function DeliveryPointsContent() {
     if (!force && (saving || photoBusy)) return;
     const cached = force ? undefined : pointDrafts.get(viewKey+':'+(row?.id ?? 'new'));
     generation.current++; original.current=cached?.original ?? row; createId.current=cached?.createId ?? crypto.randomUUID();
-    setSelected(row?.id ?? null); setDraft(cached?.draft ?? pointToDraft(row)); setPhotoMessage(null);
+    setSaveError(''); setSelected(row?.id ?? null); setDraft(cached?.draft ?? pointToDraft(row)); setPhotoMessage(null);
     if(focus) {setEditorIntent(value=>value+1);nameInput.current?.focus();}
   }
   useEffect(() => {
@@ -122,13 +125,13 @@ function DeliveryPointsContent() {
     if (!draft.name.trim()) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
     if (draft.deadline !== pointToDraft(selectedRow).deadline && draft.deadline.trim() && (!normalizeTime(draft.deadline.trim()) || displayToBizMin(normalizeTime(draft.deadline.trim())) == null)) { toast('마감 시간 형식이 올바르지 않습니다.', 'warn'); return; }
     const saveGeneration = generation.current;
-    savingRef.current = true; setSaving(true);
+    savingRef.current = true; setSaving(true); setSaveError('');
     try {
       const { data: saved, error, removedColumns } = await saveDeliveryPoint(pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow), selectedRow?.updated_at, createId.current);
-      if (error) { toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
+      if (error) { setSaveError(error.message); toast(error.code === '23505' ? '이미 사용 중인 코드입니다.' : `저장 실패: ${error.message}`, 'error'); return; }
       if (removedColumns.length) console.warn('[delivery-points] DB에 없는 컬럼은 제외하고 저장했습니다.', removedColumns);
-      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload(); const row = next.find(row => row.id === saved?.id) ?? saved; if (row && generation.current === saveGeneration) { pointDrafts.delete(viewKey+':'+(selected ?? 'new')); select(row, false, true); }
-    } catch (error) { toast(`납품처 저장 중 오류가 발생했습니다. ${error instanceof Error ? error.message : ''}`, 'error'); }
+      toast(draft.id ? '수정되었습니다.' : '추가되었습니다.', 'success'); const next = await reload().catch(() => null); const row = next?.find(row => row.id === saved?.id) ?? saved; if (!next) toast('저장은 완료됐지만 목록을 갱신하지 못했습니다. 저장된 원본은 유지됩니다.', 'warn'); if (row && generation.current === saveGeneration) { pointDrafts.delete(viewKey+':'+(selected ?? 'new')); select(row, false, true); }
+    } catch (error) { setSaveError('저장 결과를 확인하지 못했습니다. 입력을 보존했습니다. 같은 내용으로 재시도할 수 있습니다.'); toast(`납품처 저장 중 오류가 발생했습니다. ${error instanceof Error ? error.message : ''}`, 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   }
   async function remove() {
@@ -202,7 +205,13 @@ function DeliveryPointsContent() {
           <span id="form-meta" className="text-[11px] text-zinc-500">{draft.id && selectedRow?.updated_at ? `최종수정: ${new Date(selectedRow.updated_at).toLocaleString("ko-KR")}` : ""}</span>
         </div>
 
-        <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} />
+        <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} error={saveError} />
+        <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)"}} onRebase={latest => {
+          const before = pointToDraft(original.current), next = pointToDraft(latest);
+          generation.current++; original.current = latest;
+          setDraft(current => Object.fromEntries(Object.keys(next).map(key => [key, catalogValueEqual(current[key as keyof PointDraft], before[key as keyof PointDraft]) ? next[key as keyof PointDraft] : current[key as keyof PointDraft]])) as PointDraft);
+          setSaveError('');
+        }}/>
           <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
         <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}><fieldset className="editor-fields space-y-4" disabled={!editable || saving}>
           <input type="hidden" id="f-id" value={draft.id} />

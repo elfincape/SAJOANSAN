@@ -1,3 +1,4 @@
+import { updateCatalog } from './catalog-scope';
 import type { DashboardRow } from '../domain/dashboard';
 import { displayToMin, minToDisplay } from '../domain/time';
 import { permissionAllowed, type PermissionContext } from './permissions';
@@ -430,34 +431,6 @@ export async function writeCell(snapshot: CellSnapshot, draft: CellDraft) {
     return;
   }
   const patch = cellPatch(snapshot, draft);
-  if (!snapshot.source.updated_at)
-    throw Error('수정시각을 확인할 수 없습니다. 입력은 보존됩니다.');
-  const result = await supabase
-    .from(snapshot.table)
-    .update(patch)
-    .eq('id', snapshot.id)
-    .eq('updated_at', String(snapshot.source.updated_at))
-    .is('deleted_at', null)
-    .select('id')
-    .maybeSingle();
+  const result = await updateCatalog(snapshot.table, snapshot.id, patch, snapshot.source.updated_at ? String(snapshot.source.updated_at) : null);
   if (result.error) throw result.error;
-  if (result.data) return;
-  // A lost response may have already committed this exact edit. Never retry with a fresh revision.
-  const current = await supabase
-    .from(snapshot.table)
-    .select(Object.keys(patch).join(',') + ',deleted_at')
-    .eq('id', snapshot.id)
-    .single<RecordValue>();
-  if (
-    !current.error &&
-    current.data &&
-    !(current.data as RecordValue).deleted_at &&
-    Object.entries(patch).every(
-      ([key, value]) => (current.data as RecordValue)[key] === value,
-    )
-  )
-    return;
-  throw Error(
-    '다른 작업에서 수정했거나 권한이 변경되었습니다. 입력을 보존했습니다. 최신값과 비교해 주세요.',
-  );
 }

@@ -1,5 +1,5 @@
 import { fetchAllRows } from './pagination';
-import { catalogFilter, activeCatalog, softDeleteCatalog, insertCatalog } from './catalog-scope';
+import { catalogFilter, activeCatalog, softDeleteCatalog, insertCatalog, updateCatalog } from './catalog-scope';
 import { useLegacyCommonCatalog } from './erp-course-catalog';
 import { supabase } from './supabase';
 import type { CompanyOption, Vehicle } from './vehicles';
@@ -23,12 +23,8 @@ export async function loadRoutes(center: string) {
   const stopCounts = new Map<string, number>(); for (const row of counts.data || []) stopCounts.set(row.route_id, (stopCounts.get(row.route_id) || 0) + 1);
   return { routes, stopCounts };
 }
-export async function saveRoute(payload: Omit<Route, 'id'> & { id?: string; center_code: string | null }, expected?: string | null, createId?:string) {
-  if (payload.id) {
-    if (!expected) return {error: {message: '원본 수정시각을 다시 확인하세요.'}};
-    const {data,error} = await supabase.from('routes').update(payload).eq('id',payload.id).eq('updated_at',expected).select('id').maybeSingle();
-    return {data,error:error ?? (!data ? {message:'다른 작업에서 변경되었거나 수정 권한이 없습니다. 입력을 보존했습니다.'} : null)};
-  }
+export async function saveRoute(payload: Partial<Route> & { id?: string }, expected?: string | null, createId?:string) {
+  if (payload.id) return updateCatalog<Route>('routes', payload.id, payload, expected);
   return insertCatalog('routes',payload,createId ?? crypto.randomUUID());
 }
 export function deleteRoute(center: string, id: string) { if (useLegacyCommonCatalog) return softDeleteCatalog('routes',id); return supabase.from('routes').delete().eq('center_code', center).eq('id', id); }

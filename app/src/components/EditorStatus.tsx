@@ -2,11 +2,11 @@ import { useEffect, useRef } from 'react';
 import { navigateWorkspace, registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
 import { useAdminPage } from './AdminPage';
 
-export function EditorStatus({ dirty, saving, editable }: { dirty: boolean; saving: boolean; editable: boolean; existing: boolean }) {
-  if (editable && !dirty && !saving) return null;
-  return <p className="editor-status" data-state={saving ? 'saving' : dirty && editable ? 'dirty' : 'ready'} role="status" aria-live="polite">
+export function EditorStatus({ dirty, saving, editable, error }: { dirty: boolean; saving: boolean; editable: boolean; existing: boolean; error?: string }) {
+  if (editable && !dirty && !saving && !error) return null;
+  return <p className="editor-status" data-state={saving ? 'saving' : error ? 'error' : dirty && editable ? 'dirty' : 'ready'} role="status" aria-live="polite">
     <span className="editor-status-dot" aria-hidden="true"/>
-    {!editable ? '열람 전용 · 수정 권한이 필요합니다.' : saving ? '저장 중' : '저장하지 않은 변경사항'}
+    {!editable ? '열람 전용 · 수정 권한이 필요합니다.' : saving ? '저장 중' : error ? '저장 미완료 · 입력 보존' : '저장하지 않은 변경사항'}
   </p>;
 }
 
