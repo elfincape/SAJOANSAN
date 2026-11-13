@@ -338,6 +338,12 @@ export function AdminPage({
   );
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (auth || error) { setChecking(false); return; }
+    const timer = setTimeout(() => setChecking(true), 250);
+    return () => clearTimeout(timer);
+  }, [auth, error, attempt]);
   const [controlsDisabled, setControlsDisabled] = useState(false);
   const centerChangeGuard = useRef<CenterChangeGuard | null>(null);
   const setCenterChangeGuard = useCallback(
@@ -379,9 +385,8 @@ export function AdminPage({
     );
   if (!auth)
     return (
-      <div className="workspace-loading" role="status">
-        <span className="workspace-spinner" aria-hidden="true" />
-        로그인과 작업 권한을 확인하고 있습니다.
+      <div className="workspace-loading" role="status" aria-busy="true">
+        {checking ? <><span className="workspace-spinner" aria-hidden="true" />로그인과 작업 권한을 확인하고 있습니다.</> : null}
       </div>
     );
   if (!center)
