@@ -42,8 +42,7 @@ export function PortalFiles({
         )[kind],
       ),
     accept = '.xlsx,.xls,.pdf,.docx,.doc,.pptx,.csv,.txt,.jpg,.jpeg,.png,.webp';
-  async function load() {
-    const generation = active.current;
+  async function load(generation = active.current) {
     try {
       const files = await operationsFiles.list(kind, subjectId);
       if (active.current === generation) {
@@ -57,6 +56,9 @@ export function PortalFiles({
   }
   useEffect(() => {
     active.current++;
+    pending.current = null;
+    setSelected(null); setFiles([]); setHint(''); setError('');
+    if (input.current) input.current.value = '';
     void load();
     return () => {
       active.current++;
@@ -68,7 +70,8 @@ export function PortalFiles({
     else pending.current = null;
   }
   async function upload() {
-    if (state.busy || !selected) return;
+    if (state.busy || !selected || !writable) return;
+    const generation = active.current;
     const file = selected;
     if (file.size < 1 || file.size > 10 * 1024 * 1024) {
       message('10MB 이하의 파일을 선택해 주세요.', true);
@@ -101,14 +104,16 @@ export function PortalFiles({
         requestId: pending.current.requestId,
         file,
       });
+      if (active.current !== generation) return;
       pending.current = null;
       setSelected(null);
       if (input.current) input.current.value = '';
       setHint('');
-      await load();
+      await load(generation);
       message('파일을 저장했습니다.');
     } catch (error) {
-      await load();
+      if (active.current !== generation) return;
+      await load(generation);
       message(
         error instanceof Error
           ? error.message
@@ -137,12 +142,14 @@ export function PortalFiles({
                 <MentionText>{file.file_name}</MentionText>
               </p>
               <small>
+                {file.ordinal ? `첨부 #${file.ordinal} · ` : ''}
                 <MentionText>{file.original_name}</MentionText> ·
                 <MentionText> </MentionText>
                 <MentionText>{(file.byte_size / 1024).toFixed(1)}</MentionText>
                 KB ·<MentionText> </MentionText>
                 <MentionText>{portalStamp(file.created_at)}</MentionText>
               </small>
+              {file.status === 'saved' && file.verified_at ? <small> · 저장 확인 {portalStamp(file.verified_at)}</small> : null}
               {file.status === 'saved' ? (
                 <button
                   type="button"
@@ -177,9 +184,9 @@ export function PortalFiles({
                   <p>
                     <MentionText>
                       {file.status === 'failed'
-                        ? '저장 실패 · ' +
+                        ? '파일·업무 연결 저장 미완료 · ' +
                           (file.last_error ?? '다시 시도해 주세요.')
-                        : '저장 확인 중'}
+                        : '파일 등록 중 · 업무 연결 미완료'}
                     </MentionText>
                   </p>
                   {writable && file.uploaded_by === profile.id ? (

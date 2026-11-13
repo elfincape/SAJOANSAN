@@ -1,4 +1,4 @@
-import type { PortalTask } from './portal-types';
+import type { PortalTask, PortalEvent, PortalSpec } from './portal-types';
 export function coupangEntryDate(task: PortalTask) {
   const parts = task.created_at
       ? Object.fromEntries(
@@ -63,8 +63,35 @@ export interface CoupangResult {
   entry_date?: string;
   generated_at?: string;
   image_error?: string | null;
+  run_id?: string;
+  source_file_id?: string;
+  input_dispatch?: string;
+  task_version?: number;
+  processor_version?: string;
+  settings?: PortalSpec['integration'];
+}
+export function coupangResultVersions(current: CoupangResult | null | undefined, events: PortalEvent[]) {
+  const versions: { key: string; result: CoupangResult; recordedAt?: string }[] = [];
+  function add(value: unknown, recordedAt?: string) {
+    if (!value || typeof value !== 'object') return;
+    const result = value as CoupangResult;
+    if (!Array.isArray(result.files) || !result.files.length || result.files.some(id => typeof id !== 'string' || !id) || new Set(result.files).size !== result.files.length || typeof result.dispatch !== 'string') return;
+    const key = JSON.stringify(result.files);
+    if (!versions.some(version => version.key === key)) versions.push({ key, result: structuredClone(result), recordedAt });
+  }
+  add(current);
+  for (const event of [...events].reverse()) {
+    const inputs = event.after_value?.inputs as Record<string, unknown> | undefined;
+    add(inputs?.coupang_result, event.occurred_at);
+  }
+  return versions;
 }
 export interface CoupangPending {
+  runId: string;
+  sourceFileId: string;
+  inputDispatch: string;
+  taskVersion: number;
+  settings: PortalSpec['integration'];
   captureRange: string;
   entryDate: string;
   generatedAt: string;

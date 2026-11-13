@@ -10,8 +10,11 @@ export interface PortalFile {
   status: string;
   uploaded_by: string;
   request_id: string;
+  ordinal?: number;
+  verified_at?: string | null;
   last_error?: string | null;
 }
+interface FileReceipt { id: string; saved: true }
 export const operationsFiles = {
   health: () => oneDriveCall<{ rootAccessible: boolean }>('operations-health'),
   settings: () =>
@@ -33,7 +36,7 @@ export const operationsFiles = {
     ).files,
   download: (fileId: string) =>
     oneDriveCall<Blob>('operations-download', { fileId }, true),
-  upload: ({
+  upload: async ({
     kind,
     subjectId,
     requestId,
@@ -49,6 +52,9 @@ export const operationsFiles = {
     form.set('subjectId', subjectId);
     form.set('requestId', requestId);
     form.set('file', file);
-    return oneDriveCall<PortalFile>('operations-upload', form);
+    const receipt = await oneDriveCall<FileReceipt>('operations-upload', form);
+    if (receipt?.saved !== true || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(receipt.id))
+      throw new Error('파일의 최종 저장을 확인하지 못했습니다. 같은 요청으로 저장 상태를 확인해 주세요.');
+    return receipt;
   },
 };
