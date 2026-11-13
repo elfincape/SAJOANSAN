@@ -57,4 +57,10 @@
 - 다른 도구·Windows·외부 제공자 미확인, Notion 폐기와 이전 단계의 제한은 유지한다.
 
 ## 운영 반영
-구현·격리 검사 완료. PR 병합·Vercel 배포와 공개 자산/비로그인 진입 확인 결과는 아래에 최종 기록한다.
+- PR https://github.com/elfincape/SAJOANSAN/pull/162 — MERGED. 구현 `c7523278e5ea2f59fe9b062b03f8d30be9ae29f1`의 Vercel Preview SUCCESS 확인 후 병합.
+- main 병합/실제 배포 코드: `9efacc2a078be442bc33c69e116a6734bbaf965f`.
+- Vercel `sajoansan` / `prj_6K1FG1lemrMTwQB8T0tRnpMZfzM7`, production `dpl_ChBjUsQeW3Q4sWFTXaYmXy9HUSqo`: READY. 위 SHA와 `sajoansan.vercel.app` alias 확인.
+- 공개 `assets/Portal-Dd8DboGE.js`에 같은 탭 재개·coupang-run 체크포인트·SHA256 재선택·저장 중 변경 차단·대기 해제 포함 확인.
+- 내부 Chromium에서 `/portal/`, `/admin/routes.html` 모두 비로그인 상태로 `/login.html` 이동, HTTP 200, 로그인 입력 표시, pageerror 0 확인. 실제 직원 로그인/업무 쓰기/외부 파일 호출은 실행하지 않았다.
+- 실행: `python3 /tmp/legacy-stage6/assets.py`, `node /tmp/legacy-stage5/live.cjs`. 후속 결과 기록은 문서만 변경한다.
+- 총 7단계 중 6단계 완료. 다음은 7단계 업무·일정·보고이며 이번에 시작하지 않는다.
