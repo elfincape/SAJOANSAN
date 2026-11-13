@@ -1,8 +1,9 @@
+import { CenterAttributeFilter } from '../components/CenterAttribute';
+import { centerAccessKey, centerAttributeLabel } from '../domain/catalog-attributes';
 import { LinkedRecordButton, LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
-import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
 import { SelectionActions, useSelectionExport } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -24,7 +25,7 @@ import { withCenterParam } from '../lib/center';
 const routeViews = createWorkspaceStore<{view: typeof defaultView; scope?:string; grid?: ReturnType<GridApi['getState']>; editing?:string|null; stops?:string}>('route-view', value => !!value.view && typeof value.view.search === 'string' && typeof value.view.company === 'string' && typeof value.view.columnFilters === 'boolean' && typeof value.view.gridFilters === 'string' && (!value.grid || typeof value.grid === 'object'));
 ModuleRegistry.registerModules([AllCommunityModule]);
 const defaultView = { search: '', company: '', columnFilters: false, gridFilters: '{}' };
-interface GridRow { id: string; route: Route; company: string; carNumber: string; routeName: string; primaryDriver: string; secondaryDriver: string; primaryVehicle: string; stopCount: number; closedDays: number[]; closedDaysText: string; activeLabel: string }
+interface GridRow { id: string; route: Route; company: string; carNumber: string; routeName: string; classification: string; primaryDriver: string; secondaryDriver: string; primaryVehicle: string; stopCount: number; closedDays: number[]; closedDaysText: string; activeLabel: string }
 function RoutesContent() {
   const { center, editable, permissions, profile } = useAdminPage();
   const [linked, setLinked] = useState<LinkedRecord | null>(null);
@@ -53,7 +54,7 @@ function RoutesContent() {
     else if (restored.current?.editing) setEditing(data.routes.find(row => row.id === restored.current?.editing));
     if (restored.current?.stops) setStops(data.routes.find(row => row.id === restored.current?.stops) ?? null);
   }, [loading,data]);
-  const canEdit=(route:Route)=>editable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',route.center_code ?? 'unclassified'));
+  const canEdit=(route:Route)=>editable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',centerAccessKey(route.center_code)));
   const live = useRef({ editable, canEdit, remove: (_id: string) => {}, setEditing, setStops });
   live.current = { editable, canEdit, remove: id => { void remove(id); }, setEditing, setStops };
   const initial = useRef<{ masters: ReturnType<typeof loadRouteMasters>; routes: ReturnType<typeof loadRoutes> } | undefined>(undefined);
@@ -109,6 +110,7 @@ function RoutesContent() {
     const gridApi = createGrid<GridRow>(grid.current, {
       theme: themeQuartz.withParams({ accentColor: '#087f5b', backgroundColor: '#ffffff', borderColor: '#d7dde2', foregroundColor: '#20252b', headerBackgroundColor: '#f1f3f5', rowHoverColor: '#f0f7f3' }),
       columnDefs: [
+        ...(useLegacyCommonCatalog ? [{field:'classification' as const,headerName:'센터 속성',width:110}] : []),
         { field: 'company', headerName: '운수사', width: 160, minWidth: 140, sort: 'asc', sortIndex: 0 },
         { field: 'carNumber', headerName: '호차', width: 125, minWidth: 100, sort: 'asc', sortIndex: 1 },
         { field: 'routeName', headerName: '코스명', width: 170, minWidth: 145, sort: 'asc', sortIndex: 2 },
@@ -142,7 +144,7 @@ function RoutesContent() {
     const drivers = new Map(masters.drivers.map(row => [row.id, row])), vehicles = new Map(masters.vehicles.map(row => [row.id, row])), companies = new Map(masters.companies.map(row => [row.id, row]));
     const term = debouncedSearch.toLowerCase();
     const rows = data.routes.filter(row => (!company || row.company_id === company) && (!term || [row.name, row.car_number, drivers.get(row.primary_driver_id || '')?.name, drivers.get(row.secondary_driver_id || '')?.name, vehicles.get(row.primary_vehicle_id || '')?.plate_number, vehicles.get(row.secondary_vehicle_id || '')?.plate_number].filter(Boolean).join(' ').toLowerCase().includes(term))).map(route => ({
-      id: route.id, route, company: companies.get(route.company_id || '')?.name || '', carNumber: route.car_number || '', routeName: route.name || '', primaryDriver: drivers.get(route.primary_driver_id || '')?.name || '', secondaryDriver: drivers.get(route.secondary_driver_id || '')?.name || '', primaryVehicle: vehicles.get(route.primary_vehicle_id || '')?.plate_number || '', stopCount: data.stopCounts.get(route.id) || 0, closedDays: [...(route.closed_days || [])].sort((a, b) => a - b), closedDaysText: [...(route.closed_days || [])].sort((a, b) => a - b).join(','), activeLabel: route.active === false ? '비활성' : '활성',
+      id: route.id, route, company: companies.get(route.company_id || '')?.name || '', carNumber: route.car_number || '', routeName: route.name || '', classification: centerAttributeLabel(route.center_code), primaryDriver: drivers.get(route.primary_driver_id || '')?.name || '', secondaryDriver: drivers.get(route.secondary_driver_id || '')?.name || '', primaryVehicle: vehicles.get(route.primary_vehicle_id || '')?.plate_number || '', stopCount: data.stopCounts.get(route.id) || 0, closedDays: [...(route.closed_days || [])].sort((a, b) => a - b), closedDaysText: [...(route.closed_days || [])].sort((a, b) => a - b).join(','), activeLabel: route.active === false ? '비활성' : '활성',
     }));
     api.current?.setGridOption('rowData', rows); if (rows.length) api.current?.hideOverlay(); else api.current?.showNoRowsOverlay();
   }, [data, masters, company, debouncedSearch]);
@@ -176,7 +178,7 @@ function RoutesContent() {
     <WorkspaceDraftStatus storageKeys={[routeViews.storageKey(viewKey)]} />
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1400px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-      {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => setCatalogScope(event.target.value)}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
+      {useLegacyCommonCatalog ? <CenterAttributeFilter value={catalogScope} change={setCatalogScope}/> : null}
       <SavedViews scope="routes" value={{ search, company, columnFilters, gridFilters }} defaultValue={defaultView} onApply={applyView} disabled={loading} />
       <div className="route-toolbar" role="search" aria-label="코스 검색 및 필터"><input id="search-input" type="search" aria-label="코스명, 호차, 기사, 차량번호 검색" placeholder="코스명/호차/기사/차량번호 검색" className="app-input flex-1 min-w-[220px]" value={search} onChange={event => setSearch(event.target.value)} /><select id="filter-company" aria-label="운수사 선택" className="app-select w-44" value={company} onChange={event => setCompany(event.target.value)}><option value="">운수사(전체)</option>{masters.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select><button id="column-filters-btn" type="button" className="btn btn-ghost" aria-pressed={columnFilters} aria-controls="route-grid" onClick={() => setColumnFilters(value => !value)}>상세 필터</button><button id="reset-filters-btn" type="button" className={`btn btn-ghost${filterCount ? '' : ' hidden'}`} onClick={resetFilters}>필터 초기화</button><button id="new-btn" data-permission-action="edit" className="btn btn-primary" disabled={!editable} onClick={() => setEditing(null)}>+ 새 코스</button></div>
       <div className="route-filter-summary"><span id="filter-summary" role="status" aria-live="polite">{filterCount ? `필터 ${filterCount}개 적용 중` : '전체 코스'}</span></div>
