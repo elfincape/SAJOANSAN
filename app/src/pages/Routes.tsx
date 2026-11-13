@@ -1,3 +1,5 @@
+import { createWorkspaceStore } from '../lib/workspace-session';
+import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { CENTERS } from '../lib/center';
 import { SavedViews } from '../components/SavedViews';
@@ -5,7 +7,7 @@ import { SelectionActions, useSelectionExport } from '../components/Workbench';
 import { useWorkspaceActions } from '../lib/workspace-actions';
 import { permissionAllowed } from '../lib/permissions';
 import '../styles/routes.css';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { AllCommunityModule, ModuleRegistry, createGrid, themeQuartz } from 'ag-grid-community';
@@ -18,7 +20,7 @@ import { deleteRoute, loadRouteMasters, loadRoutes } from '../lib/routes';
 import type { Route, RouteMasters } from '../lib/routes';
 import { withCenterParam } from '../lib/center';
 
-const routeViews = new Map<string, {view: typeof defaultView; scope?:string; grid?: ReturnType<GridApi['getState']>}>();
+const routeViews = createWorkspaceStore<{view: typeof defaultView; scope?:string; grid?: ReturnType<GridApi['getState']>; editing?:string|null; stops?:string}>('route-view', value => !!value.view && typeof value.view.search === 'string' && typeof value.view.company === 'string' && typeof value.view.columnFilters === 'boolean' && typeof value.view.gridFilters === 'string' && (!value.grid || typeof value.grid === 'object'));
 ModuleRegistry.registerModules([AllCommunityModule]);
 const defaultView = { search: '', company: '', columnFilters: false, gridFilters: '{}' };
 interface GridRow { id: string; route: Route; company: string; carNumber: string; routeName: string; primaryDriver: string; secondaryDriver: string; primaryVehicle: string; stopCount: number; closedDays: number[]; closedDaysText: string; activeLabel: string }
@@ -37,7 +39,18 @@ function RoutesContent() {
   const [stats, setStats] = useState({ filters: 0, shown: 0 });
   const [editing, setEditing] = useState<Route | null | undefined>(undefined), [stops, setStops] = useState<Route | null>(null);
   const grid = useRef<HTMLDivElement>(null), api = useRef<GridApi<GridRow> | null>(null);
-  routeViews.set(viewKey,{...routeViews.get(viewKey),scope:catalogScope,view:{search,company,columnFilters,gridFilters}});
+  const restoredEditor = useRef(false), restoredGrid = useRef(false);
+  useLayoutEffect(() => {
+    const previous = routeViews.get(viewKey);
+    routeViews.set(viewKey,{...previous,scope:catalogScope,view:{search,company,columnFilters,gridFilters}, editing: restoredEditor.current ? editing === undefined ? undefined : editing?.id ?? null : previous?.editing, stops: restoredEditor.current ? stops?.id : previous?.stops});
+  }, [viewKey,catalogScope,search,company,columnFilters,gridFilters,editing,stops]);
+  useEffect(() => {
+    if (loading || restoredEditor.current) return;
+    restoredEditor.current=true;
+    if (restored.current?.editing === null) setEditing(null);
+    else if (restored.current?.editing) setEditing(data.routes.find(row => row.id === restored.current?.editing));
+    if (restored.current?.stops) setStops(data.routes.find(row => row.id === restored.current?.stops) ?? null);
+  }, [loading,data]);
   const canEdit=(route:Route)=>editable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',route.center_code ?? 'unclassified'));
   const live = useRef({ editable, canEdit, remove: (_id: string) => {}, setEditing, setStops });
   live.current = { editable, canEdit, remove: id => { void remove(id); }, setEditing, setStops };
@@ -73,6 +86,7 @@ function RoutesContent() {
       };
     }
     function updateGrid(gridApi: GridApi<GridRow>) {
+      if (!restoredGrid.current) return;
       const visible = new Set<string>();
       gridApi.forEachNodeAfterFilter(node => { if (node.id) visible.add(node.id); });
       for (const node of gridApi.getSelectedNodes()) if (node.id && !visible.has(node.id)) node.setSelected(false);
@@ -97,7 +111,9 @@ function RoutesContent() {
       ],
       defaultColDef: { cellDataType: false, sortable: true, filter: 'agTextColumnFilter', floatingFilter: false, suppressHeaderFilterButton: true, resizable: true, comparator: (left, right) => collator.compare(String(left ?? ''), String(right ?? '')) },
       initialState: restored.current?.grid,
-      onStateUpdated: event => routeViews.set(viewKey,{...routeViews.get(viewKey),view:routeViews.get(viewKey)?.view ?? defaultView,grid:event.state}),
+      onStateUpdated: event => { if (restoredGrid.current) routeViews.set(viewKey,{...routeViews.get(viewKey),view:routeViews.get(viewKey)?.view ?? defaultView,grid:event.state}); },
+      onBodyScrollEnd: event => { if (restoredGrid.current) routeViews.set(viewKey,{...routeViews.get(viewKey),view:routeViews.get(viewKey)?.view ?? defaultView,grid:event.api.getState()}); },
+      onFirstDataRendered: event => { if (!restoredGrid.current) { restoredGrid.current = true; if (restored.current?.grid) event.api.setState(restored.current.grid); updateGrid(event.api); } },
       rowData: [], getRowId: params => params.data.id, rowHeight: compact.matches ? 52 : 46, headerHeight: 44,
       rowSelection: { mode: 'multiRow', selectAll: 'filtered', enableClickSelection: false },
       selectionColumnDef: { width: 48, minWidth: 48, maxWidth: 48, pinned: 'left', resizable: false },
@@ -146,6 +162,7 @@ function RoutesContent() {
   ]);
   const filterCount = stats.filters + Number(!!debouncedSearch) + Number(!!company);
   return <>
+    <WorkspaceDraftStatus storageKeys={[routeViews.storageKey(viewKey)]} />
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1400px] w-full mx-auto px-4 py-3">
       {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
       {useLegacyCommonCatalog ? <label className="app-label">센터 속성<select className="app-select" aria-label="센터 속성" value={catalogScope} onChange={event => setCatalogScope(event.target.value)}><option value="">전체</option>{CENTERS.map(item=><option key={item.code} value={item.code}>{item.shortName}</option>)}<option value="unclassified">미분류</option></select></label> : null}
@@ -157,9 +174,9 @@ function RoutesContent() {
       <div ref={grid} id="route-grid" aria-label="코스 목록" />
       <div className="px-1 py-2 text-xs text-zinc-400 flex items-center justify-between"><span id="result-count" role="status" aria-live="polite">{!data.routes.length ? '코스 없음' : stats.shown === data.routes.length ? `총 ${stats.shown}건` : `${stats.shown}건 표시 · 전체 ${data.routes.length}건`}</span><span id="loading-indicator" role="status" className={loading ? '' : 'hidden'}>불러오는 중...</span></div>
     </main>
-    {editing !== undefined ? <RouteForm route={editing} masters={masters} toast={toast} close={() => setEditing(undefined)} saved={reload} /> : null}
+    {editing !== undefined ? <RouteForm key={editing?.id ?? "new"} route={editing} masters={masters} toast={toast} close={() => setEditing(undefined)} saved={reload} /> : null}
     {stops ? <Modal width="5xl" dismissable={false} label="납품처 편집" onClose={() => {}}><div className="p-4"><div className="flex items-center justify-between gap-3 mb-3"><div><h2 className="app-function-title text-base font-semibold">납품처 편집</h2><p className="text-xs text-zinc-400 mt-1">{stops.name || ''} · {stops.car_number || ''} · 납품처 {data.stopCounts.get(stops.id) || 0}개</p></div><button data-x className="btn btn-ghost text-xs" onClick={() => { setStops(null); void reload(); }}>닫기</button></div><iframe src={withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(stops.id)}`, center)} title={`${stops.name || '코스'} 납품처 편집`} className="w-full h-[78vh] rounded-lg border border-zinc-700 bg-zinc-950" /></div></Modal> : null}
     {feedback}
   </>;
 }
-export default function Routes() { return <AdminPage title="코스 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><RoutesContent /></AdminPage>; }
+export default function Routes() { return <AdminPage title="코스 관리" bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"><WorkspaceSessionScope><RoutesContent /></WorkspaceSessionScope></AdminPage>; }

@@ -1,6 +1,8 @@
+import { createWorkspaceStore } from '../lib/workspace-session';
+import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { permissionAllowed } from '../lib/permissions';
 import '../styles/route-edit.css';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import Sortable from 'sortablejs';
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react';
@@ -18,10 +20,14 @@ import type { RouteDetails, RouteStop } from '../lib/route-stops';
 import { withCenterParam } from '../lib/center';
 import { bizMinToDisplay, formatSlack } from '../domain/time';
 
+const routeDetailViews = createWorkspaceStore<{editing?:string|null;scroll:number;left:number}>('route-detail-view', value => Number.isFinite(value.scroll) && Number.isFinite(value.left) && (value.editing == null || typeof value.editing === 'string'));
 function RouteEditContent() {
-  const { center, editable: pageEditable, permissions } = useAdminPage();
+  const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const routeId = new URLSearchParams(location.search).get('id') || '';
+  const viewKey = profile.id+':'+center.code+':'+routeId;
+  const restored = useRef(routeDetailViews.get(viewKey)), hydrated = useRef(false), restoredScroll = useRef(false);
+  const table = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<RouteDetails>({
     route: null,
     stops: [],
@@ -67,6 +73,11 @@ function RouteEditContent() {
             return;
           }
           setData(value);
+          if (!hydrated.current) {
+            hydrated.current=true;
+            if (restored.current?.editing === null) setEditing(null);
+            else if (restored.current?.editing) setEditing(value.stops.find(row => row.id === restored.current?.editing));
+          }
         })
         .catch(() => {
           if (active) toast('코스 정보를 불러오지 못했습니다.', 'error');
@@ -77,6 +88,25 @@ function RouteEditContent() {
       clearTimeout(timer);
     };
   }, [routeId, center, toast]);
+  useLayoutEffect(() => {
+    if (!hydrated.current) return;
+    const previous=routeDetailViews.get(viewKey);
+    routeDetailViews.set(viewKey,{...previous,scroll:previous?.scroll ?? 0,left:previous?.left ?? 0,editing:editing === undefined ? undefined : editing?.id ?? null});
+  }, [viewKey,editing,data.route?.id]);
+  useEffect(() => {
+    if (!data.route || restoredScroll.current) return;
+    const frame = requestAnimationFrame(() => { window.scrollTo(0,restored.current?.scroll ?? 0); if(table.current) table.current.scrollLeft=restored.current?.left ?? 0; restoredScroll.current=true; });
+    return () => cancelAnimationFrame(frame);
+  }, [data.route]);
+  useEffect(() => {
+    const saveScroll = () => {
+      if (!restoredScroll.current || document.querySelector('[role="dialog"]')) return;
+      const previous=routeDetailViews.get(viewKey);
+      routeDetailViews.set(viewKey,{...previous,scroll:window.scrollY,left:table.current?.scrollLeft ?? 0});
+    };
+    addEventListener('scroll',saveScroll,{passive:true});
+    return () => removeEventListener('scroll',saveScroll);
+  }, [viewKey]);
   async function reload() {
     try {
       const value = await loadRouteDetails(center.code, routeId);
@@ -186,6 +216,7 @@ function RouteEditContent() {
   }
   return (
     <>
+      <WorkspaceDraftStatus storageKeys={[routeDetailViews.storageKey(viewKey)]} />
       <main
         id="work-main"
         tabIndex={-1}
@@ -270,6 +301,7 @@ function RouteEditContent() {
           </span>
         </div>
         <div
+          ref={table} onScroll={() => { if(restoredScroll.current) { const previous=routeDetailViews.get(viewKey); routeDetailViews.set(viewKey,{...previous,scroll:previous?.scroll ?? window.scrollY,left:table.current?.scrollLeft ?? 0}); } }}
           className="table-wrap"
           style={{ maxHeight: 'calc(100vh - 280px)' }}
           tabIndex={0}
@@ -471,7 +503,7 @@ function RouteEditContent() {
         </div>
       </main>
       {editing !== undefined ? (
-        <StopForm
+        <StopForm key={editing?.id ?? "new"}
           stop={editing}
           details={data}
           routeId={routeId}
@@ -504,7 +536,7 @@ export default function RouteEdit() {
       actions={<RouteBackLink />}
       bodyClass="bg-zinc-900 text-zinc-100 min-h-screen flex flex-col"
     >
-      <RouteEditContent />
+      <WorkspaceSessionScope><RouteEditContent /></WorkspaceSessionScope>
     </AdminPage>
   );
 }
