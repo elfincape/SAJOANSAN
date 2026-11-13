@@ -1,3 +1,4 @@
+import { PortalEventSnapshot } from './PortalEventSnapshot';
 import { MentionText } from './PortalMentions';
 import { useEffect, useState } from 'react';
 import type { PortalEvent } from '../../domain/portal-types';
@@ -17,19 +18,24 @@ export function PortalRecordHistory({
 }) {
   const { state, centerName } = usePortal(),
     [events, setEvents] = useState<PortalEvent[]>([]),
-    [error, setError] = useState(false);
+    [error, setError] = useState(false),
+    [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
+    setEvents([]);
+    setLoading(true);
+    setError(false);
     void portalApi
       .events(kind === 'task' ? { taskId: id } : { incidentId: id })
       .then((events) => {
         if (active) {
           setEvents(events.filter((e) => e.action !== 'file_uploaded'));
           setError(false);
+          setLoading(false);
         }
       })
       .catch(() => {
-        if (active) setError(true);
+        if (active) { setError(true); setLoading(false); }
       });
     return () => {
       active = false;
@@ -42,10 +48,10 @@ export function PortalRecordHistory({
     );
   return (
     <details className="history">
-      <summary>처리 기록</summary>
-      {error ? (
+      <summary style={{ color: 'var(--theme-text)' }}>처리 기록</summary>
+      {loading ? <p role="status">처리 기록을 불러오는 중…</p> : error ? (
         <p>처리 기록을 불러오지 못했습니다.</p>
-      ) : (
+      ) : !events.length ? <p>조회 가능한 처리 기록이 없습니다.</p> : (
         events.map((event) => (
           <div key={event.id} className="history-entry">
             <small>
@@ -60,6 +66,7 @@ export function PortalRecordHistory({
                 ).replaceAll('HQ', '배송팀')}
               </MentionText>
             </small>
+            <PortalEventSnapshot event={event} />
             {event.action === 'task_handoff' ? (
               <>
                 <p>

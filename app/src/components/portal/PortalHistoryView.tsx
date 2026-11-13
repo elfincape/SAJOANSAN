@@ -1,3 +1,4 @@
+import { PortalEventSnapshot } from './PortalEventSnapshot';
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
@@ -102,6 +103,7 @@ function HistoryRow({
                 <small>
                   <MentionText>{portalStamp(event.occurred_at)}</MentionText>
                 </small>
+                <PortalEventSnapshot event={event} />
                 {[
                   event.request_body?.data?.note,
                   event.request_body?.data?.memo,
