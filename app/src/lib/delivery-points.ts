@@ -1,6 +1,6 @@
 import { fetchAllRows } from './pagination';
 import { useLegacyCommonCatalog } from './erp-course-catalog';
-import { catalogFilter, activeCatalog, softDeleteCatalog, insertCatalog } from './catalog-scope';
+import { catalogFilter, activeCatalog, softDeleteCatalog, insertCatalog, updateCatalog } from './catalog-scope';
 import { supabase } from './supabase';
 
 export interface DeliveryPoint {
@@ -15,9 +15,8 @@ export interface DeliveryPoint {
 export function loadDeliveryPoints(center: string) { return fetchAllRows<DeliveryPoint>(() => activeCatalog(catalogFilter(supabase.from('delivery_points').select('*,route_stops(route_id)').order('id'), center)).returns<DeliveryPoint[]>()).then(data=>({data,error:null}),error=>({data:null,error})); }
 export async function saveDeliveryPoint(payload: Record<string, unknown>, expected?: string | null, createId?:string) {
   if (payload.id) {
-    if (!expected) return {data:null, error:{message:'원본 수정시각을 다시 확인하세요.',code:undefined},removedColumns:[]};
-    const {data,error} = await supabase.from('delivery_points').update(payload).eq('id',String(payload.id)).eq('updated_at',expected).select().maybeSingle<DeliveryPoint>();
-    return {data,error:error ?? (!data ? {message:'다른 작업에서 변경되었거나 수정 권한이 없습니다. 입력을 보존했습니다.',code:'40001'} : null),removedColumns:[]};
+    const result = await updateCatalog<DeliveryPoint>('delivery_points', String(payload.id), payload, expected);
+    return {...result, removedColumns:[]};
   }
   const {data,error} = await insertCatalog('delivery_points',payload,createId ?? crypto.randomUUID());
   return {data,error,removedColumns:[]};

@@ -1,3 +1,6 @@
+import { catalogValueEqual } from '../lib/catalog-scope';
+import { CatalogSaveReview } from './CatalogSaveReview';
+import { EditorStatus } from './EditorStatus';
 import { permissionAllowed } from '../lib/permissions';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { useRef, useState } from 'react';
@@ -7,28 +10,44 @@ import { saveRoute } from '../lib/routes';
 import type { Route, RouteMasters } from '../lib/routes';
 import type { Notice } from './Toasts';
 
-const routeDrafts = new Map<string, {draft: Record<string, unknown>; updatedAt?: string | null; createId:string}>();
+const routeDrafts = new Map<string, {draft: Record<string, unknown>; updatedAt?: string | null; original?: Route | null; createId:string}>();
 
 export function RouteForm({ route, masters, close, saved, toast }: { route: Route | null; masters: RouteMasters; close: () => void; saved: () => Promise<void>; toast: (text: string, type: Notice['type']) => void }) {
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
-  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',route ? route.center_code ?? 'unclassified' : center.code));
-  const company = route?.company_id || '';
+
+  const toDraft = (row: Route | null) => ({ name: row?.name || '', car: row?.car_number || '', company: row?.company_id || '', driver: row?.primary_driver_id ?? '', driver2: row?.secondary_driver_id ?? '', vehicle: row?.primary_vehicle_id ?? '', vehicle2: row?.secondary_vehicle_id ?? '', active: row?.active !== false, days: [...(row?.closed_days || [])] });
   const draftKey = profile.id+':'+(route?.id ?? 'new:'+center.code);
   const createId = useRef(routeDrafts.get(draftKey)?.createId ?? crypto.randomUUID());
+  const baseline = useRef(routeDrafts.get(draftKey)?.original ?? route);
+  const editable = pageEditable && (!useLegacyCommonCatalog || permissionAllowed(permissions,'routes','edit',baseline.current ? baseline.current.center_code ?? 'unclassified' : center.code));
   const original = useRef(routeDrafts.get(draftKey)?.updatedAt ?? route?.updated_at);
+  const [saveError, setSaveError] = useState('');
   const [saving,setSaving] = useState(false);
-  const [draft, setDraft] = useState(() => (routeDrafts.get(draftKey)?.draft as {name:string;car:string;company:string;driver:string;driver2:string;vehicle:string;vehicle2:string;active:boolean;days:number[]} | undefined) ?? ({ name: route?.name || '', car: route?.car_number || '', company, driver: route?.primary_driver_id ?? '', driver2: route?.secondary_driver_id ?? '', vehicle: route?.primary_vehicle_id ?? '', vehicle2: route?.secondary_vehicle_id ?? '', active: route?.active !== false, days: [...(route?.closed_days || [])] }));
-  routeDrafts.set(draftKey,{draft,updatedAt:original.current,createId:createId.current});
+  const [draft, setDraft] = useState(() => (routeDrafts.get(draftKey)?.draft as {name:string;car:string;company:string;driver:string;driver2:string;vehicle:string;vehicle2:string;active:boolean;days:number[]} | undefined) ?? toDraft(route));
+  routeDrafts.set(draftKey,{draft,updatedAt:original.current,original:baseline.current,createId:createId.current});
   const submitting = useRef(false);
+  const fields = { name: 'name', car: 'car_number', company: 'company_id', driver: 'primary_driver_id', driver2: 'secondary_driver_id', vehicle: 'primary_vehicle_id', vehicle2: 'secondary_vehicle_id', active: 'active', days: 'closed_days' } as const;
+  function changedFields() {
+    const before = toDraft(baseline.current);
+    return Object.fromEntries(Object.entries(fields).filter(([key]) => !baseline.current || !catalogValueEqual(draft[key as keyof typeof draft], before[key as keyof typeof before])).map(([key, field]) => { const value = draft[key as keyof typeof draft]; return [field, typeof value === 'string' ? value.trim() || null : Array.isArray(value) ? [...value].sort((a,b)=>a-b) : value]; }));
+  }
+  const patch = changedFields();
+  const dirty = Object.keys(patch).length > 0;
   const currentDrivers = masters.drivers.filter(row => !draft.company || row.company_id === draft.company), currentVehicles = masters.vehicles.filter(row => !draft.company || row.company_id === draft.company);
   return <Modal dismissable={!saving} width="lg" label={route ? '코스 편집' : '새 코스'} onClose={() => { if (!submitting.current) close(); }}><div className="p-5"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{route ? '코스 편집' : '새 코스'}</h2><ModalClose data-x className="btn btn-ghost text-xs">닫기</ModalClose></div>
+    <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(route)} error={saveError} />
+    <CatalogSaveReview<Route> table="routes" id={route?.id ?? ''} error={saveError} busy={saving} patch={patch} labels={{name:'코스명',car_number:'호차',company_id:'운수사',primary_driver_id:'주기사',secondary_driver_id:'보조기사',primary_vehicle_id:'주차량',secondary_vehicle_id:'보조차량',active:'활성',closed_days:'휴무일'}} onRebase={latest => {
+      const before = toDraft(baseline.current), next = toDraft(latest);
+      setDraft(current => Object.fromEntries(Object.keys(next).map(key => [key, catalogValueEqual(current[key as keyof typeof current], before[key as keyof typeof before]) ? next[key as keyof typeof next] : current[key as keyof typeof current]])) as typeof current);
+      baseline.current = latest; original.current = latest.updated_at; setSaveError('');
+    }}/>
     <fieldset disabled={saving || !editable}><form id="route-form" className="space-y-3" noValidate onSubmit={async event => {
       event.preventDefault(); if (!editable || submitting.current) return;
       const name = draft.name.trim(); if (!name) { toast('코스명은 필수입니다.', 'warn'); return; }
-      const payload = { ...(route ? { id: route.id } : {}), center_code: route ? route.center_code ?? null : center.code, name, car_number: draft.car.trim() || null, company_id: draft.company || null, primary_driver_id: draft.driver || null, primary_vehicle_id: draft.vehicle || null, secondary_driver_id: draft.driver2 || null, secondary_vehicle_id: draft.vehicle2 || null, active: draft.active, closed_days: [...draft.days].sort((a, b) => a - b) };
-      submitting.current = true; setSaving(true);
-      try { const { error } = await saveRoute(payload, original.current,createId.current); if (error) { toast(`저장 실패: ${error.message}`, 'error'); return; } toast(route ? '수정되었습니다.' : '추가되었습니다.', 'success'); routeDrafts.delete(draftKey); close(); await saved(); }
-      catch { toast('저장 중 오류가 발생했습니다.', 'error'); }
+      const payload = route ? { id: route.id, ...patch } : { center_code: center.code, ...patch };
+      submitting.current = true; setSaving(true); setSaveError('');
+      try { const { error } = await saveRoute(payload, original.current,createId.current); if (error) { setSaveError(error.message); toast(`저장 실패: ${error.message}`, 'error'); return; } toast(route ? '수정되었습니다.' : '추가되었습니다.', 'success'); routeDrafts.delete(draftKey); close(); await saved().catch(() => toast('저장은 완료됐지만 목록을 갱신하지 못했습니다.', 'warn')); }
+      catch { setSaveError('저장 결과를 확인하지 못했습니다. 입력을 보존했습니다. 같은 내용으로 재시도할 수 있습니다.'); toast('저장 중 오류가 발생했습니다.', 'error'); }
       finally { submitting.current = false; setSaving(false); }
     }}>
       <div><label className="app-label" htmlFor="r-name">코스명 *</label><input id="r-name" className="app-input" required value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} /></div>
