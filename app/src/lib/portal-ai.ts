@@ -1,3 +1,5 @@
+import { koreaDate } from '../domain/operations';
+import { periodBounds } from '../domain/portal-calendar';
 import { supabase } from './supabase';
 export interface DraftEvidence {
   label?: string;
@@ -76,24 +78,20 @@ export const portalBriefing = {
       'portal-briefing',
       { force },
     ),
-  async cached(): Promise<BriefingCache> {
-    const day = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date()),
-      [result, dispatch] = await Promise.all([
+  async cached(day = koreaDate()): Promise<BriefingCache> {
+    periodBounds(day, 'day');
+    if (day > koreaDate()) throw Error('미래 날짜의 브리핑은 조회할 수 없습니다.');
+    const [result, dispatch] = await Promise.all([
         supabase
           .from('operations_ai_results')
           .select('body,status,last_error,generated_at')
           .eq('cache_key', 'briefing:' + day)
           .maybeSingle(),
-        supabase
+        day === koreaDate() ? supabase
           .from('operations_automation_state')
           .select('last_error')
           .eq('name', 'briefing-dispatch')
-          .maybeSingle(),
+          .maybeSingle() : Promise.resolve({ data: null, error: null }),
       ]);
     if (result.error) throw result.error;
     if (dispatch.error) throw dispatch.error;

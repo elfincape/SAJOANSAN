@@ -1,18 +1,39 @@
 import { MentionText } from './PortalMentions';
-import { Fragment } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
 import { PortalIncidentList } from './PortalIncidents';
 import { PortalRecordDetail } from './PortalRecordDetail';
+import type { BriefingCache } from '../../lib/portal-ai';
+import { koreaDate, statusLabels } from '../../domain/operations';
 import { portalBriefing } from '../../lib/portal-ai';
 import { portalRecord } from '../../lib/portal';
 import { portalStamp } from '../../domain/portal-types';
 import { actionLabels } from '../../domain/operations';
 export function PortalBriefing() {
-  const { state, update, message, loadData, choose } = usePortal(),
-    entry = state.briefing,
+  const { state, update, message, loadData, choose, viewState } = usePortal(),
+    today = koreaDate(),
+    [day, setDay] = useState(() => String(viewState.get('briefing-date') || today)),
+    [archive, setArchive] = useState<{ day: string; entry?: BriefingCache; error?: string } | null>(null),
+    openRequest = useRef(0),
+    generating = useRef(false),
+    archived = day !== today,
+    loading = archived && archive?.day !== day,
+    error = archived && archive?.day === day ? archive.error : '',
+    entry = archived ? (archive?.day === day ? archive.entry : undefined) : state.briefing,
     body = entry?.body;
+  useEffect(() => {
+    let active = true;
+    openRequest.current++;
+    if (archived) void portalBriefing.cached(day).then(entry => {
+      if (active) setArchive({ day, entry });
+    }).catch(error => {
+      if (active) setArchive({ day, error: error instanceof Error ? error.message : String(error) });
+    });
+    return () => { active = false; openRequest.current++; };
+  }, [day, archived]);
   async function generate() {
-    if (state.busy) return;
+    if (state.busy || generating.current || day !== koreaDate()) return;
+    generating.current = true;
     update((s) => {
       s.busy = true;
     });
@@ -39,18 +60,24 @@ export function PortalBriefing() {
         true,
       );
     } finally {
+      generating.current = false;
       update((s) => {
         s.busy = false;
       });
     }
   }
   async function open(kind: string, id: string) {
+    const request = ++openRequest.current;
     try {
-      if (kind === 'task')
-        choose({ type: 'task', row: await portalRecord('task', id) });
-      else
-        choose({ type: 'incident', row: await portalRecord('incident', id) });
+      if (kind === 'task') {
+        const row = await portalRecord('task', id);
+        if (request === openRequest.current) choose({ type: 'task', row });
+      } else {
+        const row = await portalRecord('incident', id);
+        if (request === openRequest.current) choose({ type: 'incident', row });
+      }
     } catch (error) {
+      if (request !== openRequest.current) return;
       message(
         error && typeof error === 'object' && 'message' in error
           ? String(error.message)
@@ -62,14 +89,22 @@ export function PortalBriefing() {
   return (
     <>
       <section id="quick-actions" className="quick-actions">
+        <label>브리핑 기준일<input type="date" name="briefing-date" aria-label="브리핑 기준일" value={day} max={today} disabled={state.busy} onChange={event => {
+          const next = event.target.value;
+          if (!next || next > today) return;
+          openRequest.current++;
+          setDay(next); viewState.set('briefing-date', next);
+        }}/></label>
         <button
           className="primary"
-          disabled={state.busy}
+          disabled={state.busy || archived}
           onClick={() => void generate()}
         >
           브리핑 생성·새로고침
         </button>
       </section>
+      <p role="status">{loading ? '저장된 브리핑을 불러오는 중…' : error || (archived ? '과거 보관본 조회 · 다시 생성하지 않습니다.' : '브리핑 생성은 업무를 완료하지 않습니다.')}</p>
+      {body ? <p>보고 기준일 {body.date} · 생성 {portalStamp(entry?.generated_at)}</p> : null}
       <div className="workspace">
         <section className="list">
           <div className="list-heading">
@@ -87,14 +122,14 @@ export function PortalBriefing() {
             <h3>센터 업무 특이사항 · 현재 상태</h3>
             <PortalIncidentList />
             {!body ? (
-              <p>오늘 저장된 AI 요약이 없습니다.</p>
+              <p>{loading || error ? '조회가 완료되면 보관 내용을 표시합니다.' : `${day}에 저장된 AI 요약이 없습니다.`}</p>
             ) : (
               <>
                 {body.items?.map((item, index) => {
-                  const current =
-                    item.kind === 'incident'
-                      ? state.incidents.find((i) => i.id === item.id)
-                      : null;
+                  const current = (state.selected?.type === 'task' || state.selected?.type === 'incident') && state.selected.type === item.kind && state.selected.row.id === item.id
+                    ? state.selected.row
+                    : item.kind === 'task' ? state.tasks.find(task => task.id === item.id)
+                    : item.kind === 'incident' ? state.incidents.find(incident => incident.id === item.id) : null;
                   return (
                     <div
                       key={item.kind + item.id + index}
@@ -102,15 +137,10 @@ export function PortalBriefing() {
                     >
                       <p>
                         <MentionText>
-                          {item.title +
-                            (current
-                              ? ' · ' +
-                                (current.status === 'resolved'
-                                  ? '처리완료'
-                                  : '처리중')
-                              : '')}
+                          {item.title}
                         </MentionText>
                       </p>
+                      {['task', 'incident'].includes(item.kind) ? <p>현재 원본 · <MentionText>{current ? current.title + ' · ' + (statusLabels[current.status] ?? current.status) : '상세에서 조회 필요'}</MentionText></p> : null}
                       <small>
                         <MentionText>
                           {(body.centers.find((c) => c.code === item.center)
@@ -170,7 +200,7 @@ export function PortalBriefing() {
             <PortalRecordDetail />
           ) : (
             <>
-              <h2>오늘의 운영 브리핑</h2>
+              <h2>{archived ? '보관된 운영 브리핑' : '오늘의 운영 브리핑'}</h2>
               <p>
                 매일 오전 08:00에 생성합니다. 각 항목에서 실제 업무 기록을
                 확인하세요.
@@ -202,7 +232,7 @@ export function PortalBriefing() {
                     </MentionText>
                   </p>
                   {Object.entries({
-                    pending_tasks: '미완료 업무',
+                    pending_tasks: '생성 당시 미완료 업무',
                     open_incidents: '생성 당시 처리중 특이사항',
                     yesterday_events: '전일 처리 기록',
                     master_changes: '전일 차량·기사·코스 변경',
