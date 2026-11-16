@@ -15,7 +15,7 @@ import type { Root } from 'react-dom/client';
 import { AllCommunityModule, ModuleRegistry, createGrid, themeQuartz } from 'ag-grid-community';
 import type { GridApi, ICellRendererParams } from 'ag-grid-community';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
-import { Modal } from '../components/Modal';
+
 import { RouteForm } from '../components/RouteForm';
 import { useFeedback } from '../components/useFeedback';
 import { deleteRoute, loadRouteMasters, loadRoutes } from '../lib/routes';
@@ -188,7 +188,7 @@ function RoutesContent() {
       <div className="px-1 py-2 text-xs text-zinc-400 flex items-center justify-between"><span id="result-count" role="status" aria-live="polite">{!data.routes.length ? '코스 없음' : stats.shown === data.routes.length ? `총 ${stats.shown}건` : `${stats.shown}건 표시 · 전체 ${data.routes.length}건`}</span><span id="loading-indicator" role="status" className={loading ? '' : 'hidden'}>불러오는 중...</span></div>
     </main>
     {editing !== undefined ? <RouteForm key={editing?.id ?? "new"} route={editing} masters={masters} toast={toast} close={() => setEditing(undefined)} saved={reload} /> : null}
-    {stops ? <Modal width="5xl" dismissable={false} label="납품처 편집" onClose={() => {}}><div className="p-4"><div className="flex items-center justify-between gap-3 mb-3"><div><h2 className="app-function-title text-base font-semibold">납품처 편집</h2><p className="text-xs text-zinc-400 mt-1">{stops.name || ''} · {stops.car_number || ''} · 납품처 {data.stopCounts.get(stops.id) || 0}개</p></div><button data-x className="btn btn-ghost text-xs" onClick={() => { setStops(null); void reload(); }}>닫기</button></div><iframe src={withCenterParam(`/admin/route-edit.html?id=${encodeURIComponent(stops.id)}`, center)} title={`${stops.name || '코스'} 납품처 편집`} className="w-full h-[78vh] rounded-lg border border-zinc-700 bg-zinc-950" /></div></Modal> : null}
+    {stops ? <LinkedRecordDetail key={stops.id} record={{kind:'route',id:stops.id,label:stops.name || '코스'}} close={()=>setStops(null)} refresh={reload}/> : null}
     {linked ? <LinkedRecordDetail key={linked.kind+linked.id} record={linked} close={()=>setLinked(null)} refresh={reload}/> : null}
     {feedback}
   </>;

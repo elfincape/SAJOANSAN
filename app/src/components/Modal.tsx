@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -71,7 +72,7 @@ export function Modal({
     y: 6,
     scaleX: 0.985,
     scaleY: 0.985,
-    borderRadius: 20,
+    borderRadius: 24,
   });
 
   function enter(event: Event) {
@@ -94,7 +95,7 @@ export function Modal({
                 y: 0,
                 scaleX: 1,
                 scaleY: 1,
-                borderRadius: 20,
+                borderRadius: 24,
                 opacity: 1,
               },
               { duration: 0.18, ease: [0.22, 1, 0.36, 1] },
@@ -192,7 +193,7 @@ export function Modal({
                 className={`ean-modal-panel w-full ${widths[width]}`}
                 style={{
                   position: 'relative',
-                  borderRadius: 20,
+                  borderRadius: 24,
                   background: 'transparent',
                   border: 0,
                   boxShadow: 'none',
@@ -209,8 +210,8 @@ export function Modal({
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    borderRadius: 20,
-                    background: 'var(--ean-popup-fill, var(--ean-surface))',
+                    borderRadius: 24,
+                    background: 'linear-gradient(135deg,var(--ean-sidebar-sheen),transparent 60%) var(--ean-sidebar-glass)',
                     WebkitBackdropFilter: 'blur(var(--ean-surface-blur, 24px))',
                     backdropFilter: 'blur(var(--ean-surface-blur, 24px))',
                     border: 0,
@@ -224,9 +225,9 @@ export function Modal({
                   style={{
                     position: 'relative',
                     background: 'transparent',
-                    borderRadius: 20,
+                    borderRadius: 24,
                     maxHeight: 'calc(100dvh - 40px)',
-                    overflow: 'auto',
+                    overflow: 'hidden',
                     overscrollBehavior: 'contain',
                     pointerEvents: closing ? 'none' : 'auto',
                   }}
@@ -235,7 +236,7 @@ export function Modal({
                   }}
                 >
                   <Dialog.Title className="sr-only">{label}</Dialog.Title>
-                  {children}
+                  <DialogFrame>{children}</DialogFrame>
                 </motion.div>
               </div>
             </Dialog.Content>

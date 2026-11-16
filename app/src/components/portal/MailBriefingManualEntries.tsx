@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from '../Modal';
 import { privateMail } from '../../lib/portal-mail';
@@ -1081,7 +1082,7 @@ export function MailBriefingManualEntries({
                 </label>
               </>
             )}
-            <div className="daily-filter-actions">
+            <DialogActions>
               <label className="manual-reference" htmlFor="manual-reference">
                 메시지 기준일 (선택)
                 <input
@@ -1117,7 +1118,7 @@ export function MailBriefingManualEntries({
               <ModalClose className="btn btn-ghost" disabled={busy}>
                 취소
               </ModalClose>
-            </div>
+            </DialogActions>
             <p className="daily-task-meta">
               접수되면 창이 닫힙니다. 분석과 저장은 뒤에서 처리하며 일시적인
               오류는 자동으로 재시도합니다.

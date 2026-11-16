@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { Fragment, useEffect, useState } from 'react';
 import type { PortalSpec, PortalSurvey } from '../../domain/portal-types';
@@ -61,7 +62,7 @@ function TemplateReview({
     };
   }, [survey.center_code]);
   return (
-    <form
+    <form id="dialog-portalsurveydetail-0"
       className="portal-form"
       data-template-review="true"
       onSubmit={(e) => {
@@ -251,9 +252,9 @@ function TemplateReview({
         조사 내용을 확인한 뒤 승인하세요. 양식 승인은 구축 완료 기록과
         별개입니다.
       </p>
-      <button className="primary" disabled={state.busy}>
+      <DialogActions><button form="dialog-portalsurveydetail-0" className="primary" disabled={state.busy}>
         정식 업무 양식 승인
-      </button>
+      </button></DialogActions>
     </form>
   );
 }

@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { closePortalDialog, PortalDialog } from './PortalDialog';
@@ -61,7 +62,7 @@ function TaskCreate({ issue = false }: { issue?: boolean }) {
   );
   return (
     <>
-      <form
+      <form id="dialog-portaltickets-0"
         ref={form}
         className="portal-form"
         onSubmit={(e) => {
@@ -107,9 +108,9 @@ function TaskCreate({ issue = false }: { issue?: boolean }) {
                 multiline
               />
             </PortalField>
-            <button className="primary" disabled={state.busy}>
+            <DialogActions><button form="dialog-portaltickets-0" className="primary" disabled={state.busy}>
               등록
-            </button>
+            </button></DialogActions>
           </>
         ) : null}
       </form>
@@ -171,7 +172,7 @@ function IncidentCreate({ task }: { task: PortalTask }) {
       <p>
         상위 업무 · <MentionText>{task.title}</MentionText>
       </p>
-      <form
+      <form id="dialog-portaltickets-1"
         className="portal-form"
         onSubmit={(e) => {
           e.preventDefault();
@@ -229,9 +230,9 @@ function IncidentCreate({ task }: { task: PortalTask }) {
             multiline
           />
         </PortalField>
-        <button className="primary" disabled={state.busy}>
+        <DialogActions><button form="dialog-portaltickets-1" className="primary" disabled={state.busy}>
           처리중으로 등록
-        </button>
+        </button></DialogActions>
       </form>
     </>
   );

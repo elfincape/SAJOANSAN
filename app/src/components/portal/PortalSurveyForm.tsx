@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { Fragment, useRef, useState } from 'react';
 import type { PortalSurvey } from '../../domain/portal-types';
@@ -122,7 +123,7 @@ export function PortalSurveyForm({
       <h2>
         <MentionText>{survey ? '업무조사 수정' : '업무조사 등록'}</MentionText>
       </h2>
-      <form
+      <form id="dialog-portalsurveyform-0"
         className="portal-form"
         onSubmit={(e) => {
           e.preventDefault();
@@ -200,9 +201,9 @@ export function PortalSurveyForm({
         <p>
           <MentionText>{hint}</MentionText>
         </p>
-        <button className="primary" disabled={state.busy}>
+        <DialogActions><button form="dialog-portalsurveyform-0" className="primary" disabled={state.busy}>
           조사 내용·첨부파일 저장
-        </button>
+        </button></DialogActions>
       </form>
     </>
   );

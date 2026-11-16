@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { yangsanDriverGuidance } from '../../domain/yangsan-driver-guidance';
 import { useClipboard } from '../useClipboard';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
@@ -729,11 +730,7 @@ export function PortalTaskDetail({
     <PortalStore.Provider value={{ ...portal, state: { ...state, busy } }}>
       {popup ? <div className="task-detail-content">{body}</div> : body}
       {!task.deleted_at && writable ? (
-        <div
-          className="task-primary-actions"
-          role="group"
-          aria-label="업무 처리"
-        >
+        <DialogActions>
           {finished(task) ? (
             <button
               type="button"
@@ -766,7 +763,7 @@ export function PortalTaskDetail({
               </button>
             </>
           )}
-        </div>
+        </DialogActions>
       ) : null}
     </PortalStore.Provider>
   );

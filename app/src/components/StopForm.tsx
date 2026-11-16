@@ -1,3 +1,4 @@
+import { DialogActions } from './DialogFrame';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus } from './WorkspaceDraftStatus';
 import { permissionAllowed } from '../lib/permissions';
@@ -93,7 +94,7 @@ export function StopForm({ stop, details, routeId, close, saved, toast, confirm 
         ['delivery', 'ov-dmethod', '납품방식', ['대면', '검수', '무인']], ['access', 'ov-amethod', '진입방식', ['보안키', '열쇠', '없음']], ['location', 'ov-dloc', '납품장소', ['창고', '탑차', '야적']],
       ] as const).map(([key, id, label, values]) => <div key={key}><label className="app-label" htmlFor={id}>{label}</label><select id={id} className="app-select" value={draft[key]} onChange={event => update(key, event.target.value)}><option value="">기본값 사용</option>{values.map(value => <option key={value} value={value}>{value}</option>)}</select></div>)}</div></details>
       <div><label className="app-label" htmlFor="s-memo">비고</label><textarea id="s-memo" rows={2} className="app-textarea" value={draft.memo} onChange={event => update('memo', event.target.value)} /></div><div id="form-warn" className="hidden text-xs text-amber-400 bg-amber-900/20 border border-amber-900/40 rounded-md px-3 py-2" />
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!editable}>저장</button><ModalClose data-x className="btn btn-ghost" onAction={() => { completed.current = true; stopDrafts.delete(key); }}>취소</ModalClose></div>
+      <DialogActions><button type="submit" form="stop-form" className="btn btn-primary" disabled={!editable || saving}>저장</button><ModalClose data-x className="btn btn-ghost" onAction={() => { completed.current = true; stopDrafts.delete(key); close(); }}>취소</ModalClose></DialogActions>
     </form></fieldset>
   </div></Modal>;
 }

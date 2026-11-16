@@ -1,3 +1,4 @@
+import { DialogActions, DialogFrame } from './DialogFrame';
 import { useEffect, useRef, useState } from 'react';
 import { DispatchBoard } from './DispatchBoard';
 import { useWorkspaceActions } from '../lib/workspace-actions';
@@ -1721,7 +1722,7 @@ export function CJDispatch({
         id="dispatch-edit-dialog"
         onCancel={() => setEditing(null)}
         onClose={() => setEditing(null)}
-      >
+      ><DialogFrame>
         <form
           id="dispatch-edit-form"
           className="space-y-4"
@@ -1841,7 +1842,7 @@ export function CJDispatch({
             주소가 같아도 하차 장소가 다르면 합치지 마세요. 조건은 이 가배차에만
             적용됩니다.
           </p>
-          <div className="toolbar">
+          <DialogActions>
             <button
               id="dispatch-edit-cancel"
               type="button"
@@ -1852,15 +1853,15 @@ export function CJDispatch({
               취소
             </button>
             <button
-              type="submit"
+              type="submit" form="dispatch-edit-form"
               className="btn btn-primary"
               disabled={view.busy || !editable}
             >
               착지 조정 적용
             </button>
-          </div>
+          </DialogActions>
         </form>
-      </dialog>
+      </DialogFrame></dialog>
       {feedback}
       {downloadLink}
     </section>

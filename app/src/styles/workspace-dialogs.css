@@ -8,12 +8,11 @@ html[data-theme]
     #gm-fixed-dialog,
     [data-portal-motion]
   ) {
-  border: 1px solid var(--ean-rim);
-  border-radius: 20px;
-  background: var(--ean-surface);
+  border: 0;
+  border-radius: 24px;
+  background: linear-gradient(135deg,var(--ean-sidebar-sheen),transparent 60%) var(--ean-sidebar-glass);
   color: var(--theme-text);
   box-shadow:
-    inset 0 1px 0 var(--ean-edge),
     var(--ean-shadow);
   -webkit-backdrop-filter: blur(24px) saturate(110%);
   backdrop-filter: blur(24px) saturate(110%);
@@ -44,7 +43,7 @@ html[data-theme]
 html[data-theme]
   body.workspace-ui
   dialog.parent-task-dialog[data-portal-motion] {
-  border-radius: 20px 0 0 20px;
+  border-radius: 24px;
 }
 html[data-theme]
   body.workspace-ui
@@ -108,7 +107,4 @@ html[data-theme]
   }
 }
 
-.ean-modal-position[data-placement=right] { justify-content:flex-end; align-items:stretch; padding:0; }
-.ean-modal-position[data-placement=right] .ean-modal-panel { height:100dvh; }
-.ean-modal-position[data-placement=right] .ean-modal-panel > div:not(.ean-modal-surface) { max-height:100dvh !important; height:100%; border-radius:0 !important; }
-.ean-modal-position[data-placement=right] .ean-modal-surface { border-radius:0 !important; }
+.ean-modal-position[data-placement=right] { justify-content:flex-end; align-items:center; padding:24px; }

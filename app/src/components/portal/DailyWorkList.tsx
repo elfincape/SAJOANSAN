@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { workSummaryForDisplay } from '../../../../supabase/functions/onedrive-auth/private-mail-work.js';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
@@ -483,7 +484,7 @@ export function DailyWorkList({
             </label>
             {onFollowup && <button type="button" className="btn btn-primary" disabled={disabled || !drafts[item.workId]?.text.trim()} onClick={()=>{const text=drafts[item.workId]?.text ?? '';close();onFollowup(text,item.workId,item.monthly ? null : item.workScope);setDrafts(current=>{const next={...current};delete next[item.workId];return next;});}}>분석 후 저장</button>}
             {item.correction?.processingNotes?.map(note=><div key={note.id}><small>{formatBriefingTimestamp(note.at)}</small><p style={{whiteSpace:'pre-wrap'}}>{note.text}</p></div>)}
-            <div className="daily-detail-actions">
+            <DialogActions>
               {item.category !== 'reference' && (
                 <button
                   type="button"
@@ -537,7 +538,7 @@ export function DailyWorkList({
                   되돌리기
                 </button>
               )}
-            </div>
+            </DialogActions>
             <p className="daily-feedback" role="status" aria-live="polite">
               {saving ? '저장 중…' : feedback}
             </p>

@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { PortalInput, PortalField, MentionText } from './PortalMentions';
 import { useRef, useState } from 'react';
 import type { PortalTemplate } from '../../domain/portal-types';
@@ -102,7 +103,7 @@ export function PortalDesigner({
           닫기
         </button>
       </div>
-      <form
+      <form id="dialog-portaldesigner-0"
         className="portal-form"
         onSubmit={async (e) => {
           e.preventDefault();
@@ -345,9 +346,9 @@ export function PortalDesigner({
           저장하면 이 센터 업무 화면에 버튼이 생깁니다. 양식을 수정해도 이미
           발행한 티켓의 입력 항목과 기록은 유지됩니다.
         </p>
-        <button className="primary" disabled={busy}>
+        <DialogActions><button form="dialog-portaldesigner-0" className="primary" disabled={busy}>
           저장하고 업무 버튼 생성
-        </button>
+        </button></DialogActions>
         {error ? (
           <p className="designer-error error">
             <MentionText>{error}</MentionText>

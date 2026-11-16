@@ -1,3 +1,4 @@
+import { DialogFrame } from '../DialogFrame';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PortalStore } from './PortalStore';
 import type { ReactNode } from 'react';
@@ -101,7 +102,7 @@ export function PortalDialog({
         outside.current = false;
       }}
     >
-      {children}
+      <DialogFrame>{children}</DialogFrame>
       {portal?.state.messageError && portal.state.message ? (
         <div className="portal-dialog-error" role="alert">
           <span>{portal.state.message}</span>

@@ -1,3 +1,4 @@
+import { DialogActions } from './DialogFrame';
 import { useFeedback } from './useFeedback';
 import { useEditorGuard } from './EditorStatus';
 import { permissionAllowed } from '../lib/permissions';
@@ -236,7 +237,7 @@ export function DashboardDetail({
               {r.dp_code || ''} · {r.dp_region || ''}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <DialogActions>
             {r.route_id ? (
               <a
                 href={useErpCatalog ? erpCourseHref('route', r.route_id) : withCenterParam(
@@ -263,7 +264,7 @@ export function DashboardDetail({
             <ModalClose id="detail-close" className="btn btn-ghost text-xs">
               닫기
             </ModalClose>
-          </div>
+          </DialogActions>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4 text-sm">
           <div className="space-y-4">

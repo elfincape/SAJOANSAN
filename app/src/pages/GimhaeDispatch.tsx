@@ -1,3 +1,4 @@
+import { DialogActions, DialogFrame } from '../components/DialogFrame';
 import { permissionAllowed } from '../lib/permissions';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
@@ -1356,7 +1357,7 @@ function Work() {
         aria-labelledby="gm-preview-title"
         onCancel={() => setPreview(null)}
         onClose={() => setPreview(null)}
-      >
+      ><DialogFrame>
         <div className="gm-section-head">
           <h3 id="gm-preview-title">{preview?.title || '원본'}</h3>
           <button
@@ -1380,7 +1381,7 @@ function Work() {
           value={preview?.text || ''}
           hidden={preview?.text === undefined}
         />
-      </dialog>
+      </DialogFrame></dialog>
       <dialog
         ref={fixedDialog}
         id="gm-fixed-dialog"
@@ -1390,7 +1391,7 @@ function Work() {
           else setFixed(null);
         }}
         onClose={() => setFixed(null)}
-      >
+      ><DialogFrame>
         <form
           id="gm-fixed-form"
           onSubmit={(e) => {
@@ -1546,7 +1547,7 @@ function Work() {
           >
             최신 기사정보 불러오기
           </button>
-          <div className="gm-dialog-actions">
+          <DialogActions>
             <button
               id="gm-delete-fixed"
               type="button"
@@ -1582,15 +1583,15 @@ function Work() {
             </button>
             <button
               id="gm-submit-fixed"
-              type="submit"
+              type="submit" form="gm-fixed-form"
               className="btn btn-primary"
               disabled={editDisabled}
             >
               {editingId ? '변경 적용' : '등록'}
             </button>
-          </div>
+          </DialogActions>
         </form>
-      </dialog>
+      </DialogFrame></dialog>
       {feedback}
     </main>
   );
