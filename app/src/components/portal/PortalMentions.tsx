@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { createPortal } from 'react-dom';
 import {
   Children,
@@ -184,9 +185,9 @@ function MentionInformation({
       onClose={onClose}
     >
       <h2>{title}</h2>
-      <button type="button" onClick={onClose}>
+      <DialogActions><button type="button" onClick={onClose}>
         닫기
-      </button>
+      </button></DialogActions>
       <div>
         {error ? (
           <p>

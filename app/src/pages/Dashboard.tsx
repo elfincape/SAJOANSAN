@@ -1,3 +1,4 @@
+import { DialogActions } from '../components/DialogFrame';
 import { catalogScopeLabel, useErpCatalog } from '../lib/erp-course-catalog';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -1422,9 +1423,9 @@ function Work({
               <dd>{profile.active ? '활성' : '비활성'}</dd>
             </dl>
             <div className="mt-4 text-right">
-              <ModalClose id="me-close" className="btn">
+              <DialogActions><ModalClose id="me-close" className="btn">
                 닫기
-              </ModalClose>
+              </ModalClose></DialogActions>
             </div>
           </div>
         </Modal>
@@ -1446,7 +1447,7 @@ function Work({
               표시할 컬럼을 선택하세요. 순서는 헤더를 직접 드래그하거나 ↑↓ 으로
               조정 가능합니다.
             </p>
-            <div id="cc-list" className="space-y-1 max-h-[55vh] overflow-auto">
+            <div id="cc-list" className="space-y-1">
               {columnConfig.order.map((key, index) => {
                 const c = COL_MAP[key];
                 if (!c) return null;
@@ -1511,7 +1512,7 @@ function Work({
                 );
               })}
             </div>
-            <div className="flex justify-between pt-3 mt-3 border-t border-zinc-700">
+            <DialogActions>
               <button
                 id="cc-reset"
                 className="px-3 py-1.5 text-sm bg-red-700/70 hover:bg-red-600 rounded"
@@ -1553,7 +1554,7 @@ function Work({
                   적용
                 </button>
               </div>
-            </div>
+            </DialogActions>
           </div>
         </Modal>
       ) : null}

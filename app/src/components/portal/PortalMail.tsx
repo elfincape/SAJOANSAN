@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import { usePortal } from './PortalStore';
@@ -60,7 +61,7 @@ function ManualSourceDialog({
       <div className="daily-message-dialog">
         <div className="daily-dialog-heading">
           <h2>입력 메시지 원문</h2>
-          <ModalClose className="btn btn-ghost">닫기</ModalClose>
+          <DialogActions><ModalClose className="btn btn-ghost">닫기</ModalClose></DialogActions>
         </div>
         {error ? (
           <div role="alert">

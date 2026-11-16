@@ -1,3 +1,4 @@
+import { DialogActions } from '../DialogFrame';
 import { MentionText } from './PortalMentions';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -67,7 +68,7 @@ function ImageDialog({
       className="coupang-image-dialog"
       onClose={onClose}
     >
-      <div className="actions">
+      <DialogActions>
         <strong>쿠팡 입문확인</strong>
         <button onClick={onClose}>닫기</button>
         {loaded ? (
@@ -93,7 +94,7 @@ function ImageDialog({
             이미지 복사
           </button>
         ) : null}
-      </div>
+      </DialogActions>
       <p>
         <MentionText>{status}</MentionText>
       </p>
