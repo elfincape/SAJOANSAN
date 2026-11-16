@@ -1,4 +1,7 @@
-import { LinkedRecordButton, LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
+import { linkedRecordId, useLinkedRecordBridge, notifyLinkedRecordSaved, LinkedRecordButton, LinkedRecordDetail, type LinkedRecord } from '../components/LinkedRecordDetail';
+import { registerWorkspaceNavigationGuard } from '../lib/workspace-navigation';
+import { RouteForm } from '../components/RouteForm';
+import { loadRouteMasters, type RouteMasters } from '../lib/routes';
 import { createWorkspaceStore } from '../lib/workspace-session';
 import { WorkspaceDraftStatus, WorkspaceSessionScope } from '../components/WorkspaceDraftStatus';
 import { permissionAllowed } from '../lib/permissions';
@@ -23,6 +26,11 @@ import { bizMinToDisplay, formatSlack } from '../domain/time';
 
 const routeDetailViews = createWorkspaceStore<{editing?:string|null;scroll:number;left:number}>('route-detail-view', value => Number.isFinite(value.scroll) && Number.isFinite(value.left) && (value.editing == null || typeof value.editing === 'string'));
 function RouteEditContent() {
+  const linkedId = linkedRecordId();
+  useLinkedRecordBridge();
+  const [masters,setMasters] = useState<RouteMasters>({companies:[],drivers:[],vehicles:[]});
+  const [basicBusy,setBasicBusy] = useState(false);
+  const [loadError,setLoadError] = useState('');
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
   const { toast, confirm, feedback } = useFeedback();
   const [linked, setLinked] = useState<LinkedRecord | null>(null);
@@ -45,6 +53,9 @@ function RouteEditContent() {
   const reducedMotion = useReducedMotion();
   const [savingOrder, setSavingOrder] = useState(false);
   const savingOrderRef = useRef(false);
+  const closeBusy = useRef(false); closeBusy.current = savingOrder || basicBusy || editing !== undefined || !!linked;
+  useEffect(()=>registerWorkspaceNavigationGuard(()=>!closeBusy.current),[]);
+  useEffect(()=>{if(!linkedId)return;let active=true;void loadRouteMasters(center.code).then(value=>{if(active)setMasters(value);}).catch(()=>{if(active)setLoadError('연결 후보를 불러오지 못했습니다.');});return()=>{active=false;};},[linkedId,center.code]);
   const body = useRef<HTMLTableSectionElement>(null),
     initial = useRef<ReturnType<typeof loadRouteDetails> | undefined>(
       undefined,
@@ -56,6 +67,7 @@ function RouteEditContent() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const redirect = (message: string) => {
       toast(message, 'error');
+      if(linkedId){setLoadError(message);return;}
       timer = setTimeout(
         () => location.replace(withCenterParam('/admin/routes.html', center)),
         600,
@@ -110,12 +122,14 @@ function RouteEditContent() {
     return () => removeEventListener('scroll',saveScroll);
   }, [viewKey]);
   async function reload() {
+    notifyLinkedRecordSaved();
     try {
       const value = await loadRouteDetails(center.code, routeId);
       if (value.route) setData(value);
       else {
         toast('해당 코스를 찾을 수 없습니다.', 'error');
-        location.replace(withCenterParam('/admin/routes.html', center));
+        if (linkedId) setLoadError('해당 코스를 찾을 수 없습니다.');
+        else location.replace(withCenterParam('/admin/routes.html', center));
       }
     } catch {
       toast('코스 정보를 불러오지 못했습니다.', 'error');
@@ -148,7 +162,7 @@ function RouteEditContent() {
         })),
       ));
       if (error) throw error;
-      toast('순서를 저장했습니다.', 'success');
+      toast('순서를 저장했습니다.', 'success');notifyLinkedRecordSaved();
     } catch {
       toast('순서 저장 실패. 되돌립니다.', 'error');
       setData((previous) => ({ ...previous, stops: backup }));
@@ -190,7 +204,7 @@ function RouteEditContent() {
       },
     });
     return () => sortable.destroy();
-  }, [editable, savingOrder, reducedMotion]);
+  }, [editable, savingOrder, reducedMotion, !!data.route]);
   const points = new Map(data.points.map((point) => [point.id, point]));
   const drivers = new Map(data.drivers.map((row) => [row.id, row])),
     vehicles = new Map(data.vehicles.map((row) => [row.id, row]));
@@ -222,8 +236,10 @@ function RouteEditContent() {
       <main
         id="work-main"
         tabIndex={-1}
-        className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3"
+        className={`app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3${linkedId ? ' linked-course-detail' : ''}`}
       >
+        {loadError && <p role="alert">{loadError}</p>}
+        {linkedId && data.route && <RouteForm key={data.route.updated_at} embedded route={data.route} masters={masters} close={()=>{}} saved={reload} toast={toast} onBusyChange={setBasicBusy}/>}
         {!editable ? (
           <p id="read-only-notice" className="text-sm text-amber-300 p-3">
             열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.
@@ -272,14 +288,14 @@ function RouteEditContent() {
                     <LinkedRecordButton record={{kind:'vehicle',id:route.secondary_vehicle_id || '',label:vehicles.get(route.secondary_vehicle_id || '')?.plate_number || '연결 원본 확인 필요'}} open={setLinked}/>
                   </div>
                 ) : null}
-                <div className="ml-auto">
+                {!linkedId && <div className="ml-auto">
                   <a
                     href={withCenterParam('/admin/routes.html', center)}
                     className="text-xs text-emerald-400 hover:underline"
                   >
                     코스 정보 편집 →
                   </a>
-                </div>
+                </div>}
               </div>
             ) : (
               '불러오는 중...'

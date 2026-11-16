@@ -7,7 +7,7 @@ import { CatalogSaveReview } from './CatalogSaveReview';
 import { EditorStatus } from './EditorStatus';
 import { permissionAllowed } from '../lib/permissions';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Modal, ModalClose } from './Modal';
 import { useAdminPage } from './AdminPage';
 import { saveRoute } from '../lib/routes';
@@ -16,7 +16,7 @@ import type { Notice } from './Toasts';
 
 const routeDrafts = createWorkspaceStore<{draft: Record<string, unknown>; updatedAt?: string | null; original?: Route | null; createId:string}>('route-draft', value => !!value.draft && (value.draft.centerCode==null || typeof value.draft.centerCode==='string') && ['name','car','company','driver','driver2','vehicle','vehicle2'].every(key => typeof value.draft[key] === 'string') && Array.isArray(value.draft.days) && typeof value.draft.active === 'boolean' && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
 
-export function RouteForm({ route, masters, close, saved, toast }: { route: Route | null; masters: RouteMasters; close: () => void; saved: () => Promise<void>; toast: (text: string, type: Notice['type']) => void }) {
+export function RouteForm({ route, masters, close, saved, toast, embedded = false, onBusyChange }: { embedded?: boolean; onBusyChange?: (busy:boolean)=>void; route: Route | null; masters: RouteMasters; close: () => void; saved: () => Promise<void>; toast: (text: string, type: Notice['type']) => void }) {
   const { center, editable: pageEditable, permissions, profile } = useAdminPage();
 
   const toDraft = (row: Route | null) => ({ centerCode: row ? row.center_code ?? null : useLegacyCommonCatalog ? null : center.code, name: row?.name || '', car: row?.car_number || '', company: row?.company_id || '', driver: row?.primary_driver_id ?? '', driver2: row?.secondary_driver_id ?? '', vehicle: row?.primary_vehicle_id ?? '', vehicle2: row?.secondary_vehicle_id ?? '', active: row?.active !== false, days: [...(row?.closed_days || [])] });
@@ -43,8 +43,9 @@ export function RouteForm({ route, masters, close, saved, toast }: { route: Rout
     if (dirty) routeDrafts.set(draftKey,{draft,updatedAt:original.current,original:baseline.current,createId:createId.current});
     else routeDrafts.delete(draftKey);
   }, [draftKey, draft, dirty]);
+  useEffect(() => { onBusyChange?.(saving); }, [saving,onBusyChange]);
   const currentDrivers = masters.drivers.filter(row => !draft.company || row.company_id === draft.company), currentVehicles = masters.vehicles.filter(row => !draft.company || row.company_id === draft.company);
-  return <Modal dismissable={!saving} width="lg" label={route ? '코스 편집' : '새 코스'} onClose={() => { if (!submitting.current) close(); }}><div className="p-5"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{route ? '코스 편집' : '새 코스'}</h2><ModalClose data-x className="btn btn-ghost text-xs">닫기</ModalClose></div>
+  const content = <div className="p-5"><div className="flex items-center justify-between mb-3"><h2 className="app-function-title text-base font-semibold">{route ? '코스 편집' : '새 코스'}</h2>{!embedded && <ModalClose data-x className="btn btn-ghost text-xs">닫기</ModalClose>}</div>
     <WorkspaceDraftStatus storageKeys={[routeDrafts.storageKey(draftKey)]} dirty={dirty} />
     <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(route)} error={saveError} />
     <CatalogSaveReview<Route> table="routes" id={route?.id ?? ''} error={saveError} busy={saving} patch={patch} labels={{center_code:'센터 속성',name:'코스명',car_number:'호차',company_id:'운수사',primary_driver_id:'주기사',secondary_driver_id:'보조기사',primary_vehicle_id:'주차량',secondary_vehicle_id:'보조차량',active:'활성',closed_days:'휴무일'}} onRebase={latest => {
@@ -71,7 +72,8 @@ export function RouteForm({ route, masters, close, saved, toast }: { route: Rout
       <div className="grid grid-cols-2 gap-3">{([['driver', 'r-driver', '주기사'], ['vehicle', 'r-vehicle', '주차량'], ['driver2', 'r-driver2', '보조기사'], ['vehicle2', 'r-vehicle2', '보조차량']] as const).map(([key, id, title]) => <div key={key}><label className="app-label" htmlFor={id}>{title}</label><select id={id} className="app-select" value={draft[key]} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))}><option value="">선택 안 함</option>{draft[key] && !(key.startsWith('driver') ? currentDrivers : currentVehicles).some(row => row.id === draft[key]) ? <option value={draft[key]}>기존 연결 · {draft[key]} (후보에 없음)</option> : null}{key.startsWith('driver') ? currentDrivers.map(row => <option key={row.id} value={row.id}>{row.name}{row.phone ? ' · ' + row.phone : ''}</option>) : currentVehicles.map(row => <option key={row.id} value={row.id}>{row.plate_number}{row.tonnage ? ' · ' + row.tonnage + 't' : ''}</option>)}</select></div>)}</div>
       <label className="cb"><input type="checkbox" id="r-active" checked={draft.active} onChange={event => setDraft(previous => ({ ...previous, active: event.target.checked }))} /> 활성</label>
       <div><label className="app-label">휴무일</label><div className="flex gap-3 flex-wrap mt-1">{['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <label key={day} className="cb text-xs"><input type="checkbox" className="cd-check" value={index} checked={draft.days.includes(index)} onChange={event => { const checked = event.target.checked; setDraft(previous => ({ ...previous, days: checked ? [...previous.days, index] : previous.days.filter(day => day !== index) })); }} /> {day}</label>)}</div><p className="text-[10px] text-zinc-500 mt-1">체크한 요일에는 이 코스가 운행하지 않습니다.</p></div>
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!canSave}>저장</button><ModalClose data-x className="btn btn-ghost" onAction={() => { completed.current = true; routeDrafts.delete(draftKey); }}>취소</ModalClose></div>
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" className="btn btn-primary" disabled={!canSave}>저장</button>{embedded ? <button type="button" className="btn btn-ghost" onClick={()=>{routeDrafts.delete(draftKey);setDraft(toDraft(baseline.current));setSaveError('');}}>취소</button> : <ModalClose data-x className="btn btn-ghost" onAction={() => { completed.current = true; routeDrafts.delete(draftKey); close(); }}>취소</ModalClose>}</div>
     </form></fieldset>
-  </div></Modal>;
+  </div>;
+  return embedded ? content : <Modal dismissable={!saving} width="lg" label={route ? '코스 편집' : '새 코스'} onClose={() => { if (!submitting.current) close(); }}>{content}</Modal>;
 }

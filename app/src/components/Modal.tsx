@@ -213,8 +213,8 @@ export function Modal({
                     background: 'var(--ean-popup-fill, var(--ean-surface))',
                     WebkitBackdropFilter: 'blur(var(--ean-surface-blur, 24px))',
                     backdropFilter: 'blur(var(--ean-surface-blur, 24px))',
-                    border: '1px solid var(--ean-rim)',
-                    boxShadow: 'inset 0 1px var(--ean-edge), var(--ean-shadow)',
+                    border: 0,
+                    boxShadow: 'var(--ean-shadow)',
                     pointerEvents: 'none',
                   }}
                   initial={{ opacity: reduced ? 1 : 0 }}

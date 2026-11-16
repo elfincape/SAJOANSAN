@@ -851,6 +851,8 @@ function Work({
           onKeyDown={event => { if (event.key === 'F2' && quickEdit && canOfferCell(permissions, row, key)) { event.preventDefault(); event.stopPropagation(); void openCell(row, key, event.currentTarget); } }}>
           {value || '—'}
         </button> : <span title="연결 원본 ID 확인 필요" onClick={event => event.stopPropagation()}>{value || '—'}</span>;
+      if (key === 'route_name' || key === 'car_number')
+        return reference('route', row.route_id, row.route_name || '연결 코스', cell(row, key));
       if (key === 'primary_driver_name' || key === 'primary_driver_phone')
         return <span className="inline-flex flex-wrap gap-2">{(['primary', 'secondary'] as const).map(role => {
           const name = String(row[role + '_driver_name'] || '');
@@ -1281,10 +1283,10 @@ function Work({
                     >
                       <header data-dashboard-row={head.stop_id ?? ''} className="px-3 py-2 bg-zinc-800/60 border-b border-zinc-700 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                         <span className="font-semibold">
-                          {head.route_name || '(코스명 없음)'}
+                          {editableCell(head, 'route_name', 'group')}
                         </span>
                         <span className="text-zinc-400">
-                          {head.car_number || ''}
+                          {editableCell(head, 'car_number', 'group')}
                         </span>
                         <span className="text-zinc-400">
                           {head.company_name || ''}

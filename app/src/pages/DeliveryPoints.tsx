@@ -162,6 +162,12 @@ function DeliveryPointsContent() {
     if (!await confirm(message, { okText: '삭제', cancelText: '취소', danger: true })) return;
     try { const { error } = await deleteDeliveryPoint(center.code, draft.id); if (error) { toast(error.code === '23503' ? '코스에 등록된 납품처라 삭제할 수 없습니다.' : `삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); select(undefined, false, true); } catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
+  const editorActions = <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
+            <button type="submit" form="dp-form" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!canSave || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button>
+            <button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => select(selectedRow, false, true)}>취소</button>
+            <div className="flex-1"></div>
+            <button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? "" : " hidden"}`} onClick={() => void remove()} disabled={!editable}>삭제</button>
+          </div>;
   if (linkedId && (loading || selected !== linkedId)) return <p role="status" className="p-4">{loading ? '원본을 불러오는 중…' : '원본을 조회할 수 없습니다. 삭제 여부와 접근 권한을 확인하세요.'}</p>;
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
@@ -219,7 +225,7 @@ function DeliveryPointsContent() {
       <SelectionActions count={selectedRows.length} clear={bulk.clear}><button type="button" disabled={saving} onClick={() => { if (selectedRows[0]) select(selectedRows[0], true); }}>첫 선택 항목 상세</button>{canExport ? <button type="button" disabled={saving} onClick={exportRows}>선택 목록 CSV</button> : null}</SelectionActions></section>
 
       
-      <section className="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title">
+      <section className="work-editor border border-zinc-700 rounded-lg bg-zinc-800/30" aria-labelledby="form-title"><div className="linked-editor-scroll">
         <div className="px-4 py-3 border-b border-zinc-700 flex items-center gap-3">
           <h2 id="form-title" className="app-function-title text-sm font-semibold">{draft.id ? selectedRow?.name || "(이름 없음)" : "새 납품처"}</h2>
           <span id="form-mode-badge" className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">{draft.id ? "편집" : "신규"}</span>
@@ -366,14 +372,9 @@ function DeliveryPointsContent() {
             <textarea id="f-memo" rows={2} className="app-textarea" value={draft.memo} onChange={event => update('memo',event.target.value)}></textarea>
           </div>
 
-          <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700">
-            <button type="submit" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!canSave || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button>
-            <button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => select(selectedRow, false, true)}>취소</button>
-            <div className="flex-1"></div>
-            <button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? "" : " hidden"}`} onClick={() => void remove()} disabled={!editable}>삭제</button>
-          </div>
-        </fieldset></form>
-      </section>
+          {!linkedId && editorActions}
+</fieldset></form>
+      </div>{linkedId && editorActions}</section>
     </SplitPane>
   </main>
     {downloadLink}{feedback}

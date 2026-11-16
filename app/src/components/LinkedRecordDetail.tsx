@@ -4,9 +4,9 @@ import { allowWorkspaceNavigation, registerWorkspaceNavigationGuard } from '../l
 import { useAdminPage } from './AdminPage';
 import './linked-record.css';
 
-export type LinkedRecord = { kind: 'driver' | 'vehicle' | 'delivery_point'; id: string; label: string };
-const pages = { driver: 'drivers', vehicle: 'vehicles', delivery_point: 'delivery-points' };
-const labels = { driver: '기사', vehicle: '차량', delivery_point: '납품처' };
+export type LinkedRecord = { kind: 'driver' | 'vehicle' | 'delivery_point' | 'route'; id: string; label: string };
+const pages = { driver: 'drivers', vehicle: 'vehicles', delivery_point: 'delivery-points', route: 'route-edit' };
+const labels = { driver: '기사', vehicle: '차량', delivery_point: '납품처', route: '코스' };
 export function linkedRecordId() {
   const params = new URLSearchParams(location.search);
   return params.get('linked_detail') === '1' ? params.get('id') || '' : '';
@@ -53,7 +53,8 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
     if (pending.current) return;
     pending.current=true;
     try {
-      if (!await allowClose()) return;
+      // Existing editors retain drafts in the current workspace. Only an active save blocks dismissal.
+      if (!await allowClose(true)) return;
       setClosing(true);
       close();
       if (changed.current) void refresh().catch(() => dispatchEvent(new CustomEvent('workspace:navigation-blocked', { detail: '원본 저장은 완료됐지만 목록을 갱신하지 못했습니다. 목록 새로고침을 다시 실행하세요.' })));
@@ -67,8 +68,8 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
   const params = new URLSearchParams({ id:record.id, center:center.slug, embedded:'1', linked_detail:'1' });
   return <Dialog.Root open onOpenChange={open => { if(!open) void dismiss(); }}><Dialog.Portal>
     <Dialog.Overlay className="linked-record-overlay" />
-    <Dialog.Content className="linked-record-panel" aria-describedby="linked-record-purpose" onInteractOutside={event=>event.preventDefault()} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main') ?? document.getElementById('app'); target?.focus({preventScroll:true});});}}>
-      <header><div><Dialog.Title>{labels[record.kind]} 원본</Dialog.Title><p id="linked-record-purpose">공통 원본 수정 · 코스 연결은 유지됩니다.</p></div><button type="button" className="btn btn-ghost" disabled={closing} onClick={()=>void dismiss()}>{closing?'갱신 중…':'닫기'}</button></header>
+    <Dialog.Content className="linked-record-panel" aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main') ?? document.getElementById('app'); target?.focus({preventScroll:true});});}}>
+      <header><Dialog.Title>{labels[record.kind]} 정보</Dialog.Title><button type="button" className="btn btn-ghost" disabled={closing} onClick={()=>void dismiss()}>{closing?'갱신 중…':'닫기'}</button></header>
       {error?<p role="alert">{error}</p>:null}
       <iframe ref={frame} src={`/admin/${pages[record.kind]}.html?${params}`} title={`${labels[record.kind]} 원본 편집`} />
     </Dialog.Content>
