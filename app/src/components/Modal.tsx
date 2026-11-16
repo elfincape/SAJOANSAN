@@ -132,6 +132,15 @@ export function Modal({
     if (mounted.current) onClose();
   }
 
+  const embeddedClose = useRef(close);
+  embeddedClose.current = close;
+  useEffect(() => {
+    if (window === parent) return;
+    const previous = window.linkedRecordDismissTop;
+    window.linkedRecordDismissTop = () => embeddedClose.current();
+    return () => { window.linkedRecordDismissTop = previous; };
+  }, []);
+
   const widths = {
     sm: 'max-w-sm',
     md: 'max-w-md',
