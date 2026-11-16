@@ -1,3 +1,5 @@
+import { Modal, ModalClose } from './Modal';
+import { allowWorkspaceNavigation } from '../lib/workspace-navigation';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useAdminPage } from './AdminPage';
@@ -7,6 +9,7 @@ import './workbench.css';
 
 export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { children: [ReactNode, ReactNode]; scope: string; revealToken?: number; revealFocus?: string }) {
   const { profile, center } = useAdminPage();
+  const modalEditor = ['drivers', 'vehicles', 'delivery-points'].includes(scope) && new URLSearchParams(location.search).get('linked_detail') !== '1';
   const key = `sajo.split.v1:${profile.id}:${center.code}:${scope}`;
   const [width, setWidth] = useState(() => { try { return Math.min(680, Math.max(320, Number(localStorage.getItem(key)) || 480)); } catch { return 480; } });
   const [collapsed, setCollapsed] = useState(() => { if (new URLSearchParams(location.search).has('id')) return false; try { return localStorage.getItem(key + ':collapsed') !== 'false'; } catch { return true; } }), [available, setAvailable] = useState(1100);
@@ -14,7 +17,7 @@ export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { c
   useEffect(() => {
     if (!revealToken) return;
     setCollapsed(false);
-    const frame = requestAnimationFrame(() => container.current?.querySelector<HTMLElement>(revealFocus || '.work-editor input:not(:disabled):not([type="hidden"]), .work-editor select:not(:disabled), .work-editor textarea:not(:disabled)')?.focus({ preventScroll: true }));
+    const frame = requestAnimationFrame(() => (modalEditor ? document.querySelector('.master-record-editor') : container.current)?.querySelector<HTMLElement>(revealFocus || '.work-editor input:not(:disabled):not([type="hidden"]), .work-editor select:not(:disabled), .work-editor textarea:not(:disabled)')?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [revealToken, revealFocus]);
   useEffect(() => { if (new URLSearchParams(location.search).get('linked_detail') === '1') return; try { localStorage.setItem(key + ':collapsed', String(collapsed)); } catch { /* Current layout remains usable. */ } }, [key, collapsed]);
@@ -26,6 +29,12 @@ export function SplitPane({ children, scope, revealToken = 0, revealFocus }: { c
     observer.observe(container.current); return () => observer.disconnect();
   }, []);
   useEffect(() => { try { localStorage.setItem(key, String(width)); } catch { /* Layout remains usable without persistence. */ } }, [key, width]);
+  if (modalEditor) return <div ref={container} className="workspace-master-list">
+    {children[0]}
+    {!collapsed && <Modal width="5xl" label={scope === 'drivers' ? '기사 정보' : scope === 'vehicles' ? '차량 정보' : '납품처 정보'} beforeClose={() => allowWorkspaceNavigation(true)} onClose={() => setCollapsed(true)}>
+      <div className="master-record-editor"><div className="master-record-heading"><h2>{scope === 'drivers' ? '기사 정보' : scope === 'vehicles' ? '차량 정보' : '납품처 정보'}</h2><ModalClose className="btn btn-ghost">닫기</ModalClose></div>{children[1]}</div>
+    </Modal>}
+  </div>;
   return <div ref={container} className="workspace-split" data-editor-collapsed={collapsed} style={{ '--editor-width': effective + 'px' } as CSSProperties}>
     <div className="workspace-split-controls"><span>목록 · 상세 편집</span><button type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(previous => !previous)}>{collapsed ? '편집 패널 열기' : '편집 패널 접기'}</button></div>
     {children[0]}

@@ -29,8 +29,8 @@ export function DialogFrame({ children }: { children: ReactNode }) {
     <div className="ean-dialog-footer" ref={setHost} />
   </div></ActionsHost.Provider>;
 }
-export function DialogActions({ children }: { children: ReactNode }) {
+export function DialogActions({ children, className = '' }: { children: ReactNode; className?: string }) {
   const host = useContext(ActionsHost);
-  const actions = <div className="ean-dialog-actions">{children}</div>;
+  const actions = <div className={`ean-dialog-actions ${className}`}>{children}</div>;
   return host === undefined ? actions : host ? createPortal(actions, host) : null;
 }

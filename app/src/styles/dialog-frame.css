@@ -19,3 +19,20 @@ html[data-theme] body.workspace-ui .ean-dialog-body .parent-dialog-heading { pos
  html[data-theme] body.workspace-ui .ean-dialog-actions,
  html[data-theme] body.workspace-ui dialog:is(#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog,[data-portal-motion]):has(> .ean-dialog-frame) { background:var(--theme-panel);backdrop-filter:none; }
 }
+
+.workspace-master-list { min-width:0; }
+.master-record-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; }
+.master-record-heading h2 { margin:0; font-size:15px; font-weight:600; }
+html[data-theme] body.workspace-ui #modal-root .master-record-editor .work-editor { position:static; display:block; max-height:none; overflow:visible; border:0; background:transparent; box-shadow:none; }
+.master-record-editor .linked-editor-scroll { display:contents; }
+.master-record-editor .driver-editor .editor-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.master-record-editor .driver-editor .editor-fields > * { margin:0; }
+html[data-theme] body.workspace-ui .ean-dialog-footer .work-form-actions { position:static; inset:auto; margin:0; }
+
+html[data-theme] body.workspace-ui .ean-dialog-actions > button { background:var(--ean-control-fill); color:var(--theme-text); }
+html[data-theme] body.workspace-ui .ean-dialog-actions > button[type=submit] { background:var(--theme-selected);font-weight:650; }
+html[data-theme] body.workspace-ui .ean-dialog-actions > button:hover:not(:disabled) { background:var(--theme-hover); }
+
+html[data-theme] body.workspace-ui .ean-dialog-footer .ean-dialog-actions { border:0; background:linear-gradient(135deg,var(--ean-sidebar-sheen),transparent 60%) var(--ean-sidebar-glass); }
+html[data-theme] body.workspace-ui .ean-dialog-footer .ean-dialog-actions > button { background:var(--ean-control-fill); }
+html[data-theme] body.workspace-ui .ean-dialog-footer .ean-dialog-actions #btn-delete { color:var(--theme-danger); }

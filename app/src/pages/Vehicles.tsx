@@ -1,3 +1,4 @@
+import { DialogActions } from '../components/DialogFrame';
 import { notifyLinkedRecordSaved, linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { useLegacyCommonCatalog } from '../lib/erp-course-catalog';
 import { CENTERS } from '../lib/center';
@@ -71,7 +72,7 @@ function VehiclesContent() {
   ]);
 
   const update = (key: keyof Draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
-  function select(row: Vehicle, focus = false, force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 차량을 선택할까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row.id); setDraft(toDraft(row)); if (focus) { setEditorIntent(value => value + 1); plateInput.current?.focus(); } }
+  function select(row: Vehicle, focus = false, force = false) { if (!force && row?.id === selected && dirty) { if (focus) setEditorIntent(value => value + 1); return; } if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 차량을 선택할까요?').then(ok => { if (ok) select(row, focus, true); }); return; } setSelected(row.id); setDraft(toDraft(row)); if (focus) { setEditorIntent(value => value + 1); plateInput.current?.focus(); } }
   function reset(force = false) { if (!force && saving) return; if (!force && dirty) { void confirm('저장하지 않은 변경사항을 버리고 새 차량을 작성할까요?').then(ok => { if (ok) reset(true); }); return; } setSelected(null); setDraft(toDraft()); setEditorIntent(value => value + 1); }
   async function save() {
     if (!editable || savingRef.current) return;
@@ -100,7 +101,7 @@ function VehiclesContent() {
     try { const { error } = await deleteVehicle(center.code, draft.id); if (error) { toast(`삭제 실패: ${error.message}`, 'error'); return; } toast('삭제되었습니다.', 'success'); await reload(); reset(true); }
     catch { toast('삭제 중 오류가 발생했습니다.', 'error'); }
   }
-  const editorActions = <div className="work-form-actions flex items-center gap-2 pt-2 border-t border-zinc-700"><button type="submit" form="form" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => setDraft(toDraft(selectedRow))}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable || saving} onClick={() => void remove()}>삭제</button></div>;
+  const editorActions = <DialogActions className="work-form-actions"><button type="submit" form="form" id="btn-save" data-permission-action="edit" className="btn btn-primary" disabled={!editable || saving} aria-busy={saving}>{saving ? '저장 중…' : '저장'}</button><button type="button" id="btn-cancel" disabled={saving} className="btn btn-ghost" onClick={() => setDraft(toDraft(selectedRow))}>취소</button><div className="flex-1" /><button type="button" id="btn-delete" data-permission-action="edit" className={`btn btn-danger${draft.id ? '' : ' hidden'}`} disabled={!editable || saving} onClick={() => void remove()}>삭제</button></DialogActions>;
   if (linkedId && (loading || selected !== linkedId)) return <p role="status" className="p-4">{loading ? '원본을 불러오는 중…' : '원본을 조회할 수 없습니다. 삭제 여부와 접근 권한을 확인하세요.'}</p>;
   return <>
     <main id="work-main" tabIndex={-1} className="app-main flex-1 max-w-[1200px] w-full mx-auto px-4 py-3">

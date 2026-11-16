@@ -11,7 +11,7 @@ export function linkedRecordId() {
   const params = new URLSearchParams(location.search);
   return params.get('linked_detail') === '1' ? params.get('id') || '' : '';
 }
-declare global { interface Window { linkedRecordCanClose?: (recheck?: boolean) => Promise<boolean> } }
+declare global { interface Window { linkedRecordDismissTop?: () => Promise<void>; linkedRecordCanClose?: (recheck?: boolean) => Promise<boolean> } }
 export function notifyLinkedRecordSaved() {
   if (linkedRecordId() && parent !== window) parent.postMessage({ type: 'linked-record-saved', id: linkedRecordId() }, location.origin);
 }
@@ -54,6 +54,8 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
     pending.current=true;
     try {
       // Existing editors retain drafts in the current workspace. Only an active save blocks dismissal.
+      const child = frame.current?.contentWindow?.linkedRecordDismissTop;
+      if (child) { await child(); return; }
       if (!await allowClose(true)) return;
       setClosing(true);
       close();
@@ -65,10 +67,16 @@ export function LinkedRecordDetail({ record, close, refresh }: { record: LinkedR
     const request = (event: MessageEvent) => { if(event.origin!==location.origin || event.source!==frame.current?.contentWindow) return; if(event.data?.type==='linked-record-saved' && event.data.id===record.id) changed.current=true; if(event.data?.type==='linked-record-close') void dismiss(); };
     addEventListener('message',request); return () => removeEventListener('message',request);
   }, []);
+  useEffect(() => {
+    const previous = window.linkedRecordDismissTop;
+    window.linkedRecordDismissTop = dismiss;
+    return () => { window.linkedRecordDismissTop = previous; };
+  }, []);
+  const overlayDown = useRef(false);
   const params = new URLSearchParams({ id:record.id, center:center.slug, embedded:'1', linked_detail:'1' });
   return <Dialog.Root open onOpenChange={open => { if(!open) void dismiss(); }}><Dialog.Portal>
-    <Dialog.Overlay className="linked-record-overlay" />
-    <Dialog.Content className="linked-record-panel" aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main') ?? document.getElementById('app'); target?.focus({preventScroll:true});});}}>
+    <Dialog.Overlay className="linked-record-overlay" onPointerDown={event => { overlayDown.current = event.target === event.currentTarget; }} onClick={event => { if (overlayDown.current && event.target === event.currentTarget) void dismiss(); overlayDown.current = false; }} />
+    <Dialog.Content onInteractOutside={event => event.preventDefault()} className="linked-record-panel" aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const target=opener?.isConnected ? opener : document.querySelector<HTMLElement>(originSelector) ?? document.getElementById('work-main') ?? document.getElementById('app'); target?.focus({preventScroll:true});});}}>
       <header><Dialog.Title>{labels[record.kind]} 정보</Dialog.Title><button type="button" className="btn btn-ghost" disabled={closing} onClick={()=>void dismiss()}>{closing?'갱신 중…':'닫기'}</button></header>
       {error?<p role="alert">{error}</p>:null}
       <iframe ref={frame} src={`/admin/${pages[record.kind]}.html?${params}`} title={`${labels[record.kind]} 원본 편집`} />
