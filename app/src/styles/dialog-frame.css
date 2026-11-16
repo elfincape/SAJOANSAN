@@ -9,12 +9,13 @@ html[data-theme] body.workspace-ui :is(.ean-modal-panel,dialog[data-portal-motio
 html[data-theme] body.workspace-ui :is(.ean-modal-panel,dialog[data-portal-motion],#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog) :is(input:not([type=checkbox]):not([type=radio]),select,textarea,fieldset.border) { border-radius:12px; }
 html[data-theme] body.workspace-ui :is(.ean-modal-panel,dialog[data-portal-motion],#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog),
 html[data-theme] body.workspace-ui :is(.ean-modal-panel,dialog[data-portal-motion],#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog) * { scrollbar-width:thin; scrollbar-color:rgb(105 103 116 / .38) transparent; }
-html[data-theme] body.workspace-ui dialog:has(> .ean-dialog-frame) { padding:0; max-height:calc(100dvh - 48px); overflow:hidden; }
+html[data-theme] body.workspace-ui dialog:is(#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog,[data-portal-motion]):has(> .ean-dialog-frame) { padding:0; max-height:calc(100dvh - 48px); overflow:hidden; border:0; border-radius:24px; background:linear-gradient(135deg,var(--ean-sidebar-sheen),transparent 60%) var(--ean-sidebar-glass); backdrop-filter:blur(var(--ean-surface-blur,18px)); box-shadow:var(--ean-shadow); }
 dialog > .ean-dialog-frame > .ean-dialog-body { padding:20px; }
-html[data-theme] body.workspace-ui dialog.parent-task-dialog:has(> .ean-dialog-frame) { inset:24px 24px 24px auto; height:calc(100dvh - 48px); margin:0; border-radius:24px; }
+html[data-theme] body.workspace-ui dialog.parent-task-dialog:has(> .ean-dialog-frame) { inset:24px 24px 24px auto; width:min(760px,calc(100vw - 48px)); height:calc(100dvh - 48px); margin:0; border-radius:24px; }
 dialog.parent-task-dialog > .ean-dialog-frame { height:100%; }
 html[data-theme] body.workspace-ui .ean-dialog-body .task-detail-content { overflow:visible; padding:0; }
 html[data-theme] body.workspace-ui .ean-dialog-body .parent-dialog-heading { position:static; margin:0 0 16px; padding:0; background:transparent; border:0; box-shadow:none; backdrop-filter:none; }
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {
- html[data-theme] body.workspace-ui .ean-dialog-actions { background:var(--theme-panel);backdrop-filter:none; }
+ html[data-theme] body.workspace-ui .ean-dialog-actions,
+ html[data-theme] body.workspace-ui dialog:is(#edit-dialog,#dispatch-edit-dialog,#gm-fixed-dialog,#gm-preview-dialog,[data-portal-motion]):has(> .ean-dialog-frame) { background:var(--theme-panel);backdrop-filter:none; }
 }
