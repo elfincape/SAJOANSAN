@@ -1,4 +1,4 @@
-import { DialogActions, DialogFrame } from '../components/DialogFrame';
+import { DialogFrame } from '../components/DialogFrame';
 import { permissionAllowed } from '../lib/permissions';
 import { useEffect, useRef, useState } from 'react';
 import { AdminPage, useAdminPage } from '../components/AdminPage';
@@ -8,15 +8,8 @@ import {
   isPrivateFeatureOwner,
   loadPrivateFeatures,
 } from '../lib/private-features';
+import { analyze, imageData } from '../lib/gimhae';
 import {
-  analyze,
-  imageData,
-  loadFixedDefaults,
-  saveFixedDefaults,
-} from '../lib/gimhae';
-import type { FixedDefaults } from '../lib/gimhae';
-import {
-  DOCKS,
   REGIONS,
   newDraft,
   normalizeDraft,
@@ -30,12 +23,8 @@ import {
   filledTruck,
   validDate,
   defaultDate,
-  newFixedDriver,
-  normalizeFixedDrivers,
-  applyFixedDrivers,
-  clearFixedAssignment,
 } from '../domain/gimhae';
-import type { DispatchDraft, FixedDriver } from '../domain/gimhae';
+import type { DispatchDraft } from '../domain/gimhae';
 import type { HaulComparison } from '../domain/gimhae-haul';
 import '../styles/gimhae-dispatch.css';
 
@@ -43,9 +32,6 @@ interface View {
   draft: DispatchDraft;
   dirty: boolean;
   busy: boolean;
-  defaults: FixedDefaults | null;
-  defaultsLoaded: boolean;
-  fixedStatus: string;
   previous: { draft: DispatchDraft; dirty: boolean } | null;
   photoError: string;
   replyChanged: boolean;
@@ -57,46 +43,14 @@ interface View {
 }
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : '요청을 처리하지 못했습니다.';
-function syncRegisteredFixed(draft: DispatchDraft, rows: FixedDriver[]) {
-  const next = normalizeFixedDrivers(rows).map((f) => ({
-    ...f,
-    enabled: draft.fixedDrivers.find((old) => old.id === f.id)?.enabled ?? true,
-  }));
-  for (const row of next) {
-    const old = draft.fixedDrivers.find((f) => f.id === row.id);
-    if (!old) continue;
-    for (const truck of draft.trucks) {
-      if (truck.fixedDriverId !== row.id) continue;
-      for (const key of ['driver', 'vehicle', 'phone', 'arrival'] as const)
-        if (truck[key] === old[key]) truck[key] = row[key];
-    }
-  }
-  draft.fixedDrivers = next;
-  applyFixedDrivers(draft);
-}
 function Work() {
   const { center, profile, permissions, setCenterChangeGuard } = useAdminPage();
   const editable = permissionAllowed(permissions, 'gimhae_dispatch', 'edit');
-  const dataReadable = permissionAllowed(
-    permissions,
-    'dispatch_parser',
-    'read',
-    center.code,
-  );
-  const dataEditable = permissionAllowed(
-    permissions,
-    'dispatch_parser',
-    'edit',
-    center.code,
-  );
   const { confirm, feedback } = useFeedback();
   const [view, setView] = useState<View>(() => ({
     draft: newDraft(),
     dirty: false,
     busy: false,
-    defaults: null,
-    defaultsLoaded: false,
-    fixedStatus: '',
     previous: null,
     photoError: '',
     replyChanged: false,
@@ -111,14 +65,8 @@ function Work() {
     photo = useRef<HTMLImageElement>(null),
     reply = useRef<HTMLTextAreaElement>(null);
   const [trucksOpen, setTrucksOpen] = useState(false);
-  const fixedDialog = useRef<HTMLDialogElement>(null),
-    previewDialog = useRef<HTMLDialogElement>(null),
+  const previewDialog = useRef<HTMLDialogElement>(null),
     messageAreas = useRef(new Map<string, HTMLTextAreaElement>());
-  const [fixed, setFixed] = useState<FixedDriver | null>(null),
-    [editingId, setEditingId] = useState<string | null>(null),
-    [fixedError, setFixedError] = useState(''),
-    [refreshVisible, setRefreshVisible] = useState(false),
-    [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [preview, setPreview] = useState<{
       title: string;
       text?: string;
@@ -160,74 +108,6 @@ function Work() {
       });
     }
   }
-  async function refreshDefaults(apply = false) {
-    if (!dataReadable) return null;
-    let result: FixedDefaults | null;
-    try {
-      result = await loadFixedDefaults(center.code);
-    } catch (error) {
-      update((s) => {
-        s.fixedStatus = '고정기사 정보를 불러오지 못했습니다.';
-      });
-      throw error;
-    }
-    update((s) => {
-      s.defaults = result;
-      s.defaultsLoaded = true;
-      s.fixedStatus = '';
-      if (!apply) return;
-      const rows = normalizeFixedDrivers(result?.payload.fixedDrivers).map(
-        (f) => ({ ...f, enabled: true }),
-      );
-      for (const t of s.draft.trucks) {
-        if (!t.fixedDriverId) continue;
-        const same = rows.some(
-          (f) =>
-            f.id === t.fixedDriverId &&
-            f.driver === t.driver &&
-            f.vehicle === t.vehicle,
-        );
-        if (!t.fixedConfirmed || !same) clearFixedAssignment(t, true);
-      }
-      s.draft.fixedDrivers = rows;
-      applyFixedDrivers(s.draft);
-    });
-    return result;
-  }
-  useEffect(() => {
-    let active = true;
-    if (!dataReadable) {
-      update((s) => {
-        s.defaults = null;
-        s.defaultsLoaded = true;
-        s.draft.fixedDrivers = [];
-      });
-      return;
-    }
-    void loadFixedDefaults(center.code)
-      .then((result) => {
-        if (!active) return;
-        update((s) => {
-          s.defaults = result;
-          s.defaultsLoaded = true;
-          s.draft.fixedDrivers = normalizeFixedDrivers(
-            result?.payload.fixedDrivers,
-          ).map((f) => ({ ...f, enabled: true }));
-          applyFixedDrivers(s.draft);
-        });
-      })
-      .catch((error) => {
-        if (active)
-          update((s) => {
-            s.fixedStatus = '고정기사 정보를 불러오지 못했습니다.';
-            s.status = messageOf(error);
-            s.statusError = true;
-          });
-      });
-    return () => {
-      active = false;
-    };
-  }, [center.code, dataReadable]);
   useEffect(() => {
     setCenterChangeGuard(
       async () =>
@@ -249,10 +129,6 @@ function Work() {
     addEventListener('beforeunload', guard);
     return () => removeEventListener('beforeunload', guard);
   }, []);
-  useEffect(() => {
-    if (fixed && !fixedDialog.current?.open) fixedDialog.current?.showModal();
-    if (!fixed && fixedDialog.current?.open) fixedDialog.current.close();
-  }, [fixed]);
   useEffect(() => {
     if (preview && !previewDialog.current?.open)
       previewDialog.current?.showModal();
@@ -306,7 +182,6 @@ function Work() {
     filled = d.trucks.filter((t) =>
       [t.driver, t.vehicle, t.phone].every((v) => v?.trim()),
     ).length,
-    fixedCount = d.trucks.filter((t) => t.fixedDriverId).length,
     hasAssignment = d.trucks.some((t) =>
       [t.driver, t.vehicle, t.phone].some((v) => v?.trim()),
     );
@@ -480,71 +355,6 @@ function Work() {
       throw error;
     }
   }
-  function openFixed(id: string | null = null) {
-    if (editDisabled || !dataEditable || !view.defaultsLoaded) return;
-    const row = id ? d.fixedDrivers.find((f) => f.id === id) : newFixedDriver();
-    if (!row) return;
-    setEditingId(id);
-    setFixed({ ...row });
-    setFixedError('');
-    setRefreshVisible(false);
-    setDeleteConfirmed(false);
-  }
-  async function commitFixed(rows: FixedDriver[]) {
-    if (!dataEditable) throw Error('센터 고정기사 수정 권한이 없습니다.');
-    const s = current.current,
-      result = await saveFixedDefaults(
-        center.code,
-        rows,
-        s.defaults?.id || null,
-        s.defaults?.revision || 0,
-      );
-    update((s) => {
-      s.defaults = { ...result, payload: normalizeDraft(result.payload) };
-      syncRegisteredFixed(s.draft, rows);
-      if (s.previous) {
-        s.previous = structuredClone(s.previous);
-        syncRegisteredFixed(s.previous.draft, rows);
-      }
-    });
-  }
-  function fixedAction(action: () => Promise<void>) {
-    void run(async () => {
-      setFixedError('');
-      try {
-        await action();
-        setFixed(null);
-        status('고정기사 정보를 반영했습니다.');
-      } catch (error) {
-        setFixedError(messageOf(error));
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          ['PT409', '23505'].includes(String(error.code))
-        )
-          setRefreshVisible(true);
-        throw error;
-      }
-    }, true);
-  }
-  function fixedStatus(f: FixedDriver) {
-    if (!f.enabled) return '오늘 제외';
-    if (!d.requests.length) return '오늘 포함 · 요청 대기';
-    if (d.requestPending) return '분석 대기';
-    if (d.trucks.some((t) => t.fixedDriverId === f.id))
-      return '오늘 포함 · 배차 적용';
-    const slot = d.trucks.some((t) => {
-      const r = d.requests.find((r) => r.id === t.requestId);
-      return (
-        r?.region === f.region &&
-        t.dock === f.dock &&
-        (!f.carrier ||
-          f.carrier === (r.carrier || carrierFor(r.region, d.date)))
-      );
-    });
-    return slot ? '기존 배차 유지' : '해당 요청 없음';
-  }
   type TruckField =
     | 'requestId'
     | 'dock'
@@ -613,8 +423,6 @@ function Work() {
   }
   function copyMessage(message: ReturnType<typeof messages>[number]) {
     void run(async () => {
-      if (!current.current.defaultsLoaded)
-        throw Error('고정기사 정보를 먼저 불러와 주세요.');
       const errors = issues(
         current.current.draft,
         ['cj', 'summary'].includes(message.key),
@@ -646,7 +454,6 @@ function Work() {
             aria-label={`${message.title} 복사`}
             disabled={
               view.busy ||
-              !view.defaultsLoaded ||
               issues(d, ['cj', 'summary'].includes(message.key)).length > 0
             }
             onClick={() => copyMessage(message)}
@@ -724,10 +531,8 @@ function Work() {
                 update((s) => {
                   if (s.draft.date !== date) {
                     s.lastReply = '';
-                    for (const f of s.draft.fixedDrivers) f.enabled = true;
                   }
                   s.draft.date = date;
-                  applyFixedDrivers(s.draft);
                   s.dirty = true;
                 });
               }}
@@ -742,17 +547,13 @@ function Work() {
                 if (
                   current.current.dirty &&
                   !(await confirm(
-                    '현재 요청과 회신을 비우고 새 작업을 시작할까요? 등록된 고정기사는 유지됩니다.',
+                    '현재 요청과 회신을 비우고 새 작업을 시작할까요?',
                     { okText: '새 작업' },
                   ))
                 )
                   return;
-                const result = await refreshDefaults();
                 update((s) => {
-                  s.draft = newDraft(
-                    defaultDate(),
-                    result?.payload.fixedDrivers,
-                  );
+                  s.draft = newDraft(defaultDate());
                   s.dirty = false;
                   resetTransient(s);
                 });
@@ -766,90 +567,6 @@ function Work() {
             {center.name} · 김해 출발 배차{editable ? '' : ' · 열람 전용'}
           </span>
         </div>
-        <section
-          className="gm-fixed-strip"
-          aria-labelledby="gm-fixed-title"
-          hidden={!dataReadable}
-        >
-          <h3 id="gm-fixed-title">고정기사</h3>
-          <div
-            id="gm-fixed-today"
-            className="gm-fixed-today"
-            aria-label="오늘 배차에 포함할 고정기사"
-          >
-            {d.fixedDrivers.map((f) => (
-              <div
-                key={f.id}
-                className="gm-fixed-person"
-                title={[
-                  f.vehicle,
-                  f.phone,
-                  f.carrier || '운수사 공통',
-                  fixedStatus(f),
-                ].join(' · ')}
-              >
-                <label className="gm-fixed-choice">
-                  <input
-                    type="checkbox"
-                    data-fixed-toggle={f.id}
-                    aria-label={`${f.driver} 오늘 포함`}
-                    checked={f.enabled}
-                    disabled={editDisabled}
-                    onChange={(e) =>
-                      touch((draft) => {
-                        const row = draft.fixedDrivers.find(
-                          (row) => row.id === f.id,
-                        );
-                        if (row) row.enabled = e.target.checked;
-                        applyFixedDrivers(draft);
-                      })
-                    }
-                  />
-                  <strong>{f.driver}</strong>
-                  <span>
-                    {f.region} {f.dock}번
-                  </span>
-                </label>
-                <button
-                  className="btn btn-ghost"
-                  data-edit-fixed={f.id}
-                  aria-label={`${f.driver} 고정기사 수정`}
-                  disabled={editDisabled}
-                  onClick={() => openFixed(f.id)}
-                >
-                  수정
-                </button>
-              </div>
-            ))}
-          </div>
-          <span
-            id="gm-fixed-empty"
-            className="gm-empty"
-            hidden={!view.defaultsLoaded || !!d.fixedDrivers.length}
-          >
-            등록 없음
-          </span>
-          <button
-            id="gm-add-fixed"
-            className={`btn ${d.fixedDrivers.length ? 'btn-ghost' : 'btn-primary'}`}
-            disabled={editDisabled || !dataEditable || !view.defaultsLoaded}
-            onClick={() => openFixed()}
-          >
-            고정기사 등록
-          </button>
-          <span id="gm-fixed-status" className="gm-muted" role="status">
-            {view.fixedStatus}
-          </span>
-          <button
-            id="gm-fixed-retry"
-            className="btn btn-ghost"
-            hidden={!view.fixedStatus}
-            disabled={view.busy}
-            onClick={() => void run(() => refreshDefaults(true).then(() => {}))}
-          >
-            다시 불러오기
-          </button>
-        </section>
         <div className="gm-flow">
           <section
             className="gm-stage gm-source-band"
@@ -871,24 +588,21 @@ function Work() {
                 </button>
               </div>
               <FileArea
-                as="button"
-                type="button"
                 id="gm-paste"
                 className="gm-paste"
                 hint={false}
                 accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                 disabled={editDisabled}
-                aria-label="CJ 요청 사진 파일 선택 또는 붙여넣기"
+                role="region"
+                aria-label="CJ 요청 사진 붙여넣기"
+                aria-disabled={editDisabled}
                 title="JPG·PNG·WEBP, 최대 15MB"
                 onFiles={(files) => {
                   if (files[0]) importPhoto(files[0]);
                 }}
-                onClick={() => {
-                  if (!editDisabled) file.current?.click();
-                }}
               >
                 <span id="gm-image-empty" hidden={!!d.image}>
-                  사진 파일 선택 · 붙여넣기
+                  클릭 후 Ctrl+V · 사진 끌어놓기
                 </span>
                 <img
                   ref={photo}
@@ -898,6 +612,15 @@ function Work() {
                   hidden={!d.image}
                 />
               </FileArea>
+              <button
+                type="button"
+                id="gm-select-photo"
+                className="btn btn-ghost"
+                disabled={editDisabled}
+                onClick={() => file.current?.click()}
+              >
+                사진 파일 선택
+              </button>
               <input
                 ref={file}
                 id="gm-photo-file"
@@ -969,7 +692,7 @@ function Work() {
               <p id="gm-count" className="gm-muted">
                 {d.requestPending
                   ? '분석 대기'
-                  : `요청 ${total}대 · 배차 ${filled}대${fixedCount ? ` · 고정 ${fixedCount}대` : ''}`}
+                  : `요청 ${total}대 · 배차 ${filled}대`}
               </p>
               <div id="gm-summary">
                 {volumes.map((v) => {
@@ -1252,9 +975,6 @@ function Work() {
                           </option>
                         ))}
                       </select>
-                      {t.fixedDriverId ? (
-                        <span className="gm-muted">고정기사</span>
-                      ) : null}
                       {!t.requestId && t.region ? (
                         <span className="gm-muted">{t.region}</span>
                       ) : null}
@@ -1381,216 +1101,6 @@ function Work() {
           value={preview?.text || ''}
           hidden={preview?.text === undefined}
         />
-      </DialogFrame></dialog>
-      <dialog
-        ref={fixedDialog}
-        id="gm-fixed-dialog"
-        aria-labelledby="gm-fixed-dialog-title"
-        onCancel={(e) => {
-          if (view.busy) e.preventDefault();
-          else setFixed(null);
-        }}
-        onClose={() => setFixed(null)}
-      ><DialogFrame>
-        <form
-          id="gm-fixed-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!fixed) return;
-            const existing = current.current.draft.fixedDrivers.find(
-              (f) => f.id === editingId,
-            );
-            if (editingId && !existing) {
-              setFixedError(
-                '다른 창에서 삭제된 기사입니다. 취소 후 새로 등록해 주세요.',
-              );
-              return;
-            }
-            const row = { ...(existing || newFixedDriver()), ...fixed };
-            fixedAction(() =>
-              commitFixed(
-                existing
-                  ? current.current.draft.fixedDrivers.map((f) =>
-                      f.id === row.id ? row : f,
-                    )
-                  : [...current.current.draft.fixedDrivers, row],
-              ),
-            );
-          }}
-        >
-          <h3 id="gm-fixed-dialog-title">
-            {editingId ? '고정기사 수정' : '고정기사 등록'}
-          </h3>
-          <div className="gm-fixed-fields">
-            <label>
-              지역
-              <select
-                name="region"
-                disabled={editDisabled}
-                value={fixed?.region || '광주'}
-                onChange={(e) =>
-                  setFixed((f) =>
-                    f
-                      ? {
-                          ...f,
-                          region: e.target.value,
-                          dock: DOCKS[e.target.value]?.[0] || '',
-                        }
-                      : f,
-                  )
-                }
-              >
-                {REGIONS.map((r) => (
-                  <option key={r}>{r}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              운수사
-              <select
-                name="carrier"
-                disabled={editDisabled}
-                value={fixed?.carrier || ''}
-                onChange={(e) =>
-                  setFixed((f) => (f ? { ...f, carrier: e.target.value } : f))
-                }
-              >
-                <option value="">공통</option>
-                {['광신', '동진', '해피'].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              도크
-              <select
-                name="dock"
-                disabled={editDisabled}
-                value={fixed?.dock || ''}
-                onChange={(e) =>
-                  setFixed((f) => (f ? { ...f, dock: e.target.value } : f))
-                }
-              >
-                {[
-                  ...new Set([
-                    ...(DOCKS[fixed?.region || '광주'] || []),
-                    ...(fixed?.dock ? [fixed.dock] : []),
-                  ]),
-                ].map((dock) => (
-                  <option key={dock} value={dock}>
-                    {dock}번 도크
-                  </option>
-                ))}
-              </select>
-            </label>
-            {(
-              [
-                ['driver', '기사명', 80],
-                ['vehicle', '차량번호', 40],
-                ['phone', '연락처', 40],
-                ['arrival', '입차시간', 80],
-              ] as const
-            ).map(([key, label, max]) => (
-              <label key={key}>
-                {label}
-                <input
-                  name={key}
-                  type={key === 'phone' ? 'tel' : 'text'}
-                  required={key !== 'arrival'}
-                  maxLength={max}
-                  autoComplete={key === 'arrival' ? undefined : 'off'}
-                  placeholder={key === 'arrival' ? '선택' : undefined}
-                  value={fixed?.[key] || ''}
-                  disabled={editDisabled}
-                  onChange={(e) =>
-                    setFixed((f) => (f ? { ...f, [key]: e.target.value } : f))
-                  }
-                />
-              </label>
-            ))}
-          </div>
-          <p id="gm-fixed-error" className="gm-issues" role="alert">
-            {fixedError}
-          </p>
-          <button
-            id="gm-refresh-fixed"
-            type="button"
-            className="btn btn-ghost"
-            hidden={!refreshVisible}
-            disabled={editDisabled}
-            onClick={() =>
-              void run(async () => {
-                try {
-                  const result = await refreshDefaults();
-                  update((s) => {
-                    syncRegisteredFixed(
-                      s.draft,
-                      result?.payload.fixedDrivers || [],
-                    );
-                    if (s.previous) {
-                      s.previous = structuredClone(s.previous);
-                      syncRegisteredFixed(
-                        s.previous.draft,
-                        result?.payload.fixedDrivers || [],
-                      );
-                    }
-                  });
-                  setRefreshVisible(false);
-                  setFixedError(
-                    '최신 기사정보를 불러왔습니다. 입력한 내용을 확인하고 다시 적용해 주세요.',
-                  );
-                } catch (error) {
-                  setFixedError(messageOf(error));
-                }
-              }, true)
-            }
-          >
-            최신 기사정보 불러오기
-          </button>
-          <DialogActions>
-            <button
-              id="gm-delete-fixed"
-              type="button"
-              className="btn btn-ghost"
-              hidden={!editingId}
-              disabled={editDisabled}
-              onClick={() => {
-                if (!editingId) return;
-                if (!deleteConfirmed) {
-                  setDeleteConfirmed(true);
-                  setFixedError('이 기사의 고정 배차 등록을 삭제합니다.');
-                  return;
-                }
-                fixedAction(() =>
-                  commitFixed(
-                    current.current.draft.fixedDrivers.filter(
-                      (f) => f.id !== editingId,
-                    ),
-                  ),
-                );
-              }}
-            >
-              {deleteConfirmed ? '삭제 확정' : '등록 삭제'}
-            </button>
-            <button
-              id="gm-cancel-fixed"
-              type="button"
-              className="btn btn-ghost"
-              disabled={editDisabled}
-              onClick={() => setFixed(null)}
-            >
-              취소
-            </button>
-            <button
-              id="gm-submit-fixed"
-              type="submit" form="gm-fixed-form"
-              className="btn btn-primary"
-              disabled={editDisabled}
-            >
-              {editingId ? '변경 적용' : '등록'}
-            </button>
-          </DialogActions>
-        </form>
       </DialogFrame></dialog>
       {feedback}
     </main>

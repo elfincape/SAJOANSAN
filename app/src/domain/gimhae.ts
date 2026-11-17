@@ -128,7 +128,7 @@ export function formatArrival(value: unknown) {
       String((Number(hour) % 12) + (period === '오후' ? 12 : 0)),
   );
   const match = raw.match(
-    /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|:([0-5]\d))(?!\d)/,
+    /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|[:_]([0-5]\d))(?!\d)/,
   );
   return match
     ? `${match[1].padStart(2, '0')}:${(match[2] || match[3] || '0').padStart(2, '0')}`
@@ -153,6 +153,11 @@ function requestOrder(a: RequestRow, b: RequestRow) {
     REGIONS.indexOf(a.region) - REGIONS.indexOf(b.region) || rank(a) - rank(b)
   );
 }
+function temperatureCompatible(request: unknown, load: unknown) {
+  const needed = temperatureOf(load),
+    available = temperatureOf(request);
+  return !needed || needed === available || available === '냉동&냉장';
+}
 function orderedTrucks(draft: DispatchDraft) {
   return [...draft.trucks].sort((a, b) => {
     const ra = draft.requests.find((r) => r.id === a.requestId);
@@ -176,9 +181,16 @@ function replyCandidates(
     return (
       r &&
       r.region === regionName(item.region) &&
-      (!temperature || temperatureOf(r.temperature) === temperature)
+      temperatureCompatible(r.temperature, item.loadText)
     );
   });
+  const exactTemperature = candidates.filter(
+    (t) =>
+      temperatureOf(
+        draft.requests.find((r) => r.id === t.requestId)?.temperature,
+      ) === temperature,
+  );
+  if (temperature && exactTemperature.length) candidates = exactTemperature;
   const tons = replyTons(item);
   const exact = candidates.filter(
     (t) => draft.requests.find((r) => r.id === t.requestId)?.tons === tons,
@@ -482,7 +494,6 @@ export function syncSlots(draft: DispatchDraft) {
     throw Error('차량은 최대 100대까지 입력할 수 있습니다.');
   draft.trucks = next;
   reconcileDocks(draft);
-  applyFixedDrivers(draft);
 }
 export function clearFixedAssignment(
   truck: TruckRow,
@@ -633,7 +644,9 @@ export function importRequest(draft: DispatchDraft, result: AnalysisResult) {
 }
 const VEHICLE_PATTERN = /(?:[가-힣]{2,3}\s*)?\d{2,3}\s*[가-힣]\s*\d{4}(?!\d)/g;
 function sourceReplyVehicles(raw: string) {
-  const lines = raw.split(/\r?\n/).map(text);
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => text(line).replace(/^[-ㅡ•·]+\s*(?=[^\s-ㅡ•·])/, ''));
   const positions = lines.flatMap((line, index) => {
     const plates = [...line.matchAll(VEHICLE_PATTERN)];
     return plates.length ? [{ index, plates }] : [];
@@ -652,6 +665,10 @@ function sourceReplyVehicles(raw: string) {
       continue;
     const end = positions[i + 1]?.index ?? lines.length;
     let body = lines.slice(entry.index + 1, end);
+    const summary = body.findIndex((line) =>
+      /^(?:\d{1,2}\/\d{1,2}\s*\(|■|예상출고량|상차 후 사무실)/.test(line),
+    );
+    if (summary >= 0) body = body.slice(0, summary);
     const nextHeader = body.findIndex(timeHeader);
     if (nextHeader >= 0) body = body.slice(0, nextHeader);
     const previous =
@@ -668,13 +685,14 @@ function sourceReplyVehicles(raw: string) {
       (body.join('\n').match(route) || header.match(route))?.[1],
     );
     const loading = body
-      .filter((line) => /^(?:냉동|냉장)/.test(line))
+      .filter((line) =>
+        /^(?:냉동|냉장|\d+(?:\.\d+)?\s*(?:p\b|파레트|팔레트|톤))/i.test(line),
+      )
       .join(' ');
     if (
       phoneIndex < 0 ||
       !/^[가-힣]{2,6}$/.test(driver) ||
-      !region ||
-      !temperatureOf(loading)
+      !region
     )
       continue;
     const times = [
@@ -720,12 +738,6 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
     extracted.set(key, { ...extracted.get(key), ...supplied });
   }
   for (const [vehicle, row] of recovered) {
-    if (result.tonnageVerified) {
-      const verified = result.trucks.find(
-        (t) => text(t.vehicle).replace(/\s/g, '') === vehicle,
-      );
-      if (verified) row.actualTons = tonnageValue(verified.actualTons);
-    }
     extracted.set(vehicle, row);
   }
   const sourcePlates = new Set(
@@ -764,7 +776,7 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
       : undefined;
     if (
       target &&
-      !replyCandidates(draft, item, draft.trucks).some(
+      !replyCandidates(draft, item, [target]).some(
         (t) => t.id === target!.id,
       )
     ) {
@@ -837,7 +849,11 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
               ? formatArrival(item[field])
               : text(item[field])
         ).slice(0, field === 'loadText' ? 1000 : 80);
-    if (result.tonnageVerified || replyTons(item) != null)
+    if (
+      recovered.has(vehicle) ||
+      result.tonnageVerified ||
+      replyTons(item) != null
+    )
       target.actualTons = replyTons(item);
     if (target.fixedDriverId) target.fixedConfirmed = true;
     used.add(target.id);
@@ -890,7 +906,7 @@ export function issues(draft: DispatchDraft, complete = false) {
       if (
         request &&
         temperatureOf(t.loadText) &&
-        temperatureOf(t.loadText) !== temperatureOf(request.temperature)
+        !temperatureCompatible(request.temperature, t.loadText)
       )
         result.push(
           `차량 ${i + 1}: 회신 온도와 연결된 요청이 다릅니다. 연결할 요청을 확인해 주세요.`,

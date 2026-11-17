@@ -195,15 +195,19 @@
   width: 100%;
   height: 100px;
   padding: 0;
-  border: 1px dashed var(--theme-border);
+  border: 0;
+  border-radius: var(--ean-control-radius, 10px);
   background: var(--theme-panel);
   color: var(--theme-muted);
   overflow: hidden;
 }
 #gm-app .gm-paste:hover,
 #gm-app .gm-paste:focus {
-  border-color: var(--theme-accent);
   background: var(--theme-hover);
+}
+#gm-app .gm-paste:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
 }
 .gm-paste img {
   width: 100%;
