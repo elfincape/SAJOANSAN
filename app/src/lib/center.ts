@@ -5,6 +5,11 @@ export const CENTERS: Center[] = [
 ];
 const storageKey = 'sajo.selectedCenterCode';
 
+export function getCatalogCenterScope(center: Center) {
+  const scope = new URLSearchParams(location.search).get('catalog_scope');
+  return scope === 'all' ? '' : scope === 'unclassified' ? scope : center.code;
+}
+
 export function normalizeCenterCode(value: unknown) {
   const raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return '';

@@ -21,6 +21,7 @@ import type { AuthContext } from '../lib/auth';
 import {
   CENTERS,
   getSelectedCenter,
+  getCatalogCenterScope,
   setSelectedCenterCode,
   withCenterParam,
 } from '../lib/center';
@@ -278,20 +279,28 @@ function Shell({
           </small>
         </div>
       }
-      centerControl={commonCatalogList ? null :
+      centerControl={
         <CenterSwitcher
           disabled={controlsDisabled}
-          value={center.code}
-          options={CENTERS.map((item) => ({
+          value={commonCatalogList ? getCatalogCenterScope(center) : center.code}
+          options={[...(commonCatalogList ? [{value: '', label: '전체 센터'}, {value: 'unclassified', label: '미분류'}] : []), ...CENTERS.map((item) => ({
             value: item.code,
             label: item.shortName,
-          }))}
+          }))]}
           onChange={async (code) => {
             if (
               centerChangeGuard.current &&
               !(await centerChangeGuard.current())
             )
               return;
+            if (commonCatalogList) {
+              const next = setSelectedCenterCode(code, false);
+              const url = new URL(next ? withCenterParam(location.href, next) : location.href, location.origin);
+              if (code === '' || code === 'unclassified') url.searchParams.set('catalog_scope', code || 'all');
+              else url.searchParams.delete('catalog_scope');
+              navigateWorkspace(url.pathname + url.search + url.hash, true);
+              return;
+            }
             const next = setSelectedCenterCode(code);
             if (next)
               location.replace(

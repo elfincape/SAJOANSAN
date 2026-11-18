@@ -1,5 +1,6 @@
+import { getCatalogCenterScope } from '../lib/center';
 import { DialogActions } from '../components/DialogFrame';
-import { CenterAttributeInput, CenterAttributeFilter } from '../components/CenterAttribute';
+import { CenterAttributeInput } from '../components/CenterAttribute';
 import { centerAccessKey, centerAttributeLabel } from '../domain/catalog-attributes';
 import { notifyLinkedRecordSaved, linkedRecordId, useLinkedRecordBridge } from '../components/LinkedRecordDetail';
 import { createWorkspaceStore } from '../lib/workspace-session';
@@ -49,7 +50,7 @@ function DeliveryPointsContent() {
   const original = useRef(restoredDraft.current?.original), createId = useRef(restoredDraft.current?.createId ?? crypto.randomUUID());
   const hydrated = useRef(Boolean(restoredDraft.current));
   const list = useRef<HTMLDivElement>(null), restoredScroll = useRef(false);
-  const [catalogScope,setCatalogScope] = useState(restored.current?.scope ?? (useLegacyCommonCatalog ? '' : center.code));
+  const catalogScope = getCatalogCenterScope(center);
 
   const [saveError, setSaveError] = useState('');
   const [editorIntent, setEditorIntent] = useState(0);
@@ -179,7 +180,7 @@ function DeliveryPointsContent() {
       
       <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{"minHeight": "70vh"}} aria-label="납품처 목록">
         <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          {useLegacyCommonCatalog ? <CenterAttributeFilter value={catalogScope} change={value => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}/> : null}<input id="search-input" type="search" placeholder="코드/이름/주소 검색" aria-label="납품처 코드, 이름, 주소 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} />
+          <input id="search-input" type="search" placeholder="코드/이름/주소 검색" aria-label="납품처 코드, 이름, 주소 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} />
           <select id="filter-region" className="app-select w-32" aria-label="지역 필터" value={region} onChange={event => setRegion(event.target.value)}>
             <option value="">지역(전체)</option>{regions.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
