@@ -23,6 +23,8 @@ export interface CellField {
   stop?: boolean;
 }
 export const cellFields: Record<string, CellField> = {
+  dp_delivery_start_business_min: { table: 'delivery_points', field: 'delivery_start_business_min', idKey: 'delivery_point_id', type: 'time' },
+  dp_delivery_window_text: { table: 'delivery_points', field: 'delivery_window_text', idKey: 'delivery_point_id' },
   company_name: {
     table: 'companies',
     field: 'name',

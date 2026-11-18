@@ -19,6 +19,8 @@ export interface DashboardRow extends HealthRow {
   unloading_start_business_min?: number | null;
   unloading_end_business_min?: number | null;
   effective_deadline_business_min?: number | null;
+  dp_delivery_start_business_min?: number | null;
+  dp_delivery_window_text?: string | null;
   dp_code?: string | null;
   dp_name?: string | null;
   dp_region?: string | null;
@@ -157,6 +159,8 @@ export const COLUMNS: DashboardColumn[] = [
     defaultWidth: 70,
   },
   { key: 'dp_code', label: '코드', sortKey: 'dp_code', defaultWidth: 90 },
+  { key: 'dp_delivery_start_business_min', label: '납품가능 시작', sortKey: 'dp_delivery_start_business_min', cls: 'biz-time', defaultWidth: 110 },
+  { key: 'dp_delivery_window_text', label: '납품시간 조건', sortKey: 'dp_delivery_window_text', defaultWidth: 170 },
   { key: 'dp_name', label: '납품처', sortKey: 'dp_name', defaultWidth: 180 },
   { key: 'dp_region', label: '지역', sortKey: 'dp_region', defaultWidth: 100 },
   { key: 'entry_cond', label: '진입조건', sortable: false, defaultWidth: 140 },

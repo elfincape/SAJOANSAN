@@ -40,6 +40,8 @@ export function unassignedDashboardRow(
     security_key_location: point.security_key_location,
     security_password: point.security_password,
     dp_deadline_text: point.deadline_text,
+    dp_delivery_start_business_min: point.delivery_start_business_min,
+    dp_delivery_window_text: point.delivery_window_text,
     dp_deadline_business_min: point.deadline_business_min,
     effective_deadline_text: point.deadline_text,
     effective_deadline_business_min: point.deadline_business_min,

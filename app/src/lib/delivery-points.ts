@@ -6,6 +6,7 @@ import { supabase } from './supabase';
 export interface DeliveryPoint {
   id: string; deleted_at?:string|null; center_code?: string | null; code?: string | null; name: string; address?: string | null; region?: string | null;
   deadline_text?: string | null; deadline_business_min?: number | null;
+  delivery_start_text?: string | null; delivery_start_business_min?: number | null; delivery_window_text?: string | null;
   allow_under_1ton?: boolean | null; allow_under_3_5ton?: boolean | null; allow_over_5ton?: boolean | null; allow_unmanned_yard?: boolean | null;
   delivery_method?: string | null; access_method?: string | null; delivery_location?: string | null;
   security_key_location?: string | null; security_password?: string | null;

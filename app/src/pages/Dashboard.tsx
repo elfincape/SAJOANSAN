@@ -744,6 +744,7 @@ function Work({
           'unloading_start_business_min',
           'unloading_end_business_min',
           'effective_deadline_business_min',
+          'dp_delivery_start_business_min',
         ].includes(key)
           ? bizMinToStandard(row[key] as number | null)
           : row[key] != null
@@ -888,6 +889,8 @@ function Work({
     'unloading_start_business_min',
     'unloading_end_business_min',
     'effective_deadline_business_min',
+    'dp_delivery_start_business_min',
+    'dp_delivery_window_text',
     'dp_code',
     'dp_name',
     'dp_region',

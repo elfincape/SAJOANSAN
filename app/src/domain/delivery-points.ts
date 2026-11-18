@@ -11,7 +11,7 @@ export const textFields = {
 export const flags = { 'f-1ton': 'allow_under_1ton', 'f-3_5ton': 'allow_under_3_5ton', 'f-5ton': 'allow_over_5ton', 'f-yard': 'allow_unmanned_yard' } as const;
 export const radios = { dmethod: 'delivery_method', amethod: 'access_method', dloc: 'delivery_location' } as const;
 type TextKey = typeof textFields[keyof typeof textFields] | typeof radios[keyof typeof radios];
-export type PointDraft = Record<TextKey, string> & Record<typeof flags[keyof typeof flags], boolean> & { centerCode: string | null; id: string; deadline: string; memo: string; photos: DeliveryPhoto[] };
+export type PointDraft = Record<TextKey, string> & Record<typeof flags[keyof typeof flags], boolean> & { centerCode: string | null; id: string; deadline: string; deliveryStart: string; deliveryWindow: string; memo: string; photos: DeliveryPhoto[] };
 export function pointToDraft(row?: DeliveryPoint): PointDraft {
   const legacy = splitLegacyMemoAndPhotos(row?.memo || '');
   const photos = parseDeliveryPointPhotos(row?.photos);
@@ -19,16 +19,22 @@ export function pointToDraft(row?: DeliveryPoint): PointDraft {
     ...Object.fromEntries([...Object.values(textFields), ...Object.values(radios)].map(key => [key, row?.[key] || ''])) as Record<TextKey, string>,
     ...Object.fromEntries(Object.values(flags).map(key => [key, !!row?.[key]])) as Record<typeof flags[keyof typeof flags], boolean>,
     centerCode: row?.center_code ?? null, id: row?.id || '', deadline: row?.deadline_text ?? (row?.deadline_business_min != null ? bizMinToDisplay(row.deadline_business_min) : ''),
+    deliveryStart: row?.delivery_start_text ?? (row?.delivery_start_business_min != null ? bizMinToDisplay(row.delivery_start_business_min) : ''),
+    deliveryWindow: row?.delivery_window_text ?? '',
     contact_mobile: row?.contact_mobile ?? row?.contact ?? '', memo: legacy.memo, photos: photos.length ? photos : legacy.photos,
   };
 }
 export function pointPayload(draft: PointDraft, center: string | null, original?: DeliveryPoint) {
   const deadline = draft.deadline.trim();
+  const deliveryStart = draft.deliveryStart.trim();
   const payload: Record<string, unknown> = {
     ...Object.fromEntries([...Object.values(textFields), ...Object.values(radios)].map(key => [key, draft[key].trim() || null])),
     ...Object.fromEntries(Object.values(flags).map(key => [key, draft[key]])),
     center_code: center, name: draft.name.trim(), deadline_text: deadline ? normalizeTime(deadline) : null,
     deadline_business_min: deadline ? displayToBizMin(normalizeTime(deadline)) : null,
+    delivery_start_text: deliveryStart ? normalizeTime(deliveryStart) : null,
+    delivery_start_business_min: deliveryStart ? displayToBizMin(normalizeTime(deliveryStart)) : null,
+    delivery_window_text: draft.deliveryWindow.trim() || null,
     contact: draft.contact_mobile.trim() || null, memo: stripLegacyPhotoPayload(draft.memo) || null, photos: draft.photos,
   };
   if (draft.id) payload.id = draft.id;

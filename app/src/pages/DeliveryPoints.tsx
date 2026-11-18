@@ -36,7 +36,7 @@ function previewPhoto(photo: DeliveryPhoto) {
 }
 type PointView = { scope:string; selected:string|null; search:string; region:string; method:string; sort:string; scroll:number; selection:string[] };
 const pointViews = createWorkspaceStore<PointView>('point-view', value => ['scope','search','region','method','sort'].every(key => typeof value[key as keyof PointView] === 'string') && (value.selected === null || typeof value.selected === 'string') && Number.isFinite(value.scroll) && Array.isArray(value.selection) && value.selection.every(id => typeof id === 'string'));
-const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => key==='centerCode' ? (value.draft.centerCode==null || typeof value.draft.centerCode==='string') : Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
+const pointDrafts = createWorkspaceStore<{draft:PointDraft; original?:DeliveryPoint; createId:string}>('point-draft', value => !!value.draft && Object.entries(pointToDraft()).every(([key, initial]) => ['deliveryStart','deliveryWindow'].includes(key) && value.draft[key as keyof PointDraft] === undefined ? true : key==='centerCode' ? (value.draft.centerCode==null || typeof value.draft.centerCode==='string') : Array.isArray(initial) ? Array.isArray(value.draft[key as keyof PointDraft]) : typeof value.draft[key as keyof PointDraft] === typeof initial) && typeof value.createId === 'string' && (!value.original || typeof value.original.id === 'string'));
 
 function DeliveryPointsContent() {
   const linkedId = linkedRecordId();
@@ -119,12 +119,11 @@ function DeliveryPointsContent() {
   ]);
 
   function extractRegion() { const region = extractRegionFromAddress(draft.address.trim()); if (region) { update('region', region); toast(`지역을 "${region}"으로 설정했습니다.`, 'success'); } else toast('주소에서 지역을 추출하지 못했습니다.', 'warn'); }
-  function normalizeDeadline() {
-    const value = draft.deadline.trim(); if (!value) return;
+  function normalizeDeadline(key: 'deadline' | 'deliveryStart' = 'deadline') {
+    const value = draft[key].trim(); if (!value) return;
     const normal = normalizeTime(value);
-    if (!normal) { toast('시간 형식이 올바르지 않습니다. 예: 22:00, 25:30', 'warn'); return; }
-    if (displayToBizMin(normal) == null) { toast('시간은 04:00 ~ 27:59 범위여야 합니다.', 'warn'); return; }
-    update('deadline', normal);
+    if (!normal || displayToBizMin(normal) == null) { toast('시간은 00:00~23:59로 입력하세요.', 'warn'); return; }
+    update(key, normal);
   }
   async function addPhotos(files: File[]) {
     if (!editable || !files.length || photoBusyRef.current) return;
@@ -144,6 +143,7 @@ function DeliveryPointsContent() {
     if (!canSave || savingRef.current) return;
     if (!draft.name.trim()) { toast('이름은 필수입니다.', 'warn'); nameInput.current?.focus(); return; }
     if (draft.deadline !== pointToDraft(selectedRow).deadline && draft.deadline.trim() && (!normalizeTime(draft.deadline.trim()) || displayToBizMin(normalizeTime(draft.deadline.trim())) == null)) { toast('마감 시간 형식이 올바르지 않습니다.', 'warn'); return; }
+    if (draft.deliveryStart !== pointToDraft(selectedRow).deliveryStart && draft.deliveryStart.trim() && (!normalizeTime(draft.deliveryStart.trim()) || displayToBizMin(normalizeTime(draft.deliveryStart.trim())) == null)) { toast('납품가능 시작은 00:00~23:59로 입력하세요.', 'warn'); return; }
     const saveGeneration = generation.current;
     savingRef.current = true; setSaving(true); setSaveError('');
     try {
@@ -209,10 +209,10 @@ function DeliveryPointsContent() {
                 <th>코스 배정</th>
                 <th>지역</th>
                 <th>납품방식</th>
-                <th>마감</th>
+                <th>납품가능 시작</th><th>마감</th><th>납품시간 조건</th>
               </tr>
             </thead>
-            <tbody id="dp-tbody">{loading && !data.length ? <TableSkeleton columns={useLegacyCommonCatalog ? 8 : 7} /> : null}{rows.map(row => <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="selection-column"><SelectionCheckbox label={`${row.name || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td>{useLegacyCommonCatalog ? <td>{centerAttributeLabel(row.center_code)}</td> : null}<td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td></tr>)}</tbody>
+            <tbody id="dp-tbody">{loading && !data.length ? <TableSkeleton columns={useLegacyCommonCatalog ? 10 : 9} /> : null}{rows.map(row => <tr key={row.id} data-id={row.id} data-bulk-selected={bulk.selected.has(row.id)} className={`cursor-pointer${row.id === selected ? ' selected' : ''}`} onClick={() => select(row,true)}><td className="selection-column"><SelectionCheckbox label={`${row.name || "항목"} 선택`} checked={bulk.selected.has(row.id)} onChange={() => bulk.toggle(row.id)} /></td><td>{row.code || ''}</td><td><button type="button" className="text-left hover:underline" aria-label={`${row.name || '(이름 없음)'} 편집`}>{row.name || '(이름 없음)'}</button></td>{useLegacyCommonCatalog ? <td>{centerAttributeLabel(row.center_code)}</td> : null}<td>{row.route_stops?.length ? '배정' : '미지정'}</td><td>{row.region || ''}</td><td>{row.delivery_method || ''}</td><td className="biz-time">{bizMinToDisplay(row.delivery_start_business_min)}</td><td className="biz-time">{bizMinToDisplay(row.deadline_business_min)}</td><td>{row.delivery_window_text || ''}</td></tr>)}</tbody>
           </table>
           <div id="empty-msg" className={`${rows.length ? "hidden " : ""}text-center text-sm text-zinc-500 py-12`}>
             조건에 맞는 납품처가 없습니다.
@@ -237,13 +237,13 @@ function DeliveryPointsContent() {
         <WorkspaceDraftStatus storageKeys={[pointViews.storageKey(viewKey),pointDrafts.storageKey(draftKey)]} dirty={hasChanges} />
         {editable && !canSave ? <p className="editor-status" role="status">저장할 센터 속성의 수정 권한이 필요합니다.</p> : null}
         <EditorStatus dirty={dirty} saving={saving} editable={editable} existing={Boolean(draft.id)} error={saveError} />
-        <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, useLegacyCommonCatalog ? draft.centerCode : selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{center_code:'센터 속성',name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)"}} onRebase={latest => {
+        <CatalogSaveReview<DeliveryPoint> table="delivery_points" id={draft.id} error={saveError} busy={saving || photoBusy} patch={pointPayload(draft, useLegacyCommonCatalog ? draft.centerCode : selectedRow ? selectedRow.center_code ?? null : center.code, selectedRow)} labels={{center_code:'센터 속성',name:"이름",code:"코드",address:"주소",region:"지역",memo:"비고",photos:"사진",contact:"연락처",contact_mobile:"연락처",deadline_text:"마감",deadline_business_min:"마감(분)",delivery_start_text:"납품가능 시작",delivery_start_business_min:"납품가능 시작(분)",delivery_window_text:"납품시간 조건"}} onRebase={latest => {
           const before = pointToDraft(original.current), next = pointToDraft(latest);
           generation.current++; original.current = latest;
           setDraft(current => Object.fromEntries(Object.keys(next).map(key => [key, catalogValueEqual(current[key as keyof PointDraft], before[key as keyof PointDraft]) ? next[key as keyof PointDraft] : current[key as keyof PointDraft]])) as PointDraft);
           setSaveError('');
         }}/>
-          <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ centerCode:'센터 속성', name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
+          <ChangeReview fields={Object.entries(draft).filter(([key]) => key !== 'id').map(([key, value]) => { const before = pointToDraft(selectedRow)[key as keyof PointDraft]; const label = ({ centerCode:'센터 속성', name: '이름', code: '코드', address: '주소', region: '지역', deadline: '마감', deliveryStart: '납품가능 시작', deliveryWindow: '납품시간 조건', memo: '비고', photos: '사진', contact_mobile: '연락처', security_key_location: '열쇠보관장소', security_password: '비밀번호', delivery_method: '납품방식', access_method: '진입방식', delivery_location: '납품위치', rep_name: '대표자', rep_phone: '대표자 연락처', contact_name: '담당자', contact_office: '사무실 연락처', allow_under_1ton: '1톤 미만', allow_under_3_5ton: '3.5톤 미만', allow_over_5ton: '5톤 이상', allow_unmanned_yard: '무인야적' } as Record<string, string>)[key] || key; if (key === 'photos') return { label, before: `${(before as unknown[]).length}장`, after: `${draft.photos.length}장${JSON.stringify(before) !== JSON.stringify(value) ? ' · 구성 변경' : ''}` }; return { label, before: typeof before === 'boolean' ? (before ? '허용' : '미허용') : before, after: typeof value === 'boolean' ? (value ? '허용' : '미허용') : value }; })} />
         <form id="dp-form" className="p-4 space-y-4" noValidate onSubmit={event => {event.preventDefault(); void save();}}><fieldset className="editor-fields space-y-4" disabled={!editable || saving}>
           {useLegacyCommonCatalog ? <CenterAttributeInput value={draft.centerCode} change={value=>update('centerCode',value)} permissions={permissions} resource="delivery_points"/> : null}<input type="hidden" id="f-id" value={draft.id} />
 
@@ -273,8 +273,19 @@ function DeliveryPointsContent() {
             </div>
             <div>
               <label className="app-label" htmlFor="f-deadline">납품마감</label>
-              <input id="f-deadline" className="app-input biz-time" placeholder="예: 22:00 또는 02:30" aria-describedby="deadline-help" value={draft.deadline} onChange={event => update('deadline',event.target.value)} onBlur={normalizeDeadline} />
+              <input id="f-deadline" className="app-input biz-time" placeholder="예: 22:00 또는 02:30" aria-describedby="deadline-help" value={draft.deadline} onChange={event => update('deadline',event.target.value)} onBlur={() => normalizeDeadline()} />
               <p id="deadline-help" className="text-[10px] text-zinc-500 mt-1">00:00~23:59 범위. 비워두면 마감 없음.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="app-label" htmlFor="f-delivery-start">납품가능 시작</label>
+              <input id="f-delivery-start" className="app-input biz-time" placeholder="예: 16:00" value={draft.deliveryStart} onChange={event => update('deliveryStart',event.target.value)} onBlur={() => normalizeDeadline('deliveryStart')} />
+            </div>
+            <div>
+              <label className="app-label" htmlFor="f-delivery-window">납품시간 조건</label>
+              <input id="f-delivery-window" className="app-input" value={draft.deliveryWindow} onChange={event => update('deliveryWindow',event.target.value)} />
             </div>
           </div>
 
