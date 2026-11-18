@@ -130,8 +130,9 @@ export function formatArrival(value: unknown) {
   const match = raw.match(
     /(?<!\d)([01]?\d|2[0-3])\s*(?:시(?:\s*([0-5]?\d)\s*분)?|[:_]([0-5]\d))(?!\d)/,
   );
+  const qualifier = match ? raw.slice(match.index! + match[0].length).match(/^\s*(이전|이후|까지|부터)/)?.[1] : '';
   return match
-    ? `${match[1].padStart(2, '0')}:${(match[2] || match[3] || '0').padStart(2, '0')}`
+    ? `${match[1].padStart(2, '0')}:${(match[2] || match[3] || '0').padStart(2, '0')}${qualifier ? ' ' + qualifier : ''}`
     : '';
 }
 function temperatureOf(value: unknown) {
@@ -156,7 +157,8 @@ function requestOrder(a: RequestRow, b: RequestRow) {
 function temperatureCompatible(request: unknown, load: unknown) {
   const needed = temperatureOf(load),
     available = temperatureOf(request);
-  return !needed || needed === available || available === '냉동&냉장';
+  return !needed || needed === available || available === '냉동&냉장' ||
+    (needed === '냉동&냉장' && (available === '냉동' || available === '냉장'));
 }
 function orderedTrucks(draft: DispatchDraft) {
   return [...draft.trucks].sort((a, b) => {
@@ -652,11 +654,31 @@ function sourceReplyVehicles(raw: string) {
     return plates.length ? [{ index, plates }] : [];
   });
   const rows = new Map<string, Partial<TruckRow>>();
-  const route = /김해\s*[-ㅡ→~]+\s*(광주|전주|하양|경산)/;
+  const route = /김해(?:센터)?\s*[-ㅡ→~]+\s*(광주|전주|하양|경산)(?:센터)?/;
   const timeHeader = (line: string) =>
     route.test(line) && Boolean(formatArrival(line));
   for (const [i, entry] of positions.entries()) {
     const vehicle = entry.plates[0][0].replace(/\s/g, '');
+    const inlineName = lines[entry.index].replace(entry.plates[0][0], '').trim();
+    const lead = lines.slice((positions[i - 1]?.index ?? -1) + 1, entry.index).filter(Boolean);
+    const routeHeader = lead.at(-1) || '', specs = lead.at(-2) || '';
+    // Explicit two-line vehicle header followed by name/plate and phone, including (18p).
+    if (entry.plates.length === 1 && /^[가-힣]{2,6}$/.test(inlineName) && route.test(routeHeader) && formatArrival(specs)) {
+      const block = lines.slice(entry.index + 1, positions[i + 1]?.index ?? lines.length);
+      const phone = block[0]?.match(/^(01\d[\s-]*\d{3,4}[\s-]*\d{4})(?:\s*\(\d+(?:\.\d+)?\s*p\))?$/i);
+      const tons = specs.match(/(\d+(?:\.\d+)?)\s*톤/);
+      if (phone && tons && temperatureOf(specs)) {
+        const notes = [];
+        for (const line of block.slice(1)) {
+          if (!line || formatArrival(line) || route.test(line) || /^(?:#|■|예상출고량|상차 후)/.test(line)) break;
+          notes.push(line.replace(/^>\s*/, ''));
+        }
+        rows.set(vehicle, { region: regionName(routeHeader.match(route)?.[1]), vehicle, driver: inlineName,
+          phone: formatPhone(phone[1]), arrival: formatArrival(specs), actualTons: Number(tons[1]),
+          loadText: [`${temperatureOf(specs)} ${tons[1]}톤`, ...notes].join('\n') });
+        continue;
+      }
+    }
     // Only recover explicit plate/name/phone blocks; leave other layouts to extraction.
     if (
       entry.plates.length !== 1 ||
@@ -761,6 +783,8 @@ export function applyReply(draft: DispatchDraft, result: AnalysisResult) {
     .filter(hasVehicleDetails)
     .sort(
       (a, b) =>
+        Number(draft.requests.some(r => r.region === regionName(b.region) && temperatureOf(r.temperature) === temperatureOf(b.loadText))) -
+        Number(draft.requests.some(r => r.region === regionName(a.region) && temperatureOf(r.temperature) === temperatureOf(a.loadText))) ||
         Number(Boolean(temperatureOf(b.loadText))) +
         Number(replyTons(b) != null) -
         Number(Boolean(temperatureOf(a.loadText))) -

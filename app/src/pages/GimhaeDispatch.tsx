@@ -339,14 +339,15 @@ function Work() {
         applyReply(structuredClone(current.current.draft), result),
       );
       next.replyPending = false;
+      const needsReview = issues(next, true).length > 0;
       update((s) => {
         s.draft = next;
         s.lastReply = signature;
         s.replyChanged = false;
         s.dirty = true;
-        s.replyState = '반영 완료';
+        s.replyState = needsReview ? '분석 완료 · 배차 확인 필요' : '반영 완료';
       });
-      status('운수사 회신을 반영했습니다.');
+      status(needsReview ? '회신을 분석했습니다. 미연결·누락 항목을 확인해 주세요.' : '운수사 회신을 반영했습니다.', needsReview);
       if (next.trucks.some((t) => !t.requestId)) setTrucksOpen(true);
     } catch (error) {
       update((s) => {
