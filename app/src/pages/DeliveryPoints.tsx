@@ -173,14 +173,13 @@ function DeliveryPointsContent() {
   return <>
   <main className="app-main flex-1 max-w-[1600px] w-full mx-auto px-4 py-3" id="work-main" tabIndex={-1}>
     {!editable ? <p id="read-only-notice" className="text-sm text-amber-300 p-3">열람 전용 · 선택한 센터에서 이 업무를 수정할 권한이 없습니다.</p> : null}
-          {useLegacyCommonCatalog ? <CenterAttributeFilter value={catalogScope} change={value => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}/> : null}
       <SavedViews scope="delivery-points" value={{ search, region, method, sort }} defaultValue={{ search: '', region: '', method: '', sort: 'code' }} onApply={next => { setSearch(next.search); setDebouncedSearch(next.search.trim()); setRegion(next.region); setMethod(next.method); setSort(next.sort); }} disabled={saving} />
       <SplitPane scope="delivery-points" revealToken={editorIntent} revealFocus="#f-name">
 
       
       <section className="work-list border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style={{"minHeight": "70vh"}} aria-label="납품처 목록">
         <div className="p-3 border-b border-zinc-700 bg-zinc-800/50 flex flex-wrap gap-2 items-center">
-          <input id="search-input" type="search" placeholder="코드/이름/주소 검색" aria-label="납품처 코드, 이름, 주소 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} />
+          {useLegacyCommonCatalog ? <CenterAttributeFilter value={catalogScope} change={value => { if (dirty || saving) { toast('현재 입력을 저장하거나 취소한 뒤 필터를 변경하세요.','warn'); return; } setCatalogScope(value); }}/> : null}<input id="search-input" type="search" placeholder="코드/이름/주소 검색" aria-label="납품처 코드, 이름, 주소 검색" className="app-input flex-1 min-w-[180px]" value={search} onChange={event => setSearch(event.target.value)} />
           <select id="filter-region" className="app-select w-32" aria-label="지역 필터" value={region} onChange={event => setRegion(event.target.value)}>
             <option value="">지역(전체)</option>{regions.map(value => <option key={value} value={value}>{value}</option>)}
           </select>

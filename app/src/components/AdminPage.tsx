@@ -108,6 +108,10 @@ function Shell({
     [profile],
   );
   const manager = ['editor', 'admin'].includes(profile.role);
+  const commonCatalogList = useLegacyCommonCatalog && [
+    '/admin/routes.html', '/admin/delivery-points.html', '/admin/drivers.html',
+    '/admin/vehicles.html', '/admin/companies.html',
+  ].includes(location.pathname);
   const canManage =
     manager ||
     FEATURE_CATALOG.some(
@@ -265,7 +269,7 @@ function Shell({
           <span>현재 화면</span>
           <strong>{title}</strong>
           <small>
-            {center.shortName} ·{' '}
+            {commonCatalogList ? '공통 원장' : center.shortName} ·{' '}
             {profile.role === 'admin'
               ? '관리자'
               : profile.role === 'editor'
@@ -274,7 +278,7 @@ function Shell({
           </small>
         </div>
       }
-      centerControl={
+      centerControl={commonCatalogList ? null :
         <CenterSwitcher
           disabled={controlsDisabled}
           value={center.code}
