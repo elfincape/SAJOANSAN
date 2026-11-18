@@ -6,7 +6,10 @@ export const CENTERS: Center[] = [
 const storageKey = 'sajo.selectedCenterCode';
 
 export function getCatalogCenterScope(center: Center) {
-  const scope = new URLSearchParams(location.search).get('catalog_scope');
+  const params = new URLSearchParams(location.search);
+  // A linked original keeps its own attribute, independent of the opener's center.
+  if (params.get('linked_detail') === '1' && params.get('id')) return '';
+  const scope = params.get('catalog_scope');
   return scope === 'all' ? '' : scope === 'unclassified' ? scope : center.code;
 }
 
