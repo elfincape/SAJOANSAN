@@ -319,5 +319,5 @@ export async function analyzeManualPhotos({
     });
   }
   if (items.length + startIndex > 30) throw Error('MANUAL_LIMIT');
-  return { items, responses, facts: value.facts };
+  return { items, responses, facts: value.facts, photoIntent };
 }

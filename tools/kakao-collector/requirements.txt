@@ -1,0 +1,1 @@
+kakaotalk-ax @ git+https://github.com/HyunSeob/kakaotalk-ax.git@4fb2bc7f1cc0892a257761b2c46237b2c9520007

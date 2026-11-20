@@ -524,7 +524,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       return null;
     let key;
     try {
-      key = globalThis.Deno?.env?.get('TYPESAFE_API_KEY');
+      key = globalThis.Deno?.env?.get('TYPESAFE_API_KEY') || globalThis.Deno?.env?.get('JEV_API_KEY');
     } catch {
       /* unavailable */
     }
@@ -537,6 +537,7 @@ export async function handlePrivateMail(action, req, user, ctx) {
       'private-mail-manual-scoped-enqueue',
       'private-mail-manual-list',
       'private-mail-manual-status',
+      'private-mail-manual-kakao-capability',
       'private-mail-manual-update',
       'private-mail-manual-source',
       'private-mail-manual-verify',
