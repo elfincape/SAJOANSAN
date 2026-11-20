@@ -106,7 +106,7 @@ def utf16(text):
     return len(text.encode("utf-16-le")) // 2
 
 
-def chunks(rows, room, aliases, mode, split_photos):
+def chunks(rows, room, aliases, mode, split_photos, batch_id):
     groups = []
     group = []
     for row in rows:
@@ -122,7 +122,7 @@ def chunks(rows, room, aliases, mode, split_photos):
                  if row["occurred"] else None for row in group if row["fresh"]}
         if len(dates) == 1 and None not in dates:
             day = dates.pop()
-        meta = {"room": room, "mode": mode, "aliases": aliases, "dateVerified": bool(day)}
+        meta = {"room": room, "mode": mode, "aliases": aliases, "dateVerified": bool(day), "batchId": batch_id}
         header = "[kakao-collector:v1] " + encode(meta)
         for row in group:
             scope = "새 자료" if row["fresh"] else "문맥 전용"
@@ -130,8 +130,8 @@ def chunks(rows, room, aliases, mode, split_photos):
         text = header + "\n" + "\n\n".join(lines)
         if utf16(text) > 12000 and len(group) > 1:
             pivot = len(group) // 2
-            yield from chunks(group[:pivot], room, aliases, mode, split_photos)
-            yield from chunks(group[pivot:], room, aliases, mode, split_photos)
+            yield from chunks(group[:pivot], room, aliases, mode, split_photos, batch_id)
+            yield from chunks(group[pivot:], room, aliases, mode, split_photos, batch_id)
         elif utf16(text) > 12000 or split_photos(group):
             raise PortalError("PORTAL_SOURCE_LIMIT")
         elif any(row["fresh"] for row in group):
@@ -173,7 +173,7 @@ def prepare(store, batch, actor, mode, aliases):
                      "text": raw.get("text") or ("[카카오톡 창 영역 사진 캡처]" if image else "[AX 본문 미확인]"),
                      "sender": raw.get("sender") or "작성자 미확인", "occurred": message["occurred"]})
     room = store.db.execute("SELECT name FROM rooms WHERE id=?", (batch["room"],)).fetchone()[0]
-    parts = list(chunks(rows, room[:150], aliases, mode, image_limits))
+    parts = list(chunks(rows, room[:150], aliases, mode, image_limits, batch["id"]))
     with store.db:
         for number, (day, text, images) in enumerate(parts):
             request = str(uuid.uuid5(uuid.UUID(batch["id"]), f"kakao-portal-v1/{number}"))
@@ -216,7 +216,11 @@ def sync(store, portal):
             if part["entry"] and part["state"] == "ready":
                 statuses.append(decode(part["result"]))
                 continue
-            if part["entry"]:
+            if part["entry"] and part["state"] == "retry":
+                payload = decode(part["payload"])
+                payload.pop("images")
+                result = portal.action("enqueue", {**payload,"retry":True})
+            elif part["entry"]:
                 result = portal.action("status", {"entryId": part["entry"]})["entry"]
             else:
                 payload = decode(part["payload"])

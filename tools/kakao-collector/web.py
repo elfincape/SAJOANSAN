@@ -114,7 +114,7 @@ class Dashboard(ThreadingHTTPServer):
         elif action in ("agent-install", "agent-remove"):
             agent(store, action == "agent-install")
         else:
-            lock_name = "portal" if action in {"login", "portal-mode", "portal-stop"} else "collector"
+            lock_name = "portal" if action in {"login", "portal-mode", "portal-stop", "portal-retry"} else "collector"
             with locked(store, lock_name):
                 if action == "rooms":
                     self.available = list_rooms(native(store))
@@ -143,6 +143,12 @@ class Dashboard(ThreadingHTTPServer):
     def portal_action(self, store, action, data):
         if action == "portal-stop":
             store.configure("portal_enabled", False)
+            return
+        if action == "portal-retry":
+            batch = batch_number(store, int(data["number"][0]))
+            with store.db:
+                store.db.execute("UPDATE portal_parts SET state='retry' WHERE batch=? AND entry IS NOT NULL AND state='failed'", (batch["id"],))
+                store.db.execute("UPDATE batches SET error=NULL WHERE id=? AND state='portal_wait'", (batch["id"],))
             return
         portal = Portal(store.root)
         try:
@@ -224,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403)
             return
         actions = {"start", "pause", "interval", "agent-install", "agent-remove", "rooms",
-                   "select", "deselect", "collect", "history", "resume-room", "login", "portal-mode", "portal-stop", "probe"}
+                   "select", "deselect", "collect", "history", "resume-room", "login", "portal-mode", "portal-stop", "portal-retry", "probe"}
         action = self.path.removeprefix("/action/")
         if action not in actions:
             self.reply(404)
@@ -358,7 +364,11 @@ class Handler(BaseHTTPRequestHandler):
             text += "</div>"
         text += f'</section><section><h2>업무포탈 판단</h2><a href="{APP_URL}">업무포탈 업무 보기</a>'
         if batch["result"] and batch["state"] in ("portal_wait", "portal_ready"):
-            for part in decode(batch["result"]):
+            parts = decode(batch["result"])
+            if any(part.get("status") == "failed" and not part.get("retryScheduled") for part in parts):
+                text += self.button("portal-retry", "같은 접수 다시 분석",
+                                    f'<input type="hidden" name="number" value="{number}">')
+            for part in parts:
                 text += f'<p>접수 {esc(part.get("status"))} · 사진 {len(part.get("images") or [])}장</p>'
                 for item in part.get("items", []):
                     decision = item.get("kakao") or {}

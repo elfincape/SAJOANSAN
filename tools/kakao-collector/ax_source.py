@@ -3,6 +3,7 @@
 import re
 import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -65,7 +66,6 @@ def collect_room(store, ax, room, history_pages=0):
 
     name = room["name"]
     own = bool(room["own"])
-    checked(ax.windows())
     with ui_session():
         listing = checked(ax.rooms())
         listed = listing["items"]
@@ -156,21 +156,38 @@ def probe_capture(store):
     choices = [room for room in rooms if room.get("isSelf")] + [
         room for room in rooms if not room.get("isSelf") and room["name"] in open_names
     ]
-    if not choices:
-        choices = rooms[:1]
+    choices.extend(room for room in rooms if room not in choices)
     read = photos = tested = 0
     issue = None
-    for room in choices[:3]:
-        title = room["name"]
+    attempted = set()
+    # First inspect AX-confirmed open chat windows without issuing UI actions.
+    targets = [(name, None) for name in sorted(open_names) if name]
+    targets += [(room["name"], room) for room in choices]
+    for title, room in targets[:5]:
+        if title in attempted:
+            continue
+        attempted.add(title)
         opened = None
         stage = "open"
         try:
-            unique_room(rooms, title)
-            opened = checked(ax.open_room(title, require_self=bool(room["isSelf"])))
-            tested += 1
+            if room is not None:
+                unique_room(rooms, title)
+                result = ax.open_room(title, require_self=bool(room["isSelf"]))
+                if result.get("reason") == "opened_window_not_observed":
+                    time.sleep(0.65)
+                else:
+                    opened = checked(result)
             stage = "read"
-            token, rows, _ = snapshot(ax, title)
+            for attempt in range(3):
+                try:
+                    token, rows, _ = snapshot(ax, title)
+                    break
+                except AXError as error:
+                    if attempt == 2 or not str(error).endswith("-25204"):
+                        raise
+                    time.sleep(0.3 * (attempt + 1))
             read += len(rows)
+            tested += 1
             stage = "capture"
             for row in reversed(rows):
                 if row["kind"] != "attachment":
@@ -183,10 +200,12 @@ def probe_capture(store):
                         break
                     issue = stage + ":" + reason(result)
             if photos:
+                issue = None
                 break
         except AXError as error:
             issue = stage + ":" + str(error)
         finally:
             if opened and not opened["alreadyOpen"]:
                 ax.close_room(title)
-    return {"rooms":len(rooms), "tested":tested, "rows":read, "photos":photos, "photoError":issue}
+    return {"rooms":len(rooms), "tested":tested, "rows":read, "photos":photos, "photoError":issue,
+            "readableWindows": len(open_names)}
