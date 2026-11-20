@@ -150,15 +150,19 @@ def capture_photos(store, ax, room, token, rows):
 def probe_capture(store):
     """Read one actual conversation and capture one photo for a local diagnostic."""
     ax = native(store)
-    rooms, _ = list_rooms(ax)
     windows = ax.windows().get("items", [])
+    issue = None
+    try:
+        rooms, _ = list_rooms(ax)
+    except AXError as error:
+        rooms = []
+        issue = "list:" + str(error)
     open_names = {window.get("windowTitle") for window in windows if window.get("readable")}
     choices = [room for room in rooms if room.get("isSelf")] + [
         room for room in rooms if not room.get("isSelf") and room["name"] in open_names
     ]
     choices.extend(room for room in rooms if room not in choices)
     read = photos = tested = 0
-    issue = None
     attempted = set()
     # First inspect AX-confirmed open chat windows without issuing UI actions.
     targets = [(name, None) for name in sorted(open_names) if name]
