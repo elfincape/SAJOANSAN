@@ -2,6 +2,9 @@ import { handleCharter } from './charter.js';
 import { handleOperations } from './operations.js';
 import { handleBackups } from './backups.js';
 import { handlePrivateMail } from './private-mail.js';
+import { createKakaoTriageDrive, kakaoTriageOptions } from './kakao-triage-drive.js';
+import { runKakaoTriage } from './kakao-triage-run.js';
+import { createOneDriveStorage } from './storage.js';
 import { mailAiConfiguration } from '../_shared/luna.js';
 import { handleApiManagement } from '../_shared/ai-providers.js';
 import { APPROVED_MAIL_TARGET } from './private-mail-policy.js';
@@ -770,6 +773,31 @@ export function makeHandler(
         return await callback(url);
       if (req.method !== 'POST')
         return json({ error: 'POST 요청이 필요합니다.' }, 405);
+      if (action === 'kakao-triage') {
+        const user = await caller(req, false, true);
+        if (user.id !== APPROVED_MAIL_TARGET.owner_id) throw fail('권한이 없습니다.', 403);
+        const text = await req.text();
+        let options;
+        try {
+          options = text.trim() ? JSON.parse(text) : {};
+        } catch {
+          throw fail('JSON 요청을 확인해 주세요.', 400);
+        }
+        kakaoTriageOptions(options);
+        const storage = createOneDriveStorage({ settings, connected, graph, fetcher, hash, fail });
+        const { access } = await withLock(() => storage.environment());
+        const triageDb = (path, request) => {
+          if (!/^(?:rpc\/)?kakao_triage_[a-z_]+(?:\?|$)/.test(path)) throw fail('분류 저장 경로를 확인해 주세요.', 500);
+          return db(path, request);
+        };
+        return json(await runKakaoTriage({
+          source: createKakaoTriageDrive(graph, access),
+          db: triageDb,
+          jevKey: env.TYPESAFE_API_KEY || env.JEV_API_KEY,
+          ai: await dailyAiConfiguration(),
+          fetcher,
+        }, options));
+      }
       if (
         ['api-admin-status', 'api-admin-default', 'api-admin-verify'].includes(
           action,

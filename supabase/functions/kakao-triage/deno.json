@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "postal-mime": "npm:postal-mime@4.0.7",
+    "imagescript": "npm:imagescript@3.13.1",
+    "exceljs": "npm:exceljs@4.4.0",
+    "unpdf/pdfjs": "npm:unpdf@2.1.0/pdfjs"
+  }
+}
