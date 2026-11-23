@@ -48,6 +48,8 @@ REASONS = {
     "target_room_name_ambiguous": "같은 이름의 방이 여러 개",
     "target_room_window_ambiguous": "같은 이름의 창이 여러 개",
     "room_search_in_use": "사용 중인 카카오톡 방 검색을 보존하기 위해 대기",
+    "room_picker_filter_active": "카카오톡 채팅방 검색을 해제하지 못했습니다. 검색을 지운 뒤 방 목록을 새로 읽어 주세요.",
+    "room_picker_changed": "조회 중 채팅방 목록이 바뀌었습니다. 방 목록을 새로 읽어 주세요.",
     "room_search_partial": "동명 방이 없는지 확인할 수 없어 수집 보류",
     "room_search_restore_failed": "수집 후 카카오톡 방 검색 상태 복원 실패",
     "room_identity_changed": "방 식별 정보가 달라짐",
@@ -264,7 +266,8 @@ def main():
                             counts = Counter(item["name"] for item in items)
                             for room in items:
                                 print(safe(room["name"]) + ("  (동명 방)" if counts[room["name"]] > 1 else ""))
-                            print(f"현재 노출 {len(items)}개 · 앱 보고 {total}행")
+                            scope = f"앱 보고 {total}행" if total is not None else "열린 대화창만 표시"
+                            print(f"현재 노출 {len(items)}개 · {scope}")
                         else:
                             selected = [unique_room(items, name) for name in arguments.names]
                             for room in selected:

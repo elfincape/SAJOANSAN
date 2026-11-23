@@ -346,8 +346,11 @@ class Handler(BaseHTTPRequestHandler):
                      f'{" checked" if name in active else ""}{" disabled" if disabled else ""}>'
                      f'<span>{esc(name)}{detail}</span></label>')
         text += "</fieldset>"
-        if len(rooms) < total:
-            text += f'<p>카카오톡이 보고한 {total}행 중 {len(rooms)}개 방 이름을 읽었습니다.</p>'
+        listed_count = sum(not r.get("openOnly", False) for r in rooms)
+        if total is None:
+            text += '<p>카카오톡 채팅 목록을 읽지 못해 열린 대화창만 표시합니다. 방 목록 새로 읽기를 눌러 다시 확인하세요.</p>'
+        elif listed_count < total:
+            text += f'<p>카카오톡이 보고한 {total}행 중 {listed_count}개 방 이름을 읽었습니다.</p>'
         missing = sorted(active - counts.keys())
         if missing:
             text += '<p>목록 밖에서 계속 수집 중인 방 · ' + ", ".join(map(esc, missing)) + '</p>'

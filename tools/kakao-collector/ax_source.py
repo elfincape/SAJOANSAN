@@ -70,14 +70,14 @@ def list_rooms(ax):
         items = list(rooms["items"])
         total = rooms["reportedRowCount"]
     else:
-        items, total = [], 0
+        items, total = [], None
     listed = {r["name"] for r in items}
     for win in windows.get("items", []):
         if win.get("readable") and win["windowTitle"] not in listed:
             items.append(dict(name=win["windowTitle"], isSelf=False, openOnly=True))
     if not items and rooms.get("status") != "ok":
         checked(rooms)
-    return items, max(total, len(items))
+    return items, total
 
 
 def unique_room(items, name, own=None):
