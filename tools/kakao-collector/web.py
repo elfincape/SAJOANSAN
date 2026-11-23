@@ -286,6 +286,8 @@ class Handler(BaseHTTPRequestHandler):
         state = "일시정지" if store.setting("paused", True) else REASONS.get(store.setting("input_wait"), "사용 중")
         seconds = store.setting("interval", 60)
         text = f'<section><h2>정기 수집 <small>{state}</small></h2>'
+        if store.setting("window_cleanup_error"):
+            text += '<p class="notice">저장 폴더 창 정리 대기 · ' + issue(store.setting("window_cleanup_error")) + '</p>'
         if self.server.note:
             text += f'<p class="notice">{esc(self.server.note)}</p>'
         if self.server.vpn_status:

@@ -13,10 +13,11 @@ source = SOURCE.read_bytes()
 if hashlib.sha256(source).hexdigest()[:20] != "8070ff42939eae750c98":
     raise SystemExit("unexpected upstream AX reader")
 swift = source.decode().replace("let maximumRows = 1000", "var maximumRows = 1000")
-swift = swift.replace('["windows", "read", "attachment"].contains(action)', '["windows", "read", "file", "layout", "activity"].contains(action)')
+swift = swift.replace('["windows", "read", "attachment"].contains(action)', '["windows", "read", "file", "layout", "activity", "tidy"].contains(action)')
 swift = swift.replace('let application = AXUIElementCreateApplication', '''
     if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
        session["CGSSessionScreenIsLocked"] as? Bool == true { throw ReadFailure.blocked("screen_locked") }
+    if action == "tidy" { return try tidyWorkspace(request) }
     maximumRows = min(1000, max(1, request["tail"] as? Int ?? 24))
     let application = AXUIElementCreateApplication''')
 swift = swift.replace('if action == "attachment" { return try attachment(request, window, found.tables[0], app.processIdentifier) }',
@@ -32,7 +33,7 @@ swift = swift.replace('let title = try string(window, "AXTitle")',
 swift = swift.replace('try windows.filter { try string($0, "AXTitle") == titles[0] }',
                       'windows.filter { (try? string($0, "AXTitle")) == titles[0] }')
 start = swift.index('func attachment(')
-swift = swift[:start] + Path(__file__).with_name("Original.swift").read_text() + "\n" + swift[swift.index("func run() throws", start):]
+swift = swift[:start] + Path(__file__).with_name("Original.swift").read_text() + "\n" + Path(__file__).with_name("WindowCleanup.swift").read_text() + "\n" + swift[swift.index("func run() throws", start):]
 with tempfile.TemporaryDirectory() as tmp:
     main = Path(tmp) / "main.swift"
     swift = swift.replace('guard AXIsProcessTrusted()', '''if action == "activity" { return ["status":"ok", "idleSeconds":try hardwareIdleSeconds()] }

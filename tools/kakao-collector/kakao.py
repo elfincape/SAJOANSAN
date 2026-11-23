@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.error import URLError
 
-from ax_source import AXError, IDLE_SECONDS, COLLECTION_WAIT, checked, collect_room, list_rooms, native, unique_room
+from ax_source import AXError, IDLE_SECONDS, COLLECTION_WAIT, checked, collect_room, list_rooms, native, tidy, unique_room
 from collector import DEFAULT_ROOT, SEOUL, Store, decode, now
 from drive_store import deliver, drive_ready
 
@@ -35,6 +35,7 @@ REASONS = {
     "overlap_unverified": "스냅샷 연결 불확실 · 누락 가능",
     "partial_ax": "AX가 일부 범위만 노출",
     "photo_capture_failed": "사진 캡처 실패",
+    "finder_cleanup_unavailable": "Finder 창 접근을 확인해 주세요",
     "mac_user_active": f"맥 사용 중 · 입력이 {IDLE_SECONDS}초 멈추면 자동 재개",
     "mac_input_unavailable": "맥 입력 상태 확인 대기",
     "screen_locked": "맥 잠금 해제 대기",
@@ -123,13 +124,16 @@ def run_collection(store, args):
         rooms = [room for room in rooms if room["id"] >= resume]
     elif scheduled:
         store.configure("last_cycle", now())
-    for room in rooms:
+    for index, room in enumerate(rooms):
         if scheduled and store.setting("next_collection_room") != room["id"]:
             store.configure("next_collection_room", room["id"])
         if scheduled and store.setting("paused", True):
             return
         try:
-            collect_room(store, native(store, idle_guard=IDLE_SECONDS), room, pages)
+            ax = native(store, idle_guard=IDLE_SECONDS)
+            if index == 0:
+                tidy(store, ax, quit_apps=True)
+            collect_room(store, ax, room, pages)
         except AXError as error:
             if str(error) in COLLECTION_WAIT:
                 if not scheduled:

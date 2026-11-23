@@ -284,6 +284,8 @@ func saveToDirectory(_ app: AXUIElement, _ viewer: AXUIElement, _ pid: pid_t, _ 
         return buttons.count == 1 ? buttons[0] : nil
     }) else { throw ReadFailure.blocked("save_folder_not_confirmed") }
     // A private directory is bound to one attachment before any Save action.
+    // Finder cleanup is optional and independent of saving the original file.
+    try? armFolderCleanup(directory)
     try "save".write(to:directory.appendingPathComponent(".requested"),atomically:true,encoding:.utf8)
     try press(saveButton)
     guard let file = try awaitValue(10, { () -> URL? in

@@ -136,7 +136,8 @@ def collect_room(store, ax, room, history_pages=0):
         matching = [w for w in windows if w["windowTitle"] == name]
         if len(matching) > 1:
             raise AXError("target_room_window_ambiguous")
-        close = searched = observed = partial_search = False
+        close = searched = partial_search = False
+        close_after = len(matching) == 1 and matching[0]["readable"]
         try:
             if not matching or not matching[0]["readable"]:
                 listing = checked(ax.rooms())
@@ -169,6 +170,7 @@ def collect_room(store, ax, room, history_pages=0):
                     time.sleep(.25)
                 else:
                     raise AXError("opened_window_not_observed")
+                close_after = True
                 close = result.get("alreadyOpen") is False
             head = store.db.execute("SELECT * FROM observations WHERE id=?", (room["head"],)).fetchone()
             previous = decode(head["rows_json"]) if head else []
@@ -189,19 +191,20 @@ def collect_room(store, ax, room, history_pages=0):
             store.observe(room["id"], page["snapshotId"], rows, page["coverage"], {})
             current = store.db.execute("SELECT o.message_ids FROM rooms r JOIN observations o ON o.id=r.head WHERE r.id=?",
                                        (room["id"],)).fetchone()
-            observed = True
             ids = decode(current[0])
             acquire_photos(store, ax, name, page, ids)
             retry_older_photo(store, ax, room["id"], name, ids)
         finally:
-            if close and not observed:
-                ax.close_room(name)
             if searched:
                 listing = ax.rooms()
                 if listing.get("status") == "ok" and listing.get("searchQuery") == name:
                     checked(ax.search_rooms(""))
                 if listing.get("status") == "ok":
                     store.configure("collector_room_search", None)
+            if close_after:
+                result = ax.close_room(name)
+                if result.get("reason") != "existing_draft_preserved":
+                    checked(result)
 
 
 def retry_older_photo(store, ax, room, name, recent_ids):
@@ -297,3 +300,21 @@ def acquire_photos(store, ax, name, page, ids):
                                  (time.time()+min(3600,60*2**min(6,item["attempts"])), code,*key))
                 if code != item["error"]:
                     invalidate(store, item["batch"])
+        else:
+            tidy(store, ax)
+
+
+def tidy(store, ax, *, quit_apps=False):
+    # A cleanup error must not count as a failed photo transfer.
+    try:
+        with ui_session():
+            checked(ax.request(action="tidy", downloads=str(store.root / "downloads"), quitApps=quit_apps))
+    except AXError as exc:
+        if str(exc) in COLLECTION_WAIT:
+            raise
+        store.configure("window_cleanup_error", str(exc))
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        store.configure("window_cleanup_error", type(exc).__name__)
+    else:
+        if store.setting("window_cleanup_error"):
+            store.configure("window_cleanup_error", None)
