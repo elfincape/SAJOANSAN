@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
+from vpn_remote import serve_private, same_owner_peer
 from ax_source import list_rooms, native, probe, unique_room
 from collector import DEFAULT_ROOT, Store, decode, encode, now
 from drive_store import deliver, drive_ready
@@ -67,6 +68,9 @@ class Dashboard(ThreadingHTTPServer):
         self.task_lock = threading.Lock()
         self.note = ""
         self.available = None
+        self.vpn_status = ""
+        self.vpn_url = ""
+        self.vpn_last_visit = None
 
     def background(self, actions, lock_name):
         while True:
@@ -159,6 +163,10 @@ def enabled_names(store):
 
 
 class Handler(BaseHTTPRequestHandler):
+    @property
+    def expected_host(self):
+        return self.server.host
+
     def log_message(self, *_):
         pass
 
@@ -180,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_GET(self):
-        if self.headers.get("Host") != self.server.host:
+        if self.headers.get_all("Host") != [self.expected_host]:
             self.reply(403)
             return
         request = urlsplit(self.path)
@@ -223,8 +231,8 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, (PAGE + content + "</main>").encode())
 
     def do_POST(self):
-        if (self.headers.get("Host") != self.server.host or not self.authorized()
-                or self.headers.get("Origin") != f"http://{self.server.host}"):
+        if (self.headers.get_all("Host") != [self.expected_host] or not self.authorized()
+                or self.headers.get_all("Origin") != [f"http://{self.expected_host}"]):
             self.reply(403)
             return
         actions = {"start", "pause", "interval", "agent-install", "agent-remove", "rooms",
@@ -276,6 +284,13 @@ class Handler(BaseHTTPRequestHandler):
         text = f'<section><h2>정기 수집 <small>{state}</small></h2>'
         if self.server.note:
             text += f'<p class="notice">{esc(self.server.note)}</p>'
+        if self.server.vpn_status:
+            text += f'<p>원격 접속 · {esc(self.server.vpn_status)}'
+            if self.server.vpn_url:
+                text += f' · <a href="{esc(self.server.vpn_url)}">{esc(self.server.vpn_url)}</a>'
+            if self.server.vpn_last_visit:
+                text += f' · 마지막 원격 접속 {kst(self.server.vpn_last_visit)}'
+            text += '</p>'
         text += self.button("start", "시작") + self.button("pause", "일시정지")
         text += self.button("interval", "주기 변경", f'<label>초 <input name="seconds" type="number" min="15" max="3600" value="{seconds}"> </label>')
         last = store.db.execute("SELECT MAX(collected) FROM messages WHERE state='new'").fetchone()[0]
@@ -413,6 +428,39 @@ class Handler(BaseHTTPRequestHandler):
         return text + "</section>"
 
 
+class VPNHandler(Handler):
+    def __init__(self, request, address, dashboard, owner):
+        self.owner = owner
+        super().__init__(request, address, dashboard)
+
+    @property
+    def expected_host(self):
+        ip, port = self.connection.getsockname()[:2]
+        return f"{ip}:{port}"
+
+    def authorized(self):
+        return same_owner_peer(self.client_address, self.owner)
+
+    def reply(self, status, *args, **kwargs):
+        super().reply(status, *args, **kwargs)
+        if status in (200, 303) and self.client_address[0] != self.connection.getsockname()[0]:
+            self.server.vpn_last_visit = now()
+
+    def do_GET(self):
+        path = urlsplit(self.path).path
+        if path not in {"/", "/rooms"} and not re.fullmatch(r"/(room|batch|photo)/[0-9]{1,12}", path):
+            self.reply(404)
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if self.path not in {"/action/" + action for action in (
+                "start", "pause", "interval", "refresh-rooms", "save-rooms", "collect", "deselect")}:
+            self.reply(404)
+            return
+        super().do_POST()
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -440,6 +488,9 @@ def main():
         subprocess.Popen(["/usr/bin/caffeinate", "-s", "-w", str(os.getpid())],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         server.workers()
+        with Store(server.root) as store:
+            if store.setting("private_vpn_enabled", False):
+                threading.Thread(target=serve_private, args=(server, VPNHandler), daemon=True).start()
         if args.open and not os.environ.get("KAKAO_COLLECTOR_BACKGROUND"):
             threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
         server.serve_forever()

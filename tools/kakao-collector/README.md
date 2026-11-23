@@ -13,3 +13,9 @@ Finder 앱에서 여는 수집 현황의 **카카오톡 방 목록 가져오기*
 ## 네이티브 브리지
 
 `requirements.txt`에 지정된 kakaotalk-ax 0.9.0을 사용한다. 동일 Python 환경에서 `python build_reader.py <데이터폴더>/native/collector-read <데이터폴더>/native/collector-control`을 실행하면 설치된 upstream의 Swift 소스를 확인한 뒤 제한된 읽기 범위와 사진 저장 동작을 빌드한다. 손쉬운 사용 권한은 Finder에서 실행하는 **카카오톡 업무 수집** 앱의 실제 읽기 결과로 확인한다.
+
+### 다른 기기에서 수집 화면 열기
+
+맥과 휴대폰 또는 PC의 Tailscale에 같은 계정으로 로그인한다. 원격 제어를 켠 맥의 수집 현황에 표시되는 VPN 주소를 다른 기기 브라우저에서 연다. 방 선택, 수집 시작·일시정지, 주기 변경은 기존 수집기와 같은 설정에 적용된다. 카카오톡을 읽으려면 맥이 깨어 있고 카카오톡의 잠금이 풀려 있어야 한다.
+
+원격 기능은 로컬 SQLite의 `private_vpn_enabled` 설정으로 켠다. 수집기는 처음 연결된 Tailscale 사용자 ID와 맥 기기 ID를 보존한다. TCP 18749는 Tailscale의 IPv4 주소와 그 utun 인터페이스에만 바인딩한다. HTTP는 기기 간 WireGuard 터널을 통과한다. 매 요청마다 연결 상대의 IP를 Tailscale에 조회해 같은 사용자의 개인 기기인지 확인한다. 로컬용 접속 키와 LaunchAgent 관리 동작은 원격에서 제공하지 않는다.
