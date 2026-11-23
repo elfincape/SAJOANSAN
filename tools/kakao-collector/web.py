@@ -461,6 +461,38 @@ class VPNHandler(Handler):
         super().do_POST()
 
 
+class ServeHandler(VPNHandler):
+    def __init__(self, request, peer, dashboard, owner, key, hosts, self_ip):
+        self.key, self.hosts, self.self_ip = key, hosts, self_ip
+        super().__init__(request, peer, dashboard, owner)
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        prefix, separator, suffix = self.path[1:].partition("/")
+        if (not secrets.compare_digest(prefix.encode(), self.key.encode())
+                or self.headers.get_all("Host", []) != self.headers.get_all("X-Forwarded-Host", [])
+                or self.headers.get("Host", "") not in self.hosts
+                or self.headers.get("Tailscale-Funnel-Request")):
+            self.reply(403)
+            return False
+        self.path = "/" + suffix if separator else "/"
+        return True
+
+    @property
+    def expected_host(self):
+        return self.headers["Host"]
+
+    def authorized(self):
+        peers = self.headers.get_all("X-Forwarded-For", [])
+        return len(peers) == 1 and same_owner_peer((peers[0], 1), self.owner)
+
+    def reply(self, status, *args, **kwargs):
+        Handler.reply(self, status, *args, **kwargs)
+        if status in (200, 303) and self.headers.get("X-Forwarded-For") != self.self_ip:
+            self.server.vpn_last_visit = now()
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -490,7 +522,7 @@ def main():
         server.workers()
         with Store(server.root) as store:
             if store.setting("private_vpn_enabled", False):
-                threading.Thread(target=serve_private, args=(server, VPNHandler), daemon=True).start()
+                threading.Thread(target=serve_private, args=(server, VPNHandler, ServeHandler), daemon=True).start()
         if args.open and not os.environ.get("KAKAO_COLLECTOR_BACKGROUND"):
             threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
         server.serve_forever()
