@@ -178,7 +178,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Referrer-Policy", "no-referrer")
+        # A no-referrer form document can serialize its POST Origin as "null".
+        form_page = status in (200, 409) and mime.startswith("text/html")
+        self.send_header("Referrer-Policy", "same-origin" if form_page else "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         for key, value in headers.items():
@@ -231,9 +233,11 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, (PAGE + content + "</main>").encode())
 
     def do_POST(self):
-        if (self.headers.get_all("Host") != [self.expected_host] or not self.authorized()
-                or self.headers.get_all("Origin") != [f"http://{self.expected_host}"]):
+        if self.headers.get_all("Host") != [self.expected_host] or not self.authorized():
             self.reply(403)
+            return
+        if self.headers.get_all("Origin") != [f"http://{self.expected_host}"]:
+            self.reply(403, "요청 출처를 확인할 수 없습니다. 수집 화면을 새로고침한 뒤 다시 시도해 주세요.".encode())
             return
         actions = {"start", "pause", "interval", "agent-install", "agent-remove", "rooms",
                    "select", "deselect", "collect", "history", "resume-room", "probe", "save-rooms", "refresh-rooms"}
