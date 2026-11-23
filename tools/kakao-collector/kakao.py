@@ -18,7 +18,7 @@ from urllib.error import URLError
 
 from ax_source import AXError, checked, collect_room, list_rooms, native, unique_room
 from collector import DEFAULT_ROOT, SEOUL, Store, decode, now
-from portal import Portal, PortalError, sync
+from drive_store import deliver, drive_ready
 
 LABEL = "com.ean.kakao-collector"
 STATES = {
@@ -35,6 +35,15 @@ REASONS = {
     "overlap_unverified": "스냅샷 연결 불확실 · 누락 가능",
     "partial_ax": "AX가 일부 범위만 노출",
     "photo_capture_failed": "사진 캡처 실패",
+    "screen_locked": "맥 잠금 해제 대기",
+    "accessibility_read_failed_AXWindows_-25204": "카카오톡 창 목록 응답 지연 · 재시도 대기",
+    "viewer_controls_not_observed": "사진 뷰어의 저장 버튼을 확인하지 못함",
+    "viewer_save_control_unavailable": "사진 뷰어의 저장 동작을 확인하지 못함",
+    "viewer_inspection_pending": "카카오톡 사진 저장 경로 확인 대기",
+    "viewer_save_inspection_pending": "사진 뷰어 저장 메뉴 확인 대기",
+    "photo_hit_not_confirmed": "대화창에서 해당 사진 위치를 확인하지 못함",
+    "photo_viewer_not_observed": "해당 사진의 뷰어가 열렸는지 확인하지 못함",
+    "photo_context_not_visible": "사진이 있는 대화 구간이 현재 보이지 않음",
     "room_not_visible": "목록에서 방을 확인할 수 없음",
     "target_room_name_ambiguous": "같은 이름의 방이 여러 개",
     "target_room_window_ambiguous": "같은 이름의 창이 여러 개",
@@ -112,9 +121,7 @@ def run_collection(store, args):
 def show_status(store):
     print(f"정기 수집  {'일시정지' if store.setting('paused', True) else '사용'}")
     print(f"수집 주기  {store.setting('interval', 60)}초")
-    print("업무 반영  검토 후 선택한 묶음만")
-    connection = store.setting("portal_status", "대기")
-    print(f"업무포탈  {REASONS.get(connection, connection)}")
+    print("OneDrive  " + ("연결됨" if drive_ready(store.root) else "계정 연결 대기"))
     for room in store.db.execute("SELECT * FROM rooms ORDER BY id"):
         issue = REASONS.get(room["issue"], room["issue"]) or "현재 노출 범위"
         gap = " · 이전/사이 누락 가능" if room["sticky_gap"] and room["issue"] != "overlap_unverified" else ""
@@ -172,16 +179,12 @@ def review(store, number):
 
 
 def photo(store, identifier):
-    image = store.db.execute("SELECT bytes FROM captures WHERE message=?", (identifier,)).fetchone()
-    if not image or not image[0]:
-        raise ValueError("해당 사진의 캡처가 아직 없습니다")
-    folder = store.root / "preview"
-    folder.mkdir(mode=0o700, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=folder, suffix=".png", delete=False) as file:
-        file.write(image[0])
-        name = file.name
-    subprocess.run(["/usr/bin/open", "-a", "Preview", name], check=True)
-    print(name)
+    rows = store.db.execute("SELECT path FROM originals WHERE message=? AND path IS NOT NULL ORDER BY ordinal", (identifier,)).fetchall()
+    if not rows:
+        raise ValueError("사진 확보 대기")
+    for row in rows:
+        path = store.root / "outbox" / row["path"]
+        subprocess.run(["/usr/bin/open","-a","Preview",str(path)],check=True)
 
 
 def agent(store, install):
@@ -198,8 +201,8 @@ def agent(store, install):
         path.unlink(missing_ok=True)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    arguments = ["/usr/bin/open", "-gj", app]
-    data = {"Label":label, "LimitLoadToSessionType":"Aqua", "ProgramArguments":arguments, "RunAtLoad":True}
+    arguments = ["/usr/bin/open", "-W", "-gj", "--env", "KAKAO_COLLECTOR_BACKGROUND=1", app]
+    data = {"Label":label, "LimitLoadToSessionType":"Aqua", "ProgramArguments":arguments, "RunAtLoad":True, "KeepAlive":True, "ThrottleInterval":15}
     with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".kakao-", delete=False) as file:
         file.write(plistlib.dumps(data))
     os.replace(file.name, path)
@@ -245,7 +248,7 @@ def main():
             elif command == "interval":
                 store.configure("interval", arguments.seconds)
             else:
-                lock_name = "portal" if command == "sync-tick" else "collector"
+                lock_name = "drive" if command == "sync-tick" else "collector"
                 with locked(store, lock_name):
                     if command in ("collect", "tick"):
                         run_collection(store, arguments)
@@ -266,11 +269,12 @@ def main():
                             selected = [unique_room(items, name) for name in arguments.names]
                             for room in selected:
                                 store.add_room(room["name"], bool(room["isSelf"]), arguments.since)
+                            store.configure("paused", False)
                             show_status(store)
                     else:
-                        sync(store, Portal(store.root))
-    except (AXError, PortalError, ValueError, OSError, ImportError, subprocess.SubprocessError) as error:
-        label = str(error) if isinstance(error, (AXError, PortalError, ValueError)) else type(error).__name__
+                        deliver(store)
+    except (AXError, ValueError, OSError, ImportError, subprocess.SubprocessError) as error:
+        label = str(error) if isinstance(error, (AXError, ValueError)) else type(error).__name__
         if command in ("tick", "sync-tick") and label == "수집기 작업이 진행 중입니다":
             return 0
         print(REASONS.get(label, label), file=sys.stderr)

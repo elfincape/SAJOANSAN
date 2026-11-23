@@ -4,6 +4,10 @@ import argparse
 import html
 import os
 import re
+import plistlib
+import subprocess
+import tempfile
+import sqlite3
 import secrets
 import threading
 import webbrowser
@@ -13,9 +17,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
-from ax_source import list_rooms, native, probe_capture, unique_room
+from ax_source import list_rooms, native, probe, unique_room
 from collector import DEFAULT_ROOT, Store, decode
-from portal import APP_URL, Portal, PortalError, sync
+from drive_store import deliver, drive_ready
+from portal import APP_URL
 from kakao import REASONS, STATES, agent, batches, batch_number, kst, locked, run_collection
 
 PAGE = """<!doctype html><html lang="ko"><meta charset="utf-8">
@@ -65,18 +70,17 @@ class Dashboard(ThreadingHTTPServer):
             try:
                 with Store(self.root) as store, locked(store, lock_name):
                     actions(store)
-            except (PortalError, OSError, ValueError, RuntimeError) as error:
-                if lock_name == "portal" and str(error) != "수집기 작업이 진행 중입니다":
+                    if store.setting(lock_name + "_error"):
+                        store.configure(lock_name + "_error", None)
+            except (sqlite3.Error, OSError, ValueError, RuntimeError) as error:
+                if str(error) != "수집기 작업이 진행 중입니다":
                     with Store(self.root) as store:
-                        store.configure("portal_status", str(error) if isinstance(error, PortalError) else type(error).__name__)
+                        store.configure(lock_name + "_error", type(error).__name__)
             threading.Event().wait(15)
 
     def workers(self):
         collect = lambda store: run_collection(store, SimpleNamespace(command="tick"))
-        def submit(store):
-            if store.setting("portal_enabled"):
-                sync(store, Portal(store.root))
-        for action, lock_name in ((collect, "collector"), (submit, "portal")):
+        for action, lock_name in ((collect, "collector"), (deliver, "drive")):
             threading.Thread(target=self.background, args=(action, lock_name), daemon=True).start()
 
     @property
@@ -123,8 +127,10 @@ class Dashboard(ThreadingHTTPServer):
                     selected = [unique_room(items, name) for name in data.get("room", [])]
                     for room in selected:
                         store.add_room(room["name"], bool(room["isSelf"]), value("since") or None)
+                    if selected:
+                        store.configure("paused", False)
                 elif action == "probe":
-                    store.configure("ax_probe", probe_capture(store))
+                    store.configure("ax_probe", probe(store))
                 elif action == "deselect":
                     with store.db:
                         store.db.execute("UPDATE rooms SET enabled=0 WHERE id=?", (int(value("room")),))
@@ -138,40 +144,7 @@ class Dashboard(ThreadingHTTPServer):
                     with store.db:
                         store.db.execute("UPDATE rooms SET sticky_gap=0,issue='baseline_restarted' WHERE id=? AND head IS NOT NULL", (int(value("room")),))
                 else:
-                    self.portal_action(store, action, data)
-
-    def portal_action(self, store, action, data):
-        if action == "portal-stop":
-            store.configure("portal_enabled", False)
-            return
-        if action == "portal-retry":
-            batch = batch_number(store, int(data["number"][0]))
-            with store.db:
-                store.db.execute("UPDATE portal_parts SET state='retry' WHERE batch=? AND entry IS NOT NULL AND state='failed'", (batch["id"],))
-                store.db.execute("UPDATE batches SET error=NULL WHERE id=? AND state='portal_wait'", (batch["id"],))
-            return
-        portal = Portal(store.root)
-        try:
-            if action == "login":
-                actor = portal.login(data["identifier"][0], data["password"][0])
-                store.configure("portal_actor", actor)
-                portal.capability()
-                store.configure("portal_status", "업무포탈 연결 확인")
-                return
-            portal.capability()
-            if portal.session["actor"] != store.setting("portal_actor"):
-                raise PortalError("PORTAL_ACCOUNT_CHANGED")
-            aliases = [alias.strip() for alias in data.get("aliases", [""])[0].split(",") if alias.strip()]
-            mode = data["mode"][0]
-            if mode not in ("preview", "auto") or len(aliases) > 8 or any(len(alias) > 40 for alias in aliases):
-                raise ValueError("업무 판단 설정을 확인해 주세요")
-            store.configure("portal_aliases", aliases)
-            store.configure("portal_mode", mode)
-            store.configure("portal_enabled", True)
-        except PortalError as error:
-            store.configure("portal_status", str(error))
-            raise
-
+                    raise ValueError("unknown_action")
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
@@ -230,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403)
             return
         actions = {"start", "pause", "interval", "agent-install", "agent-remove", "rooms",
-                   "select", "deselect", "collect", "history", "resume-room", "login", "portal-mode", "portal-stop", "portal-retry", "probe"}
+                   "select", "deselect", "collect", "history", "resume-room", "probe"}
         action = self.path.removeprefix("/action/")
         if action not in actions:
             self.reply(404)
@@ -264,12 +237,20 @@ class Handler(BaseHTTPRequestHandler):
         text = f'<section><h2>정기 수집 <small>{state}</small></h2>'
         if self.server.note:
             text += f'<p class="notice">{esc(self.server.note)}</p>'
-        text += self.button("collect", "지금 수집", primary=True)
         text += self.button("start", "시작") + self.button("pause", "일시정지")
-        text += self.button("interval", "주기 변경", f'<label>초 <input name="seconds" type="number" min="15" max="3600" value="{seconds}" size="5"> </label>')
-        text += '<details><summary>로그인 시 자동 실행</summary>'
-        text += self.button("agent-install", "자동 실행 등록") + self.button("agent-remove", "자동 실행 해제")
-        text += '</details></section><section><h2>수집 대상</h2>'
+        text += self.button("interval", "주기 변경", f'<label>초 <input name="seconds" type="number" min="15" max="3600" value="{seconds}"> </label>')
+        last = store.db.execute("SELECT MAX(collected) FROM messages WHERE state='new'").fetchone()[0]
+        text += f'<p>마지막 새 대화 수집 {kst(last)}</p></section><section><h2>OneDrive · 카톡수집</h2>'
+        waiting, sent = store.db.execute("SELECT count(*) FILTER(WHERE sent<revision),count(*) FILTER(WHERE sent=revision) FROM drive_outbox").fetchone()
+        photos = store.db.execute("SELECT count(*) FROM originals WHERE path IS NULL").fetchone()[0]
+        connection = "계정 연결됨" if drive_ready(store.root) else "계정 연결 대기"
+        text += f'<p>{connection} · 업로드 대기 {waiting}개 · OneDrive 전송 성공 {sent}개 · 사진 확보 대기 {photos}개</p>'
+        for worker in ("collector", "drive"):
+            if store.setting(worker + "_error"):
+                text += f'<p>{esc(worker)} · {esc(store.setting(worker + "_error"))}</p>'
+        for row in store.db.execute("SELECT error,count(*) FROM originals WHERE path IS NULL GROUP BY error UNION ALL SELECT error,count(*) FROM drive_outbox WHERE error IS NOT NULL GROUP BY error"):
+            text += f'<p>{issue(row[0])} · {row[1]}건</p>'
+        text += '</section><section><h2>수집 대상</h2>'
         text += self.button("rooms", "카카오톡 방 목록 가져오기")
         rooms = list(store.db.execute("SELECT * FROM rooms WHERE enabled=1 ORDER BY id"))
         if rooms:
@@ -291,42 +272,15 @@ class Handler(BaseHTTPRequestHandler):
                 duplicate = counts[room["name"]] > 1
                 fields += (f'<label><input type="checkbox" name="room" value="{name}" '
                            f'{"disabled" if duplicate else ""}> {name} {"(동명 방)" if duplicate else ""}</label>')
-            fields += '</div><label>과거 시작 범위 (KST, 선택) <input name="since" type="datetime-local"></label> '
+            fields += "</div>"
             text += self.button("select", "선택 저장", fields, inline=False)
-        text += '</section><section><h2>수집 묶음</h2><table><tr><th>채팅방</th><th>수집 시각 (KST)</th><th>처리 상태</th></tr>'
-        recent = list(batches(store).fetchmany(100))
-        for batch in recent:
-            error = issue(batch["error"])
-            text += (f'<tr><td><a href="/batch/{batch["number"]}">{esc(batch["name"])}</a></td>'
-                     f'<td>{kst(batch["created"])}</td><td>{esc(STATES[batch["state"]])} {error}</td></tr>')
-        if not recent:
-            text += '<tr><td colspan="3">수집 묶음이 없습니다.</td></tr>'
-        text += '</table></section><section><h2>업무포탈</h2>'
-        text += f'<p>{issue(store.setting("portal_status", "연결 대기"))} · <a href="{APP_URL}">업무포탈 열기</a></p>'
-        text += self.button("login", "업무포탈 로그인",
-                            '<label>계정 <input name="identifier" autocomplete="username" required></label> '
-                            '<label>비밀번호 <input type="password" name="password" autocomplete="off" required></label> ',
-                            inline=False)
-        fields = ('<label>본인 별칭 <input name="aliases" placeholder="쉼표로 구분"></label> '
-                  '<label>모드 <select name="mode"><option value="preview">확인</option>'
-                  '<option value="auto">자동 반영</option></select></label> '
-                  '<label><input required type="checkbox" name="confirm" value="yes"> 선택 방의 대화·사진을 업무포탈로 전송</label> ')
-        text += self.button("portal-mode", "전송 시작", fields, inline=False)
-        text += self.button("portal-stop", "전송 일시정지")
-        return text + '</section>'
+        return text + "</section>"
 
     def room_detail(self, store, number):
         room = store.db.execute("SELECT * FROM rooms WHERE id=?", (number,)).fetchone()
         if room is None:
             raise ValueError("room_not_found")
         text = f'<section><h2>{esc(room["name"])}</h2><p>{issue(room["issue"])}</p>'
-        if room["enabled"]:
-            room_field = f'<input type="hidden" name="room" value="{number}">'
-            fields = room_field + '<label>로딩 횟수 <input type="number" name="pages" min="1" max="10" value="1"></label> '
-            text += self.button("history", "이전 대화 요청", fields)
-            if room["sticky_gap"]:
-                text += '<p>누락 가능 구간을 보관했습니다. 최신 관찰을 기준으로 이후부터 재개할 수 있습니다.</p>'
-                text += self.button("resume-room", "최신 관찰부터 재개", room_field)
         head = store.db.execute("SELECT * FROM observations WHERE id=?", (room["head"],)).fetchone()
         if head:
             rows = decode(head["rows_json"])
@@ -335,11 +289,8 @@ class Handler(BaseHTTPRequestHandler):
             for row, identifier in list(zip(rows, ids))[-100:]:
                 text += f'<div class="message"><div class="meta">{esc(row.get("sender") or "작성자 미확인")} · {esc(row.get("dateText"))} {esc(row.get("timeText"))}</div>'
                 if row["kind"] == "attachment":
-                    capture = store.db.execute("SELECT sha256,error FROM captures WHERE message=?", (identifier,)).fetchone()
-                    if capture and capture["sha256"]:
-                        text += f'<img src="/photo/{identifier}" alt="카카오톡 창 사진 영역 캡처">'
-                    else:
-                        text += f'<p>사진 · {issue(capture["error"]) if capture else "캡처 대기"}</p>'
+                    for photo in store.db.execute("SELECT path,error FROM originals WHERE message=? ORDER BY ordinal", (identifier,)):
+                        text += f'<p>{esc(photo["path"] or "사진 확보 대기")} {issue(photo["error"])}</p>'
                 else:
                     text += f'<p>{esc(row.get("text") or "AX 본문 미확인")}</p>'
                 text += "</div>"
@@ -394,9 +345,19 @@ def main():
         with connection_file.open("w") as target:
             target.write(url)
         os.chmod(connection_file, 0o600)
+        with Store(server.root) as store:
+            app = store.setting("collector_app")
+            if app and Path(app).is_dir():
+                shortcut = Path(app).parent / "수집 화면 열기.webloc"
+                with tempfile.NamedTemporaryFile(dir=shortcut.parent, delete=False) as temp:
+                    temp.write(plistlib.dumps({"URL": url}))
+                os.replace(temp.name, shortcut)
+        # The system assertion applies on AC power and expires with the app.
+        subprocess.Popen(["/usr/bin/caffeinate", "-s", "-w", str(os.getpid())],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         server.workers()
-        if args.open:
-            webbrowser.open(url)
+        if args.open and not os.environ.get("KAKAO_COLLECTOR_BACKGROUND"):
+            threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
         server.serve_forever()
 
 

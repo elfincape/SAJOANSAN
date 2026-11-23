@@ -45,14 +45,19 @@ def occurred_at(row):
 
 
 def signature(row):
-    # AX row indexes are coordinates in one snapshot, not Kakao message IDs.
-    return encode({key: val for key, val in row.items() if key != "rowIndex"})
+    # Offscreen timestamp labels disappear and context menus attach to the AX row.
+    # Match the ordered conversation on content that stays with the bubble.
+    if row["kind"] in ("text", "attachment"):
+        return encode([row["kind"], row.get("text"), row.get("attachments", []), row.get("links", [])])
+    return encode([part for part in row.get("axParts", []) if part.get("role") not in ("AXMenu", "AXMenuItem")])
 
 
 def reconcile(previous, current):
     """Return (current offset, matched count) for a unique, diverse prior suffix."""
     old = list(map(signature, previous))
     new = list(map(signature, current))
+    if old and old == new:
+        return (0, len(old))
     for length in range(min(len(old), len(new)), 1, -1):
         tail = old[-length:]
         if len(set(tail)) < 2:
@@ -115,7 +120,11 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.executescript(SCHEMA)
+        from drive_store import SCHEMA as DRIVE_SCHEMA
+        self.db.executescript(SCHEMA + DRIVE_SCHEMA)
+        if "local_revision" not in {r[1] for r in self.db.execute("PRAGMA table_info(drive_outbox)")}:
+            with self.db:
+                self.db.execute("ALTER TABLE drive_outbox ADD COLUMN local_revision INTEGER NOT NULL DEFAULT 0")
 
     def __enter__(self):
         return self
@@ -154,7 +163,8 @@ class Store:
         timestamp = now()
         config = self.db.execute("SELECT * FROM rooms WHERE id=?", (room,)).fetchone()
         head = self.db.execute("SELECT * FROM observations WHERE id=?", (config["head"],)).fetchone()
-        same = head and head["snapshot"] == snapshot
+        from drive_store import queue_batch
+        same = head and head["snapshot"] == snapshot and len(decode(head["message_ids"])) == len(rows)
         issue = None
         sticky_gap = config["sticky_gap"]
         new_ids = []
@@ -164,6 +174,9 @@ class Store:
             else:
                 previous = decode(head["rows_json"]) if head else []
                 matched = reconcile(previous, rows) if previous else None
+                if previous and not matched and not coverage.get("rowStart") and not decode(head["coverage"]).get("rowStart"):
+                    if len(rows) >= len(previous) and list(map(signature, rows[:len(previous)])) == list(map(signature, previous)):
+                        matched = (0, len(previous))
                 ids = [None] * len(rows)
                 if matched:
                     start, count = matched
@@ -175,18 +188,13 @@ class Store:
                     if ids[index] is not None:
                         continue
                     at = occurred_at(row)
-                    cutoff = datetime.fromisoformat(config["cutoff"])
-                    # AX timestamps have minute resolution. The minute spanning
-                    # a freshly selected cutoff remains baseline unless anchored.
                     appended = matched and index >= sum(matched)
-                    loaded = matched and history_requested and index < matched[0]
-                    fresh = appended or ((head is None or loaded) and at and at >= cutoff)
-                    if at and at < cutoff:
-                        state = "context"
-                    elif sticky_gap:
-                        state = "review_overlap"
-                    elif fresh:
+                    exportable = row["kind"] in ("text", "attachment")
+                    # A new selection includes the visible baseline. Never publish ambiguous overlap.
+                    if exportable and (head is None or appended):
                         state = "new"
+                    elif previous and not matched:
+                        state = "review_overlap"
                     else:
                         state = "context"
                     ids[index] = self.db.execute(
@@ -207,11 +215,13 @@ class Store:
                     group = new_ids[offset:offset + 12]
                     left, right = max(0, group[0][0] - 4), group[-1][0] + 5
                     state = "photo_review" if any(row["kind"] == "attachment" for row in rows[left:right]) else "queued"
+                    batch_id = str(uuid.uuid4())
                     self.db.execute(
                         "INSERT INTO batches(id,room,fresh,context,created,state) VALUES (?,?,?,?,?,?)",
-                        (str(uuid.uuid4()), room, encode([identifier for _, identifier in group]),
+                        (batch_id, room, encode([identifier for _, identifier in group]),
                          encode(ids[left:right]), timestamp, state),
                     )
+                    queue_batch(self.db, batch_id, [(mid, rows[i]) for i, mid in group])
             for index, (image, error) in photos.items():
                 self.db.execute(
                     "INSERT INTO captures VALUES (?,?,?,?,?) ON CONFLICT(message) DO UPDATE SET "
@@ -226,8 +236,8 @@ class Store:
             elif any(error for _, error in photos.values()):
                 issue = "photo_capture_failed"
             self.db.execute(
-                "UPDATE rooms SET last_attempt=?,last_ok=CASE WHEN ? IS NULL THEN ? ELSE last_ok END,issue=? WHERE id=?",
-                (timestamp, issue, timestamp, issue, room),
+                "UPDATE rooms SET last_attempt=?,last_ok=?,issue=? WHERE id=?",
+                (timestamp, timestamp, issue, room),
             )
 
     def include_late_photos(self, room, ids, photos):
