@@ -39,7 +39,9 @@ func describe(_ root: AXUIElement) -> [[String:String]] {
 func clickPhoto(_ image: AXUIElement, _ row: AXUIElement, _ table: AXUIElement,
                 _ window: AXUIElement, _ app: AXUIElement, _ pid: pid_t) throws {
     guard let running = NSRunningApplication(processIdentifier: pid) else { throw ReadFailure.blocked("app_not_running") }
+    try yieldToMacUser()
     running.activate(options:[])
+    try yieldToMacUser()
     _ = AXUIElementPerformAction(window, "AXRaise" as CFString)
     Thread.sleep(forTimeInterval:0.15)
     guard let parent = try attribute(table,"AXParent") else { throw ReadFailure.blocked("transcript_scroll_unavailable") }
@@ -53,6 +55,7 @@ func clickPhoto(_ image: AXUIElement, _ row: AXUIElement, _ table: AXUIElement,
         let height = try frame(last).maxY - frame(first).minY - viewport.height
         guard height > 0 else { throw ReadFailure.blocked("photo_offscreen") }
         let next = min(1,max(0,old.doubleValue + (rect.midY-viewport.midY)/height))
+        try yieldToMacUser()
         _ = AXUIElementSetAttributeValue(bar as! AXUIElement,"AXValue" as CFString,NSNumber(value:next))
         Thread.sleep(forTimeInterval:0.15)
         rect = try frame(image)
@@ -71,8 +74,10 @@ func clickPhoto(_ image: AXUIElement, _ row: AXUIElement, _ table: AXUIElement,
     }
     guard let pt = point else { throw ReadFailure.blocked("photo_hit_not_confirmed") }
     let move = CGEvent(mouseEventSource:nil, mouseType:.mouseMoved, mouseCursorPosition:pt, mouseButton:.left)
+    try yieldToMacUser()
     move?.post(tap:.cghidEventTap)
     Thread.sleep(forTimeInterval:0.06)
+    try yieldToMacUser()
     let pair: [CGEventType] = [.leftMouseDown,.leftMouseUp]
     for type in pair {
         guard let event = CGEvent(mouseEventSource:nil,mouseType:type,mouseCursorPosition:pt,mouseButton:.left) else { throw ReadFailure.blocked("photo_open_failed") }
@@ -131,7 +136,7 @@ func original(_ req: [String: Any], _ app: AXUIElement, _ window: AXUIElement,
     let directory = URL(fileURLWithPath:path,isDirectory:true)
     defer {
         // Only the viewer opened by this request belongs to the collector.
-        if (try? saveSheet(app,viewer)) == nil, let close = try? attribute(viewer,"AXCloseButton") {
+        if (try? saveSheet(app,viewer)) == nil, let close = try? attribute(viewer,"AXCloseButton"), (try? yieldToMacUser()) != nil {
             _ = AXUIElementPerformAction(close as! AXUIElement,"AXPress" as CFString)
         }
     }
@@ -142,6 +147,7 @@ func original(_ req: [String: Any], _ app: AXUIElement, _ window: AXUIElement,
     }) else { throw ReadFailure.blocked("viewer_save_not_enabled") }
     let buttonActions = actions(save)
     AXUIElementSetMessagingTimeout(save,0.7)
+    try yieldToMacUser()
     let click = AXUIElementPerformAction(save,"AXPress" as CFString)
     if images.count > 1 {
         guard let one = try awaitValue(5, { () -> AXUIElement? in
@@ -151,6 +157,7 @@ func original(_ req: [String: Any], _ app: AXUIElement, _ window: AXUIElement,
             return candidates.count == 1 ? candidates[0] : nil
         }) else { return ["status":"ok","reason":"single_photo_menu_missing","press":click.rawValue,
                            "actions":buttonActions,"nodes":describe(viewer)] }
+        try yieldToMacUser()
         _ = AXUIElementPerformAction(one,"AXPress" as CFString)
     }
     let file = try saveToDirectory(app,viewer,pid,directory)
@@ -207,10 +214,12 @@ func press(_ el: AXUIElement) throws {
     guard actions(el).contains("AXPress"), (try attribute(el,"AXEnabled") as? Bool) != false else {
         throw ReadFailure.blocked("save_control_unavailable")
     }
+    try yieldToMacUser()
     _ = AXUIElementPerformAction(el,"AXPress" as CFString)
 }
 
-func key(_ pid: pid_t, _ code: CGKeyCode, _ flags: CGEventFlags = []) {
+func key(_ pid: pid_t, _ code: CGKeyCode, _ flags: CGEventFlags = []) throws {
+    try yieldToMacUser()
     for down in [true,false] {
         let event = CGEvent(keyboardEventSource:nil,virtualKey:code,keyDown:down)
         event?.flags = flags
@@ -243,24 +252,27 @@ func awaitValue<T>(_ seconds: Double, _ inspect: () throws -> T?) throws -> T? {
 func saveToDirectory(_ app: AXUIElement, _ viewer: AXUIElement, _ pid: pid_t, _ directory: URL) throws -> String {
     guard let panel = try awaitValue(5, { try saveSheet(app, viewer) }) else { throw ReadFailure.blocked("save_panel_not_observed") }
     guard let running = NSRunningApplication(processIdentifier:pid) else { throw ReadFailure.blocked("app_not_running") }
+    try yieldToMacUser()
     running.activate(options:[])
+    try yieldToMacUser()
     _ = AXUIElementPerformAction(viewer,"AXRaise" as CFString)
     guard try awaitValue(3,{ () -> Bool? in
         guard running.isActive, let focused = try attribute(app,"AXFocusedUIElement"),
               within(focused as! AXUIElement,panel) else { return nil }
         return true
     }) != nil else { throw ReadFailure.blocked("save_panel_focus_changed") }
-    key(pid,5,[.maskCommand,.maskShift])
+    try key(pid,5,[.maskCommand,.maskShift])
     guard let field = try awaitValue(6, { () -> AXUIElement? in
         guard let raw = try attribute(app,"AXFocusedUIElement") else { return nil }
         let el = raw as! AXUIElement
         guard try string(el,"AXIdentifier",optional:true) == "PathTextField", within(el,panel) else { return nil }
         return el
     }) else { throw ReadFailure.blocked("folder_field_not_observed") }
+    try yieldToMacUser()
     guard AXUIElementSetAttributeValue(field,"AXValue" as CFString,directory.path as CFString) == .success,
           try string(field,"AXValue") == directory.path, running.isActive else { throw ReadFailure.blocked("save_folder_not_set") }
     Thread.sleep(forTimeInterval:0.35)
-    key(pid,36)
+    try key(pid,36)
     let folderName = directory.lastPathComponent
     guard let saveButton = try awaitValue(4, { () -> AXUIElement? in
         let entries = try descendants(panel)

@@ -1,13 +1,21 @@
+// Kakao prefixes the accessible room-list label with the chat type.
+func roomListTitle(_ label: String) -> String {
+    let prefix = "팀채팅, "
+    return label.hasPrefix(prefix) && label.count > prefix.count ? String(label.dropFirst(prefix.count)) : label
+}
+
 // Reuse the upstream exact-name match. Activate only a hit-tested visible room label.
 func openVisibleCell(_ cell: AXUIElement, _ main: AXUIElement, _ app: NSRunningApplication, _ title: String) throws -> Bool {
     guard let label = elements(cell).first(where: {
-        string($0,"AXRole") == "AXStaticText" && string($0,"AXValue") == title
+        string($0,"AXRole") == "AXStaticText" && roomListTitle(string($0,"AXValue")) == title
     }), let pos = attr(label,"AXPosition"), let size = attr(label,"AXSize") else { return false }
     var origin = CGPoint.zero, dimensions = CGSize.zero
     guard CFGetTypeID(pos) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID(),
           AXValueGetValue(pos as! AXValue,.cgPoint,&origin), AXValueGetValue(size as! AXValue,.cgSize,&dimensions),
           dimensions.width > 0, dimensions.height > 0 else { return false }
+    try yieldToMacUser()
     app.activate(options:[])
+    try yieldToMacUser()
     _ = AXUIElementPerformAction(main,"AXRaise" as CFString)
     Thread.sleep(forTimeInterval:0.15)
     let point = CGPoint(x:origin.x+dimensions.width/2,y:origin.y+dimensions.height/2)
@@ -16,8 +24,9 @@ func openVisibleCell(_ cell: AXUIElement, _ main: AXUIElement, _ app: NSRunningA
           var item = hit else { return false }
     for _ in 0..<12 {
         if CFEqual(item,cell) {
-            guard string(label,"AXValue") == title else { return false }
+            guard roomListTitle(string(label,"AXValue")) == title else { return false }
             for count: Int64 in [1,2] {
+                try yieldToMacUser()
                 for type: CGEventType in [.leftMouseDown,.leftMouseUp] {
                     guard let e = CGEvent(mouseEventSource:nil,mouseType:type,mouseCursorPosition:point,mouseButton:.left) else {
                         throw ControlFailure.blocked("room_activation_failed")
@@ -42,13 +51,18 @@ func enterRoomSearch(_ field: AXUIElement, _ query: String, _ app: NSRunningAppl
         return
     }
     if query.isEmpty { try clearRoomSearch(field); return }
+    try yieldToMacUser()
     app.activate(options:[])
-    _ = AXUIElementPerformAction(try mainWindow(application), "AXRaise" as CFString)
+    let main = try mainWindow(application)
+    try yieldToMacUser()
+    _ = AXUIElementPerformAction(main, "AXRaise" as CFString)
+    try yieldToMacUser()
     _ = AXUIElementSetAttributeValue(field,"AXFocused" as CFString,kCFBooleanTrue)
     guard let focused = attr(application,"AXFocusedUIElement"), CFEqual(focused,field) else {
         throw ControlFailure.blocked("room_search_field_not_focused")
     }
-    func key(_ code: CGKeyCode, flags: CGEventFlags = [], text: [UniChar] = []) {
+    func key(_ code: CGKeyCode, flags: CGEventFlags = [], text: [UniChar] = []) throws {
+        try yieldToMacUser()
         for down in [true,false] {
             let e = CGEvent(keyboardEventSource:nil,virtualKey:code,keyDown:down)
             e?.flags = flags
@@ -57,10 +71,10 @@ func enterRoomSearch(_ field: AXUIElement, _ query: String, _ app: NSRunningAppl
         }
     }
     if !string(field,"AXValue").isEmpty {
-        key(0,flags:.maskCommand)
-        key(51)
+        try key(0,flags:.maskCommand)
+        try key(51)
     }
-    if !query.isEmpty { key(0,text:Array(query.utf16)) }
+    if !query.isEmpty { try key(0,text:Array(query.utf16)) }
     let until = min(deadline,ProcessInfo.processInfo.systemUptime+3)
     while string(field,"AXValue") != query && ProcessInfo.processInfo.systemUptime < until { Thread.sleep(forTimeInterval:0.08) }
     guard string(field,"AXValue") == query else { throw ControlFailure.blocked("room_search_input_not_observed") }
@@ -93,7 +107,7 @@ func pickerLabel(_ element: AXUIElement, _ direct: Bool, _ depth: Int, _ name: i
           let metadata = values as? [Any], metadata.count == 3, let role = metadata[0] as? String else {
         throw ControlFailure.blocked("room_picker_changed")
     }
-    if direct, role == "AXStaticText", name == nil { name = string(element, "AXValue") }
+    if direct, role == "AXStaticText", name == nil { name = roomListTitle(string(element, "AXValue")) }
     if role == "AXImage", metadata[1] as? String == "badge me" { own = true }
     if ["AXTextArea", "AXTextField", "AXSearchField"].contains(role) { return }
     for child in metadata[2] as? [AXUIElement] ?? [] {

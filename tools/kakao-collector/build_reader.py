@@ -1,17 +1,19 @@
 """Extend the pinned upstream Swift reader with a caller-bounded tail and file actions."""
 import hashlib
+import re
 import subprocess
 import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
 
+activity = Path(__file__).with_name("MacActivity.swift").read_text()
 SOURCE = files("kakaotalk_native").joinpath("ReadKakaoAX.swift")
 source = SOURCE.read_bytes()
 if hashlib.sha256(source).hexdigest()[:20] != "8070ff42939eae750c98":
     raise SystemExit("unexpected upstream AX reader")
 swift = source.decode().replace("let maximumRows = 1000", "var maximumRows = 1000")
-swift = swift.replace('["windows", "read", "attachment"].contains(action)', '["windows", "read", "file", "layout"].contains(action)')
+swift = swift.replace('["windows", "read", "attachment"].contains(action)', '["windows", "read", "file", "layout", "activity"].contains(action)')
 swift = swift.replace('let application = AXUIElementCreateApplication', '''
     if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
        session["CGSSessionScreenIsLocked"] as? Bool == true { throw ReadFailure.blocked("screen_locked") }
@@ -33,7 +35,12 @@ start = swift.index('func attachment(')
 swift = swift[:start] + Path(__file__).with_name("Original.swift").read_text() + "\n" + swift[swift.index("func run() throws", start):]
 with tempfile.TemporaryDirectory() as tmp:
     main = Path(tmp) / "main.swift"
-    main.write_text(swift)
+    swift = swift.replace('guard AXIsProcessTrusted()', '''if action == "activity" { return ["status":"ok", "idleSeconds":try hardwareIdleSeconds()] }
+    idleGuardSeconds = request["idleGuardSeconds"] as? Double ?? 0
+    try yieldToMacUser()
+    guard AXIsProcessTrusted()''')
+    swift = swift.replace('func checkBudget() throws {', 'func checkBudget() throws {\n    try yieldToMacUser()')
+    main.write_text("typealias BridgeFailure = ReadFailure\n" + activity + "\n" + swift)
     subprocess.run(["/usr/bin/xcrun", "swiftc", "-O", str(main), "-o", sys.argv[1]], check=True)
 
 if len(sys.argv) > 2:
@@ -47,11 +54,21 @@ if len(sys.argv) > 2:
                           'try enterRoomSearch(field, query, app, application)')
         src = src.replace('let main = try ensureChats(application)', '''let main = try ensureChats(application)
         if command == "rooms", request["listAllRooms"] as? Bool == true { return try pickerRooms(main) }''')
+        src = src.replace('let name = string(nameElement, "AXValue")', 'let name = roomListTitle(string(nameElement, "AXValue"))')
+        src = src.replace('guard AXIsProcessTrusted()', '''idleGuardSeconds = request["idleGuardSeconds"] as? Double ?? 0
+    try yieldToMacUser()
+    if let session = CGSessionCopyCurrentDictionary() as? [String: Any], session["CGSSessionScreenIsLocked"] as? Bool == true {
+        throw ControlFailure.blocked("screen_locked")
+    }
+    guard AXIsProcessTrusted()''')
+        src = src.replace('func check() throws {', 'func check() throws {\n    try yieldToMacUser()')
+        # Guard pinned upstream mutations again after any intervening AX reads.
+        src = re.sub(r'(?m)^( +)(let \w+ = AXUIElement(?:SetAttributeValue|PerformAction)\()', r'\1try yieldToMacUser()\n\1\2', src)
         menu_start = src.index('        try act(cell, "AXShowMenu")')
         menu_end = src.index('        let until =', menu_start)
         src = (src[:menu_start] + '        if !(try openVisibleCell(cell, main, app, title)) {\n'
                + src[menu_start:menu_end] + '        }\n' + src[menu_end:])
-        src = Path(__file__).with_name("OpenRoom.swift").read_text() + "\n" + src
+        src = "typealias BridgeFailure = ControlFailure\n" + activity + "\n" + Path(__file__).with_name("OpenRoom.swift").read_text() + "\n" + src
         main.write_text(src.replace("started + 8.0", "started + 65.0")
                         .replace("AXUIElementSetMessagingTimeout(application, 0.2)",
                                  "AXUIElementSetMessagingTimeout(application, 15.0)")

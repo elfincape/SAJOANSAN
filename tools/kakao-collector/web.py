@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 f'<button class="{color}">{esc(label)}</button></form>')
 
     def index(self, store):
-        state = "일시정지" if store.setting("paused", True) else "사용 중"
+        state = "일시정지" if store.setting("paused", True) else REASONS.get(store.setting("input_wait"), "사용 중")
         seconds = store.setting("interval", 60)
         text = f'<section><h2>정기 수집 <small>{state}</small></h2>'
         if self.server.note:

@@ -126,6 +126,19 @@ class Store:
             with self.db:
                 self.db.execute("ALTER TABLE drive_outbox ADD COLUMN local_revision INTEGER NOT NULL DEFAULT 0")
 
+        # The old picker stored the spoken room type as part of the title.
+        # Keep the existing room ID, cutoff, selections and observations.
+        if not self.setting("team_room_titles_v1"):
+            with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                if not self.setting("team_room_titles_v1"):
+                    prefix = "팀채팅, "
+                    self.db.execute(
+                        "UPDATE OR IGNORE rooms SET name=substr(name, ?) "
+                        "WHERE substr(name, 1, ?)=? AND length(name)>?",
+                        (len(prefix)+1, len(prefix), prefix, len(prefix)))
+                    self.db.execute("INSERT INTO settings VALUES ('team_room_titles_v1','true')")
+
     def __enter__(self):
         return self
 

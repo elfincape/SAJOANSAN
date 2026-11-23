@@ -28,22 +28,34 @@ def checked(result):
     return result
 
 
+COLLECTION_WAIT = {"mac_user_active", "mac_input_unavailable", "screen_locked"}
+IDLE_SECONDS = 60
+
+
 class CollectorAX(NativeAX):
+    idle_guard = 0
+
+    def response(self, proc):
+        result = json.loads(proc.stdout)
+        if self.idle_guard and result.get("reason") in COLLECTION_WAIT:
+            raise AXError(result["reason"])
+        return result
+
     tail = 24
 
     def request(self, **args):
         proc = subprocess.run([str(self.cache_root / "collector-read")],
-                              input=json.dumps(dict(args, tail=self.tail)), capture_output=True, text=True, timeout=80)
+                              input=json.dumps(dict(args, tail=self.tail, idleGuardSeconds=self.idle_guard)), capture_output=True, text=True, timeout=80)
         if proc.returncode:
             raise AXError("ax_reader_failed")
-        return json.loads(proc.stdout)
+        return self.response(proc)
 
     def _control_call(self, action, **arguments):
         proc = subprocess.run([str(self.cache_root / "collector-control")],
-                              input=json.dumps(dict(action=action, **arguments)), capture_output=True, text=True, timeout=80)
+                              input=json.dumps(dict(action=action, idleGuardSeconds=self.idle_guard, **arguments)), capture_output=True, text=True, timeout=80)
         if proc.returncode:
             raise AXError("ax_control_failed")
-        return json.loads(proc.stdout)
+        return self.response(proc)
 
     def _call(self, action, titles, text=None):
         if action in {"read", "windows"}:
@@ -51,8 +63,10 @@ class CollectorAX(NativeAX):
         return super()._call(action, titles, text)
 
 
-def native(store):
-    return CollectorAX(cache_root=store.root / "native")
+def native(store, *, idle_guard=0):
+    ax = CollectorAX(cache_root=store.root / "native")
+    ax.idle_guard = idle_guard
+    return ax
 
 
 def catalog(ax, *, full_list=False):
@@ -109,6 +123,12 @@ def overlap(old, rows):
 def collect_room(store, ax, room, history_pages=0):
     name = room["name"]
     with ui_session():
+        pending_search = store.setting("collector_room_search")
+        if pending_search:
+            current = checked(ax.rooms())
+            if current.get("searchQuery") == pending_search:
+                checked(ax.search_rooms(""))
+            store.configure("collector_room_search", None)
         window_result = ax.windows()
         if window_result.get("reason") == "screen_locked":
             checked(window_result)
@@ -126,6 +146,7 @@ def collect_room(store, ax, room, history_pages=0):
                         raise AXError("room_search_in_use")
                     searched = not listing.get("searchQuery")
                     if searched:
+                        store.configure("collector_room_search", name)
                         listing = checked(ax.search_rooms(name))
                     for _ in range(4):
                         if listing.get("searchQuery") == name and any(r["name"] == name for r in listing["items"]):
@@ -178,7 +199,9 @@ def collect_room(store, ax, room, history_pages=0):
             if searched:
                 listing = ax.rooms()
                 if listing.get("status") == "ok" and listing.get("searchQuery") == name:
-                    ax.search_rooms("")
+                    checked(ax.search_rooms(""))
+                if listing.get("status") == "ok":
+                    store.configure("collector_room_search", None)
 
 
 def retry_older_photo(store, ax, room, name, recent_ids):
@@ -265,6 +288,8 @@ def acquire_photos(store, ax, name, page, ids):
                 store.db.execute("UPDATE original_attempts SET finished=?,result=? WHERE directory=?", (now(),"saved",str(folder)))
         except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
             code = str(exc) if isinstance(exc, AXError) else type(exc).__name__
+            if code in COLLECTION_WAIT:
+                raise
             with store.db:
                 if item["directory"]:
                     store.db.execute("UPDATE original_attempts SET finished=?,result=? WHERE directory=?", (now(),code,item["directory"]))

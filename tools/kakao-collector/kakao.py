@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.error import URLError
 
-from ax_source import AXError, checked, collect_room, list_rooms, native, unique_room
+from ax_source import AXError, IDLE_SECONDS, COLLECTION_WAIT, checked, collect_room, list_rooms, native, unique_room
 from collector import DEFAULT_ROOT, SEOUL, Store, decode, now
 from drive_store import deliver, drive_ready
 
@@ -35,6 +35,8 @@ REASONS = {
     "overlap_unverified": "스냅샷 연결 불확실 · 누락 가능",
     "partial_ax": "AX가 일부 범위만 노출",
     "photo_capture_failed": "사진 캡처 실패",
+    "mac_user_active": f"맥 사용 중 · 입력이 {IDLE_SECONDS}초 멈추면 자동 재개",
+    "mac_input_unavailable": "맥 입력 상태 확인 대기",
     "screen_locked": "맥 잠금 해제 대기",
     "accessibility_read_failed_AXWindows_-25204": "카카오톡 창 목록 응답 지연 · 재시도 대기",
     "viewer_controls_not_observed": "사진 뷰어의 저장 버튼을 확인하지 못함",
@@ -87,8 +89,23 @@ def run_collection(store, args):
     scheduled = args.command == "tick"
     if scheduled and store.setting("paused", True):
         return
+    if scheduled:
+        try:
+            activity = native(store).request(action="activity")
+            idle = activity.get("idleSeconds")
+            if activity.get("status") != "ok" or not isinstance(idle, (float, int)):
+                wait = "mac_input_unavailable"
+            else:
+                wait = "mac_user_active" if idle < IDLE_SECONDS else None
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            wait = "mac_input_unavailable"
+        if store.setting("input_wait") != wait and (wait or store.setting("input_wait") != "screen_locked"):
+            store.configure("input_wait", wait)
+        if wait:
+            return
     last = store.setting("last_cycle")
-    if scheduled and last:
+    resume = store.setting("next_collection_room") if scheduled else None
+    if scheduled and not resume and last:
         elapsed = (datetime.fromisoformat(now()) - datetime.fromisoformat(last)).total_seconds()
         if 0 <= elapsed < store.setting("interval", 60):
             return
@@ -102,12 +119,24 @@ def run_collection(store, args):
         raise ValueError("이전 대화 요청은 --room 번호를 지정하세요")
     if not scheduled and not rooms:
         raise ValueError("먼저 rooms에서 방을 확인한 뒤 select로 선택하세요")
-    if scheduled:
+    if resume:
+        rooms = [room for room in rooms if room["id"] >= resume]
+    elif scheduled:
         store.configure("last_cycle", now())
     for room in rooms:
+        if scheduled and store.setting("next_collection_room") != room["id"]:
+            store.configure("next_collection_room", room["id"])
+        if scheduled and store.setting("paused", True):
+            return
         try:
-            collect_room(store, native(store), room, pages)
+            collect_room(store, native(store, idle_guard=IDLE_SECONDS), room, pages)
         except AXError as error:
+            if str(error) in COLLECTION_WAIT:
+                if not scheduled:
+                    raise
+                if store.setting("input_wait") != str(error):
+                    store.configure("input_wait", str(error))
+                return
             store.failure(room["id"], str(error))
         except ImportError:
             store.failure(room["id"], "kakaotalk_ax_missing")
@@ -116,12 +145,19 @@ def run_collection(store, args):
             store.failure(room["id"], issue)
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             store.failure(room["id"], type(error).__name__)
+        if scheduled and store.setting("input_wait"):
+            store.configure("input_wait", None)
+    if scheduled:
+        store.configure("next_collection_room", None)
+        if store.setting("input_wait"):
+            store.configure("input_wait", None)
     if not scheduled and not getattr(args, 'quiet', False):
         show_status(store)
 
 
 def show_status(store):
-    print(f"정기 수집  {'일시정지' if store.setting('paused', True) else '사용'}")
+    state = "일시정지" if store.setting("paused", True) else REASONS.get(store.setting("input_wait"), "사용")
+    print(f"정기 수집  {state}")
     print(f"수집 주기  {store.setting('interval', 60)}초")
     print("OneDrive  " + ("연결됨" if drive_ready(store.root) else "계정 연결 대기"))
     for room in store.db.execute("SELECT * FROM rooms ORDER BY id"):
