@@ -55,17 +55,17 @@ def native(store):
     return CollectorAX(cache_root=store.root / "native")
 
 
-def catalog(ax):
+def catalog(ax, *, full_list=False):
     with ui_session():
         windows = ax.windows()
         if windows.get("reason") == "screen_locked":
             return windows, windows
-        rooms = ax.rooms()
+        rooms = ax._control_call("rooms", listAllRooms=True) if full_list else ax.rooms()
     return windows, rooms
 
 
 def list_rooms(ax):
-    windows, rooms = catalog(ax)
+    windows, rooms = catalog(ax, full_list=True)
     if rooms.get("status") == "ok":
         items = list(rooms["items"])
         total = rooms["reportedRowCount"]

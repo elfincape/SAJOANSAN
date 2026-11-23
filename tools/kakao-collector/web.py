@@ -1,6 +1,7 @@
 """Loopback-only browser controls for the local Kakao collector."""
 
 import argparse
+import hashlib
 import html
 import os
 import re
@@ -18,7 +19,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 from ax_source import list_rooms, native, probe, unique_room
-from collector import DEFAULT_ROOT, Store, decode
+from collector import DEFAULT_ROOT, Store, decode, encode, now
 from drive_store import deliver, drive_ready
 from portal import APP_URL
 from kakao import REASONS, STATES, agent, batches, batch_number, kst, locked, run_collection
@@ -40,11 +41,13 @@ input:not([type=checkbox]){border:1px solid #aebdad;border-radius:6px;padding:7p
 small,.muted{color:#536453}table{width:100%;border-collapse:collapse;text-align:left}
 td,th{padding:9px 8px;border-bottom:1px solid #e3e9e2;vertical-align:top}th{font-size:13px;color:#465747}
 .notice{padding:10px 14px;background:#fcf4dd;border:1px solid #efe0b5;border-radius:6px}
-.rooms{max-height:230px;overflow:auto;margin:9px 0}.rooms label{display:block;padding:4px 0}
+.rooms{min-width:0;border:0;margin:12px 0;padding:0}.rooms label{display:flex;align-items:center;gap:10px;
+padding:8px 4px;border-bottom:1px solid #e3e9e2;cursor:pointer;overflow-wrap:anywhere}.rooms input{width:18px;height:18px;flex:none;accent-color:#2e5132}
+.rooms label:focus-within{outline:2px solid #2e5132}.savebar{position:sticky;bottom:0;background:#fff;padding:10px 0;border-top:1px solid #c8d5c5}
 .meta{font-size:13px;color:#546553}.message{border-left:2px solid #c9dcc7;margin:12px 0;padding-left:12px}
 .message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}.message img{max-width:100%;max-height:400px}
 nav{display:flex;gap:14px;margin-bottom:14px}@media(max-width:620px){main{padding:20px 12px}section{padding:12px}td,th{padding:6px 3px}}
-</style><main><header><h1>카카오톡 업무 수집</h1><nav><a href="/">수집 현황</a></nav></header>
+</style><main><header><h1>카카오톡 업무 수집</h1><nav><a href="/rooms">수집할 방 선택</a><a href="/">수집 현황</a></nav></header>
 """
 
 
@@ -146,6 +149,15 @@ class Dashboard(ThreadingHTTPServer):
                 else:
                     raise ValueError("unknown_action")
 
+def selection_version(items, enabled):
+    keys = [(r["name"], bool(r["isSelf"])) for r in items]
+    return hashlib.sha256(encode([keys, sorted(enabled)]).encode()).hexdigest()
+
+
+def enabled_names(store):
+    return {r[0] for r in store.db.execute("SELECT name FROM rooms WHERE enabled=1")}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
@@ -174,7 +186,8 @@ class Handler(BaseHTTPRequestHandler):
         request = urlsplit(self.path)
         match = re.fullmatch(r"/(batch|photo|room)/(\d{1,12})", request.path)
         if request.path == "/connect" and parse_qs(request.query).get("key") == [self.server.token]:
-            self.reply(303, Location="/", Set_Cookie=f"ean_local={self.server.token}; Path=/; HttpOnly; SameSite=Strict")
+            landing = "/rooms" if parse_qs(request.query).get("view") == ["rooms"] else "/"
+            self.reply(303, Location=landing, Set_Cookie=f"ean_local={self.server.token}; Path=/; HttpOnly; SameSite=Strict")
             return
         if not self.authorized():
             self.reply(403, "수집기를 실행해 발급받은 주소를 사용하세요.".encode())
@@ -190,6 +203,18 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     self.reply(404)
                     return
+            elif request.path == "/rooms":
+                notice = ""
+                if self.server.available is None:
+                    try:
+                        with locked(store, wait=True):
+                            if self.server.available is None:
+                                self.server.available = list_rooms(native(store))
+                    except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as error:
+                        notice = REASONS.get(str(error), "카카오톡 방 목록을 읽지 못했습니다.")
+                if parse_qs(request.query).get("saved") == ["1"]:
+                    notice = "수집할 방을 저장했습니다."
+                content = self.room_picker(store, notice)
             elif request.path == "/":
                 content = self.index(store)
             else:
@@ -203,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403)
             return
         actions = {"start", "pause", "interval", "agent-install", "agent-remove", "rooms",
-                   "select", "deselect", "collect", "history", "resume-room", "probe"}
+                   "select", "deselect", "collect", "history", "resume-room", "probe", "save-rooms", "refresh-rooms"}
         action = self.path.removeprefix("/action/")
         if action not in actions:
             self.reply(404)
@@ -213,12 +238,26 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(413)
             return
         try:
-            data = parse_qs(self.rfile.read(int(length)).decode(), max_num_fields=200)
+            data = parse_qs(self.rfile.read(int(length)).decode(), max_num_fields=1100 if action == "save-rooms" else 200)
         except ValueError:
             self.reply(400)
             return
         if action == "portal-mode" and data.get("confirm") != ["yes"]:
             self.reply(400)
+            return
+        if action in {"save-rooms", "refresh-rooms"}:
+            with Store(self.server.root) as store:
+                try:
+                    with locked(store, wait=True):
+                        if action == "refresh-rooms":
+                            self.server.available = list_rooms(native(store))
+                        else:
+                            self.save_rooms(store, data)
+                except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as error:
+                    message = REASONS.get(str(error), str(error))
+                    self.reply(409, (PAGE + self.room_picker(store, message) + "</main>").encode())
+                    return
+            self.reply(303, Location="/rooms?saved=1" if action == "save-rooms" else "/rooms")
             return
         self.server.act(action, data)
         number = data.get("number", [""])[0]
@@ -251,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
         for row in store.db.execute("SELECT error,count(*) FROM originals WHERE path IS NULL GROUP BY error UNION ALL SELECT error,count(*) FROM drive_outbox WHERE error IS NOT NULL GROUP BY error"):
             text += f'<p>{issue(row[0])} · {row[1]}건</p>'
         text += '</section><section><h2>수집 대상</h2>'
-        text += self.button("rooms", "카카오톡 방 목록 가져오기")
+        text += '<p><a href="/rooms">방 목록에서 선택하기</a></p>'
         rooms = list(store.db.execute("SELECT * FROM rooms WHERE enabled=1 ORDER BY id"))
         if rooms:
             text += '<table><tr><th>채팅방</th><th>시작 범위</th><th>마지막 정상 수집</th><th>상태</th><th></th></tr>'
@@ -263,18 +302,62 @@ class Handler(BaseHTTPRequestHandler):
                 text += (f'<tr><td><a href="/room/{room["id"]}">{esc(room["name"])}</a></td><td>{kst(room["cutoff"])}</td>'
                          f'<td>{kst(room["last_ok"])}</td><td>{status}</td><td>{button}</td></tr>')
             text += "</table>"
-        if self.server.available is not None:
-            available, total = self.server.available
-            counts = Counter(r["name"] for r in available)
-            fields = f'<small>현재 노출 {len(available)}개 · 앱 보고 {total}행</small><div class="rooms">'
-            for room in available:
-                name = esc(room["name"])
-                duplicate = counts[room["name"]] > 1
-                fields += (f'<label><input type="checkbox" name="room" value="{name}" '
-                           f'{"disabled" if duplicate else ""}> {name} {"(동명 방)" if duplicate else ""}</label>')
-            fields += "</div>"
-            text += self.button("select", "선택 저장", fields, inline=False)
         return text + "</section>"
+
+    def room_picker(self, store, notice=""):
+        active = enabled_names(store)
+        text = '<section><h2>수집할 방 선택</h2>'
+        if notice:
+            text += f'<p class="notice" role="status">{esc(notice)}</p>'
+        text += self.button("refresh-rooms", "방 목록 새로 읽기")
+        if self.server.available is None:
+            return text + "</section>"
+        rooms, total = self.server.available
+        counts = Counter(r["name"] for r in rooms)
+        version = selection_version(rooms, active)
+        text += (f'<p>표시된 방 {len(rooms)}개 · 현재 수집 대상 {len(active)}개</p>'
+                 '<form method="post" action="/action/save-rooms">'
+                 f'<input type="hidden" name="version" value="{version}">'
+                 '<fieldset class="rooms"><legend>자동으로 수집할 방에 체크하세요.</legend>')
+        for n, r in enumerate(rooms):
+            name = r["name"]
+            disabled = counts[name] != 1
+            detail = " (동명 방 · 선택 변경 불가)" if disabled else ""
+            text += (f'<label><input type="checkbox" name="choice" value="{n}"'
+                     f'{" checked" if name in active else ""}{" disabled" if disabled else ""}>'
+                     f'<span>{esc(name)}{detail}</span></label>')
+        text += "</fieldset>"
+        if len(rooms) < total:
+            text += f'<p>카카오톡이 보고한 {total}행 중 {len(rooms)}개 방 이름을 읽었습니다.</p>'
+        missing = sorted(active - counts.keys())
+        if missing:
+            text += '<p>목록 밖에서 계속 수집 중인 방 · ' + ", ".join(map(esc, missing)) + '</p>'
+        return text + '<div class="savebar"><button class="primary">선택 저장</button></div></form></section>'
+
+    def save_rooms(self, store, data):
+        if self.server.available is None:
+            raise ValueError("방 목록을 다시 읽어 주세요.")
+        rooms, _ = self.server.available
+        counts = Counter(r["name"] for r in rooms)
+        editable = {str(i): r for i,r in enumerate(rooms) if counts[r["name"]] == 1}
+        choices = set(data.get("choice", []))
+        if not choices <= editable.keys():
+            raise ValueError("방 목록이 바뀌었습니다. 다시 선택해 주세요.")
+        with store.db:
+            store.db.execute("BEGIN IMMEDIATE")
+            active = enabled_names(store)
+            if data.get("version") != [selection_version(rooms, active)]:
+                raise ValueError("선택 상태가 바뀌었습니다. 현재 목록을 확인해 주세요.")
+            added = False
+            for key, room in editable.items():
+                name = room["name"]
+                if key in choices and name not in active:
+                    store.enable_room(name, bool(room["isSelf"]), now())
+                    added = True
+                elif key not in choices and name in active:
+                    store.db.execute("UPDATE rooms SET enabled=0 WHERE name=?", (name,))
+            if added:
+                store.configure("paused", False)
 
     def room_detail(self, store, number):
         room = store.db.execute("SELECT * FROM rooms WHERE id=?", (number,)).fetchone()
@@ -348,10 +431,11 @@ def main():
         with Store(server.root) as store:
             app = store.setting("collector_app")
             if app and Path(app).is_dir():
-                shortcut = Path(app).parent / "수집 화면 열기.webloc"
-                with tempfile.NamedTemporaryFile(dir=shortcut.parent, delete=False) as temp:
-                    temp.write(plistlib.dumps({"URL": url}))
-                os.replace(temp.name, shortcut)
+                for name, address in (("수집 화면 열기", url), ("수집할 방 선택", url + "&view=rooms")):
+                    shortcut = Path(app).parent / (name + ".webloc")
+                    with tempfile.NamedTemporaryFile(dir=shortcut.parent, delete=False) as temp:
+                        temp.write(plistlib.dumps({"URL": address}))
+                    os.replace(temp.name, shortcut)
         # The system assertion applies on AC power and expires with the app.
         subprocess.Popen(["/usr/bin/caffeinate", "-s", "-w", str(os.getpid())],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

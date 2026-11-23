@@ -45,6 +45,18 @@ if len(sys.argv) > 2:
         src = control.decode()
         src = src.replace('try setValue(field, query)\n            if names(field).contains("AXConfirm") { try act(field, "AXConfirm") }',
                           'try enterRoomSearch(field, query, app, application)')
+        src = src.replace('let visible = attr(table, "AXVisibleRows") as? [AXUIElement]',
+                          'let visible = attr(table, listAllRooms ? "AXRows" : "AXVisibleRows") as? [AXUIElement]')
+        src = src.replace('if ["rooms", "open", "search_rooms"].contains(command) {',
+                          'listAllRooms = command == "rooms" && request["listAllRooms"] as? Bool == true\n'
+                          '    if ["rooms", "open", "search_rooms"].contains(command) {')
+        src = src.replace('let labels = labelElements.map', 'if listAllRooms {\n'
+                          '            let own = try nodes(cells[0], tables: true).contains { string($0, "AXRole") == "AXImage" && string($0, "AXDescription") == "badge me" }\n'
+                          '            result.append((cells[0], ["name": name, "isSelf": own]))\n'
+                          '            continue\n        }\n        let labels = labelElements.map')
+        src = src.replace('visible == nil ? "AXChildren" : "AXVisibleRows"',
+                          'listAllRooms ? "AXRows" : (visible == nil ? "AXChildren" : "AXVisibleRows")')
+        src = 'var listAllRooms = false\n' + src
         menu_start = src.index('        try act(cell, "AXShowMenu")')
         menu_end = src.index('        let until =', menu_start)
         src = (src[:menu_start] + '        if !(try openVisibleCell(cell, main, app, title)) {\n'

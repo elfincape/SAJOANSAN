@@ -145,11 +145,14 @@ class Store:
         if start.tzinfo is None:
             start = start.replace(tzinfo=SEOUL)
         with self.db:
-            self.db.execute(
-                "INSERT INTO rooms(name,own,cutoff) VALUES (?,?,?) "
-                "ON CONFLICT(name) DO UPDATE SET enabled=1 WHERE own=excluded.own",
-                (name, int(own), start.isoformat()),
-            )
+            return self.enable_room(name, own, start.isoformat())
+
+    def enable_room(self, name, own, cutoff):
+        self.db.execute(
+            "INSERT INTO rooms(name,own,cutoff) VALUES (?,?,?) "
+            "ON CONFLICT(name) DO UPDATE SET enabled=1 WHERE own=excluded.own",
+            (name, int(own), cutoff),
+        )
         item = self.db.execute("SELECT id,own FROM rooms WHERE name=?", (name,)).fetchone()
         if bool(item["own"]) != own:
             raise ValueError("room_identity_changed")

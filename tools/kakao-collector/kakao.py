@@ -69,11 +69,11 @@ def kst(value):
 
 
 @contextmanager
-def locked(store, name="collector"):
+def locked(store, name="collector", *, wait=False):
     fd = os.open(store.root / f"{name}.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("수집기 작업이 진행 중입니다") from None
         yield
