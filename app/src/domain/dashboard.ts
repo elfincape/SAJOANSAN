@@ -212,11 +212,14 @@ export const COLUMNS: DashboardColumn[] = [
 
 export const ALL_KEYS = COLUMNS.map((c) => c.key);
 export const COL_MAP = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
+const dashboardCollator = new Intl.Collator('ko', { numeric: true });
+
 export function filterDashboard(
   rows: DashboardRow[],
   filters: DashboardFilters,
   sort: Sorter[],
   healthAvailable: boolean,
+  today?: string,
 ) {
   const f = filters as { search: string } & Record<string, Set<unknown>>;
   const terms = f.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -295,7 +298,7 @@ export function filterDashboard(
   });
   const promoted = new Set<DashboardRow>();
   if (healthAvailable !== false)
-    filtered = prioritizeHealthRows(filtered, f, undefined, promoted);
+    filtered = prioritizeHealthRows(filtered, f, today, promoted);
   return { rows: filtered, promoted };
 }
 
@@ -308,7 +311,7 @@ export function compareVal(a: unknown, b: unknown) {
   if (bN) return -1;
 
   if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), 'ko', { numeric: true });
+  return dashboardCollator.compare(String(a), String(b));
 }
 
 export function deliveryPointMemo(row: DashboardRow) {

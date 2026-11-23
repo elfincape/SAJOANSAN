@@ -1,6 +1,6 @@
 import { DialogActions } from '../components/DialogFrame';
 import { catalogScopeLabel, useErpCatalog } from '../lib/erp-course-catalog';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import '../styles/driver-documents.css';
 import '../styles/dashboard.css';
@@ -38,6 +38,7 @@ import type {
 } from '../domain/dashboard';
 import {
   healthStatus,
+  koreaToday,
   rowHealthDate,
   validDate,
   watchHealthDate,
@@ -284,7 +285,6 @@ function Work({
     [applied, setApplied] = useState(urlInitial.filters),
     [sort, setSort] = useState<Sorter[]>(urlInitial.sort),
     [view, setView] = useState(urlInitial.view),
-    [search, setSearch] = useState(urlInitial.filters.search),
     [openFilter, setOpenFilter] = useState<string | null>(null),
     [detail, setDetail] = useState<DashboardRow | null>(null),
     [linked, setLinked] = useState<LinkedRecord | null>(null);
@@ -342,6 +342,9 @@ function Work({
     [dragging, setDragging] = useState<string | null>(null),
     [drop, setDrop] = useState<{ key: string; left: boolean } | null>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const currentFilters = useRef(filters);
+  currentFilters.current = filters;
   const interacted = useRef(false),
     prefs = useRef({ order, visible, widths }),
     resizeCleanup = useRef<(() => void) | undefined>(undefined);
@@ -420,13 +423,20 @@ function Work({
     if (view !== 'flat') params.set('view', view);
     history.replaceState(null, '', location.pathname + '?' + params);
   }, [applied, sort, view, center.slug]);
-  useEffect(() => () => resizeCleanup.current?.(), []);
-  const result = filterDashboard(rows, applied, sort, healthAvailable),
+  useEffect(() => () => {
+    resizeCleanup.current?.();
+    clearTimeout(searchTimer.current);
+  }, []);
+  const today = useMemo(() => koreaToday(), [day]);
+  const result = useMemo(
+      () => filterDashboard(rows, applied, sort, healthAvailable, today),
+      [rows, applied, sort, healthAvailable, today],
+    ),
     filtered = result.rows,
     promoted = result.promoted;
-  void day;
-  const cols = orderedDashboardColumns(order).filter(
-      (c) => visible[c.key] !== false,
+  const cols = useMemo(
+      () => orderedDashboardColumns(order).filter((c) => visible[c.key] !== false),
+      [order, visible],
     ),
     activeCount = Object.values(applied).filter((v) =>
       v instanceof Set ? v.size : typeof v === 'string' && v,
@@ -442,10 +452,24 @@ function Work({
   }
   function resetFilters() {
     interacted.current = true;
+    clearTimeout(searchTimer.current);
+    searchTimer.current = undefined;
+    if (searchInput.current) searchInput.current.value = '';
     const next = initialFilters();
+    currentFilters.current = next;
     setFilters(next);
     setApplied(next);
-    setSearch('');
+  }
+  function applySearch() {
+    clearTimeout(searchTimer.current);
+    searchTimer.current = undefined;
+    const next = {
+      ...currentFilters.current,
+      search: searchInput.current?.value.trim() ?? '',
+    };
+    currentFilters.current = next;
+    setFilters(next);
+    setApplied(next);
   }
   function changeView(next: string) {
     interacted.current = true;
@@ -498,9 +522,12 @@ function Work({
       widths: nextWidths,
     } = dashboardColumns(saved);
     interacted.current = true;
+    clearTimeout(searchTimer.current);
+    searchTimer.current = undefined;
+    if (searchInput.current) searchInput.current.value = next.search;
+    currentFilters.current = next;
     setFilters(next);
     setApplied(next);
-    setSearch(next.search);
     setSort(nextSort);
     setView(saved.view === 'group' ? 'group' : 'flat');
     setOrder(nextOrder);
@@ -627,7 +654,7 @@ function Work({
       .filter((role) => row[role + '_driver_id'])
       .map((role, i) => {
         const expiry = row[`${role}_driver_health_expires_on`],
-          s = healthStatus(expiry),
+          s = healthStatus(expiry, today),
           badge = (
             <span
               className={
@@ -761,6 +788,7 @@ function Work({
             .map((role) => {
               const status = healthStatus(
                 row[`${role}_driver_health_expires_on`],
+                today,
               );
               return (
                 (role === 'primary' ? '주: ' : '보조: ') +
@@ -771,8 +799,9 @@ function Work({
             .join('');
     if (column.key === 'stop_memo') return deliveryPointMemo(row);
     if (column.key === 'dp_contact') return formatPhone(row.dp_contact);
-    return typeof cell(row, column.key) === 'string'
-      ? String(cell(row, column.key))
+    const value = cell(row, column.key);
+    return typeof value === 'string'
+      ? value
       : String(row[column.key] ?? '');
   }
   const empty = (
@@ -939,14 +968,14 @@ function Work({
               placeholder="전체 컬럼 검색 (기사명·전화번호 포함)"
               className="app-input w-64 text-xs"
               autoComplete="off"
-              value={search}
-              onChange={(e) => {
+              defaultValue={urlInitial.filters.search}
+              onChange={() => {
                 interacted.current = true;
-                setSearch(e.target.value);
-                setFilters((old) => ({
-                  ...old,
-                  search: e.target.value.trim(),
-                }));
+                clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(applySearch, 200);
+              }}
+              onBlur={() => {
+                if (searchTimer.current !== undefined) applySearch();
               }}
             />
             <div
@@ -1105,7 +1134,7 @@ function Work({
         </div>
         <div id="table-area" className="px-2 py-1">
           <div id="flat-view" className={view === 'flat' ? '' : 'hidden'}>
-            {!filtered.length ? (
+            {view !== 'flat' ? null : !filtered.length ? (
               empty
             ) : (
               <table className="data-table">
@@ -1219,7 +1248,7 @@ function Work({
                       key={String(row.stop_id ?? index)}
                       className={
                         healthAvailable && promoted.has(row)
-                          ? healthStatus(rowHealthDate(row)).className
+                          ? healthStatus(rowHealthDate(row, today), today).className
                           : ''
                       }
                       data-stop-id={row.stop_id ?? ''}
@@ -1273,9 +1302,11 @@ function Work({
             id="group-view"
             className={`${view === 'group' ? '' : 'hidden '}space-y-3 py-1`}
           >
-            {!filtered.length
-              ? empty
-              : [...groups].map(([key, stops]) => {
+            {view !== 'group'
+              ? null
+              : !filtered.length
+                ? empty
+                : [...groups].map(([key, stops]) => {
                   const sorted = [...stops].sort(
                       (a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0),
                     ),
@@ -1351,7 +1382,7 @@ function Work({
                                 key={row.stop_id ?? i}
                                 className={
                                   healthAvailable && promoted.has(row)
-                                    ? healthStatus(rowHealthDate(row)).className
+                                    ? healthStatus(rowHealthDate(row, today), today).className
                                     : ''
                                 }
                                 data-stop-id={row.stop_id ?? ''}
