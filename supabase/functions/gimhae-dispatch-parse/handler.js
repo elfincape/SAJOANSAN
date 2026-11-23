@@ -1,10 +1,11 @@
+import { callLuna, OPENAI_LUNA_MODEL } from '../_shared/luna.js';
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, apikey, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const MODEL = 'claude-haiku-4-5-20251001';
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -151,7 +152,7 @@ export function makeHandler(env, fetcher = fetch) {
         !['request', 'reply'].includes(body?.mode)
       )
         throw fail('센터와 분석 종류를 확인해 주세요.', 400);
-      // Accept the retired selector value from tabs opened before this update.
+      // Older clients still send the former selector value. The server selects the model.
       if (!['jev', 'haiku'].includes(body.provider ?? 'haiku'))
         throw fail('분석 API를 확인해 주세요.', 400);
       for (const action of ['read', 'edit']) {
@@ -171,7 +172,7 @@ export function makeHandler(env, fetcher = fetch) {
         if (!allowed.ok || (await allowed.json()) !== true)
           throw fail('김해 배차 분석 사용 권한이 없습니다.', 403);
       }
-      const content = [];
+      const images = [];
       if (body.mode === 'request') {
         if (
           !['image/jpeg', 'image/png', 'image/webp'].includes(body.mediaType) ||
@@ -181,14 +182,7 @@ export function makeHandler(env, fetcher = fetch) {
           !/^[A-Za-z0-9+/]+={0,2}$/.test(body.imageBase64)
         )
           throw fail('지원하는 형식의 사진을 붙여넣어 주세요.', 400);
-        content.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: body.mediaType,
-            data: body.imageBase64,
-          },
-        });
+        images.push({ mediaType: body.mediaType, data: body.imageBase64 });
       } else {
         if (
           typeof body.text !== 'string' ||
@@ -196,41 +190,39 @@ export function makeHandler(env, fetcher = fetch) {
           body.text.length > 40000
         )
           throw fail('회신 원문은 40,000자까지 입력할 수 있습니다.', 400);
-        content.push({ type: 'text', text: body.text });
       }
-      if (!env.AIAPIFLOW_API_KEY)
-        throw fail('기존 Haiku API 서버 설정이 필요합니다.', 503);
+      if (!env.OPENAI_API_KEY)
+        throw fail('GPT-6 Luna API 서버 설정이 필요합니다.', 503);
       const year = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '')
         ? body.date.slice(0, 4)
         : String(new Date().getUTCFullYear());
-      const response = await fetcher('https://aiapiflow.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': env.AIAPIFLOW_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 8000,
-          system: promptFor(body.mode, year),
-          messages: [{ role: 'user', content }],
-        }),
-        signal: AbortSignal.timeout(65000),
+      const instructions = promptFor(body.mode, year);
+      const prompt = body.mode === 'reply'
+        ? instructions + '\n\n회신 원문(JSON 문자열):\n' + JSON.stringify(body.text)
+        : instructions;
+      const answer = await callLuna({
+        key: env.OPENAI_API_KEY,
+        provider: 'openai',
+        model: OPENAI_LUNA_MODEL,
+        prompt,
+        images,
+        maxTokens: 8000,
+        fetcher,
       });
-      if (!response.ok)
-        throw fail(
-          response.status === 429
-            ? 'API 사용량이 많습니다. 잠시 후 다시 시도해 주세요.'
-            : `이미지·회신 분석 연결 오류입니다. (HTTP ${response.status})`,
-          response.status === 429 ? 429 : 502,
-        );
       return json({
-        result: parseAnswer(await response.json(), body.mode),
-        provider: 'haiku',
-        model: MODEL,
+        result: parseAnswer(answer, body.mode),
+        provider: answer.provider,
+        model: answer.model,
       });
     } catch (error) {
+      if (error.code === 'RATE_LIMITED')
+        return json({ error: 'API 사용량이 많습니다. 잠시 후 다시 시도해 주세요.' }, 429);
+      if (error.code === 'MODEL_TRUNCATED')
+        return json({ error: '분석 결과가 너무 깁니다. 사진이나 회신을 나누어 주세요.' }, 422);
+      if (error.code === 'IMAGE_LIMIT')
+        return json({ error: '지원하는 형식의 사진을 붙여넣어 주세요.' }, 400);
+      if (error.code === 'MODEL_FAILED' || error.code === 'MODEL_RESPONSE')
+        return json({ error: 'GPT-6 Luna 분석 연결에 실패했습니다. 입력 내용은 유지됩니다.' }, error.status);
       return json(
         {
           error: error.status
